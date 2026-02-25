@@ -177,7 +177,13 @@
                             <td>{{ student['last_name_UA'] }} {{ student['first_name_UA'] }} {{ student['middle_name_UA'] }}</td>
                             <td>
                                 <input type="hidden" name="grade_id_{{ student['id'] }}" value="{{ grade.id if grade else '' }}">
-                                <input type="number" name="grade_{{ student['id'] }}" value="{{ grade.grade if grade else '' }}" class="form-control form-control-sm" min="0" max="100" placeholder="0–100">
+                                <input type="number"
+       name="grade_{{ student['id'] }}"
+       value="{{ grade.grade if grade else '' }}"
+       class="form-control form-control-sm grade-input"
+       min="0"
+       max="100"
+       placeholder="0–100">
                             </td>
                         </tr>
                         {% endfor %}
@@ -200,5 +206,32 @@ function cancelEdit(subjectId) {
     document.getElementById('edit-row-' + subjectId).style.display = 'none';
     document.getElementById('subject-row-' + subjectId).style.display = '';
 }
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+    const inputs = document.querySelectorAll(".grade-input");
+
+    if (inputs.length === 0) return;
+
+    // Обрабатываем вставку в первое поле
+    inputs[0].addEventListener("paste", function (event) {
+        event.preventDefault();
+
+        const pasteData = (event.clipboardData || window.clipboardData).getData("text");
+        const values = pasteData
+            .split(/\r?\n/)
+            .map(v => v.trim())
+            .filter(v => v !== "");
+
+        inputs.forEach((input, index) => {
+            if (values[index] !== undefined) {
+                input.value = values[index];
+            }
+        });
+    });
+
+});
 </script>
 {% endblock %}
