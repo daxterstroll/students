@@ -1,0 +1,477 @@
+{% extends 'layout.html' %}
+
+{% block title %}Управління групами{% endblock %}
+
+{% block content %}
+<style>
+    .multiline {
+        white-space: pre-wrap; /* Сохраняет переносы строк */
+        max-width: 300px; /* Ограничивает ширину столбца */
+        word-wrap: break-word; /* Переносит длинные слова */
+    }
+</style>
+
+<div class="container mt-4">
+    <h2><i class="bi bi-person-rolodex"></i> Управління групами</h2>
+
+    <!-- Форма для добавления группы -->
+    <h4 class="mt-4">Додати групу</h4>
+    <form method="POST" class="mb-4">
+        <input type="hidden" name="action" value="add">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label for="name" class="form-label">Назва групи</label>
+                <input type="text" name="name" id="name" class="form-control" placeholder="Напр., ІПЗ-21" required>
+            </div>
+            <div class="col-md-3">
+                <label for="start_year" class="form-label">Рік початку</label>
+                <input type="number" name="start_year" id="start_year" class="form-control" placeholder="Напр., 2023" min="2000" max="2025" required>
+            </div>
+            <div class="col-md-3">
+                <label for="study_form" class="form-label">Форма навчання</label>
+                <select name="study_form" id="study_form" class="form-select" required>
+                    <option value="Денна">Денна</option>
+                    <option value="Заочна">Заочна</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="program_credits" class="form-label">Кредити</label>
+                <select name="program_credits" id="program_credits" class="form-select" required>
+                    <option value="180">180</option>
+                    <option value="240">240</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="qualification_name" class="form-label">Назва кваліфікації</label>
+                <input type="text" name="qualification_name" id="qualification_name" class="form-control" placeholder="Напр., Бакалавр комп'ютерних наук" >
+            </div>
+            <div class="col-md-6">
+                <label for="qualification_name_en" class="form-label">Qualification (EN)</label>
+                <input type="text" name="qualification_name_en" id="qualification_name_en" class="form-control" placeholder="Напр., Bachelor of Computer Science" >
+            </div>
+            <div class="col-md-6">
+                <label for="degree_level" class="form-label">Ступінь</label>
+                <input type="text" name="degree_level" id="degree_level" class="form-control" placeholder="Напр., Бакалавр" >
+            </div>
+            <div class="col-md-6">
+                <label for="degree_level_en" class="form-label">Degree Level (EN)</label>
+                <input type="text" name="degree_level_en" id="degree_level_en" class="form-control" placeholder="Напр., Bachelor" >
+            </div>
+            <div class="col-md-6">
+                <label for="specialty" class="form-label">Спеціальність</label>
+                <input type="text" name="specialty" id="specialty" class="form-control" placeholder="Напр., 121 Інженерія програмного забезпечення" >
+            </div>
+            <div class="col-md-6">
+                <label for="specialty_en" class="form-label">Specialty (EN)</label>
+                <input type="text" name="specialty_en" id="specialty_en" class="form-control" placeholder="Напр., 121 Software Engineering" >
+            </div>
+            <div class="col-md-6">
+                <label for="educational_program" class="form-label">Освітня програма</label>
+                <input type="text" name="educational_program" id="educational_program" class="form-control" placeholder="Напр., Програмна інженерія" >
+            </div>
+            <div class="col-md-6">
+                <label for="educational_program_en" class="form-label">Educational Program (EN)</label>
+                <input type="text" name="educational_program_en" id="educational_program_en" class="form-control" placeholder="Напр., Software Engineering" >
+            </div>
+            <div class="col-md-6">
+                <label for="knowledge_area" class="form-label">Галузь знань</label>
+                <input type="text" name="knowledge_area" id="knowledge_area" class="form-control" placeholder="Напр., Інформаційні технології" >
+            </div>
+            <div class="col-md-6">
+                <label for="knowledge_area_en" class="form-label">Knowledge Area (EN)</label>
+                <input type="text" name="knowledge_area_en" id="knowledge_area_en" class="form-control" placeholder="Напр., Information Technology" >
+            </div>
+            <div class="col-md-6">
+                <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
+                <textarea name="institution_name_and_status" id="institution_name_and_status" class="form-control" rows="4" placeholder="Напр., Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
+                <textarea name="institution_name_and_status_en" id="institution_name_and_status_en" class="form-control" rows="4" placeholder="Напр., Private Higher Educational Institution 'European University'. Private ownership. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="entry_requirements" class="form-label">Вимоги для вступу</label>
+                <textarea name="entry_requirements" id="entry_requirements" class="form-control" rows="4" placeholder="Напр., Сертифікат ЗНО з математики (мін. 150 балів). Сертифікат ЗНО з української мови (мін. 140 балів). Мотиваційний лист." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="entry_requirements_en" class="form-label">Access Requirements (EN)</label>
+                <textarea name="entry_requirements_en" id="entry_requirements_en" class="form-control" rows="4" placeholder="Напр., ZNO certificate in Mathematics (min. 150 points). ZNO certificate in Ukrainian Language (min. 140 points). Motivation letter." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="learning_outcomes" class="form-label">Програмні результати навчання</label>
+                <textarea name="learning_outcomes" id="learning_outcomes" class="form-control" rows="4" placeholder="Напр., Розробка програмного забезпечення. Аналіз даних. Управління проектами." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="learning_outcomes_en" class="form-label">Programme Learning Outcomes (EN)</label>
+                <textarea name="learning_outcomes_en" id="learning_outcomes_en" class="form-control" rows="4" placeholder="Напр., Software development. Data analysis. Project management." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="program_includes" class="form-label">Програма підготовки включає</label>
+                <textarea name="program_includes" id="program_includes" class="form-control" rows="4" placeholder="Напр., Курси програмування. Практичні заняття. Дипломна робота." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="program_includes_en" class="form-label">The Program Includes (EN)</label>
+                <textarea name="program_includes_en" id="program_includes_en" class="form-control" rows="4" placeholder="Напр., Programming courses. Practical training. Thesis project." ></textarea>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Список групп -->
+    <h4 class="mt-4">Список груп</h4>
+    {% if groups %}
+        <table class="table table-bordered table-striped table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Назва</th>
+                    <th>Рік початку</th>
+                    <th>Форма навчання</th>
+                    <th>Кредити</th>
+                    <th>Кількість студентів</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for group in groups %}
+                    <tr>
+                        <td>{{ group.id }}</td>
+                        <td>{{ group.name }}</td>
+                        <td>{{ group.start_year }}</td>
+                        <td>{{ group.study_form }}</td>
+                        <td>{{ group.program_credits }}</td>
+                        <td>{{ group.student_count }}</td>
+                        <td>
+							
+								<a href="{{ url_for('students.student_list', group_id=group.id) }}" class="btn btn-sm btn-primary me-1" title="Переглянути список студентів">
+									<i class="bi bi-person-lines-fill"></i>
+								</a>
+								<button class="btn btn-sm btn-info me-1" data-bs-toggle="modal" data-bs-target="#detailsGroupModal{{ group.id }}" title="Деталі групи">
+									<i class="bi bi-info-circle"></i>
+								</button>
+								<button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#editGroupModal{{ group.id }}" title="Редагувати групу">
+									<i class="bi bi-pencil"></i>
+								</button>
+								<form method="POST" action="{{ url_for('admin.archive_group', group_id=group.id) }}" class="d-inline me-1">
+									<button type="submit" class="btn btn-sm btn-warning" onclick="return confirm('Архивировать группу?');" title="Архівувати групу">
+										<i class="bi bi-archive"></i>
+									</button>
+								</form>
+								<form method="POST" action="{{ url_for('admin.manage_groups') }}" class="d-inline">
+									<input type="hidden" name="action" value="delete">
+									<input type="hidden" name="group_id" value="{{ group.id }}">
+									<button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Ви впевнені, що хочете видалити групу {{ group.display_name }}?');" title="Видалити групу">
+										<i class="bi bi-trash"></i>
+									</button>
+								</form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Модальное окно для деталей группы -->
+        {% for group in groups %}
+        <div class="modal fade" id="detailsGroupModal{{ group.id }}" tabindex="-1" aria-labelledby="detailsGroupModalLabel{{ group.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detailsGroupModalLabel{{ group.id }}">Деталі групи {{ group.display_name }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <strong>Назва групи:</strong> {{ group.name }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Рік початку:</strong> {{ group.start_year }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Форма навчання:</strong> {{ group.study_form }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Кредити:</strong> {{ group.program_credits }}
+                    </div>
+
+                    <!-- Назва кваліфікації -->
+                    <div class="{% if not group.qualification_name_en or group.qualification_name_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Назва кваліфікації:</strong> {{ group.qualification_name or '' }}
+                    </div>
+                    {% if group.qualification_name_en and group.qualification_name_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Qualification (EN):</strong> {{ group.qualification_name_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Ступінь -->
+                    <div class="{% if not group.degree_level_en or group.degree_level_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Ступінь:</strong> {{ group.degree_level or '' }}
+                    </div>
+                    {% if group.degree_level_en and group.degree_level_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Degree Level (EN):</strong> {{ group.degree_level_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Спеціальність -->
+                    <div class="{% if not group.specialty_en or group.specialty_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Спеціальність:</strong> {{ group.specialty or '' }}
+                    </div>
+                    {% if group.specialty_en and group.specialty_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Specialty (EN):</strong> {{ group.specialty_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Освітня програма -->
+                    <div class="{% if not group.educational_program_en or group.educational_program_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Освітня програма:</strong> {{ group.educational_program or '' }}
+                    </div>
+                    {% if group.educational_program_en and group.educational_program_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Educational Program (EN):</strong> {{ group.educational_program_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Галузь знань -->
+                    <div class="{% if not group.knowledge_area_en or group.knowledge_area_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Галузь знань:</strong> {{ group.knowledge_area or '' }}
+                    </div>
+                    {% if group.knowledge_area_en and group.knowledge_area_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Knowledge Area (EN):</strong> {{ group.knowledge_area_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Найменування та статус закладу -->
+                    <div class="{% if not group.institution_name_and_status_en or group.institution_name_and_status_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Найменування та статус закладу:</strong>
+                        <div class="multiline">{{ group.institution_name_and_status or '' }}</div>
+                    </div>
+                    {% if group.institution_name_and_status_en and group.institution_name_and_status_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Name and Status of Awarding Institution (EN):</strong>
+                            <div class="multiline">{{ group.institution_name_and_status_en or '' }}</div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Вимоги для вступу -->
+                    <div class="{% if not group.entry_requirements_en or group.entry_requirements_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Вимоги для вступу:</strong>
+                        <div class="multiline">{{ group.entry_requirements or '' }}</div>
+                    </div>
+                    {% if group.entry_requirements_en and group.entry_requirements_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Access Requirements (EN):</strong>
+                            <div class="multiline">{{ group.entry_requirements_en or '' }}</div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Програмні результати навчання (аккордеон) -->
+                    <div class="{% if not group.learning_outcomes_en or group.learning_outcomes_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <div class="accordion" id="learningOutcomesAccordion{{ group.id }}">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="learningOutcomesHeading{{ group.id }}">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesCollapse{{ group.id }}">
+                                        <strong>Програмні результати навчання</strong>
+                                    </button>
+                                </h2>
+                                <div id="learningOutcomesCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesHeading{{ group.id }}" data-bs-parent="#learningOutcomesAccordion{{ group.id }}">
+                                    <div class="accordion-body">
+                                        <div class="multiline">{{ group.learning_outcomes or '' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if group.learning_outcomes_en and group.learning_outcomes_en != '' %}
+                        <div class="col-md-6">
+                            <div class="accordion" id="learningOutcomesEnAccordion{{ group.id }}">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="learningOutcomesEnHeading{{ group.id }}">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesEnCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesEnCollapse{{ group.id }}">
+                                            <strong>Programme Learning Outcomes (EN)</strong>
+                                        </button>
+                                    </h2>
+                                    <div id="learningOutcomesEnCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesEnHeading{{ group.id }}" data-bs-parent="#learningOutcomesEnAccordion{{ group.id }}">
+                                        <div class="accordion-body">
+                                            <div class="multiline">{{ group.learning_outcomes_en or '' }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    <!-- Програма підготовки включає (аккордеон) -->
+                    <div class="{% if not group.program_includes_en or group.program_includes_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <div class="accordion" id="programIncludesAccordion{{ group.id }}">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="programIncludesHeading{{ group.id }}">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#programIncludesCollapse{{ group.id }}" aria-expanded="false" aria-controls="programIncludesCollapse{{ group.id }}">
+                                        <strong>Програма підготовки включає</strong>
+                                    </button>
+                                </h2>
+                                <div id="programIncludesCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="programIncludesHeading{{ group.id }}" data-bs-parent="#programIncludesAccordion{{ group.id }}">
+                                    <div class="accordion-body">
+                                        <div class="multiline">{{ group.program_includes or '' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if group.program_includes_en and group.program_includes_en != '' %}
+                        <div class="col-md-6">
+                            <div class="accordion" id="programIncludesEnAccordion{{ group.id }}">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="programIncludesEnHeading{{ group.id }}">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#programIncludesEnCollapse{{ group.id }}" aria-expanded="false" aria-controls="programIncludesEnCollapse{{ group.id }}">
+                                            <strong>The Program Includes (EN)</strong>
+                                        </button>
+                                    </h2>
+                                    <div id="programIncludesEnCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="programIncludesEnHeading{{ group.id }}" data-bs-parent="#programIncludesEnAccordion{{ group.id }}">
+                                        <div class="accordion-body">
+                                            <div class="multiline">{{ group.program_includes_en or '' }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+        {% endfor %}
+
+        <!-- Модальное окно для редактирования группы -->
+        {% for group in groups %}
+            <div class="modal fade" id="editGroupModal{{ group.id }}" tabindex="-1" aria-labelledby="editGroupModalLabel{{ group.id }}" aria-hidden="true">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="editGroupModalLabel{{ group.id }}">Редагувати групу {{ group.display_name }}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <form method="POST" action="{{ url_for('admin.manage_groups') }}">
+                                <input type="hidden" name="action" value="edit">
+                                <input type="hidden" name="group_id" value="{{ group.id }}">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label for="name{{ group.id }}" class="form-label">Назва групи</label>
+                                        <input type="text" name="name" id="name{{ group.id }}" class="form-control" value="{{ group.name }}" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="start_year{{ group.id }}" class="form-label">Рік початку</label>
+                                        <input type="number" name="start_year" id="start_year{{ group.id }}" class="form-control" value="{{ group.start_year }}" min="2000" max="2025" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="study_form{{ group.id }}" class="form-label">Форма навчання</label>
+                                        <select name="study_form" id="study_form{{ group.id }}" class="form-select" required>
+                                            <option value="Денна" {% if group.study_form == 'Денна' %}selected{% endif %}>Денна</option>
+                                            <option value="Заочна" {% if group.study_form == 'Заочна' %}selected{% endif %}>Заочна</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="program_credits{{ group.id }}" class="form-label">Кредити</label>
+                                        <select name="program_credits" id="program_credits{{ group.id }}" class="form-select" required>
+                                            <option value="180" {% if group.program_credits == 180 %}selected{% endif %}>180</option>
+                                            <option value="240" {% if group.program_credits == 240 %}selected{% endif %}>240</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="qualification_name{{ group.id }}" class="form-label">Назва кваліфікації</label>
+                                        <input type="text" name="qualification_name" id="qualification_name{{ group.id }}" class="form-control" value="{{ group.qualification_name or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="qualification_name_en{{ group.id }}" class="form-label">Qualification (EN)</label>
+                                        <input type="text" name="qualification_name_en" id="qualification_name_en{{ group.id }}" class="form-control" value="{{ group.qualification_name_en or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="degree_level{{ group.id }}" class="form-label">Ступінь</label>
+                                        <input type="text" name="degree_level" id="degree_level{{ group.id }}" class="form-control" value="{{ group.degree_level or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="degree_level_en{{ group.id }}" class="form-label">Degree Level (EN)</label>
+                                        <input type="text" name="degree_level_en" id="degree_level_en{{ group.id }}" class="form-control" value="{{ group.degree_level_en or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="specialty{{ group.id }}" class="form-label">Спеціальність</label>
+                                        <input type="text" name="specialty" id="specialty{{ group.id }}" class="form-control" value="{{ group.specialty or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="specialty_en{{ group.id }}" class="form-label">Specialty (EN)</label>
+                                        <input type="text" name="specialty_en" id="specialty_en{{ group.id }}" class="form-control" value="{{ group.specialty_en or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="educational_program{{ group.id }}" class="form-label">Освітня програма</label>
+                                        <input type="text" name="educational_program" id="educational_program{{ group.id }}" class="form-control" value="{{ group.educational_program or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="educational_program_en{{ group.id }}" class="form-label">Educational Program (EN)</label>
+                                        <input type="text" name="educational_program_en" id="educational_program_en{{ group.id }}" class="form-control" value="{{ group.educational_program_en or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="knowledge_area{{ group.id }}" class="form-label">Галузь знань</label>
+                                        <input type="text" name="knowledge_area" id="knowledge_area{{ group.id }}" class="form-control" value="{{ group.knowledge_area or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="knowledge_area_en{{ group.id }}" class="form-label">Knowledge Area (EN)</label>
+                                        <input type="text" name="knowledge_area_en" id="knowledge_area_en{{ group.id }}" class="form-control" value="{{ group.knowledge_area_en or '' }}" >
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="institution_name_and_status{{ group.id }}" class="form-label">Найменування та статус закладу</label>
+                                        <textarea name="institution_name_and_status" id="institution_name_and_status{{ group.id }}" class="form-control" rows="4" >{{ group.institution_name_and_status or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="institution_name_and_status_en{{ group.id }}" class="form-label">Name and Status of Awarding Institution (EN)</label>
+                                        <textarea name="institution_name_and_status_en" id="institution_name_and_status_en{{ group.id }}" class="form-control" rows="4" >{{ group.institution_name_and_status_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="entry_requirements{{ group.id }}" class="form-label">Вимоги для вступу</label>
+                                        <textarea name="entry_requirements" id="entry_requirements{{ group.id }}" class="form-control" rows="4" >{{ group.entry_requirements or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="entry_requirements_en{{ group.id }}" class="form-label">Access Requirements (EN)</label>
+                                        <textarea name="entry_requirements_en" id="entry_requirements_en{{ group.id }}" class="form-control" rows="4" >{{ group.entry_requirements_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="learning_outcomes{{ group.id }}" class="form-label">Програмні результати навчання</label>
+                                        <textarea name="learning_outcomes" id="learning_outcomes{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="learning_outcomes_en{{ group.id }}" class="form-label">Programme Learning Outcomes (EN)</label>
+                                        <textarea name="learning_outcomes_en" id="learning_outcomes_en{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="program_includes{{ group.id }}" class="form-label">Програма підготовки включає</label>
+                                        <textarea name="program_includes" id="program_includes{{ group.id }}" class="form-control" rows="4" >{{ group.program_includes or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="program_includes_en{{ group.id }}" class="form-label">The Program Includes (EN)</label>
+                                        <textarea name="program_includes_en" id="program_includes_en{{ group.id }}" class="form-control" rows="4" >{{ group.program_includes_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-12">
+                                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p class="text-muted">Групи відсутні</p>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends 'layout.html' %}
+
+{% block title %}Військові дані{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-shield-shaded"></i> Військові дані студента</h2>
+<form method="POST">
+    <div class="mb-3">
+        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
+        <input type="text" name="registration_number_of_the_DRPVR" class="form-control" value="{{ military.registration_number_of_the_DRPVR or '' if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Військово-обліковий документ</label>
+        <input type="text" name="military_registration_document" class="form-control" value="{{ military.military_registration_document if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Виданий ВОД</label>
+        <input type="text" name="issued_VOD" placeholder="ДД.ММ.РРРР" class="form-control" value="{{ military.issued_VOD if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Номер військово-облікової спеціальності</label>
+        <input type="text" name="military_accounting_specialty_number" class="form-control" value="{{ military.military_accounting_specialty_number if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Військове звання</label>
+        <input type="text" name="military_rank" class="form-control" value="{{ military.military_rank or '' if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Зміна облікових данних</label>
+        <input type="text" name="change_credentials" class="form-control" value="{{ military.change_credentials  or '' if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Підстава для зміни облікових даних</label>
+        <input type="text" name="reason_for_changing_credentials" class="form-control" value="{{ military.reason_for_changing_credentials  or '' if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Перебування на військовому обліку</label>
+        <input type="text" name="being_on_military_registration" class="form-control" value="{{ military.being_on_military_registration if military }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Адреса місця проживання</label>
+        <input type="text" name="address_of_residence" class="form-control" value="{{ military.address_of_residence if military }}">
+    </div>
+
+    <button type="submit" class="btn btn-success"><i class="bi bi-save me-2"></i> Зберегти</button>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i> Назад</a>
+		{% if session.get('role') == 'admin' %}
+		{% if military %}
+			<a href="{{ url_for('students.delete_military', student_id=student_id) }}" class="btn btn-danger float-end" onclick="return confirm('Ви впевнені, що хочете видалити військові дані?')"><i class="bi bi-trash3"></i> Видалити</a>
+		{% endif %}
+	{% endif %}
+</form>
+{% endblock %}

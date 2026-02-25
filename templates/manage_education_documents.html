@@ -1,0 +1,312 @@
+{% extends 'layout.html' %}
+
+{% block title %}Управління документами про освіту{% endblock %}
+
+{% block content %}
+<style>
+    .multiline {
+        white-space: pre-wrap;
+        max-width: 300px;
+        word-wrap: break-word;
+    }
+</style>
+
+<div class="container mt-4">
+    <h2><i class="bi bi-file-earmark-text"></i> Управління документами про освіту</h2>
+
+    <!-- Форма для добавления документа -->
+    <h4 class="mt-4">Додати документ про освіту</h4>
+    <form method="POST" class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-12">
+                <label for="student_id" class="form-label">Студент</label>
+                <select name="student_id" id="student_id" class="form-select" required>
+                    {% for student in students %}
+                        <option value="{{ student.id }}">{{ student.last_name_UA }} {{ student.first_name_UA }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="document_type" class="form-label">Тип документа</label>
+                <input type="text" name="document_type" id="document_type" class="form-control" placeholder="Напр., Диплом молодшого спеціаліста" required>
+            </div>
+            <div class="col-md-6">
+                <label for="document_type_en" class="form-label">Document Type</label>
+                <input type="text" name="document_type_en" id="document_type_en" class="form-control" placeholder="E.g., Junior Specialist Diploma" required>
+            </div>
+            <div class="col-md-12">
+                <label for="document_number" class="form-label">Номер документа</label>
+                <input type="text" name="document_number" id="document_number" class="form-control" placeholder="Напр., В № 176568" required>
+            </div>
+            <div class="col-md-6">
+                <label for="institution_name" class="form-label">Назва навчального закладу</label>
+                <input type="text" name="institution_name" id="institution_name" class="form-control" placeholder="Напр., Середня школа імені Мамедалі Ахмедова у місті Шамкір" required>
+            </div>
+            <div class="col-md-6">
+                <label for="institution_name_en" class="form-label">Institution Name</label>
+                <input type="text" name="institution_name_en" id="institution_name_en" class="form-control" placeholder="E.g., Secondary School named Mamedali Ahmedov in Shamkir" required>
+            </div>
+            <div class="col-md-6">
+                <label for="country" class="form-label">Країна</label>
+                <input type="text" name="country" id="country" class="form-control" placeholder="Напр., Республіка Азербайджан" required>
+            </div>
+            <div class="col-md-6">
+                <label for="country_en" class="form-label">Country</label>
+                <input type="text" name="country_en" id="country_en" class="form-control" placeholder="E.g., Republic of Azerbaijan" required>
+            </div>
+            <div class="col-md-12">
+                <label for="completion_date" class="form-label">Дата закінчення</label>
+                <input type="text" name="completion_date" id="completion_date" class="form-control" placeholder="Напр., 19/06/2005" required>
+            </div>
+
+            <!-- Додаткові поля для іноземних студентів -->
+            <div id="foreign_fields" style="display: none;">
+                <h5>Додаткові документи (для іноземців)</h5>
+                <div class="row g-3">
+                    <div class="col-md-12">
+                        <label for="reference_number" class="form-label">Номер довідки</label>
+                        <input type="text" name="reference_number" id="reference_number" class="form-control" placeholder="Напр., 08-17/04">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="reference_institution" class="form-label">Назва навчального закладу довідки</label>
+                        <input type="text" name="reference_institution" id="reference_institution" class="form-control" placeholder="Напр., ТОВ Кавказький університет">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="reference_institution_en" class="form-label">Reference Institution</label>
+                        <input type="text" name="reference_institution_en" id="reference_institution_en" class="form-control" placeholder="E.g., Caucasus University LLC">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="reference_country" class="form-label">Країна довідки</label>
+                        <input type="text" name="reference_country" id="reference_country" class="form-control" placeholder="Напр., Грузія">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="reference_country_en" class="form-label">Reference Country</label>
+                        <input type="text" name="reference_country_en" id="reference_country_en" class="form-control" placeholder="E.g., Georgia">
+                    </div>
+                    <div class="col-md-12">
+                        <label for="reference_issue_date" class="form-label">Дата видачі довідки</label>
+                        <input type="text" name="reference_issue_date" id="reference_issue_date" class="form-control" placeholder="Напр., 02/06/2017">
+                    </div>
+                    <div class="col-md-12">
+                        <label for="recognition_certificate_number" class="form-label">Номер свідоцтва про визнання</label>
+                        <input type="text" name="recognition_certificate_number" id="recognition_certificate_number" class="form-control" placeholder="Напр., № N-7916-20">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="recognition_issuer" class="form-label">Хто зробив свідоцтво</label>
+                        <input type="text" name="recognition_issuer" id="recognition_issuer" class="form-control" placeholder="Напр., Приватний вищий навчальний заклад «Європейський університет»">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="recognition_issuer_en" class="form-label">Recognition Issuer</label>
+                        <input type="text" name="recognition_issuer_en" id="recognition_issuer_en" class="form-control" placeholder="E.g., Private Higher Educational Institution 'European University'">
+                    </div>
+                    <div class="col-md-12">
+                        <label for="recognition_date" class="form-label">Дата видачі свідоцтва</label>
+                        <input type="text" name="recognition_date" id="recognition_date" class="form-control" placeholder="Напр., 12/05/2020">
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
+            </div>
+        </div>
+    </form>
+
+    <script>
+        document.getElementById('country').addEventListener('change', function() {
+            var country = this.value.toLowerCase();
+            var foreignFields = document.getElementById('foreign_fields');
+            if (country !== 'україна' && country !== 'ukraine') {
+                foreignFields.style.display = 'block';
+            } else {
+                foreignFields.style.display = 'none';
+            }
+        });
+    </script>
+
+    <!-- Таблица документов -->
+    <h4 class="mt-4">Список документів</h4>
+    {% if documents %}
+        <table class="table table-bordered table-striped table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Студент</th>
+                    <th>Тип документа</th>
+                    <th>Номер документа</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc in documents %}
+                    <tr>
+                        <td>{{ doc.id }}</td>
+                        <td>{{ doc.last_name_UA }} {{ doc.first_name_UA }}</td>
+                        <td>{{ doc.document_type }}</td>
+                        <td>{{ doc.document_number }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-info me-1" data-bs-toggle="modal" data-bs-target="#detailsModal{{ doc.id }}">
+                                <i class="bi bi-info-circle"></i> Деталі
+                            </button>
+                            <button class="btn btn-sm btn-warning me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ doc.id }}">
+                                <i class="bi bi-pencil"></i> Редагувати
+                            </button>
+                            <form method="POST" action="{{ url_for('admin.manage_education_documents') }}" style="display:inline;" onsubmit="return confirm('Ви впевнені, що хочете видалити документ?');">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="doc_id" value="{{ doc.id }}">
+                                <button type="submit" class="btn btn-sm btn-danger"><i class="bi bi-trash"></i> Видалити</button>
+                            </form>
+                        </td>
+                    </tr>
+
+                    <!-- Модальное окно для деталей -->
+                    <div class="modal fade" id="detailsModal{{ doc.id }}" tabindex="-1" aria-labelledby="detailsModalLabel{{ doc.id }}" aria-hidden="true">
+                        <div class="modal-dialog modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title" id="detailsModalLabel{{ doc.id }}">Деталі документа</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-12"><strong>Студент:</strong> {{ doc.last_name_UA }} {{ doc.first_name_UA }}</div>
+                                        <div class="col-md-6"><strong>Тип документа:</strong> {{ doc.document_type }}</div>
+                                        <div class="col-md-6"><strong>Document Type:</strong> {{ doc.document_type_en }}</div>
+                                        <div class="col-md-12"><strong>Номер документа:</strong> {{ doc.document_number }}</div>
+                                        <div class="col-md-6"><strong>Назва навчального закладу:</strong> {{ doc.institution_name }}</div>
+                                        <div class="col-md-6"><strong>Institution Name:</strong> {{ doc.institution_name_en }}</div>
+                                        <div class="col-md-6"><strong>Країна:</strong> {{ doc.country }}</div>
+                                        <div class="col-md-6"><strong>Country:</strong> {{ doc.country_en }}</div>
+                                        <div class="col-md-12"><strong>Дата закінчення:</strong> {{ doc.completion_date }}</div>
+                                        {% if doc.reference_number %}
+                                            <div class="col-md-12"><strong>Номер довідки:</strong> {{ doc.reference_number }}</div>
+                                            <div class="col-md-6"><strong>Назва навчального закладу довідки:</strong> {{ doc.reference_institution }}</div>
+                                            <div class="col-md-6"><strong>Reference Institution:</strong> {{ doc.reference_institution_en }}</div>
+                                            <div class="col-md-6"><strong>Країна довідки:</strong> {{ doc.reference_country }}</div>
+                                            <div class="col-md-6"><strong>Reference Country:</strong> {{ doc.reference_country_en }}</div>
+                                            <div class="col-md-12"><strong>Дата видачі довідки:</strong> {{ doc.reference_issue_date }}</div>
+                                            <div class="col-md-12"><strong>Номер свідоцтва про визнання:</strong> {{ doc.recognition_certificate_number }}</div>
+                                            <div class="col-md-6"><strong>Хто зробив свідоцтво:</strong> {{ doc.recognition_issuer }}</div>
+                                            <div class="col-md-6"><strong>Recognition Issuer:</strong> {{ doc.recognition_issuer_en }}</div>
+                                            <div class="col-md-12"><strong>Дата видачі свідоцтва:</strong> {{ doc.recognition_date }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Модальное окно для редактирования -->
+					<div class="modal fade" id="editModal{{ doc.id }}" tabindex="-1" aria-labelledby="editModalLabel{{ doc.id }}" aria-hidden="true">
+						<div class="modal-dialog modal-lg">
+							<div class="modal-content">
+								<div class="modal-header">
+									<h5 class="modal-title" id="editModalLabel{{ doc.id }}">Редагувати документ</h5>
+									<button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+								</div>
+								<div class="modal-body">
+									<form method="POST" action="{{ url_for('admin.manage_education_documents') }}">
+										<input type="hidden" name="action" value="edit">
+										<input type="hidden" name="doc_id" value="{{ doc.id }}">
+										<div class="row g-3">
+											<div class="col-md-12">
+												<label for="edit_student_id{{ doc.id }}" class="form-label">Студент</label>
+												<select name="student_id" id="edit_student_id{{ doc.id }}" class="form-select" required>
+													{% for student in students %}
+														<option value="{{ student.id }}" {% if student.id == doc.student_id|int %}selected{% endif %}>{{ student.last_name_UA }} {{ student.first_name_UA }}</option>
+													{% endfor %}
+												</select>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_document_type{{ doc.id }}" class="form-label">Тип документа</label>
+												<input type="text" name="document_type" id="edit_document_type{{ doc.id }}" class="form-control" value="{{ doc.document_type }}" required>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_document_type_en{{ doc.id }}" class="form-label">Document Type</label>
+												<input type="text" name="document_type_en" id="edit_document_type_en{{ doc.id }}" class="form-control" value="{{ doc.document_type_en }}" required>
+											</div>
+											<div class="col-md-12">
+												<label for="edit_document_number{{ doc.id }}" class="form-label">Номер документа</label>
+												<input type="text" name="document_number" id="edit_document_number{{ doc.id }}" class="form-control" value="{{ doc.document_number }}" required>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_institution_name{{ doc.id }}" class="form-label">Назва навчального закладу</label>
+												<input type="text" name="institution_name" id="edit_institution_name{{ doc.id }}" class="form-control" value="{{ doc.institution_name }}" required>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_institution_name_en{{ doc.id }}" class="form-label">Institution Name</label>
+												<input type="text" name="institution_name_en" id="edit_institution_name_en{{ doc.id }}" class="form-control" value="{{ doc.institution_name_en }}" required>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_country{{ doc.id }}" class="form-label">Країна</label>
+												<input type="text" name="country" id="edit_country{{ doc.id }}" class="form-control" value="{{ doc.country }}" required>
+											</div>
+											<div class="col-md-6">
+												<label for="edit_country_en{{ doc.id }}" class="form-label">Country</label>
+												<input type="text" name="country_en" id="edit_country_en{{ doc.id }}" class="form-control" value="{{ doc.country_en }}" required>
+											</div>
+											<div class="col-md-12">
+												<label for="edit_completion_date{{ doc.id }}" class="form-label">Дата закінчення</label>
+												<input type="text" name="completion_date" id="edit_completion_date{{ doc.id }}" class="form-control" value="{{ doc.completion_date }}" required>
+											</div>
+											<div class="col-md-12">
+												<label for="edit_reference_number{{ doc.id }}" class="form-label">Номер довідки</label>
+												<input type="text" name="reference_number" id="edit_reference_number{{ doc.id }}" class="form-control" value="{{ doc.reference_number or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_reference_institution{{ doc.id }}" class="form-label">Назва навчального закладу довідки</label>
+												<input type="text" name="reference_institution" id="edit_reference_institution{{ doc.id }}" class="form-control" value="{{ doc.reference_institution or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_reference_institution_en{{ doc.id }}" class="form-label">Reference Institution</label>
+												<input type="text" name="reference_institution_en" id="edit_reference_institution_en{{ doc.id }}" class="form-control" value="{{ doc.reference_institution_en or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_reference_country{{ doc.id }}" class="form-label">Країна довідки</label>
+												<input type="text" name="reference_country" id="edit_reference_country{{ doc.id }}" class="form-control" value="{{ doc.reference_country or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_reference_country_en{{ doc.id }}" class="form-label">Reference Country</label>
+												<input type="text" name="reference_country_en" id="edit_reference_country_en{{ doc.id }}" class="form-control" value="{{ doc.reference_country_en or '' }}">
+											</div>
+											<div class="col-md-12">
+												<label for="edit_reference_issue_date{{ doc.id }}" class="form-label">Дата видачі довідки</label>
+												<input type="text" name="reference_issue_date" id="edit_reference_issue_date{{ doc.id }}" class="form-control" value="{{ doc.reference_issue_date or '' }}">
+											</div>
+											<div class="col-md-12">
+												<label for="edit_recognition_certificate_number{{ doc.id }}" class="form-label">Номер свідоцтва про визнання</label>
+												<input type="text" name="recognition_certificate_number" id="edit_recognition_certificate_number{{ doc.id }}" class="form-control" value="{{ doc.recognition_certificate_number or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_recognition_issuer{{ doc.id }}" class="form-label">Хто зробив свідоцтво</label>
+												<input type="text" name="recognition_issuer" id="edit_recognition_issuer{{ doc.id }}" class="form-control" value="{{ doc.recognition_issuer or '' }}">
+											</div>
+											<div class="col-md-6">
+												<label for="edit_recognition_issuer_en{{ doc.id }}" class="form-label">Recognition Issuer</label>
+												<input type="text" name="recognition_issuer_en" id="edit_recognition_issuer_en{{ doc.id }}" class="form-control" value="{{ doc.recognition_issuer_en or '' }}">
+											</div>
+											<div class="col-md-12">
+												<label for="edit_recognition_date{{ doc.id }}" class="form-label">Дата видачі свідоцтва</label>
+												<input type="text" name="recognition_date" id="edit_recognition_date{{ doc.id }}" class="form-control" value="{{ doc.recognition_date or '' }}">
+											</div>
+											<div class="col-12 mt-3">
+												<button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+												<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+											</div>
+										</div>
+									</form>
+								</div>
+							</div>
+						</div>
+					</div>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">Документи відсутні</p>
+    {% endif %}
+</div>
+{% endblock %}

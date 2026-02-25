@@ -1,0 +1,657 @@
+{% extends 'layout.html' %}
+{% block title %}Список студентів{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-4"><i class="bi bi-person-vcard"></i> Список студентів</h2>
+
+    <a href="{{ url_for('students.add_student') }}" class="btn btn-success btn-sm mb-3"><i class="bi bi-plus-circle"></i> Додати студента</a>
+
+    <!-- Фильтры и поиск -->
+    <div class="row mb-3">
+        <!-- Поиск по ФИО -->
+        <div class="col-md-4 mb-2 mb-md-0">
+            <form method="GET" class="input-group input-group-sm">
+                <input type="text" name="search" placeholder="Пошук по ПІБ..." class="form-control" value="{{ search }}">
+                <button type="submit" class="btn btn-outline-secondary">
+                    <i class="bi bi-search"></i>
+                </button>
+            </form>
+        </div>
+        {% if session.get('role') == 'admin' %}
+        <!-- Фильтр по группе -->
+        <div class="col-md-4 mb-2 mb-md-0">
+            <form method="GET" class="input-group input-group-sm">
+                <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="per_page" value="{{ per_page }}">
+                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                <input type="hidden" name="sort_order" value="{{ sort_order }}">
+                <label class="input-group-text">Група:</label>
+                <select name="group_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">Всі групи</option>
+                    {% for group in groups %}
+                    <option value="{{ group.id }}" {% if group_id == group.id %}selected{% endif %}>
+                        {{ group.name }} ({{ group.start_year }}, {{ group.study_form }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+		{% endif %}
+        
+        <!-- Количество записей на странице -->
+        <div class="col-md-4">
+            <form method="GET" class="input-group input-group-sm">
+                <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="group_id" value="{{ group_id }}">
+                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                <input type="hidden" name="sort_order" value="{{ sort_order }}">
+                <label class="input-group-text">На сторінці:</label>
+                <select name="per_page" class="form-select" onchange="this.form.submit()">
+                    {% for option in [10, 20, 50, 100] %}
+                        <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+        </div>
+    </div>
+
+    <!-- Информация о фильтрах -->
+    {% if search or group_id %}
+    <div class="alert alert-info alert-dismissible fade show mb-3 py-2" role="alert">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <i class="bi bi-filter me-2"></i>
+                Застосовані фільтри: 
+                {% if search %}<span class="badge bg-primary me-2">Пошук: "{{ search }}"</span>{% endif %}
+                {% if group_id %}
+                    {% for group in groups %}
+                        {% if group.id == group_id %}
+                            <span class="badge bg-secondary">Група: {{ group.name }}</span>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-circle"></i> Очистити
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Таблица для десктопа -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            {% macro sort_link(column, label) -%}
+                {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
+                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
+                    {{ label }}
+                    {%- if sort_by == column %}
+                        {% if sort_order == 'asc' %} ▲
+                        {% else %} ▼
+                        {% endif %}
+                    {% endif %}
+                </a>
+            {%- endmacro %}
+
+            <thead>
+                <tr>
+                    {% if session.get('role') == 'admin' %}
+                    <th class="text-center">ID</th>
+                    {% endif %}
+                    <th class="text-center">{{ sort_link('last_name_UA', 'Прізвище') }}</th>
+                    <th class="text-center">{{ sort_link('first_name_UA', 'Імʼя') }}</th>
+                    <th class="text-center">{{ sort_link('middle_name_UA', 'По батькові') }}</th>
+                    <th class="text-center">{{ sort_link('birth_date', 'Дата народження') }}</th>
+                    <th class="text-center">{{ sort_link('group_id', 'Група') }}</th>
+                    <th class="text-center">Заповненість</th>
+                    <th class="text-center">Військові дані</th>
+                    <th class="text-center">Дії</th>
+                </tr>
+            </thead>
+            <style>
+                td {
+                    vertical-align: middle;
+                }
+                
+                /* Скрываем таблицу на мобильных и планшетах */
+                @media (max-width: 991px) {
+                    .table-responsive table,
+                    .table-responsive thead,
+                    .table-responsive tbody,
+                    .table-responsive tbody tr,
+                    .table-responsive th,
+                    .table-responsive td {
+                        display: none !important;
+                    }
+                    .student-cards-container {
+                        display: block !important;
+                    }
+                }
+                
+                /* Показываем таблицу только на десктопе */
+                @media (min-width: 992px) {
+                    .student-cards-container {
+                        display: none !important;
+                    }
+                    .table-responsive table,
+                    .table-responsive thead,
+                    .table-responsive tbody,
+                    .table-responsive tbody tr,
+                    .table-responsive th,
+                    .table-responsive td {
+                        display: revert !important;
+                    }
+                }
+                
+                /* Стили для карточек студентов */
+                .student-card {
+                    border: 1px solid #dee2e6;
+                    border-radius: 8px;
+                    padding: 15px;
+                    margin-bottom: 15px;
+                    background: #fff;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                }
+                .student-card .card-row {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                    padding-bottom: 8px;
+                    border-bottom: 1px solid #f8f9fa;
+                }
+                .student-card .card-row:last-child {
+                    border-bottom: none;
+                    margin-bottom: 0;
+                }
+                .student-card .card-label {
+                    font-weight: 600;
+                    color: #495057;
+                    font-size: 14px;
+                }
+                .student-card .card-value {
+                    color: #212529;
+                    font-size: 14px;
+                    text-align: right;
+                }
+                
+                /* Стили для прогресс-баров в карточках */
+                .student-card .progress-bar-container {
+                    width: 100%;
+                }
+                
+                /* ОПТИМИЗАЦИЯ ПАГИНАЦИИ ДЛЯ МОБИЛЬНЫХ */
+                /* Базовая пагинация */
+                .pagination .page-link {
+                    padding: 0.375rem 0.75rem;
+                    font-size: 0.875rem;
+                }
+                
+                /* Компактная пагинация для планшетов */
+                @media (max-width: 991px) {
+                    .pagination .page-link {
+                        padding: 0.25rem 0.5rem;
+                        font-size: 0.8125rem;
+                        margin: 0 1px;
+                    }
+                    .pagination .page-item:not(.active):not(:first-child):not(:last-child) .page-link {
+                        display: none;
+                    }
+                    /* Показываем только первую, последнюю, текущую и соседние страницы */
+                    .pagination .page-item.active,
+                    .pagination .page-item:first-child,
+                    .pagination .page-item:last-child,
+                    .pagination .page-item.active ~ .page-item:nth-child(2),
+                    .pagination .page-item.active + .page-item,
+                    .pagination .page-item.active + .page-item + .page-item,
+                    .pagination .page-item.active - .page-item,
+                    .pagination .page-item.active - .page-item - .page-item {
+                        display: block;
+                    }
+                    /* Скрываем номера на очень маленьких экранах */
+                    @media (max-width: 576px) {
+                        .pagination .page-link span:not(.visually-hidden) {
+                            display: none;
+                        }
+                        .pagination .page-link {
+                            padding: 0.2rem 0.4rem;
+                            min-width: 32px;
+                            text-align: center;
+                        }
+                        .pagination .page-item.active .page-link {
+                            font-weight: bold;
+                        }
+                    }
+                }
+                
+                /* СУПЕР КОМПАКТНАЯ ПАГИНАЦИЯ ДЛЯ МОБИЛЬНЫХ */
+                @media (max-width: 576px) {
+                    .pagination {
+                        flex-wrap: nowrap;
+                        overflow-x: auto;
+                        padding-bottom: 5px;
+                    }
+                    .pagination::-webkit-scrollbar {
+                        height: 3px;
+                    }
+                    .pagination::-webkit-scrollbar-track {
+                        background: #f1f1f1;
+                        border-radius: 3px;
+                    }
+                    .pagination::-webkit-scrollbar-thumb {
+                        background: #888;
+                        border-radius: 3px;
+                    }
+                    .pagination .page-item {
+                        flex: 0 0 auto;
+                    }
+                    /* Скрываем лишние элементы */
+                    .pagination .page-item:not(.active):not(:first-child):not(:last-child):not(.mobile-visible) {
+                        display: none;
+                    }
+                    /* Показываем только самые важные */
+                    .pagination .page-item.active,
+                    .pagination .page-item:first-child,
+                    .pagination .page-item:last-child,
+                    .pagination .page-item.active - 1,
+                    .pagination .page-item.active + 1 {
+                        display: block;
+                    }
+                    /* Эллипсис для скрытых страниц */
+                    .pagination .page-item.ellipsis {
+                        display: flex;
+                        align-items: center;
+                        padding: 0 2px;
+                    }
+                    .pagination .page-item.ellipsis span {
+                        color: #6c757d;
+                    }
+                }
+                
+                /* Оптимизация для маленьких экранов (до 576px) */
+                @media (max-width: 576px) {
+                    .student-card {
+                        padding: 12px;
+                        margin-bottom: 12px;
+                    }
+                    .student-card .card-label,
+                    .student-card .card-value {
+                        font-size: 13px;
+                    }
+                    .btn-sm {
+                        padding: 0.2rem 0.4rem;
+                        font-size: 12px;
+                    }
+                    .dropdown-menu {
+                        font-size: 13px;
+                    }
+                    
+                    /* Компактные формы */
+                    .input-group {
+                        flex-wrap: nowrap;
+                    }
+                    .input-group-text {
+                        padding: 0.25rem 0.5rem;
+                        font-size: 0.875rem;
+                    }
+                    .form-control, .form-select {
+                        padding: 0.25rem 0.5rem;
+                        font-size: 0.875rem;
+                    }
+                }
+                
+                /* Оптимизация для планшетов (577px - 991px) */
+                @media (min-width: 577px) and (max-width: 991px) {
+                    .student-card {
+                        padding: 15px;
+                    }
+                }
+                
+                /* Фикс для выпадающего меню на мобильных */
+                .dropdown-menu {
+                    z-index: 1060 !important;
+                }
+            </style>
+            <tbody>
+                {% for student in students %}
+                <tr>
+                    {% if session.get('role') == 'admin' %}
+                    <td class="text-center">{{ student.id }}</td>
+                    {% endif %}
+                    <td>{{ student.last_name_UA }}</td>
+                    <td>{{ student.first_name_UA }}</td>
+                    <td>{{ student.middle_name_UA }}</td>
+                    <td>{{ student.birth_date }}</td>
+                    {% if session.get('role') == 'admin' %}
+                    <td>{{ student.group_name | default('-') }}</td>
+                    {% endif %}
+                    <td>
+                        <div class="progress-bar-container">
+                            <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                                <div style="background: #0d6efd; height: 100%; width: {{ (student.filled_fields / student.total_fields) * 100 }}%; border-radius: 10px;"></div>
+                                <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                                    {{ student.filled_fields }} з {{ student.total_fields }}
+                                </div>
+                            </div>
+                            {% if student.grades_filled %}
+                            <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                                <div style="background: #212529; height: 100%; width: {{ (student.grades_filled / student.grades_total if student.grades_total > 0 else 0) * 100 }}%; border-radius: 10px;"></div>
+                                <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                                    {{ student.grades_filled }} з {{ student.grades_total }}
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% if student.activities_filled_fields %}
+                            <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                                <div style="background: #ffc107; height: 100%; width: {{ student.activities_fill_percentage }}%; border-radius: 10px;"></div>
+                                <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                                    {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}
+                                </div>
+                            </div>
+                            {% endif %}
+                            {% if student.has_military %}
+                            <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative;">
+                                <div style="background: #6c757d; height: 100%; width: {{ (student.military_filled_fields / student.military_total_fields) * 100 }}%; border-radius: 10px;"></div>
+                                <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                                    {{ student.military_filled_fields }} з {{ student.military_total_fields }}
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        {% if student.has_military %}
+                            <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-secondary"><i class="bi bi-pencil"></i> Редагувати</a>
+                        {% else %}
+                            <a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-plus-circle-dotted"></i> Додати</a>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group" role="group">
+                            <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-info" title="Переглянути деталі студента"><i class="bi bi-eye"></i></a>
+                            <a href="{{ url_for('students.edit_student', student_id=student.id) }}" class="btn btn-sm btn-primary" title="Редагувати дані студента"><i class="bi bi-pencil-square"></i></a>
+                            <a href="{{ url_for('students.edit_grades', student_id=student.id) }}" class="btn btn-sm btn-dark" title="Редагувати оцінки"><i class="bi bi-card-checklist"></i></a>
+                            <a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}" class="btn btn-sm btn-warning" title="Редагувати оцінки за Прак. Атес. Курс."><i class="bi bi-star"></i></a>
+                            <a href="{{ url_for('students.generate', student_id=student.id) }}" class="btn btn-sm btn-success" title="Згенерувати документ"><i class="bi bi-file-earmark-word"></i></a>
+                            {% if session.get('role') == 'admin' %}
+                                <a href="{{ url_for('students.delete_student', student_id=student.id) }}" class="btn btn-sm btn-danger" title="Видалити студента" onclick="return confirm('Ви впевнені, що хочете видалити студента {{ student.last_name_UA }}?')"><i class="bi bi-trash3"></i></a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Карточки для мобильной и планшетной версии -->
+    <div class="student-cards-container mt-3">
+        {% for student in students %}
+        <div class="student-card">
+            {% if session.get('role') == 'admin' %}
+            <div class="card-row">
+                <span class="card-label">ID:</span>
+                <span class="card-value">{{ student.id }}</span>
+            </div>
+            {% endif %}
+            <div class="card-row">
+                <span class="card-label">ПІБ:</span>
+                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}</span>
+            </div>
+            <div class="card-row">
+                <span class="card-label">Дата народження:</span>
+                <span class="card-value">{{ student.birth_date }}</span>
+            </div>
+            {% if student.group_name %}
+            <div class="card-row">
+                <span class="card-label">Група:</span>
+                <span class="card-value">{{ student.group_name }}</span>
+            </div>
+            {% endif %}
+            
+            <!-- Прогресс-бары в карточке -->
+            <div class="card-row" style="flex-direction: column; align-items: flex-start;">
+                <span class="card-label mb-2">Заповненість:</span>
+                <div class="progress-bar-container">
+                    <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                        <div style="background: #0d6efd; height: 100%; width: {{ (student.filled_fields / student.total_fields) * 100 }}%; border-radius: 10px;"></div>
+                        <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                            {{ student.filled_fields }} з {{ student.total_fields }}
+                        </div>
+                    </div>
+                    {% if student.grades_filled %}
+                    <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                        <div style="background: #212529; height: 100%; width: {{ (student.grades_filled / student.grades_total if student.grades_total > 0 else 0) * 100 }}%; border-radius: 10px;"></div>
+                        <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                            {{ student.grades_filled }} з {{ student.grades_total }}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if student.activities_filled_fields %}
+                    <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
+                        <div style="background: #ffc107; height: 100%; width: {{ student.activities_fill_percentage }}%; border-radius: 10px;"></div>
+                        <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                            {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if student.has_military %}
+                    <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative;">
+                        <div style="background: #6c757d; height: 100%; width: {{ (student.military_filled_fields / student.military_total_fields) * 100 }}%; border-radius: 10px;"></div>
+                        <div style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 100%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; text-shadow: 1px 1px 1px rgba(0,0,0,0.2); z-index: 1;">
+                            {{ student.military_filled_fields }} з {{ student.military_total_fields }}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Кнопки в карточке -->
+            <div class="card-row" style="justify-content: space-between; margin-top: 10px;">
+                <!-- Военные данные -->
+                <div>
+                    {% if student.has_military %}
+                        <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
+                            Військові дані
+                        </a>
+                    {% else %}
+                        <a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
+                            Додати військові дані
+                        </a>
+                    {% endif %}
+                </div>
+                
+                <!-- Действия -->
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Дії
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{{ url_for('students.student_details', student_id=student.id) }}">
+                            <i class="bi bi-eye me-2"></i>Переглянути
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_student', student_id=student.id) }}">
+                            <i class="bi bi-pencil me-2"></i>Редагувати
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_grades', student_id=student.id) }}">
+                            <i class="bi bi-card-checklist me-2"></i>Оцінки
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}">
+                            <i class="bi bi-star me-2"></i>Активності
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.generate', student_id=student.id) }}">
+                            <i class="bi bi-file-word me-2"></i>Генерувати
+                        </a></li>
+                        {% if session.get('role') == 'admin' %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item text-danger" href="{{ url_for('students.delete_student', student_id=student.id) }}"
+                               onclick="return confirm('Видалити студента {{ student.last_name_UA }}?')">
+                            <i class="bi bi-trash me-2"></i>Видалити
+                        </a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- КОМПАКТНАЯ ПАГИНАЦИЯ -->
+    {% if total_pages > 1 %}
+    <nav aria-label="Page navigation" class="mt-3">
+        <ul class="pagination justify-content-center flex-wrap" id="paginationContainer">
+            {% if page > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Previous">
+                        <span class="d-none d-sm-inline">&laquo; Назад</span>
+                        <span class="d-inline d-sm-none">&laquo;</span>
+                    </a>
+                </li>
+            {% endif %}
+            
+            <!-- Первая страница -->
+            {% if page > 3 %}
+                <li class="page-item d-none d-md-block">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">1</a>
+                </li>
+                {% if page > 4 %}
+                    <li class="page-item d-none d-md-block disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                {% endif %}
+            {% endif %}
+            
+            <!-- Страницы вокруг текущей -->
+            {% for p in range(1, total_pages + 1) %}
+                {% if p >= page-2 and p <= page+2 %}
+                    <li class="page-item {% if p == page %}active{% endif %}">
+                        <a class="page-link" href="{{ url_for('students.student_list', page=p, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">
+                            <span class="d-none d-sm-inline">{{ p }}</span>
+                            <span class="d-inline d-sm-none">{{ p }}</span>
+                        </a>
+                    </li>
+                {% endif %}
+            {% endfor %}
+            
+            <!-- Последняя страница -->
+            {% if page < total_pages - 2 %}
+                {% if page < total_pages - 3 %}
+                    <li class="page-item d-none d-md-block disabled">
+                        <span class="page-link">...</span>
+                    </li>
+                {% endif %}
+                <li class="page-item d-none d-md-block">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=total_pages, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">{{ total_pages }}</a>
+                </li>
+            {% endif %}
+            
+            {% if page < total_pages %}
+                <li class="page-item">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Next">
+                        <span class="d-none d-sm-inline">Вперед &raquo;</span>
+                        <span class="d-inline d-sm-none">&raquo;</span>
+                    </a>
+                </li>
+            {% endif %}
+        </ul>
+        
+        <!-- Информация о текущей странице для мобильных -->
+        <div class="text-center mt-2 d-block d-md-none">
+            <small class="text-muted">Сторінка {{ page }} з {{ total_pages }}</small>
+        </div>
+    </nav>
+    {% endif %}
+</div>
+
+<script>
+// Дополнительный скрипт для определения мобильных устройств
+document.addEventListener('DOMContentLoaded', function() {
+    // Проверяем ширину экрана и ориентацию
+    function checkDevice() {
+        const width = window.innerWidth;
+        const isMobile = width <= 991; // iPhone 11 имеет 828px
+        
+        // Если это мобильное устройство, принудительно показываем карточки
+        if (isMobile) {
+            document.querySelectorAll('.student-cards-container').forEach(el => {
+                el.style.display = 'block !important';
+            });
+            document.querySelectorAll('.table-responsive table, .table-responsive thead, .table-responsive tbody').forEach(el => {
+                el.style.display = 'none !important';
+            });
+        }
+    }
+    
+    // Проверяем при загрузке и изменении размера
+    checkDevice();
+    window.addEventListener('resize', checkDevice);
+    window.addEventListener('orientationchange', checkDevice);
+    
+    // Гарантируем z-index для dropdown
+    document.querySelectorAll('.dropdown-menu').forEach(function(menu) {
+        menu.style.zIndex = '1060';
+    });
+    
+    // ОПТИМИЗАЦИЯ ПАГИНАЦИИ ДЛЯ МОБИЛЬНЫХ
+    function optimizePagination() {
+        const pagination = document.getElementById('paginationContainer');
+        if (!pagination) return;
+        
+        const width = window.innerWidth;
+        const items = pagination.querySelectorAll('.page-item');
+        
+        // Для очень маленьких экранов (до 576px)
+        if (width <= 576) {
+            items.forEach((item, index) => {
+                // Показываем только: первая, последняя, текущая и +/-1
+                const isFirst = item.querySelector('a[aria-label="Previous"]') || 
+                               (item.querySelector('a') && item.querySelector('a').textContent.trim() === '1');
+                const isLast = item.querySelector('a[aria-label="Next"]') || 
+                              (item.querySelector('a') && item.querySelector('a').textContent.trim() === totalPages.toString());
+                const isCurrent = item.classList.contains('active');
+                const text = item.querySelector('a') ? item.querySelector('a').textContent.trim() : '';
+                const isNumber = !isNaN(parseInt(text)) && text !== '';
+                
+                if (isFirst || isLast || isCurrent || 
+                    (isNumber && (parseInt(text) === page - 1 || parseInt(text) === page + 1))) {
+                    item.style.display = 'block';
+                } else if (item.querySelector('.page-link').textContent === '...') {
+                    item.style.display = 'none';
+                } else {
+                    item.style.display = 'none';
+                }
+            });
+        }
+        // Для средних экранов (577px - 768px)
+        else if (width <= 768) {
+            items.forEach((item, index) => {
+                const text = item.querySelector('a') ? item.querySelector('a').textContent.trim() : '';
+                const isNumber = !isNaN(parseInt(text)) && text !== '';
+                
+                // Показываем больше страниц на планшетах
+                if (isNumber && (parseInt(text) < page - 2 || parseInt(text) > page + 2)) {
+                    item.style.display = 'none';
+                }
+            });
+        }
+    }
+    
+    // Оптимизируем пагинацию
+    optimizePagination();
+    window.addEventListener('resize', optimizePagination);
+    
+    // Сохраняем параметры фильтрации при сортировке
+    document.querySelectorAll('thead a').forEach(link => {
+        const href = link.getAttribute('href');
+        if (href && href.includes('sort_by')) {
+            // Проверяем, есть ли уже параметры фильтрации в ссылке
+            if (!href.includes('search=') && '{{ search }}') {
+                link.setAttribute('href', href + '&search={{ search }}');
+            }
+            if (!href.includes('group_id=') && '{{ group_id }}') {
+                link.setAttribute('href', href + '&group_id={{ group_id }}');
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

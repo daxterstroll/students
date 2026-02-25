@@ -1,0 +1,51 @@
+{% extends 'layout.html' %}
+{% block title %}Редагувати студента{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-plus-circle"></i> Редагувати дані студента</h2>
+<form method="POST">
+    <div class="mb-3">
+        <label class="form-label">Прізвище (укр)</label>
+        <input type="text" name="last_name_UA" class="form-control" value="{{ student.last_name_UA or '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Імʼя (укр)</label>
+        <input type="text" name="first_name_UA" class="form-control" value="{{ student.first_name_UA or '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">По батькові</label>
+        <input type="text" name="middle_name_UA" class="form-control" value="{{ student.middle_name_UA or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Прізвище (англ)</label>
+        <input type="text" name="last_name_ENG" class="form-control" value="{{ student.last_name_ENG or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Імʼя (англ)</label>
+        <input type="text" name="first_name_ENG" class="form-control" value="{{ student.first_name_ENG or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Код картки фізичної особи в ЄДЕБО</label>
+        <input type="text" name="edebo_code" class="form-control" value="{{ student.edebo_code or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Дата народження</label>
+        <input type="text" name="birth_date" class="form-control" value="{{ student.birth_date or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Група</label>
+        <select name="group_id" class="form-select">
+            {% for group in groups|default([]) %}
+                <option value="{{ group.id }}"
+                    {% if group.id == student.group_id %}selected{% endif %}>
+                    {{ group.display_name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="mb-3">
+        <button type="submit" name="update_english_names" class="btn btn-secondary">Оновити англійські імена</button>
+    </div>
+    <button type="submit" class="btn btn-primary">Зберегти зміни</button>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary">Назад</a>
+</form>
+{% endblock %}

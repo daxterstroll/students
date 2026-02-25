@@ -1,0 +1,18 @@
+{% extends 'layout.html' %}
+{% block title %}Імпорт студентів з Excel{% endblock %}
+{% block content %}
+<h2><i class="bi bi-person-add"></i> Імпорт студентів з Excel</h2>
+<form method="post" enctype="multipart/form-data">
+    <div class="mb-3">
+        <label for="excel_file" class="form-label">Завантажити Excel-файл (.xlsx)</label>
+        <input type="file" name="excel_file" class="form-control" required>
+    </div>
+    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Імпортувати</button>
+</form>
+<br>
+<i class="bi bi-check-square"></i> Завантажує Excel <br>
+<i class="bi bi-check-square"></i> Поділяє ПІБ на 3 поля <br>
+<i class="bi bi-check-square"></i> Імпортує студента та його військові дані <br>
+<i class="bi bi-check-square"></i> Перевіряє: якщо студент із таким ПІБ та датою вже існує — не додає <br>
+<i class="bi bi-check-square"></i> Приклад шаблону \template_word\import.xlsx
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends 'layout.html' %}
+
+{% block title %}Генерація документа{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-file-earmark-word"></i> Генерація документа</h2>
+<form method="POST">
+    <div class="mb-3">
+        <label class="form-label">Оберіть шаблон</label>
+        <select name="template" class="form-select">
+		{% if session.get('role') == 'admin' %}
+            <option value="template_word/template_adddiplom.docx">Шаблон для додатку до диплому</option>
+		{% endif %}
+            <option value="template_word/template_tck.docx">Повідомлення про зміну облікових даних в ТЦК</option>
+            <!-- можеш додати інші шаблони -->
+        </select>
+    </div>
+    <button type="submit" class="btn btn-success">Створити документ</button>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary">Назад</a>
+</form>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends 'layout.html' %}
+{% block title %}Редагування оцінок: {{ student.last_name_UA }} {{ student.first_name_UA }}{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">
+        <i class="bi bi-star"></i> Редагування оцінок: {{ student.last_name_UA }} {{ student.first_name_UA }} ({{ student.group_name }})
+    </h1>
+    <form method="POST">
+        <div class="accordion" id="activitiesAccordion">
+            <!-- Практики -->
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="practicesHeading">
+                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#practicesCollapse" aria-expanded="true" aria-controls="practicesCollapse">
+                        Практики
+                    </button>
+                </h2>
+                <div id="practicesCollapse" class="accordion-collapse collapse show" aria-labelledby="practicesHeading">
+                    <div class="accordion-body">
+                        {% if practices %}
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Код</th>
+                                        <th>Назва</th>
+                                        <th>Кредити</th>
+                                        <th>Тип</th>
+                                        <th>Оцінка</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for practice in practices %}
+                                        <tr>
+                                            <td>{{ practice.code | default('-') }}</td>
+                                            <td>{{ practice.name | default('-') }}</td>
+                                            <td>{{ practice.credits | default('-') }}</td>
+                                            <td>{{ practice.type | default('-') }}</td>
+                                            <td>
+                                                <input type="number" name="grade_practice_{{ practice.id }}" class="form-control" value="{{ grade_map.get((practice.id, 'practice'), {}).get('grade', '') }}" min="0" max="100">
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <p class="text-muted">Практики відсутні</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <!-- Курсові роботи -->
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="courseworksHeading">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#courseworksCollapse" aria-expanded="false" aria-controls="courseworksCollapse">
+                        Курсові роботи
+                    </button>
+                </h2>
+                <div id="courseworksCollapse" class="accordion-collapse collapse" aria-labelledby="courseworksHeading">
+                    <div class="accordion-body">
+                        {% if courseworks %}
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Код</th>
+                                        <th>Назва</th>
+                                        <th>Кредити</th>
+                                        <th>Тип</th>
+                                        <th>Оцінка</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for coursework in courseworks %}
+                                        <tr>
+                                            <td>{{ coursework.code | default('-') }}</td>
+                                            <td>{{ coursework.name | default('-') }}</td>
+                                            <td>{{ coursework.credits | default('-') }}</td>
+                                            <td>{{ coursework.type | default('-') }}</td>
+                                            <td>
+                                                <input type="number" name="grade_coursework_{{ coursework.id }}" class="form-control" value="{{ grade_map.get((coursework.id, 'coursework'), {}).get('grade', '') }}" min="0" max="100">
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <p class="text-muted">Курсові роботи відсутні</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <!-- Атестації -->
+            <div class="accordion-item">
+                <h2 class="accordion-header" id="attestationsHeading">
+                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#attestationsCollapse" aria-expanded="false" aria-controls="attestationsCollapse">
+                        Атестації
+                    </button>
+                </h2>
+                <div id="attestationsCollapse" class="accordion-collapse collapse" aria-labelledby="attestationsHeading">
+                    <div class="accordion-body">
+                        {% if attestations %}
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Код</th>
+                                        <th>Назва</th>
+                                        <th>Індивідуальна назва</th>
+                                        <th>Кредити</th>
+                                        <th>Тип</th>
+                                        <th>Оцінка</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for attestation in attestations %}
+                                        <tr>
+                                            <td>{{ attestation.code | default('-') }}</td>
+                                            <td>
+                                                {% if attestation.name and attestation.student_name %}
+                                                    {{ attestation.name }} {{ attestation.student_name }}
+                                                {% elif attestation.name %}
+                                                    {{ attestation.name }}
+                                                {% elif attestation.student_name %}
+                                                    {{ attestation.student_name }}
+                                                {% else %}
+                                                    -
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <input type="text" name="name_attestation_{{ attestation.id }}" class="form-control" value="{{ grade_map.get((attestation.id, 'attestation'), {}).get('name', '') }}">
+                                            </td>
+                                            <td>{{ attestation.credits | default('-') }}</td>
+                                            <td>{{ attestation.type | default('-') }}</td>
+                                            <td>
+                                                <input type="number" name="grade_attestation_{{ attestation.id }}" class="form-control" value="{{ grade_map.get((attestation.id, 'attestation'), {}).get('grade', '') }}" min="0" max="100">
+                                            </td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        {% else %}
+                            <p class="text-muted">Атестації відсутні</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="mt-4">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i>Назад</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

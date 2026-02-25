@@ -1,0 +1,73 @@
+{% extends 'layout.html' %}
+
+{% block title %}Архів{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1><i class="bi bi-archive"></i> Архів</h1>
+    <p>Список усіх архівних груп. Натисніть на кнопку, щоб переглянути студентів.</p>
+
+    {% if not groups %}
+    <div class="alert alert-info">Немає архівних груп.</div>
+    {% else %}
+    <div class="list-group">
+        {% for group in groups %}
+        <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ group.display_name }} (Студентів: {{ group.student_count }})</h5>
+                <div>
+                    <button class="btn btn-sm btn-primary toggle-students me-1" data-group-id="{{ group.id }}" title="Переглянути студентів">
+                        <i class="bi bi-chevron-down"></i> Переглянути студентів
+                    </button>
+                    <form method="POST" action="{{ url_for('admin.unarchive_group', group_id=group.id) }}" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Розархівувати групу {{ group.display_name }}?');" title="Розархівувати групу">
+                            <i class="bi bi-box-arrow-in-up"></i>
+                        </button>
+                    </form>
+                </div>
+            </div>
+            <div class="students-list collapse" id="students-{{ group.id }}">
+                {% if students_by_group[group.id] %}
+                <ul class="list-group mt-2">
+                    {% for student in students_by_group[group.id] %}
+                    <li class="list-group-item">
+                        {{ student.last_name_UA }} {{ student.first_name_UA }} ({{ student.birth_date }})
+                        <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-info ms-2" title="Деталі студента">Деталі</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted mt-2">Немає студентів у цій групі.</p>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const toggleButtons = document.querySelectorAll('.toggle-students');
+    toggleButtons.forEach(button => {
+        button.addEventListener('click', function () {
+            const groupId = this.getAttribute('data-group-id');
+            const studentsList = document.getElementById(`students-${groupId}`);
+            studentsList.classList.toggle('show');
+            const icon = this.querySelector('i');
+            icon.classList.toggle('bi-chevron-down');
+            icon.classList.toggle('bi-chevron-up');
+        });
+    });
+});
+</script>
+
+<style>
+.students-list {
+    display: none;
+}
+.students-list.show {
+    display: block;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,269 @@
+{% extends 'layout.html' %}
+
+{% block title %}Вхід{% endblock %}
+
+{% block content %}
+<style>
+.container1 {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  max-width: 100% !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+body {
+	margin: 0;
+	height: 100vh;
+	font-family: 'Segoe UI', sans-serif;
+	color: #fff;
+	overflow: hidden;
+	align-items: center;
+	justify-content: center;
+}
+
+/* Canvas на фоне */
+#space {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: radial-gradient(ellipse at bottom, #0d1b2a 0%, #000000 100%);
+	z-index: 0;
+}
+
+.login-container {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  max-width: 100% !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  
+}
+
+/* Карточка входа */
+.login-card {
+  animation: fadeInScale 0.6s ease forwards;
+  position: relative;
+  background: rgba(13, 27, 42, 0.85);
+  border-radius: 1rem;
+  padding: 2rem;
+  max-width: 380px;
+  margin: 0 auto;
+  color: #fff;
+  backdrop-filter: blur(8px);
+  animation: smoothGlow 4s ease-in-out infinite alternate;
+}
+
+/* Плавная анимация тени */
+@keyframes smoothGlow {
+  0% {
+    box-shadow:
+      0 0 8px rgba(100, 200, 255, 0.4),
+      0 0 15px rgba(100, 200, 255, 0.3),
+      0 0 20px rgba(100, 200, 255, 0.2);
+  }
+  50% {
+    box-shadow:
+      0 0 15px rgba(100, 200, 255, 0.7),
+      0 0 30px rgba(100, 200, 255, 0.6),
+      0 0 40px rgba(100, 200, 255, 0.5);
+  }
+  100% {
+    box-shadow:
+      0 0 8px rgba(100, 200, 255, 0.4),
+      0 0 15px rgba(100, 200, 255, 0.3),
+      0 0 20px rgba(100, 200, 255, 0.2);
+  }
+}
+
+@keyframes clickPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 10px #64c8ff;
+  }
+  50% {
+    transform: scale(0.95);
+    box-shadow: 0 0 20px #1e90ff;
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 10px #64c8ff;
+  }
+}
+
+.btn-primary.animate-click {
+  animation: clickPulse 0.3s ease forwards;
+}
+
+
+
+/* Поля */
+.form-control {
+	padding-left: 2.5rem;
+	background-color: rgba(255, 255, 255, 0.05);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	color: #fff;
+}
+.form-control:focus {
+	background-color: rgba(255, 255, 255, 0.1);
+	border-color: #64c8ff;
+	color: #fff;			
+	box-shadow: 0 0 10px #64c8ff;
+}
+.form-group {
+	position: relative;
+}
+.form-group .bi {
+	position: absolute;
+	top: 50%;
+	left: 0.8rem;
+	transform: translateY(-50%);
+	color: #64c8ff;
+}
+
+/* Кнопка */
+.btn-primary {
+	background: linear-gradient(90deg, #1e90ff, #64c8ff);
+	border: none;
+	transition: 0.3s;
+	box-shadow: 0 0 10px #1e90ff;
+}
+.btn-primary:hover {
+	background: linear-gradient(90deg, #64c8ff, #1e90ff);
+	box-shadow: 0 0 20px #64c8ff;
+	transform: scale(1.05);
+}
+
+.text-small {
+	font-size: 0.9rem;
+	color: #aaa;
+}
+.text-small a {
+	color: #64c8ff;
+}
+
+@keyframes fadeInScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+</style>
+
+
+<div class="login-container">
+  <canvas id="space"></canvas>
+
+  <div class="login-card text-center">
+    {% with errors = get_flashed_messages(category_filter=['error']) %}
+      {% if errors %}
+        <div class="alert alert-danger text-start" role="alert" style="font-weight: 600; margin-bottom: 1rem;">
+          {{ errors[0] }}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <i class="bi bi-moon-stars-fill fs-1 text-info"></i>
+    <h4 class="mt-2">🚀 Ласкаво просимо! </h4>
+    <p class="text-small">Увійдіть в систему</p>
+
+    <form method="POST">
+      <div class="form-group mb-3">
+        <i class="bi bi-envelope-fill"></i>
+        <input type="text" name="username" id="username" class="form-control" required>
+      </div>
+      <div class="form-group mb-3">
+        <i class="bi bi-lock-fill"></i>
+        <input type="password" name="password" id="password" class="form-control" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Увійти</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  const canvas = document.getElementById("space");
+const ctx = canvas.getContext("2d");
+
+let stars = [];
+let mouseX = 0, mouseY = 0;
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  stars = [];
+  for (let i = 0; i < 300; i++) {
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      baseSize: Math.random() * 1.5 + 0.5,  // базовый размер
+      size: 0,
+      speed: Math.random() * 0.3 + 0.1,
+      flickerPhase: Math.random() * Math.PI * 2  // для мерцания
+    });
+  }
+}
+
+function drawStars() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "white";
+
+  stars.forEach(star => {
+    // Мерцание размера — пульсация между baseSize ± 0.3
+    star.size = star.baseSize + Math.sin(star.flickerPhase) * 0.3;
+    star.flickerPhase += 0.05;
+
+    // Плавное смещение по Y с обновлением
+    star.y += star.speed;
+    if (star.y > canvas.height) {
+      star.y = 0;
+      star.x = Math.random() * canvas.width;
+    }
+
+    // Плавное смещение по X и Y для параллакса (уменьшено коэффициент)
+    let offsetX = (mouseX - canvas.width / 2) * 0.001;
+    let offsetY = (mouseY - canvas.height / 2) * 0.001;
+
+    ctx.beginPath();
+    ctx.arc(star.x + offsetX, star.y + offsetY, star.size, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function animate() {
+  drawStars();
+  requestAnimationFrame(animate);
+}
+
+document.addEventListener("mousemove", e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+});
+
+window.addEventListener("resize", resizeCanvas);
+
+resizeCanvas();
+animate();
+
+
+const btn = document.querySelector('.btn-primary');
+
+btn.addEventListener('click', () => {
+  btn.classList.remove('animate-click'); // сбросим класс, если он есть
+  void btn.offsetWidth; // триггер перерендера, чтобы анимация сработала снова
+  btn.classList.add('animate-click');
+});
+
+
+</script>
+{% endblock %}

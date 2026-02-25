@@ -1,0 +1,204 @@
+{% extends "layout.html" %}
+{% block title %}Управління предметами{% endblock %}
+{% block content %}
+<h1><i class="bi bi-journal"></i> Управління предметами</h1>
+
+<!-- Форма выбора группы -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Оберіть групу</h5>
+        <form method="GET" action="{{ url_for('admin.manage_subjects') }}" class="row g-3">
+            <div class="col-md-6">
+                <label for="group_id" class="form-label">Група</label>
+                <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">-- Оберіть групу --</option>
+                    {% for group in groups|default([]) %}
+                    <option value="{{ group.id }}" {% if group.id|string == selected_group_id|default('') %}selected{% endif %}>{{ group.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_group_id %}
+<h2>
+    Предмети для групи: {{ (groups|selectattr('id', 'equalto', selected_group_id|int)|map(attribute='display_name')|first)|default('Невідома група') }}
+</h2>
+
+<!-- Форма добавления нового предмета -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Додати новий предмет</h5>
+        <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="row g-3">
+            <input type="hidden" name="action" value="add">
+            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+            <div class="col-md-3">
+                <label for="code" class="form-label">Код предмета</label>
+                <input type="text" name="code" id="code" class="form-control form-control-sm" placeholder="ОК27" required>
+            </div>
+            <div class="col-md-4">
+                <label for="name" class="form-label">Назва предмета</label>
+                <input type="text" name="name" id="name" class="form-control form-control-sm" placeholder="Назва предмета" required>
+            </div>
+            <div class="col-md-2">
+                <label for="credits" class="form-label">Кредити</label>
+                <input type="number" name="credits" id="credits" class="form-control form-control-sm" min="1" placeholder="5" required>
+            </div>
+            <div class="col-md-2">
+                <label for="type" class="form-label">Тип</label>
+                <select name="type" id="type" class="form-select form-select-sm">
+                    <option value="Залік">Залік</option>
+                    <option value="Екзамен">Екзамен</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label for="position" class="form-label">Позиція</label>
+                <input type="number" name="position" id="position" class="form-control form-control-sm" min="1" value="{{ (subjects|map(attribute='position')|max + 1) if subjects else 1 }}" required>
+            </div>
+            <div class="col-md-12">
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Додати</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Таблица предметов -->
+{% if subjects|default([]) %}
+<div class="card shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Список предметів</h5>
+        <div class="table-responsive">
+            <table class="table table-hover table-sm">
+                <thead>
+                    <tr>
+                        <th scope="col" style="width: 10%;">Позиція</th>
+                        <th scope="col" style="width: 15%;">Код</th>
+                        <th scope="col" style="width: 30%;">Назва</th>
+                        <th scope="col" style="width: 10%;">Кредити</th>
+                        <th scope="col" style="width: 10%;">Тип</th>
+                        <th scope="col" style="width: 25%;">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for subject in subjects %}
+                    <!-- Обычная строка -->
+                    <tr class="subject-row" id="subject-row-{{ subject.id }}">
+                        <td>{{ subject.position }}</td>
+                        <td>{{ subject.code }}</td>
+                        <td>{{ subject.name }}</td>
+                        <td>{{ subject.credits }}</td>
+                        <td>{{ subject.type }}</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-primary btn-sm" onclick="showEditForm('{{ subject.id }}')"><i class="bi bi-pencil"></i> Редагувати</button>
+                            <div class="btn-group btn-group-sm">
+                                <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="d-inline-block">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                                    <input type="hidden" name="subject_id" value="{{ subject.id }}">
+                                    <button type="submit" class="btn btn-danger" onclick="return confirm('Ви впевнені, що хочете видалити цей предмет?')"><i class="bi bi-trash"></i></button>
+                                </form>
+                                <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="d-inline-block">
+                                    <input type="hidden" name="action" value="move_up">
+                                    <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                                    <input type="hidden" name="subject_id" value="{{ subject.id }}">
+                                    <button type="submit" class="btn btn-outline-secondary" {% if subject.position == 1 %}disabled{% endif %}><i class="bi bi-arrow-up"></i></button>
+                                </form>
+                                <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="d-inline-block">
+                                    <input type="hidden" name="action" value="move_down">
+                                    <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                                    <input type="hidden" name="subject_id" value="{{ subject.id }}">
+                                    <button type="submit" class="btn btn-outline-secondary" {% if subject.position == (subjects|map(attribute='position')|max) %}disabled{% endif %}><i class="bi bi-arrow-down"></i></button>
+                                </form>
+                            </div>
+                            <a href="{{ url_for('admin.manage_subjects', group_id=selected_group_id, subject_id=subject.id) }}" class="btn btn-primary btn-sm"><i class="bi bi-star"></i> Оцінки</a>
+                        </td>
+                    </tr>
+                    <!-- Строка редактирования -->
+                    <tr class="edit-row" id="edit-row-{{ subject.id }}" style="display: none;">
+                        <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="edit-form">
+                            <input type="hidden" name="action" value="edit">
+                            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                            <input type="hidden" name="subject_id" value="{{ subject.id }}">
+                            <td>
+                                <input type="number" name="position" value="{{ subject.position }}" class="form-control form-control-sm" min="1" required>
+                            </td>
+                            <td>
+                                <input type="text" name="code" value="{{ subject.code }}" class="form-control form-control-sm" placeholder="Код" required>
+                            </td>
+                            <td>
+                                <input type="text" name="name" value="{{ subject.name }}" class="form-control form-control-sm" placeholder="Назва" required>
+                            </td>
+                            <td>
+                                <input type="number" name="credits" value="{{ subject.credits }}" class="form-control form-control-sm" min="1" placeholder="Кр." required>
+                            </td>
+                            <td>
+                                <select name="type" class="form-select form-select-sm">
+                                    <option value="Залік" {% if subject.type == 'Залік' %}selected{% endif %}>Залік</option>
+                                    <option value="Екзамен" {% if subject.type == 'Екзамен' %}selected{% endif %}>Екзамен</option>
+                                </select>
+                            </td>
+                            <td class="action-buttons">
+                                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> Зберегти</button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="cancelEdit('{{ subject.id }}')"><i class="bi bi-x-circle"></i> Скасувати</button>
+                            </td>
+                        </form>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Таблица оценок -->
+{% if selected_subject_id and students|default([]) %}
+<div class="card mt-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Оцінки для предмета: {{ (subjects|selectattr('id', 'equalto', selected_subject_id|int)|map(attribute='name')|first)|default('Невідомий предмет') }}</h5>
+        <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}">
+            <input type="hidden" name="action" value="edit_grades">
+            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+            <input type="hidden" name="subject_id" value="{{ selected_subject_id }}">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th scope="col" style="width: 70%;">ПІБ</th>
+                            <th scope="col" style="width: 30%;">Оцінка (0–100)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for student in students %}
+                        {% set grade = grades|selectattr('student_id', 'equalto', student['id'])|first %}
+                        <tr>
+                            <td>{{ student['last_name_UA'] }} {{ student['first_name_UA'] }} {{ student['middle_name_UA'] }}</td>
+                            <td>
+                                <input type="hidden" name="grade_id_{{ student['id'] }}" value="{{ grade.id if grade else '' }}">
+                                <input type="number" name="grade_{{ student['id'] }}" value="{{ grade.grade if grade else '' }}" class="form-control form-control-sm" min="0" max="100" placeholder="0–100">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-save"></i> Зберегти оцінки</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+function showEditForm(subjectId) {
+    document.getElementById('subject-row-' + subjectId).style.display = 'none';
+    document.getElementById('edit-row-' + subjectId).style.display = '';
+}
+
+function cancelEdit(subjectId) {
+    document.getElementById('edit-row-' + subjectId).style.display = 'none';
+    document.getElementById('subject-row-' + subjectId).style.display = '';
+}
+</script>
+{% endblock %}

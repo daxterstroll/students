@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+{% block content %}
+<div class="container">
+    <h1><i class="bi bi-cloud-plus"></i> Імпорт предметів з Excel</h1>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('admin.import_subjects', group_id=selected_group_id) }}" class="row g-3">
+        <div class="col-md-12">
+            <label for="group_id" class="form-label">Група</label>
+                <select name="group_id" id="group_id" class="form-select" required>
+                    <option value="" disabled {% if not selected_group_id %}selected{% endif %}>Виберіть групу</option>
+                    {% for group in groups|default([]) %}
+                        <option value="{{ group.id }}" {% if group.id|string == selected_group_id|default('') %}selected{% endif %}>{{ group.display_name }}</option>
+                    {% endfor %}
+                </select>
+        </div>
+        <div class="col-md-12">
+            <label for="excel_file" class="form-label">Файл Excel (.xlsx)</label>
+            <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+        </div>
+        <div class="col-md-12">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Імпортувати</button>
+        </div>
+    </form>
+	<br>
+	✅ Колонка А - Код
+	✅ Колонка B - Назва предмету
+	✅ Колонка С - Кредит
+	✅ Колонка D - "Екзамен" або "Залік"
+</div>
+{% endblock %}

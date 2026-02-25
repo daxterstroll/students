@@ -1,0 +1,36 @@
+{% extends 'layout.html' %}
+
+{% block title %}Оцінки для {{ student.last_name_UA }}{% endblock %}
+
+{% block content %}
+<h2><i class="bi bi-card-checklist"></i> Виставлення оцінок</h2>
+<p><strong>Студент:</strong> {{ student.last_name_UA }} {{ student.first_name_UA }}</p>
+<p><strong>Група:</strong> {{ student.group_name }}</p>
+
+<form method="post">
+    <table class="table table-bordered">
+        <thead>
+            <tr>
+                <th>Код</th>
+                <th>Назва предмета</th>
+                <th>Кредити</th>
+                <th>Оцінка</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for subject in subjects %}
+            <tr>
+                <td>{{ subject.code }}</td>
+                <td>{{ subject.name }}</td>
+                <td>{{ subject.credits }}</td>
+                <td>
+                    <input type="text" name="grade_{{ subject.id }}" value="{{ grade_map[subject.id]|default('') }}" class="form-control" />
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i> Зберегти</button>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i> Назад</a>
+</form>
+{% endblock %}

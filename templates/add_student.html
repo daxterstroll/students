@@ -1,0 +1,83 @@
+{% extends 'layout.html' %}
+{% block title %}Додати студента{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-plus-circle"></i> Додати студента</h2>
+<form method="POST">
+    <!-- Основні дані -->
+    <div class="mb-3">
+        <label class="form-label">Прізвище (укр)</label>
+        <input type="text" name="last_name_UA" class="form-control" value="{{ request.form.last_name_UA or '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Імʼя (укр)</label>
+        <input type="text" name="first_name_UA" class="form-control" value="{{ request.form.first_name_UA or '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">По батькові</label>
+        <input type="text" name="middle_name_UA" class="form-control" value="{{ request.form.middle_name_UA or '' }}">
+    </div>
+    <!-- Английские имена генерируются автоматически, поэтому убираем поля -->
+    <div class="mb-3">
+        <label class="form-label">Код картки фізичної особи в ЄДЕБО</label>
+        <input type="text" name="edebo_code" class="form-control" value="{{ request.form.edebo_code or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Дата народження</label>
+        <input type="text" name="birth_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ request.form.birth_date or '' }}">
+    </div>
+    <!-- Група -->
+    <div class="mb-3">
+        <label class="form-label">Група</label>
+        <select name="group_id" class="form-select" >
+            {% for group in groups %}
+                <option value="{{ group.id }}" {% if request.form.group_id == group.id|string %}selected{% endif %}>
+                    {{ group.display_name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+    <hr>
+    <!-- Військові дані -->
+    <h4>🎖 Військові дані (необов’язково)</h4>
+    <div class="mb-3">
+        <label class="form-label">Звання</label>
+        <input type="text" name="military_rank" class="form-control" value="{{ request.form.military_rank or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
+        <input type="text" name="registration_number_of_the_DRPVR" class="form-control" value="{{ request.form.registration_number_of_the_DRPVR or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Військово-обліковий документ</label>
+        <input type="text" name="military_registration_document" class="form-control" value="{{ request.form.military_registration_document or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Виданий ВОД</label>
+		<input type="text" name="issued_VOD" class="form-control" value="{{ request.form.issued_VOD or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Номер військово-облікової спеціальності</label>
+        <input type="text" name="military_accounting_specialty_number" class="form-control" value="{{ request.form.military_accounting_specialty_number or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Зміна облікових данних</label>
+        <input type="text" name="change_credentials" class="form-control" value="{{ request.form.change_credentials or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Підстава для зміни облікових даних</label>
+        <input type="text" name="reason_for_changing_credentials" class="form-control" value="{{ request.form.reason_for_changing_credentials or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Перебування на військовому обліку</label>
+        <input type="text" name="being_on_military_registration" class="form-control" value="{{ request.form.being_on_military_registration or '' }}">
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Адреса місця проживання</label>
+        <input type="text" name="address_of_residence" class="form-control" value="{{ request.form.address_of_residence or '' }}">
+    </div>
+
+    <!-- Кнопки -->
+    <button type="submit" class="btn btn-success">Зберегти</button>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary">Скасувати</a>
+</form>
+{% endblock %}

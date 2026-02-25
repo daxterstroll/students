@@ -1,0 +1,88 @@
+{% extends 'layout.html' %}
+{% block title %}Масова генерація документів{% endblock %}
+{% block content %}
+<h2 class="page-title"><i class="bi bi-file-zip"></i> Масова генерація документів</h2>
+<div class="form-container">
+    <form method="GET" id="filter-form" class="filter-form">
+        <div class="form-group">
+            <label class="form-label" for="group_id">Оберіть групу:</label>
+            <select name="group_id" id="group_id" class="form-select" onchange="submitForm()">
+                <option value="">-- Оберіть групу --</option>
+                {% for group in groups %}
+                    <option value="{{ group.id }}" {% if group.id|string == selected_group_id|string %}selected{% endif %}>{{ group.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="birth_year">Оберіть рік народження (починаючи з):</label>
+            <select name="birth_year" id="birth_year" class="form-select" onchange="submitForm()">
+                <option value="">-- Усі роки --</option>
+                {% for y in years %}
+                    <option value="{{ y }}" {% if y|string == selected_year|string %}selected{% endif %}>{{ y }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="template">Оберіть шаблон:</label>
+            <select name="template" id="template" class="form-select" onchange="submitForm()">
+                <option value="template_word/template_adddiplom.docx" {% if selected_template == 'template_word/template_adddiplom.docx' %}selected{% endif %}>Шаблон для додатку до диплому</option>
+                <option value="template_word/template_tck.docx" {% if selected_template == 'template_word/template_tck.docx' %}selected{% endif %}>Шаблон для ТЦК</option>
+            </select>
+        </div>
+        <br>
+        <div class="form-group">
+            <button type="submit" class="btn btn-primary">Показати студентів</button>
+        </div>
+    </form>
+</div>
+<script>
+function submitForm() {
+    const form = document.getElementById('filter-form');
+    form.submit();
+}
+</script>
+{% if students %}
+    <h3 class="results-title">
+        Результати для
+        {% if selected_group_id %}
+            групи: {{ groups|selectattr('id', 'equalto', selected_group_id)|map(attribute='display_name')|first }}
+        {% endif %}
+        {% if selected_year %} (рік народження: ≥{{ selected_year }}){% endif %}
+    </h3>
+    <div class="table-container">
+        <form method="POST" action="{{ url_for('admin.group_export') }}" class="generate-form">
+            <table class="student-table">
+                <thead>
+                    <tr>
+                        <th>Активний</th>
+                        <th>ПІБ</th>
+                        <th>Дата народження</th>
+                        <th>Група</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for student in students %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" name="active_students" value="{{ student.id }}" checked>
+                            </td>
+                            <td>{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}</td>
+                            <td>{{ student.birth_date }}</td>
+                            <td>{{ groups|selectattr('id', 'equalto', student.group_id)|map(attribute='display_name')|first }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <input type="hidden" name="group_id" value="{{ selected_group_id or '' }}">
+            <input type="hidden" name="birth_year" value="{{ selected_year or '' }}">
+            <input type="hidden" name="template" value="{{ selected_template }}">
+            <br>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-download"></i> Згенерувати документи</button>
+        </form>
+    </div>
+{% else %}
+    {% if selected_group_id or selected_year %}
+        <p class="no-results">У цій групі або за обраними роками немає студентів.</p>
+    {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,40 @@
+{% extends 'layout.html' %}
+
+{% block title %}Список користувачів{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-people"></i> Список користувачів</h2>
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.add_user') }}" class="btn btn-primary"><i class="bi bi-person-plus me-2"></i>Додати користувача</a>
+    </div>
+
+    <table class="table table-bordered table-striped table-hover">
+        <thead class="table-light">
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Ім'я користувача</th>
+                <th scope="col">Роль</th>
+                <th scope="col">Групи</th>
+                <th scope="col">Дії</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+                <tr>
+                    <td>{{ user.id }}</td>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.role }}</td>
+                    <td>{{ user.group_names or 'Немає груп' }}</td>
+                    <td>
+                        <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" class="btn btn-sm btn-warning"><i class="bi bi-pencil"></i> Редагувати</a>
+                        <a href="{{ url_for('admin.change_password', user_id=user.id) }}" class="btn btn-sm btn-info"><i class="bi bi-key"></i> Змінити пароль</a>
+                        <a href="{{ url_for('admin.delete_user', user_id=user.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Ви впевнені, що хочете видалити користувача?');"><i class="bi bi-trash"></i> Видалити</a>
+                    </td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

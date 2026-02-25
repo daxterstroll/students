@@ -1,0 +1,363 @@
+{% extends 'layout.html' %}
+
+{% block title %}Інформація про студента {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Заголовок и уведомления -->
+    <h1 class="mb-4"><i class="bi bi-person-circle"></i> Інформація про студента</h1>
+
+    <!-- Основная информация -->
+    <section class="mb-5">
+        <h2 class="h4 mb-3"><i class="bi bi-info-circle"></i> Основна інформація</h2>
+        <table class="table table-bordered table-striped table-hover">
+            <tbody>
+                <tr>
+                    <th scope="row">Прізвище (UA)</th>
+                    <td>{{ student.last_name_UA | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Ім'я (UA)</th>
+                    <td>{{ student.first_name_UA | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">По батькові (UA)</th>
+                    <td>{{ student.middle_name_UA | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Прізвище (ENG)</th>
+                    <td>{{ student.last_name_ENG | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Ім'я (ENG)</th>
+                    <td>{{ student.first_name_ENG | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Код картки фізичної особи в ЄДЕБО</th>
+                    <td>{{ student.edebo_code | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Дата народження</th>
+                    <td>{{ student.birth_date | default('-') }}</td>
+                </tr>
+                <tr>
+                    <th scope="row">Група</th>
+                    <td>{{ student.group_name | default('-') }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <!-- Аккордеон для остальных данных -->
+    <div class="accordion" id="studentDetailsAccordion">
+        <!-- Военные данные -->
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="militaryHeading">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#militaryCollapse" aria-expanded="false" aria-controls="militaryCollapse">
+                    <i class="bi bi-shield-check me-2"></i> Військові дані
+                </button>
+            </h2>
+            <div id="militaryCollapse" class="accordion-collapse collapse" aria-labelledby="militaryHeading" data-bs-parent="#studentDetailsAccordion">
+                <div class="accordion-body">
+                    {% if military %}
+                        <table class="table table-bordered table-striped table-hover">
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Номер реєстрації ДРПВР</th>
+                                    <td>{{ military.registration_number_of_the_DRPVR | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Військовий документ</th>
+                                    <td>{{ military.military_registration_document | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Дата видачі ВОД</th>
+                                    <td>{{ military.issued_VOD | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Номер військово-облікової спеціальності</th>
+                                    <td>{{ military.military_accounting_specialty_number | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Військове звання</th>
+                                    <td>{{ military.military_rank | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Зміна облікових даних</th>
+                                    <td>{{ military.change_credentials | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Причина зміни облікових даних</th>
+                                    <td>{{ military.reason_for_changing_credentials | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Перебування на військовому обліку</th>
+                                    <td>{{ military.being_on_military_registration | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Адреса проживання</th>
+                                    <td>{{ military.address_of_residence | default('-') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">Військові дані відсутні</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Оценки -->
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="subjectsHeading">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#subjectsCollapse" aria-expanded="false" aria-controls="subjectsCollapse">
+                    <i class="bi bi-book me-2"></i> Оцінки
+                </button>
+            </h2>
+            <div id="subjectsCollapse" class="accordion-collapse collapse" aria-labelledby="subjectsHeading" data-bs-parent="#studentDetailsAccordion">
+                <div class="accordion-body">
+                    {% if subject_grades %}
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Код предмета</th>
+                                    <th scope="col">Назва предмета</th>
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Оцінка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for subject in subject_grades %}
+                                    <tr>
+                                        <td>{{ subject.code | default('-') }}</td>
+                                        <td>{{ subject.name | default('-') }}</td>
+                                        <td>{{ subject.type | default('-') }}</td>
+                                        <td>{{ subject.grade | format_grade(subject.type) | default('-') }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">Предмети або оцінки відсутні</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Практики -->
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="practicesHeading">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#practicesCollapse" aria-expanded="false" aria-controls="practicesCollapse">
+                    <i class="bi bi-briefcase me-2"></i> Практики
+                </button>
+            </h2>
+            <div id="practicesCollapse" class="accordion-collapse collapse" aria-labelledby="practicesHeading" data-bs-parent="#studentDetailsAccordion">
+                <div class="accordion-body">
+                    {% if practice_data %}
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Код практики</th>
+                                    <th scope="col">Назва практики</th>
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Оцінка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for practice in practice_data %}
+                                    <tr>
+                                        <td>{{ practice.code | default('-') }}</td>
+                                        <td>{{ practice.name | default('-') }}</td>
+                                        <td>{{ practice.type | default('-') }}</td>
+                                        <td>{{ practice.grade | format_grade(practice.type) | default('-') }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">Практики або оцінки відсутні</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Курсовые работы -->
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="courseworksHeading">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#courseworksCollapse" aria-expanded="false" aria-controls="courseworksCollapse">
+                    <i class="bi bi-file-earmark-text me-2"></i> Курсові роботи
+                </button>
+            </h2>
+            <div id="courseworksCollapse" class="accordion-collapse collapse" aria-labelledby="courseworksHeading" data-bs-parent="#studentDetailsAccordion">
+                <div class="accordion-body">
+                    {% if coursework_data %}
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Код курсової</th>
+                                    <th scope="col">Назва курсової</th>
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Оцінка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for coursework in coursework_data %}
+                                    <tr>
+                                        <td>{{ coursework.code | default('-') }}</td>
+                                        <td>{{ coursework.name | default('-') }}</td>
+                                        <td>{{ coursework.type | default('-') }}</td>
+                                        <td>{{ coursework.grade | format_grade(coursework.type) | default('-') }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">Курсові роботи або оцінки відсутні</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Аттестации -->
+        <div class="accordion-item">
+            <h2 class="accordion-header" id="attestationsHeading">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#attestationsCollapse" aria-expanded="false" aria-controls="attestationsCollapse">
+                    <i class="bi bi-award me-2"></i> Атестації
+                </button>
+            </h2>
+            <div id="attestationsCollapse" class="accordion-collapse collapse" aria-labelledby="attestationsHeading" data-bs-parent="#studentDetailsAccordion">
+                <div class="accordion-body">
+                    {% if attestation_data %}
+                        <table class="table table-bordered table-striped table-hover">
+                            <thead class="table-light">
+                                <tr>
+                                    <th scope="col">Код атестації</th>
+                                    <th scope="col">Назва атестації</th>
+                                    <th scope="col">Тип</th>
+                                    <th scope="col">Оцінка</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for attestation in attestation_data %}
+                                    <tr>
+                                        <td>{{ attestation.code | default('-') }}</td>
+                                        <td>
+                                            {% if attestation.name and attestation.student_name %}
+                                                {{ attestation.name }} {{ attestation.student_name }}
+                                            {% elif attestation.name %}
+                                                {{ attestation.name }}
+                                            {% elif attestation.student_name %}
+                                                {{ attestation.student_name }}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ attestation.type | default('-') }}</td>
+                                        <td>{{ attestation.grade | format_grade(attestation.type) | default('-') }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <p class="text-muted">Атестації або оцінки відсутні</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Документы об образовании -->
+<div class="accordion-item">
+    <h2 class="accordion-header" id="educationDocsHeading">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#educationDocsCollapse" aria-expanded="false" aria-controls="educationDocsCollapse">
+            <i class="bi bi-file-earmark-text me-2"></i> Документи про освіту
+        </button>
+    </h2>
+    <div id="educationDocsCollapse" class="accordion-collapse collapse" aria-labelledby="educationDocsHeading" data-bs-parent="#studentDetailsAccordion">
+        <div class="accordion-body">
+            {% if education_docs %}
+                {% for doc in education_docs %}
+                    <div class="mb-4">
+                        <!-- Сектор 1: Основной документ -->
+                        <h5>Документ</h5>
+                        <table class="table table-bordered table-striped table-hover">
+                            <tbody>
+                                <tr>
+                                    <th scope="row">Тип документа (UA)</th>
+                                    <td>{{ doc.document_type | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Тип документа (EN)</th>
+                                    <td>{{ doc.document_type_en | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Номер документа</th>
+                                    <td>{{ doc.document_number | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Навчальний заклад (UA)</th>
+                                    <td>{{ doc.institution_name | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Навчальний заклад (EN)</th>
+                                    <td>{{ doc.institution_name_en | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Країна (UA)</th>
+                                    <td>{{ doc.country | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Країна (EN)</th>
+                                    <td>{{ doc.country_en | default('-') }}</td>
+                                </tr>
+                                <tr>
+                                    <th scope="row">Дата закінчення</th>
+                                    <td>{{ doc.completion_date | default('-') }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        <!-- Сектор 2: Академічна довідка (если есть) -->
+                        {% if doc.reference_number or doc.reference_institution or doc.reference_country or doc.reference_issue_date %}
+                            <h5 class="mt-3">Академічна довідка</h5>
+                            <table class="table table-bordered table-striped table-hover">
+                                <tbody>
+                                    {% if doc.reference_number %}<tr><th scope="row">Номер довідки</th><td>{{ doc.reference_number }}</td></tr>{% endif %}
+                                    {% if doc.reference_institution %}<tr><th scope="row">Навчальний заклад довідки (UA)</th><td>{{ doc.reference_institution }}</td></tr>{% endif %}
+                                    {% if doc.reference_institution_en %}<tr><th scope="row">Reference Institution (EN)</th><td>{{ doc.reference_institution_en }}</td></tr>{% endif %}
+                                    {% if doc.reference_country %}<tr><th scope="row">Країна довідки (UA)</th><td>{{ doc.reference_country }}</td></tr>{% endif %}
+                                    {% if doc.reference_country_en %}<tr><th scope="row">Reference Country (EN)</th><td>{{ doc.reference_country_en }}</td></tr>{% endif %}
+                                    {% if doc.reference_issue_date %}<tr><th scope="row">Дата видачі довідки</th><td>{{ doc.reference_issue_date }}</td></tr>{% endif %}
+                                </tbody>
+                            </table>
+                        {% endif %}
+
+                        <!-- Сектор 3: Свідоцтво про визнання (если есть) -->
+                        {% if doc.recognition_certificate_number or doc.recognition_issuer or doc.recognition_date %}
+                            <h5 class="mt-3">Свідоцтво про визнання в Україні іноземного документа про освіту</h5>
+                            <table class="table table-bordered table-striped table-hover">
+                                <tbody>
+                                    {% if doc.recognition_certificate_number %}<tr><th scope="row">Номер свідоцтва про визнання</th><td>{{ doc.recognition_certificate_number }}</td></tr>{% endif %}
+                                    {% if doc.recognition_issuer %}<tr><th scope="row">Хто видав свідоцтво (UA)</th><td>{{ doc.recognition_issuer }}</td></tr>{% endif %}
+                                    {% if doc.recognition_issuer_en %}<tr><th scope="row">Recognition Issuer (EN)</th><td>{{ doc.recognition_issuer_en }}</td></tr>{% endif %}
+                                    {% if doc.recognition_date %}<tr><th scope="row">Дата видачі свідоцтва</th><td>{{ doc.recognition_date }}</td></tr>{% endif %}
+                                </tbody>
+                            </table>
+                        {% endif %}
+                    </div>
+                    <hr>
+                {% endfor %}
+            {% else %}
+                <p class="text-muted">Документи про освіту відсутні</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+    <!-- Кнопка "Назад" -->
+    <div class="mt-4">
+        <a href="{{ url_for('students.student_list') }}" class="btn btn-primary">
+            <i class="bi bi-arrow-left me-2"></i> Назад до списку студентів
+        </a>
+    </div>
+</div>
+{% endblock %}

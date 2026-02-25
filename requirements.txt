@@ -1,0 +1,14 @@
+setuptools<81
+Flask
+Flask-Login
+python-docx
+werkzeug
+jinja2
+openpyxl
+waitress
+docxcompose
+docxtpl
+unotools
+pandas
+xlrd
+bleach

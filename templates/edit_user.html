@@ -1,0 +1,43 @@
+{% extends 'layout.html' %}
+
+{% block title %}Редагувати користувача{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-person-gear"></i> Редагувати користувача: {{ user.username }}</h2>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ 'info' if category == 'message' else 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST" class="mb-4">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label for="role" class="form-label">Роль</label>
+                <select name="role" id="role" class="form-select" required>
+                    <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Адміністратор</option>
+                    <option value="user" {% if user.role == 'user' %}selected{% endif %}>Працівник</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="group_id" class="form-label">Групи (оберіть декілька)</label>
+                <select name="group_id" id="group_id" class="form-select" multiple>
+                    {% for group in groups|default([]) %}
+                        <option value="{{ group.id }}" {% if group.id in current_group_ids %}selected{% endif %}>{{ group.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
