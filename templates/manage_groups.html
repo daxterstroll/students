@@ -52,12 +52,18 @@
                 <input type="text" name="qualification_name_en" id="qualification_name_en" class="form-control" placeholder="Напр., Bachelor of Computer Science" >
             </div>
             <div class="col-md-6">
-                <label for="degree_level" class="form-label">Ступінь</label>
-                <input type="text" name="degree_level" id="degree_level" class="form-control" placeholder="Напр., Бакалавр" >
-            </div>
+                <label for="degree_level" class="form-label">Ступінь</label>	
+                <select name="degree_level" id="degree_level" class="form-select" required>
+                    <option value="Бакалавр">Бакалавр</option>
+                    <option value="Магістр">Магістр</option>
+                </select>
+		    </div>
             <div class="col-md-6">
                 <label for="degree_level_en" class="form-label">Degree Level (EN)</label>
-                <input type="text" name="degree_level_en" id="degree_level_en" class="form-control" placeholder="Напр., Bachelor" >
+				<select name="degree_level_en" id="degree_level_en" class="form-select" required>
+                    <option value="Bachelor">Bachelor</option>
+                    <option value="Master">Master</option>
+                </select>
             </div>
             <div class="col-md-6">
                 <label for="specialty" class="form-label">Спеціальність</label>
@@ -400,12 +406,19 @@
                                         <input type="text" name="qualification_name_en" id="qualification_name_en{{ group.id }}" class="form-control" value="{{ group.qualification_name_en or '' }}" >
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="degree_level{{ group.id }}" class="form-label">Ступінь</label>
-                                        <input type="text" name="degree_level" id="degree_level{{ group.id }}" class="form-control" value="{{ group.degree_level or '' }}" >
+                                        <label for="degree_level{{ group.id }}" class="form-label">Ступінь</label>										
+										<select name="degree_level" id="degree_level{{ group.id }}" class="form-select" required>
+                                            <option value="Бакалавр" {% if group.degree_level == "Бакалавр" %}selected{% endif %}>Бакалавр</option>
+                                            <option value="Магістр" {% if group.degree_level == "Магістр" %}selected{% endif %}>Магістр</option>
+                                        </select>
+										
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="degree_level_en{{ group.id }}" class="form-label">Degree Level (EN)</label>
-                                        <input type="text" name="degree_level_en" id="degree_level_en{{ group.id }}" class="form-control" value="{{ group.degree_level_en or '' }}" >
+                                        <label for="degree_level_en{{ group.id }}" class="form-label">Degree Level (EN)</label>										
+										<select name="degree_level_en" id="degree_level{{ group.id }}" class="form-select" required>
+                                            <option value="Bachelor" {% if group.degree_level_en == "Bachelor" %}selected{% endif %}>Bachelor</option>
+                                            <option value="Master" {% if group.degree_level_en == "Master" %}selected{% endif %}>Master</option>
+                                        </select>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="specialty{{ group.id }}" class="form-label">Спеціальність</label>
