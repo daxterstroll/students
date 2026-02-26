@@ -301,6 +301,8 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             study_years = '4'
         elif credits == 180:
             study_years = '3'
+        elif credits == 120:
+            study_years = '2'
         elif credits == 90:  # Для магистратуры
             study_years = '1.5'
         else:
@@ -326,7 +328,7 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     
         student_dict['study_form_eu'] = study_form_eu
     
-       # Вычисление end_year на основе start_year, program_credits и degree_level
+    # Вычисление end_year на основе start_year, program_credits и degree_level
     end_year = ''
     start_year = student_dict.get('start_year', '')
     program_credits = student_dict.get('program_credits', '')

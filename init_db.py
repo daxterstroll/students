@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	"name"	TEXT NOT NULL,
 	"start_year"	INTEGER NOT NULL,
 	"study_form"	TEXT NOT NULL CHECK("study_form" IN ('Денна', 'Заочна')),
-	"program_credits"	INTEGER NOT NULL CHECK("program_credits" IN (180, 240)),
+	"program_credits"	INTEGER NOT NULL CHECK("program_credits" IN (90, 120, 180, 240)),
 	"qualification_name"	TEXT,
 	"degree_level"	TEXT,
 	"specialty"	TEXT,
