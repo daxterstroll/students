@@ -326,10 +326,7 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     
         student_dict['study_form_eu'] = study_form_eu
     
-    # Текущий год
-    student_dict['year_short'] = datetime.now().strftime("%y")
-
-    # Вычисление end_year на основе start_year, program_credits и degree_level
+       # Вычисление end_year на основе start_year, program_credits и degree_level
     end_year = ''
     start_year = student_dict.get('start_year', '')
     program_credits = student_dict.get('program_credits', '')
@@ -356,12 +353,14 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         end_year = ''
     
     student_dict['end_year'] = end_year
+    
+    student_dict['end_year_short'] = student_dict['end_year'][-2:] if student_dict['end_year'] else ''
 
     # Проверка новых полей, включая недавно добавленные
     new_fields = [
         'qualification_name', 'degree_level', 'specialty', 'educational_program', 'knowledge_area',
         'qualification_name_en', 'degree_level_en', 'specialty_en', 'educational_program_en', 'knowledge_area_en',
-        'program_credits', 'study_years', 'study_form', 'study_form_eu', 'start_year', 'end_year', 'year_short', 
+        'program_credits', 'study_years', 'study_form', 'study_form_eu', 'start_year', 'end_year', 'end_year_short', 
         'institution_name_and_status', 'institution_name_and_status_en',
         'entry_requirements', 'entry_requirements_en',
         'learning_outcomes', 'learning_outcomes_en', 'program_includes', 'program_includes_en',
