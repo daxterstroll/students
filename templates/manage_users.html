@@ -1,0 +1,137 @@
+{% extends 'layout.html' %}
+
+{% block title %}Список користувачів та управління правами{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-people"></i> Список користувачів та управління правами</h2>
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.add_user') }}" class="btn btn-primary">
+            <i class="bi bi-person-plus me-2"></i>Додати користувача
+        </a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th>ID</th>
+                    <th>Ім'я користувача</th>
+                    <th>Роль</th>
+                    <th>Групи</th>
+                    <th>Дії</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user in users %}
+                <tr>
+                    <td>{{ user.id }}</td>
+                    <td>{{ user.username }}</td>
+                    <td>{{ user.role }}</td>
+                    <td>{{ user.group_names or 'Немає груп' }}</td>
+                    <td>
+                        <!-- Кнопка відкриття модального вікна -->
+                        <button type="button" class="btn btn-sm btn-primary mb-1" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#permissionsModal{{ user.id }}"
+                                title="Налаштувати права доступу">
+                            <i class="bi bi-shield-lock"></i> Права
+                        </button>
+
+                        <a href="{{ url_for('admin.edit_user', user_id=user.id) }}" 
+                           class="btn btn-sm btn-warning mb-1" title="Редагувати роль та групи">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+
+                        <a href="{{ url_for('admin.change_password', user_id=user.id) }}" 
+                           class="btn btn-sm btn-info mb-1" title="Змінити пароль">
+                            <i class="bi bi-key"></i>
+                        </a>
+
+                        <a href="{{ url_for('admin.delete_user', user_id=user.id) }}" 
+                           class="btn btn-sm btn-danger mb-1"
+                           onclick="return confirm('Ви впевнені, що хочете видалити користувача?');"
+                           title="Видалити">
+                            <i class="bi bi-trash"></i>
+                        </a>
+                    </td>
+                </tr>
+
+                <!-- Модальне вікно для налаштування прав -->
+                <div class="modal fade" id="permissionsModal{{ user.id }}" tabindex="-1" 
+                     aria-labelledby="permissionsModalLabel{{ user.id }}" aria-hidden="true">
+                    <div class="modal-dialog modal-lg">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="permissionsModalLabel{{ user.id }}">
+                                    Налаштування прав для {{ user.username }}
+                                </h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <form method="POST" action="{{ url_for('admin.manage_users') }}">
+                                <div class="modal-body">
+                                    <input type="hidden" name="user_id" value="{{ user.id }}">
+
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" name="is_admin" id="isAdmin{{ user.id }}"
+                                               {% if user.is_admin %}checked{% endif %}>
+                                        <label class="form-check-label" for="isAdmin{{ user.id }}">
+                                            <strong>Повний адмін</strong> (доступ до всього, незалежно від галочок нижче)
+                                        </label>
+                                    </div>
+
+                                    <hr>
+
+                                    <h6>Конкретні дозволи:</h6>
+                                    <div class="row">
+                                        {% set user_perms = user.permissions | fromjson %}
+                                        {% for perm in permissions %}
+                                            <div class="col-md-6 mb-2">
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           name="{{ perm }}" id="perm{{ user.id }}_{{ perm }}"
+                                                           {% if perm in user_perms %}checked{% endif %}>
+                                                    <label class="form-check-label" for="perm{{ user.id }}_{{ perm }}">
+														{{ perm_names_ua[perm] | default(perm | replace('_', ' ') | title) }}
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-save me-1"></i> Зберегти права
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="alert alert-info mt-4">
+        <strong>Пояснення:</strong><br>
+        • Кнопка <i class="bi bi-shield-lock"></i> Права — відкриває вікно налаштування доступу<br>
+        • <strong>Повний адмін</strong> — дає доступ до всіх розділів<br>
+        • Галочки — конкретні дозволи (працюють, якщо повний адмін вимкнено)<br>
+        • Зміни зберігаються кнопкою в модальному вікні
+    </div>
+</div>
+{% endblock %}

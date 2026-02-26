@@ -8,9 +8,21 @@ from routes.admin import admin_bp
 import argparse
 from utils import log_action
 from gen_docx import format_grade
+import json
 
 # Инициализация приложения Flask
 app = Flask(__name__)
+
+@app.template_filter('fromjson')
+def fromjson(value):
+    """Парсить JSON-рядок у список або словник"""
+    if value is None or value == '':
+        return []
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return []  # або повертайте {}, якщо очікуєте словник
+
 app.secret_key = SECRET_KEY
 
 # Регистрация blueprint'ов
@@ -57,3 +69,4 @@ if __name__ == '__main__':
     else:  # args.mode == 'production'
         from waitress import serve
         serve(app, host=args.host, port=args.port)
+       

@@ -1,8 +1,9 @@
 from functools import wraps
-from flask import session, redirect, url_for
+from flask import session, redirect, url_for, flash
 import logging
 import os
 from db import get_db
+import json
 
 # Настройка пути к файлу
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -69,10 +70,8 @@ def log_action(username, action, group_ids=None, mode=None):
         logger.info(f"👤 {username} - {action}")
 
 def login_required(role=None):
-    """
-    Декоратор для ограничения доступа к маршрутам.
-    
-    Аргументы:
+    """Декоратор для проверки авторизации и роли пользователя (стара версія для сумісності).
+    Args:
         role (str, optional): Требуемая роль пользователя (например, 'admin').
     """
     def decorator(f):
@@ -83,6 +82,52 @@ def login_required(role=None):
             if role and session.get('role') != role:
                 return "403 Forbidden", 403
             return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def permission_required(permission=None):
+    """Розширений декоратор для перевірки дозволів.
+    - Якщо permission=None: тільки перевірка логіну.
+    - Якщо permission вказано: потрібен is_admin=1 або цей дозвіл в permissions.
+    - Зворотна сумісність з role='admin'.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if 'user_id' not in session:
+                flash('Потрібна авторизація', 'danger')
+                return redirect(url_for('auth.login'))
+
+            # Спочатку перевіряємо сесію (кеш)
+            is_admin = session.get('is_admin', False)
+            perms = session.get('permissions', [])
+
+            # Якщо немає в сесії, завантажуємо з БД
+            if not hasattr(session, 'is_admin'):
+                conn = get_db()
+                user = conn.execute("""
+                    SELECT role, is_admin, permissions 
+                    FROM users 
+                    WHERE id = ?
+                """, (session['user_id'],)).fetchone()
+                conn.close()
+                if not user:
+                    session.clear()
+                    return redirect(url_for('auth.login'))
+                is_admin = bool(user['is_admin']) or (user['role'] == 'admin')
+                perms = json.loads(user['permissions'] or '[]')
+                session['is_admin'] = is_admin
+                session['permissions'] = perms
+
+            if permission is None:
+                return f(*args, **kwargs)
+
+            if is_admin or permission in perms:
+                return f(*args, **kwargs)
+
+            flash('Недостатньо прав', 'danger')
+            return redirect(url_for('students.student_list'))  # або інший маршрут
+
         return decorated_function
     return decorator
     
@@ -103,11 +148,11 @@ def transliterate_ukrainian(text):
         'ь': '', 'ю': 'yu', 'я': 'ya', 'є': 'ie', 'ї': 'i',
         'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'H', 'Ґ': 'G',
         'Д': 'D', 'Е': 'E', 'Є': 'Ye', 'Ж': 'Zh', 'З': 'Z',
-        'И': 'Y', 'І': 'I', 'Ї': 'Yi', 'Й': 'Y', 'К': 'K',
+        'И': 'Y', 'І': 'I', ' Ї': 'Yi', 'Й': 'Y', 'К': 'K',
         'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P',
         'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F',
         'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
-        'Ь': '', 'Ю': 'Yu', 'Я': 'Ya', 'Є': 'Ie', 'Ї': 'I'
+        'Ь': '', 'Ю': 'Yu', 'Я': 'Ya', 'Є': 'Ie', ' Ї': 'I'
     }
 
     result = ''
