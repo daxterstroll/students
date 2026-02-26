@@ -467,14 +467,41 @@ def manage_subjects():
         elif action == 'delete':
             try:
                 subject_id = request.form['subject_id']
-                cursor.execute('SELECT position FROM subjects WHERE id = ? AND group_id = ?', (subject_id, group_id))
-                position = cursor.fetchone()[0]
-                cursor.execute('DELETE FROM subjects WHERE id = ? AND group_id = ?', (subject_id, group_id))
-                cursor.execute('UPDATE subjects SET position = position - 1 WHERE position > ? AND group_id = ?', (position, group_id))
-                conn.commit()
-                flash('Предмет удален', 'success')
-            except (KeyError, ValueError):
-                flash('Ошибка при удалении предмета', 'error')
+                group_id = request.form['group_id']  # уже есть выше
+
+                # === ПРОВЕРКА И УДАЛЕНИЕ ОЦЕНОК ===
+                cursor.execute('SELECT COUNT(*) FROM grades WHERE subject_id = ?', (subject_id,))
+                grade_count = cursor.fetchone()[0]
+
+                if grade_count > 0:
+                    cursor.execute('DELETE FROM grades WHERE subject_id = ?', (subject_id,))
+                
+                # === УДАЛЕНИЕ ПРЕДМЕТА И ПЕРЕСЧЁТ ПОЗИЦИЙ ===
+                cursor.execute('SELECT position FROM subjects WHERE id = ? AND group_id = ?', 
+                              (subject_id, group_id))
+                position_row = cursor.fetchone()
+                if position_row is None:
+                    flash('Предмет не найден', 'error')
+                else:
+                    position = position_row[0]
+                    
+                    cursor.execute('DELETE FROM subjects WHERE id = ? AND group_id = ?', 
+                                  (subject_id, group_id))
+                    
+                    cursor.execute('UPDATE subjects SET position = position - 1 '
+                                  'WHERE position > ? AND group_id = ?', 
+                                  (position, group_id))
+                    
+                    conn.commit()
+                    
+                    if grade_count > 0:
+                        flash(f'Предмет успешно удалён вместе с {grade_count} оценками!', 'success')
+                    else:
+                        flash('Предмет успешно удалён', 'success')
+
+            except Exception as e:  # лучше ловить конкретно sqlite3.Error
+                conn.rollback()
+                flash(f'Ошибка при удалении предмета: {str(e)}', 'error')
         
         elif action == 'move_up':
             try:

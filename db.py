@@ -15,4 +15,5 @@ def get_db():
     conn = sqlite3.connect('students.db')
     conn.row_factory = sqlite3.Row
     conn.create_collation("UKRAINIAN", ukrainian_collation)
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
