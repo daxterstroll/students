@@ -385,6 +385,8 @@
                                     <div class="col-md-6">
                                         <label for="program_credits{{ group.id }}" class="form-label">Кредити</label>
                                         <select name="program_credits" id="program_credits{{ group.id }}" class="form-select" required>
+                                            <option value="90" {% if group.program_credits == 90 %}selected{% endif %}>90</option>
+                                            <option value="120" {% if group.program_credits == 120 %}selected{% endif %}>120</option>
                                             <option value="180" {% if group.program_credits == 180 %}selected{% endif %}>180</option>
                                             <option value="240" {% if group.program_credits == 240 %}selected{% endif %}>240</option>
                                         </select>

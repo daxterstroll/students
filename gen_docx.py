@@ -6,6 +6,7 @@ from docxtpl import DocxTemplate
 
 from utils import log_action, logger as global_logger
 from db import get_db
+from datetime import datetime
 
 def insert_subjects_table(doc, student_id):
     """Вставка таблицы с предметами и оценками студента."""
@@ -324,6 +325,9 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         # global_logger.debug(f"study_form: {study_form}, study_form_eu: {study_form_eu}")
     
         student_dict['study_form_eu'] = study_form_eu
+    
+    # Текущий год
+    student_dict['year_short'] = datetime.now().strftime("%y")
 
     # Вычисление end_year на основе start_year, program_credits и degree_level
     end_year = ''
@@ -357,7 +361,7 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     new_fields = [
         'qualification_name', 'degree_level', 'specialty', 'educational_program', 'knowledge_area',
         'qualification_name_en', 'degree_level_en', 'specialty_en', 'educational_program_en', 'knowledge_area_en',
-        'program_credits', 'study_years', 'study_form', 'study_form_eu', 'start_year', 'end_year',
+        'program_credits', 'study_years', 'study_form', 'study_form_eu', 'start_year', 'end_year', 'year_short', 
         'institution_name_and_status', 'institution_name_and_status_en',
         'entry_requirements', 'entry_requirements_en',
         'learning_outcomes', 'learning_outcomes_en', 'program_includes', 'program_includes_en',
