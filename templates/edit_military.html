@@ -44,7 +44,7 @@
 
     <button type="submit" class="btn btn-success"><i class="bi bi-save me-2"></i> Зберегти</button>
     <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary"><i class="bi bi-arrow-left me-2"></i> Назад</a>
-		{% if session.get('role') == 'admin' %}
+		{% if session.get('is_admin') or 'manage_students' in session.get('permissions', []) %}
 		{% if military %}
 			<a href="{{ url_for('students.delete_military', student_id=student_id) }}" class="btn btn-danger float-end" onclick="return confirm('Ви впевнені, що хочете видалити військові дані?')"><i class="bi bi-trash3"></i> Видалити</a>
 		{% endif %}

@@ -5,23 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}База даних студентів Львівської філії ПВНЗ "Європейський університет"{% endblock %}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
-    
+   
     <!-- Bootstrap CSS - локальная версия -->
     <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
-    
+   
     <style>
         :root {
             --bs-primary-rgb: 37, 99, 235;
             --custom-nav-color: #a78bfa; /* Уникальный кастомный цвет для навигации */
         }
-        
+       
         /* СБРОС ДЛЯ DROPDOWN ITEMS с новым названием переменной */
         .dropdown-menu .dropdown-item,
         .dropdown-menu-dark .dropdown-item {
             color: var(--custom-nav-color) !important;
         }
-        
+       
         .dropdown-menu .dropdown-item:hover,
         .dropdown-menu .dropdown-item:focus,
         .dropdown-menu-dark .dropdown-item:hover,
@@ -29,19 +29,19 @@
             color: var(--custom-nav-color) !important;
             background-color: rgba(167, 139, 250, 0.2) !important;
         }
-        
+       
         body {
             background-color: #f8f9fa;
             padding-top: 56px;
         }
-        
+       
         /* Фиксированная навигация */
         .navbar {
             background: #0f172a;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             padding: 0.25rem 0;
         }
-        
+       
         /* Бренд с кастомным цветом */
         .navbar-brand {
             font-weight: 600;
@@ -51,11 +51,11 @@
             gap: 0.5rem;
             padding: 0.25rem 0;
         }
-        
+       
         .navbar-brand .bi {
             font-size: 1.25rem;
         }
-        
+       
         /* Кнопка меню */
         .navbar-toggler {
             border: 1px solid rgba(167, 139, 250, 0.3);
@@ -63,7 +63,7 @@
             font-size: 1rem;
             color: var(--custom-nav-color);
         }
-        
+       
         /* Навигационные ссылки */
         .nav-link {
             padding: 0.375rem 0.75rem !important;
@@ -75,25 +75,25 @@
             margin: 0.125rem 0;
             transition: all 0.2s ease;
         }
-        
+       
         .nav-link:hover,
         .nav-link.active {
             background-color: rgba(167, 139, 250, 0.15);
             color: var(--custom-nav-color) !important;
         }
-        
+       
         .nav-link i {
             width: 20px;
             text-align: center;
         }
-        
+       
         /* ВЫПАДАЮЩЕЕ МЕНЮ - исправляем наследование */
         .admin-dropdown .dropdown-menu {
             min-width: 220px;
             background: #1e293b !important;
             border: 1px solid rgba(167, 139, 250, 0.3) !important;
         }
-        
+       
         /* ЯВНО указываем кастомный цвет для dropdown items */
         .admin-dropdown .dropdown-menu .dropdown-item {
             color: var(--custom-nav-color) !important;
@@ -103,13 +103,13 @@
             gap: 0.5rem;
             background-color: transparent !important;
         }
-        
+       
         .admin-dropdown .dropdown-menu .dropdown-item:hover,
         .admin-dropdown .dropdown-menu .dropdown-item:focus {
             color: var(--custom-nav-color) !important;
             background-color: rgba(167, 139, 250, 0.2) !important;
         }
-        
+       
         /* User badge с кастомным цветом */
         .user-badge {
             background: rgba(167, 139, 250, 0.15);
@@ -119,7 +119,7 @@
             padding: 0.25rem 0.75rem;
             font-size: 0.875rem;
         }
-        
+       
         /* Кнопка выхода с кастомным цветом */
         .logout-btn {
             padding: 0.25rem 0.75rem;
@@ -128,12 +128,12 @@
             border-color: var(--custom-nav-color) !important;
             background-color: transparent !important;
         }
-        
+       
         .logout-btn:hover {
             background-color: var(--custom-nav-color) !important;
             color: #0f172a !important;
         }
-        
+       
         /* Мобильное меню */
         @media (max-width: 991.98px) {
             .navbar-collapse {
@@ -148,14 +148,14 @@
                 z-index: 1050;
                 border-top: 1px solid rgba(167, 139, 250, 0.2);
             }
-            
+           
             .navbar-nav {
                 display: flex;
                 flex-direction: column;
                 gap: 0.25rem;
                 margin-bottom: 0.5rem;
             }
-            
+           
             /* Ссылки админа в мобильном меню */
             .admin-links-mobile {
                 display: flex;
@@ -163,7 +163,7 @@
                 gap: 0.25rem;
                 margin-top: 0.5rem;
             }
-            
+           
             .admin-link {
                 display: flex;
                 align-items: center;
@@ -175,12 +175,12 @@
                 font-size: 0.9rem;
                 background-color: transparent !important;
             }
-            
+           
             .admin-link:hover {
                 background-color: rgba(167, 139, 250, 0.15) !important;
                 color: var(--custom-nav-color) !important;
             }
-            
+           
             .admin-section-title {
                 color: var(--custom-nav-color) !important;
                 font-size: 0.8rem;
@@ -191,7 +191,7 @@
                 border-top: 1px solid rgba(167, 139, 250, 0.2);
                 opacity: 0.8;
             }
-            
+           
             /* User info в мобильной версии */
             .user-info-mobile {
                 background: rgba(167, 139, 250, 0.05);
@@ -200,36 +200,36 @@
                 margin-top: 0.75rem;
                 border-top: 1px solid rgba(167, 139, 250, 0.2);
             }
-            
+           
             .user-info-mobile .badge {
                 background: rgba(167, 139, 250, 0.15);
                 color: var(--custom-nav-color) !important;
             }
-            
+           
             .user-info-mobile .btn {
                 color: var(--custom-nav-color) !important;
                 border-color: var(--custom-nav-color) !important;
                 background-color: transparent !important;
             }
-            
+           
             .user-info-mobile .btn:hover {
                 background-color: var(--custom-nav-color) !important;
                 color: #0f172a !important;
             }
         }
-        
+       
         /* Десктоп */
         @media (min-width: 992px) {
             .navbar-expand-lg .navbar-collapse {
                 justify-content: space-between;
             }
-            
+           
             .user-info-desktop {
                 display: flex;
                 align-items: center;
                 gap: 1rem;
             }
-            
+           
             /* Скрываем мобильные элементы на десктопе */
             .user-info-mobile,
             .admin-links-mobile,
@@ -237,20 +237,20 @@
                 display: none !important;
             }
         }
-        
+       
         /* Основной контент */
         .container {
             padding-left: 15px;
             padding-right: 15px;
             max-width: 100%;
         }
-        
+       
         @media (min-width: 1400px) {
             .container {
                 max-width: 1320px;
             }
         }
-        
+       
         /* Alert с кастомным цветом */
         .alert {
             border: none;
@@ -260,31 +260,31 @@
             margin-bottom: 1rem;
             background-color: rgba(167, 139, 250, 0.05);
         }
-        
+       
         /* Убираем лишние отступы на очень маленьких экранах */
         @media (max-width: 575.98px) {
             .container {
                 padding-left: 10px;
                 padding-right: 10px;
             }
-            
+           
             .navbar-brand span {
                 font-size: 0.9rem;
             }
-            
+           
             .admin-link {
                 padding: 0.375rem 0.5rem;
                 font-size: 0.85rem;
             }
         }
-        
+       
         /* Убираем подчеркивание у всех ссылок */
         .nav-link,
         .dropdown-item,
         .admin-link {
             text-decoration: none !important;
         }
-        
+       
         /* ИСПРАВЛЯЕМ Bootstrap стили для dropdown с новым названием переменной */
         .dropdown-menu-dark {
             --bs-dropdown-link-color: var(--custom-nav-color) !important;
@@ -293,12 +293,12 @@
             --bs-dropdown-link-active-color: var(--custom-nav-color) !important;
             --bs-dropdown-link-active-bg: rgba(167, 139, 250, 0.2) !important;
         }
-        
+       
         /* Дополнительное правило для перекрытия Bootstrap */
         [data-bs-theme="dark"] .dropdown-menu-dark {
             --bs-dropdown-link-color: var(--custom-nav-color) !important;
         }
-        
+       
         /* Специфичное правило для всех элементов dropdown в темной теме */
         .navbar-dark .dropdown-menu-dark .dropdown-item {
             color: var(--custom-nav-color) !important;
@@ -314,139 +314,185 @@
                 <i class="bi bi-mortarboard-fill"></i>
                 <span>База даних</span>
             </a>
-            
+           
             <!-- Кнопка меню для мобильных -->
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" 
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
                     aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
                 <i class="bi bi-list"></i>
             </button>
-            
+           
             <!-- Навигация -->
             <div class="collapse navbar-collapse" id="mainNavbar">
                 <!-- Основные ссылки -->
                 <ul class="navbar-nav">
-                    <!-- Ссылка на студентов в навигации (основная) -->
-                    {% if session.get('role') == 'admin' %}
+                    <!-- Адмін-меню, якщо є права -->
+                    {% set has_admin_access = session.get('is_admin') or session.get('permissions') %}
+                    {% if has_admin_access %}
                     <!-- Десктоп: выпадающее меню админа -->
                     <li class="nav-item dropdown d-none d-lg-block admin-dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" 
+                        <a class="nav-link dropdown-toggle" href="#" role="button"
                            data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-gear"></i>
                             <span>Адміністрування</span>
                         </a>
                         <ul class="dropdown-menu dropdown-menu-dark">
+                            {% if session.get('is_admin') or 'manage_users' in session.get('permissions', []) %}
                             <li>
-                                <a class="dropdown-item" href="{{ url_for('admin.user_list') }}">
+                                <a class="dropdown-item" href="{{ url_for('admin.manage_users') }}">
                                     <i class="bi bi-people"></i>
-                                    Користувачі
+                                    Користувачі та права
                                 </a>
                             </li>
+                            {% endif %}
+							{% if session.get('is_admin') or 'view_logs' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.view_logs') }}">
                                     <i class="bi bi-file-earmark-binary"></i>
                                     Логування
                                 </a>
                             </li>
+							{% endif %}
+                            {% if session.get('is_admin') or 'generate_docs' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.group_export') }}">
                                     <i class="bi bi-file-zip"></i>
                                     Масова генерація
                                 </a>
                             </li>
+							{% endif %}
+                            {% if session.get('is_admin') or 'import_from_excel' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('students.import_from_excel') }}">
                                     <i class="bi bi-person-add"></i>
                                     Імпорт студентів
                                 </a>
                             </li>
-                            <li><hr class="dropdown-divider"></li>
+							{% endif %}
+                            {% if session.get('is_admin') or 'import_subjects' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.import_subjects') }}">
                                     <i class="bi bi-cloud-plus"></i>
                                     Імпорт предметів
                                 </a>
                             </li>
+
+							{% endif %}
+                            {% if session.get('is_admin') or 'manage_groups' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}">
                                     <i class="bi bi-person-rolodex"></i>
-                                    Групи
+                                    Управління групами
                                 </a>
                             </li>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_subjects' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.manage_subjects') }}">
                                     <i class="bi bi-journal"></i>
                                     Предмети
                                 </a>
                             </li>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_activities' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.manage_activities') }}">
                                     <i class="bi bi-journal-bookmark"></i>
                                     Прак. Атес. Курс.
                                 </a>
                             </li>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_education_documents' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}">
                                     <i class="bi bi-file-earmark-text"></i>
                                     Документи освіти
                                 </a>
                             </li>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_archive' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.archive') }}">
                                     <i class="bi bi-archive"></i>
                                     Архів
                                 </a>
                             </li>
+                            {% endif %}
                         </ul>
                     </li>
-                    
+                   
                     <!-- Мобильные: все ссылки админа сразу -->
                     <div class="d-lg-none w-100">
                         <div class="admin-links-mobile">
-                            <a href="{{ url_for('admin.user_list') }}" class="admin-link">
+                            {% if session.get('is_admin') or 'manage_users' in session.get('permissions', []) %}
+                            <a href="{{ url_for('admin.manage_users') }}" class="admin-link">
                                 <i class="bi bi-people"></i>
-                                Користувачі
+                                Користувачі та права
                             </a>
+                            {% endif %}
+
                             <a href="{{ url_for('admin.view_logs') }}" class="admin-link">
                                 <i class="bi bi-file-earmark-binary"></i>
                                 Логування
                             </a>
+
+                            {% if session.get('is_admin') or 'group_export' in session.get('permissions', []) %}
                             <a href="{{ url_for('admin.group_export') }}" class="admin-link">
                                 <i class="bi bi-file-zip"></i>
                                 Масова генерація
                             </a>
+                            {% endif %}
+
                             <a href="{{ url_for('students.import_from_excel') }}" class="admin-link">
                                 <i class="bi bi-person-add"></i>
                                 Імпорт студентів
                             </a>
+
                             <a href="{{ url_for('admin.import_subjects') }}" class="admin-link">
                                 <i class="bi bi-cloud-plus"></i>
                                 Імпорт предметів
                             </a>
+
+                            {% if session.get('is_admin') or 'manage_groups' in session.get('permissions', []) %}
                             <a href="{{ url_for('admin.manage_groups') }}" class="admin-link">
                                 <i class="bi bi-person-rolodex"></i>
                                 Групи
                             </a>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_subjects' in session.get('permissions', []) %}
                             <a href="{{ url_for('admin.manage_subjects') }}" class="admin-link">
                                 <i class="bi bi-journal"></i>
                                 Предмети
                             </a>
+                            {% endif %}
+
                             <a href="{{ url_for('admin.manage_activities') }}" class="admin-link">
                                 <i class="bi bi-journal-bookmark"></i>
                                 Прак. Атес. Курс.
                             </a>
+
+                            {% if session.get('is_admin') or 'manage_education_docs' in session.get('permissions', []) %}
                             <a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link">
                                 <i class="bi bi-file-earmark-text"></i>
                                 Документи освіти
                             </a>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_archive' in session.get('permissions', []) %}
                             <a href="{{ url_for('admin.archive') }}" class="admin-link">
                                 <i class="bi bi-archive"></i>
                                 Архів
                             </a>
+                            {% endif %}
                         </div>
                     </div>
                     {% endif %}
                 </ul>
-                
+               
                 <!-- User info - разные версии для мобильных и десктопа -->
                 {% if session.get('user_id') %}
                 <!-- Десктоп версия -->
@@ -460,7 +506,7 @@
                         Вийти
                     </a>
                 </div>
-                
+               
                 <!-- Мобильная версия -->
                 <div class="d-lg-none user-info-mobile">
                     <div class="d-flex justify-content-between align-items-center">
@@ -479,31 +525,33 @@
         </div>
     </nav>
     {% endif %}
-    
+   
     <main class="container">
         {% if request.endpoint != 'auth.login' %}
-            {% with messages = get_flashed_messages() %}
+            {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
-                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
-                        {{ messages[0] }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category|default('warning') }} alert-dismissible fade show" role="alert">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
                 {% endif %}
             {% endwith %}
         {% endif %}
-        
+       
         {% block content %}{% endblock %}
     </main>
-    
+   
     <!-- Bootstrap JS Bundle - локальная версия -->
     <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
-    
+   
     <script>
         // Автоматическое закрытие мобильного меню при клике на ссылку
         document.addEventListener('DOMContentLoaded', function() {
             const mobileLinks = document.querySelectorAll('#mainNavbar .nav-link, #mainNavbar .admin-link, #mainNavbar .logout-btn, #mainNavbar .dropdown-item');
             const navbarCollapse = document.getElementById('mainNavbar');
-            
+           
             mobileLinks.forEach(link => {
                 link.addEventListener('click', function() {
                     if (window.innerWidth < 992) {

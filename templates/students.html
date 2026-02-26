@@ -17,7 +17,7 @@
                 </button>
             </form>
         </div>
-        {% if session.get('role') == 'admin' %}
+        {% if session.get('is_admin') %}
         <!-- Фильтр по группе -->
         <div class="col-md-4 mb-2 mb-md-0">
             <form method="GET" class="input-group input-group-sm">
@@ -95,7 +95,7 @@
 
             <thead>
                 <tr>
-                    {% if session.get('role') == 'admin' %}
+                    {% if session.get('is_admin') %}
                     <th class="text-center">ID</th>
                     {% endif %}
                     <th class="text-center">{{ sort_link('last_name_UA', 'Прізвище') }}</th>
@@ -314,16 +314,14 @@
             <tbody>
                 {% for student in students %}
                 <tr>
-                    {% if session.get('role') == 'admin' %}
+                    {% if session.get('is_admin') %}
                     <td class="text-center">{{ student.id }}</td>
                     {% endif %}
                     <td>{{ student.last_name_UA }}</td>
                     <td>{{ student.first_name_UA }}</td>
                     <td>{{ student.middle_name_UA }}</td>
                     <td>{{ student.birth_date }}</td>
-                    {% if session.get('role') == 'admin' %}
                     <td>{{ student.group_name | default('-') }}</td>
-                    {% endif %}
                     <td>
                         <div class="progress-bar-container">
                             <div style="background: #ddd; height: 13px; width: 100%; border-radius: 10px; position: relative; margin-bottom: 5px;">
@@ -372,7 +370,7 @@
                             <a href="{{ url_for('students.edit_grades', student_id=student.id) }}" class="btn btn-sm btn-dark" title="Редагувати оцінки"><i class="bi bi-card-checklist"></i></a>
                             <a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}" class="btn btn-sm btn-warning" title="Редагувати оцінки за Прак. Атес. Курс."><i class="bi bi-star"></i></a>
                             <a href="{{ url_for('students.generate', student_id=student.id) }}" class="btn btn-sm btn-success" title="Згенерувати документ"><i class="bi bi-file-earmark-word"></i></a>
-                            {% if session.get('role') == 'admin' %}
+                            {% if session.get('is_admin') or 'manage_students' in session.get('permissions', []) %}
                                 <a href="{{ url_for('students.delete_student', student_id=student.id) }}" class="btn btn-sm btn-danger" title="Видалити студента" onclick="return confirm('Ви впевнені, що хочете видалити студента {{ student.last_name_UA }}?')"><i class="bi bi-trash3"></i></a>
                             {% endif %}
                         </div>
@@ -387,7 +385,7 @@
     <div class="student-cards-container mt-3">
         {% for student in students %}
         <div class="student-card">
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('is_admin') %}
             <div class="card-row">
                 <span class="card-label">ID:</span>
                 <span class="card-value">{{ student.id }}</span>
@@ -481,7 +479,7 @@
                         <li><a class="dropdown-item" href="{{ url_for('students.generate', student_id=student.id) }}">
                             <i class="bi bi-file-word me-2"></i>Генерувати
                         </a></li>
-                        {% if session.get('role') == 'admin' %}
+                        {% if session.get('is_admin') or 'manage_students' in session.get('permissions', []) %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item text-danger" href="{{ url_for('students.delete_student', student_id=student.id) }}"
                                onclick="return confirm('Видалити студента {{ student.last_name_UA }}?')">

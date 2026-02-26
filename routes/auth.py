@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, sessio
 from werkzeug.security import check_password_hash
 from db import get_db
 from utils import log_action
+import json
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -20,7 +21,7 @@ def login():
         username = request.form['username']
         password = request.form['password']
         conn = get_db()
-        user = conn.execute("SELECT id, password_hash, role FROM users WHERE username = ?", (username,)).fetchone()
+        user = conn.execute("SELECT id, password_hash, role, is_admin, permissions FROM users WHERE username = ?", (username,)).fetchone()
 
         if user and check_password_hash(user['password_hash'], password):
             group_ids = [row['group_id'] for row in conn.execute("SELECT group_id FROM user_groups WHERE user_id = ?", (user['id'],)).fetchall()]
@@ -28,6 +29,8 @@ def login():
             session['role'] = user['role']
             session['group_ids'] = group_ids  # Store list of group IDs
             session['username'] = username
+            session['is_admin'] = bool(user['is_admin'])
+            session['permissions'] = json.loads(user['permissions'] or '[]')
             log_action(username, "ввійшов у систему", group_ids=group_ids)
             conn.close()
             return redirect(url_for('students.student_list'))

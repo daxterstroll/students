@@ -5,14 +5,14 @@ import openpyxl
 import logging
 from werkzeug.utils import secure_filename
 from db import get_db
-from utils import log_action, login_required, transliterate_ukrainian, generate_english_name
+from utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
 from gen_docx import gen_doc
 import sqlite3
 
 students_bp = Blueprint('students', __name__)
 
 @students_bp.route('/students', methods=['GET'])
-@login_required()
+@login_required('')
 def student_list():
     """Отображение списка студентов с поиском, пагинацией, сортировкой и фильтрацией по группе."""
     # Получение параметров запроса
@@ -638,7 +638,7 @@ def edit_student(student_id):
     return render_template('edit_student.html', student=student, groups=groups)
   
 @students_bp.route('/students/<int:student_id>/delete')
-@login_required('admin')
+@login_required('manage_students')
 def delete_student(student_id):
     """Удаление студента по его ID."""
     conn = get_db()
@@ -768,7 +768,7 @@ def military_data(student_id):
     return render_template('edit_military.html', student_id=student_id, military=military)
 
 @students_bp.route('/students/<int:student_id>/military/delete')
-@login_required('admin')
+@permission_required('manage_students')
 def delete_military(student_id):
     """Удаление военных данных студента."""
     conn = get_db()
@@ -779,7 +779,7 @@ def delete_military(student_id):
     return redirect(url_for('students.student_list'))
 
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
-@login_required()
+@login_required('')
 def generate(student_id):
     """Генерация документа для студента."""
     if request.method == 'POST':
@@ -864,7 +864,7 @@ def generate(student_id):
     return render_template('generate_word.html', student_id=student_id)
 
 @students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required()
+@login_required('')
 def edit_activities_grades(student_id):
     """Редактирование оценок студента по практикам, курсовым работам и аттестациям."""
     conn = get_db()
@@ -1003,7 +1003,7 @@ def edit_activities_grades(student_id):
     )
     
 @students_bp.route('/grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required()
+@login_required('')
 def edit_grades(student_id):
     """Редактирование оценок студента."""
     conn = get_db()
@@ -1051,8 +1051,8 @@ def edit_grades(student_id):
     conn.close()
     return render_template("edit_grades.html", student=student, subjects=subjects, grade_map=grade_map)
 
-@students_bp.route('/import', methods=['GET', 'POST'])
-@login_required('admin')
+@students_bp.route('/import_from_excel', methods=['GET', 'POST'])
+@permission_required('import_from_excel')
 def import_from_excel():
     """Импорт студентов из Excel-файла."""
     if request.method == 'POST':

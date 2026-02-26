@@ -5,17 +5,36 @@ import os
 import sqlite3
 from werkzeug.security import generate_password_hash
 from db import get_db
-from utils import log_action, login_required
+from utils import log_action, permission_required
 from gen_docx import gen_doc
 import logging
 import openpyxl
 from werkzeug.utils import secure_filename
 import pandas as pd
+import json
 
 admin_bp = Blueprint('admin', __name__)
 
+# Список дозволів (на основі ваших роутів)
+PERMISSIONS = [
+    'manage_users',                 # Список користувачів та управління правами
+    'view_logs',                    # Журнал дій
+    'group_export',                 # Масова генерація документів
+    'import_from_excel',            # Інпорт студентів 
+    'manage_education_documents',   # Управління документами про освіту
+    'manage_groups',                # Управління групами
+    'manage_subjects',              # Предмети
+    'manage_activities',            # Управління діяльностями
+    'import_subjects',              # Імпорт предметів з Excel
+    'archive',                      # Управління архівом
+    'manage_students',              # Управління студентами
+    
+    # Додайте інші, якщо є
+    ]
+
+
 @admin_bp.route('/admin/manage_education_documents', methods=['GET', 'POST'])
-@login_required('admin')
+@permission_required('manage_education_documents')
 def manage_education_documents():
     db = get_db()
     cursor = db.cursor()
@@ -149,8 +168,8 @@ def manage_education_documents():
     cursor.close()
     return render_template('manage_education_documents.html', students=students, documents=documents)
 
-@admin_bp.route('/admin/groups', methods=['GET', 'POST'])
-@login_required('admin')
+@admin_bp.route('/admin/manage_groups', methods=['GET', 'POST'])
+@permission_required('manage_groups')
 def manage_groups():
     """Управление группами: просмотр, добавление, редактирование и удаление групп."""
     conn = get_db()
@@ -358,8 +377,8 @@ def manage_groups():
     conn.close()
     return render_template("manage_groups.html", groups=groups)
   
-@admin_bp.route('/admin/subjects', methods=['GET', 'POST'])
-@login_required('admin')
+@admin_bp.route('/admin/manage_subjects', methods=['GET', 'POST'])
+@permission_required('manage_subjects')
 def manage_subjects():
     """Управление предметами."""
     conn = get_db()
@@ -534,8 +553,8 @@ def manage_subjects():
     return render_template('admin_subjects.html', groups=groups, selected_group_id=selected_group_id, 
                          subjects=subjects, students=students, grades=grades, selected_subject_id=selected_subject_id)
 
-@admin_bp.route('/admin/activities', methods=['GET', 'POST'])
-@login_required('admin')
+@admin_bp.route('/admin/manage_activities', methods=['GET', 'POST'])
+@permission_required('manage_activities')
 def manage_activities():
     """Управление активностями."""
     conn = get_db()
@@ -789,8 +808,8 @@ def manage_activities():
                          selected_entity_id=selected_entity_id,
                          entity_type=selected_entity_type)
                          
-@admin_bp.route('/admin/logs')
-@login_required('admin')
+@admin_bp.route('/admin/view_logs')
+@permission_required('view_logs')
 def view_logs():
     """Отображение логов действий пользователей."""
     current_dir = os.path.dirname(__file__)
@@ -808,145 +827,312 @@ def view_logs():
     log_action(session.get('username', 'невідомо'), "переглянув логи дій користувачів")
     return render_template('view_logs.html', logs=logs[::-1])
 
-@admin_bp.route('/admin/users')
-@login_required('admin')
-def user_list():
-    """Отображение списка пользователей."""
+@admin_bp.route('/admin/users', methods=['GET', 'POST'])
+@permission_required('manage_users')
+def manage_users():
+    """
+    Головна сторінка управління користувачами:
+    - список усіх користувачів з групами
+    - форма редагування прав (is_admin + permissions)
+    """
     conn = get_db()
-    users = conn.execute("""
-        SELECT u.id, u.username, u.role,
-               GROUP_CONCAT(
-                   g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)',
-                   ', '
-               ) AS group_names
-        FROM users u
-        LEFT JOIN user_groups ug ON u.id = ug.user_id
-        LEFT JOIN groups g ON ug.group_id = g.id
-        GROUP BY u.id
-    """).fetchall()
-    
-    log_action(session.get('username', 'невідомо'), "переглянув список користувачів")
-    conn.close()
-    return render_template('user_list.html', users=users)
+    try:
+        # Виправлений запит — додана кома після u.permissions
+        users = conn.execute("""
+            SELECT 
+                u.id, 
+                u.username, 
+                u.role, 
+                u.is_admin, 
+                u.permissions,
+                GROUP_CONCAT(
+                    g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)',
+                    ', '
+                ) AS group_names
+            FROM users u
+            LEFT JOIN user_groups ug ON u.id = ug.user_id
+            LEFT JOIN groups g ON ug.group_id = g.id
+            GROUP BY u.id
+            ORDER BY u.username
+        """).fetchall()
+        
+        perm_names_ua = {
+            'manage_users':                 'Список користувачів та управління правами',
+            'view_logs':                    'Журнал дій',
+            'group_export':                 'Масова генерація документів',
+            'import_from_excel':            'Інпорт студентів',
+            'manage_education_documents':   'Управління документами про освіту',
+            'manage_groups':                'Управління групами',
+            'manage_subjects':              'Предмети',
+            'manage_activities':            'Управління діяльностями',
+            'import_subjects':              'Імпорт предметів з Excel',
+            'archive':                      'Управління архівом',
+            'manage_students':              'Управління студентами (Видалення студента та його війс. док.)',
+                 
+        }
 
-@admin_bp.route('/admin/users/add', methods=['GET', 'POST'])
-@login_required('admin')
-def add_user():
-    """Добавление нового пользователя."""
-    conn = get_db()
+        if request.method == 'POST':
+            user_id = request.form.get('user_id')
+            if not user_id:
+                flash('Не вказано користувача', 'danger')
+                return redirect(url_for('admin.manage_users'))
 
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        role = request.form['role']
-        group_ids = request.form.getlist('group_id')  # Multiple selection
-        password_hash = generate_password_hash(password)
+            is_admin = 1 if 'is_admin' in request.form else 0
+            selected_perms = [p for p in PERMISSIONS if p in request.form]
 
-        try:
-            # Выполняем вставку в таблицу users
-            cursor = conn.execute("""
-                INSERT INTO users (username, password_hash, role)
-                VALUES (?, ?, ?)
-            """, (username, password_hash, role))
-            user_id = cursor.lastrowid  # Получаем ID нового пользователя
-
-            # Добавляем связи с группами
-            for group_id in group_ids:
-                if group_id:
-                    conn.execute("""
-                        INSERT INTO user_groups (user_id, group_id)
-                        VALUES (?, ?)
-                    """, (user_id, group_id))
+            conn.execute("""
+                UPDATE users 
+                SET is_admin = ?, permissions = ? 
+                WHERE id = ?
+            """, (is_admin, json.dumps(selected_perms), user_id))
 
             conn.commit()
-            log_action(session.get('username', 'невідомо'), f"додав користувача {username}")
-            conn.close()
-            return redirect(url_for('admin.user_list'))
-        except sqlite3.IntegrityError as e:
-            conn.rollback()  # Откатываем изменения при ошибке
-            flash('Користувач з таким ім\'ям уже існує.', 'error')
-            logging.error(f"Помилка додавання користувача {username}: {e}")
-        except Exception as e:
-            conn.rollback()  # Откатываем изменения при любой другой ошибке
-            flash('Сталася помилка при додаванні користувача.', 'error')
-            logging.error(f"Помилка додавання користувача {username}: {e}")
+            log_action(
+                session.get('username', 'невідомо'),
+                f"оновив права користувача ID {user_id} (is_admin={is_admin})"
+            )
+            flash('Права успішно оновлено', 'success')
+            return redirect(url_for('admin.manage_users'))
 
-    groups = conn.execute("""
-        SELECT id, name, start_year, study_form, program_credits,
-               name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
-        FROM groups
-        ORDER BY name, start_year
-    """).fetchall()
-    conn.close()
-    log_action(session.get('username', 'невідомо'), "відкрив форму додавання користувача")
+        return render_template(
+            'manage_users.html',
+            users=users,
+            permissions=PERMISSIONS,
+            perm_names_ua=perm_names_ua
+        )
+
+    except sqlite3.Error as e:
+        flash(f'Помилка бази даних: {e}', 'danger')
+        return redirect(url_for('admin.manage_users'))
+
+    finally:
+        conn.close()
+
+
+@admin_bp.route('/admin/users/add', methods=['GET', 'POST'])
+@permission_required('manage_users')
+def add_user():
+    """Додавання нового користувача"""
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        role = request.form.get('role')
+        group_ids = request.form.getlist('group_id')
+
+        if not all([username, password, role]):
+            flash('Заповніть усі обов’язкові поля', 'danger')
+            return redirect(url_for('admin.add_user'))
+
+        is_admin = 1 if role == 'admin' else 0
+        permissions = json.dumps([])  # за замовчуванням без спеціальних прав
+
+        conn = get_db()
+        try:
+            # Перевірка на унікальність імені
+            exists = conn.execute(
+                "SELECT 1 FROM users WHERE username = ?",
+                (username,)
+            ).fetchone()
+
+            if exists:
+                flash(f'Користувач з ім’ям "{username}" вже існує', 'danger')
+                return redirect(url_for('admin.add_user'))
+
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, role, is_admin, permissions)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (username, generate_password_hash(password), role, is_admin, permissions)
+            )
+            user_id = conn.lastrowid
+
+            # Додаємо зв’язки з групами
+            for gid in group_ids:
+                if gid:
+                    conn.execute(
+                        "INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)",
+                        (user_id, gid)
+                    )
+
+            conn.commit()
+            log_action(
+                session.get('username', 'невідомо'),
+                f"додав нового користувача '{username}' (ID {user_id})"
+            )
+            flash('Користувача успішно додано', 'success')
+            return redirect(url_for('admin.manage_users'))
+
+        except sqlite3.IntegrityError as e:
+            flash(f'Помилка бази даних: {e}', 'danger')
+        finally:
+            conn.close()
+
+    # GET — показуємо форму
+    conn = get_db()
+    try:
+        groups = conn.execute("""
+            SELECT id,
+                   name || ' (' || start_year || ', ' || study_form || ', ' ||
+                   program_credits || ' кредитів)' AS display_name
+            FROM groups
+            ORDER BY name, start_year
+        """).fetchall()
+    finally:
+        conn.close()
+
     return render_template('add_user.html', groups=groups)
 
-@admin_bp.route('/admin/users/<int:user_id>/delete')
-@login_required('admin')
-def delete_user(user_id):
-    """Удаление пользователя."""
-    conn = get_db()
-    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
-    conn.commit()
-    log_action(session.get('username', 'невідомо'), f"видалив користувача ID {user_id}")
-    conn.close()
-    return redirect(url_for('admin.user_list'))
-
-@admin_bp.route('/admin/users/<int:user_id>/change_password', methods=['GET', 'POST'])
-@login_required('admin')
-def change_password(user_id):
-    """Смена пароля пользователя."""
-    if request.method == 'POST':
-        new_password = request.form['password']
-        new_hash = generate_password_hash(new_password)
-        conn = get_db()
-        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user_id))
-        conn.commit()
-        log_action(session.get('username', 'невідомо'), f"змінив пароль користувача ID {user_id}")
-        conn.close()
-        return redirect(url_for('admin.user_list'))
-
-    log_action(session.get('username', 'невідомо'), f"відкрив форму зміни пароля для користувача ID {user_id}")
-    return render_template('change_password.html', user_id=user_id)
 
 @admin_bp.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
-@login_required('admin')
+@permission_required('manage_users')
 def edit_user(user_id):
-    """Редактирование данных пользователя."""
+    """Редагування ролі та груп користувача"""
     conn = get_db()
+    try:
+        if request.method == 'POST':
+            role = request.form.get('role')
+            group_ids = request.form.getlist('group_id')
 
-    if request.method == 'POST':
-        new_role = request.form['role']
-        group_ids = request.form.getlist('group_id')  # Multiple selection
-        conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
-        conn.execute("DELETE FROM user_groups WHERE user_id = ?", (user_id,))
-        for group_id in group_ids:
-            if group_id:
-                conn.execute("""
-                    INSERT INTO user_groups (user_id, group_id)
-                    VALUES (?, ?)
-                """, (user_id, group_id))
-        conn.commit()
-        log_action(session.get('username', 'невідомо'), f"змінив роль/групи користувача ID {user_id}")
+            if not role:
+                flash('Роль обов’язкова', 'danger')
+                return redirect(url_for('admin.edit_user', user_id=user_id))
+
+            is_admin = 1 if role == 'admin' else 0
+
+            conn.execute(
+                "UPDATE users SET role = ?, is_admin = ? WHERE id = ?",
+                (role, is_admin, user_id)
+            )
+
+            # Очищаємо старі зв’язки та додаємо нові
+            conn.execute("DELETE FROM user_groups WHERE user_id = ?", (user_id,))
+            for gid in group_ids:
+                if gid:
+                    conn.execute(
+                        "INSERT INTO user_groups (user_id, group_id) VALUES (?, ?)",
+                        (user_id, gid)
+                    )
+
+            conn.commit()
+            log_action(
+                session.get('username', 'невідомо'),
+                f"змінив роль/групи користувача ID {user_id} → роль: {role}"
+            )
+            flash('Дані користувача оновлено', 'success')
+            return redirect(url_for('admin.manage_users'))
+
+        # GET — показуємо форму
+        user = conn.execute(
+            "SELECT id, username, role FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+
+        if not user:
+            flash('Користувача не знайдено', 'danger')
+            return redirect(url_for('admin.manage_users'))
+
+        current_groups = conn.execute(
+            "SELECT group_id FROM user_groups WHERE user_id = ?",
+            (user_id,)
+        ).fetchall()
+        current_group_ids = [row['group_id'] for row in current_groups]
+
+        groups = conn.execute("""
+            SELECT id,
+                   name || ' (' || start_year || ', ' || study_form || ', ' ||
+                   program_credits || ' кредитів)' AS display_name
+            FROM groups
+            ORDER BY name, start_year
+        """).fetchall()
+
+        return render_template(
+            'edit_user.html',
+            user=user,
+            groups=groups,
+            current_group_ids=current_group_ids
+        )
+
+    finally:
         conn.close()
-        return redirect(url_for('admin.user_list'))
 
-    user = conn.execute("SELECT id, username, role FROM users WHERE id = ?", (user_id,)).fetchone()
-    current_groups = conn.execute("SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)).fetchall()
-    current_group_ids = [row['group_id'] for row in current_groups]
-    groups = conn.execute("""
-        SELECT id, name, start_year, study_form, program_credits,
-               name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
-        FROM groups
-        ORDER BY name, start_year
-    """).fetchall()
-    conn.close()
 
-    log_action(session.get('username', 'невідомо'), f"відкрив форму редагування користувача ID {user_id}")
-    return render_template('edit_user.html', user=user, groups=groups, current_group_ids=current_group_ids)
+@admin_bp.route('/admin/users/<int:user_id>/change-password', methods=['GET', 'POST'])
+@permission_required('manage_users')
+def change_password(user_id):
+    """Зміна пароля користувача"""
+    if request.method == 'POST':
+        password = request.form.get('password')
+        if not password or len(password) < 6:
+            flash('Пароль повинен бути не коротшим 6 символів', 'danger')
+            return redirect(url_for('admin.change_password', user_id=user_id))
 
+        conn = get_db()
+        try:
+            conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (generate_password_hash(password), user_id)
+            )
+            conn.commit()
+            log_action(
+                session.get('username', 'невідомо'),
+                f"змінив пароль користувача ID {user_id}"
+            )
+            flash('Пароль успішно змінено', 'success')
+            return redirect(url_for('admin.manage_users'))
+        finally:
+            conn.close()
+
+    # GET — показ форми
+    conn = get_db()
+    try:
+        user = conn.execute(
+            "SELECT username FROM users WHERE id = ?",
+            (user_id,)
+        ).fetchone()
+        if not user:
+            flash('Користувача не знайдено', 'danger')
+            return redirect(url_for('admin.manage_users'))
+    finally:
+        conn.close()
+
+    return render_template('change_password.html', user_id=user_id, username=user['username'])
+
+
+@admin_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
+@permission_required('manage_users')
+def delete_user(user_id):
+    """Видалення користувача (тільки POST для безпеки)"""
+    if request.method == 'POST':
+        conn = get_db()
+        try:
+            username = conn.execute(
+                "SELECT username FROM users WHERE id = ?",
+                (user_id,)
+            ).fetchone()
+
+            if not username:
+                flash('Користувача не знайдено', 'danger')
+                return redirect(url_for('admin.manage_users'))
+
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            conn.execute("DELETE FROM user_groups WHERE user_id = ?", (user_id,))
+            conn.commit()
+
+            log_action(
+                session.get('username', 'невідомо'),
+                f"видалив користувача '{username['username']}' (ID {user_id})"
+            )
+            flash('Користувача успішно видалено', 'success')
+        except sqlite3.Error as e:
+            flash(f'Помилка при видаленні: {e}', 'danger')
+        finally:
+            conn.close()
+
+    return redirect(url_for('admin.manage_users'))
+    
 @admin_bp.route('/admin/group_export', methods=['GET', 'POST'])
-@login_required('admin')
+@permission_required('group_export')
 def group_export():
     """Отображение формы экспорта документов для группы."""
     conn = get_db()
@@ -1024,7 +1210,7 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @admin_bp.route('/admin/import_subjects', methods=['GET', 'POST'])
-@login_required('admin')
+@permission_required('import_subjects')
 def import_subjects():
     """Импорт предметов из Excel-файла."""
     conn = get_db()
@@ -1144,7 +1330,7 @@ def import_subjects():
     return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
 @admin_bp.route('/admin/generate_group_docs', methods=['GET', 'POST'])
-@login_required('admin')
+@permission_required('group_export')
 def generate_group_docs():
     """Генерация ZIP-архива с документами для группы."""
     group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
@@ -1245,7 +1431,7 @@ def generate_group_docs():
     return send_file(zip_path, as_attachment=True)
     
 @admin_bp.route('/admin/archive/<int:group_id>', methods=['POST'])
-@login_required('admin')
+@permission_required('archive')
 def archive_group(group_id):
     conn = get_db()
     cursor = conn.cursor()
@@ -1271,7 +1457,7 @@ def archive_group(group_id):
     return redirect(url_for('admin.manage_groups'))
     
 @admin_bp.route('/admin/unarchive_group/<int:group_id>', methods=['POST'])
-@login_required('admin')
+@permission_required('archive')
 def unarchive_group(group_id):
     """Разархивирование группы и связанных студентов."""
     conn = get_db()
@@ -1298,7 +1484,7 @@ def unarchive_group(group_id):
     return redirect(url_for('admin.archive'))
    
 @admin_bp.route('/admin/archive')
-@login_required('admin')
+@permission_required('archive')
 def archive():
     """Отображение списка всех архивных групп с возможностью просмотра студентов."""
     conn = get_db()

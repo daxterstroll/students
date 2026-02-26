@@ -73,33 +73,25 @@ CREATE TABLE IF NOT EXISTS "grades" (
 	"subject_id"	INTEGER,
 	"grade"	TEXT,
 	PRIMARY KEY("id" AUTOINCREMENT),
-	FOREIGN KEY("student_id") REFERENCES "students"("id"),
-	FOREIGN KEY("subject_id") REFERENCES "subjects"("id")
+	FOREIGN KEY("subject_id") REFERENCES "subjects"("id"),
+	FOREIGN KEY("student_id") REFERENCES "students"("id")
 );
 CREATE TABLE IF NOT EXISTS "groups" (
 	"id"	INTEGER,
 	"name"	TEXT NOT NULL,
 	"start_year"	INTEGER NOT NULL,
 	"study_form"	TEXT NOT NULL CHECK("study_form" IN ('Денна', 'Заочна')),
-	"program_credits"	INTEGER NOT NULL CHECK("program_credits" IN (90, 120, 180, 240)),
-	"qualification_name"	TEXT,
-	"degree_level"	TEXT,
-	"specialty"	TEXT,
-	"educational_program"	TEXT,
-	"knowledge_area"	TEXT,
-	"qualification_name_en"	TEXT,
-	"degree_level_en"	TEXT,
-	"specialty_en"	TEXT,
-	"educational_program_en"	TEXT,
-	"knowledge_area_en"	TEXT,
-	"institution_name_and_status"	TEXT,
-	"institution_name_and_status_en"	TEXT,
-	"entry_requirements"	TEXT,
-	"entry_requirements_en"	TEXT,
-	"learning_outcomes"	TEXT,
-	"learning_outcomes_en"	TEXT,
-	"program_includes"	TEXT,
-	"program_includes_en"	TEXT,
+	"program_credits"	INTEGER NOT NULL,
+	"degree_level"	TEXT NOT NULL,
+	"degree_level_en"	TEXT NOT NULL,
+	"knowledge_area"	TEXT NOT NULL,
+	"knowledge_area_en"	TEXT NOT NULL,
+	"specialty"	TEXT NOT NULL,
+	"specialty_en"	TEXT NOT NULL,
+	"educational_program"	TEXT NOT NULL,
+	"educational_program_en"	TEXT NOT NULL,
+	"qualification_name"	TEXT NOT NULL,
+	"qualification_name_en"	TEXT NOT NULL,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	UNIQUE("name","start_year")
@@ -167,13 +159,16 @@ CREATE TABLE IF NOT EXISTS "users" (
 	"username"	TEXT UNIQUE,
 	"password_hash"	TEXT,
 	"role"	TEXT NOT NULL CHECK("role" IN ('admin', 'user')),
+	"is_admin"	INTEGER DEFAULT 0,
+	"permissions"	TEXT DEFAULT '[]',
 	PRIMARY KEY("id" AUTOINCREMENT)
 );
 """)
 
-for u,p,r in [('admin','admin123','admin')]:
-    cur.execute("INSERT OR IGNORE INTO users (username,password_hash,role) VALUES (?, ?, ?)",
-                (u, generate_password_hash(p), r))
+# Додаємо користувачів
+for u, p, r, g in [('admin', 'admin123', 'admin', '1')]:
+    cur.execute("INSERT OR IGNORE INTO users (username, password_hash, role, is_admin) VALUES (?, ?, ?, ?)",
+                (u, generate_password_hash(p), r, g))
 conn.commit()
 conn.close()
-print("✅ DB и пользователи созданы.")
+print("✅ DB та користувачі створені.")
