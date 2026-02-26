@@ -197,8 +197,8 @@ def manage_groups():
                 flash("Усі поля мають бути заповнені.", "error")
             elif study_form not in ['Денна', 'Заочна']:
                 flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
-            elif program_credits not in ['180', '240']:
-                flash("Кількість кредитів має бути 180 або 240.", "error")
+            elif program_credits not in ['90', '120', '180', '240']:
+                flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:
                 try:
                     start_year = int(start_year)
@@ -274,8 +274,8 @@ def manage_groups():
                 flash("Усі поля мають бути заповнені.", "error")
             elif study_form not in ['Денна', 'Заочна']:
                 flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
-            elif program_credits not in ['180', '240']:
-                flash("Кількість кредитів має бути 180 або 240.", "error")
+            elif program_credits not in ['90', '120', '180', '240']:
+                flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:
                 try:
                     start_year = int(start_year)
