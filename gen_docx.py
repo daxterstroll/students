@@ -375,6 +375,10 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     ]
     # global_logger.debug(f"Новые поля в student_dict: {[(k, student_dict.get(k, '')) for k in new_fields]}")
 
+    if degree_level == "Магістр":
+        student_dict['top_qualification_text'] = "- підготовка кваліфікаційної роботи / preparation of qualification work"
+        student_dict['bottom_qualification_text'] = "- захист кваліфікаційної роботи / defense of qualification work"
+
     # Обработка текста для полей с разделением на отдельные строки по \n и удалением лишнего \n
     fields_to_process = ['program_includes', 'program_includes_en', 'learning_outcomes', 'learning_outcomes_en']
     for field in fields_to_process:

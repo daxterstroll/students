@@ -15,7 +15,14 @@
             <!-- можеш додати інші шаблони -->
         </select>
     </div>
-    <button type="submit" class="btn btn-success">Створити документ</button>
+	
+	{% if session.get('role') == 'admin' %}
+		<b>
+			<label class="form-label">УВАГА!!! Перевірити місяць закінчення навчання в шаблоні додатку в двох місцях!</label></br>
+	    </b>
+	{% endif %}
+	
+    <button type="submit" class="btn btn-success">Створити документ</button>	
     <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary">Назад</a>
 </form>
 {% endblock %}

@@ -91,17 +91,15 @@
             </div>
             <div class="col-md-6">
                 <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
-            	<select name="degree_level_en" id="degree_level_en" class="form-select" required>
+            	<select name="institution_name_and_status" id="degree_level" class="form-select" required>
                     <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
-                    <option value="Львів">Львів</option>
                 </select>
 			
 			</div>
             <div class="col-md-6">
                 <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                <select name="degree_level_en" id="degree_level_en" class="form-select" required>
+                <select name="institution_name_and_status_en" id="degree_level_en" class="form-select" required>
                     <option value="Private Higher Educational Institution 'European University'. Private ownership. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Private Higher Educational Institution 'European University'. Private ownership. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.</option>
-                    <option value="Lviv">Lviv</option>
                 </select>
 			</div>
             <div class="col-md-6">
@@ -113,20 +111,20 @@
                 <textarea name="entry_requirements_en" id="entry_requirements_en" class="form-control" rows="4" placeholder="Напр., ZNO certificate in Mathematics (min. 150 points). ZNO certificate in Ukrainian Language (min. 140 points). Motivation letter." ></textarea>
             </div>
             <div class="col-md-6">
-                <label for="learning_outcomes" class="form-label">Програмні результати навчання</label>
-                <textarea name="learning_outcomes" id="learning_outcomes" class="form-control" rows="4" placeholder="Напр., Розробка програмного забезпечення. Аналіз даних. Управління проектами." ></textarea>
-            </div>
-            <div class="col-md-6">
-                <label for="learning_outcomes_en" class="form-label">Programme Learning Outcomes (EN)</label>
-                <textarea name="learning_outcomes_en" id="learning_outcomes_en" class="form-control" rows="4" placeholder="Напр., Software development. Data analysis. Project management." ></textarea>
-            </div>
-            <div class="col-md-6">
                 <label for="program_includes" class="form-label">Програма підготовки включає</label>
                 <textarea name="program_includes" id="program_includes" class="form-control" rows="4" placeholder="Напр., Курси програмування. Практичні заняття. Дипломна робота." ></textarea>
             </div>
             <div class="col-md-6">
                 <label for="program_includes_en" class="form-label">The Program Includes (EN)</label>
                 <textarea name="program_includes_en" id="program_includes_en" class="form-control" rows="4" placeholder="Напр., Programming courses. Practical training. Thesis project." ></textarea>
+            </div>
+			<div class="col-md-6">
+                <label for="learning_outcomes" class="form-label">Програмні результати навчання</label>
+                <textarea name="learning_outcomes" id="learning_outcomes" class="form-control" rows="4" placeholder="Напр., Розробка програмного забезпечення. Аналіз даних. Управління проектами." ></textarea>
+            </div>
+            <div class="col-md-6">
+                <label for="learning_outcomes_en" class="form-label">Programme Learning Outcomes (EN)</label>
+                <textarea name="learning_outcomes_en" id="learning_outcomes_en" class="form-control" rows="4" placeholder="Напр., Software development. Data analysis. Project management." ></textarea>
             </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
@@ -285,42 +283,6 @@
                         </div>
                     {% endif %}
 
-                    <!-- Програмні результати навчання (аккордеон) -->
-                    <div class="{% if not group.learning_outcomes_en or group.learning_outcomes_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
-                        <div class="accordion" id="learningOutcomesAccordion{{ group.id }}">
-                            <div class="accordion-item">
-                                <h2 class="accordion-header" id="learningOutcomesHeading{{ group.id }}">
-                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesCollapse{{ group.id }}">
-                                        <strong>Програмні результати навчання</strong>
-                                    </button>
-                                </h2>
-                                <div id="learningOutcomesCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesHeading{{ group.id }}" data-bs-parent="#learningOutcomesAccordion{{ group.id }}">
-                                    <div class="accordion-body">
-                                        <div class="multiline">{{ group.learning_outcomes or '' }}</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% if group.learning_outcomes_en and group.learning_outcomes_en != '' %}
-                        <div class="col-md-6">
-                            <div class="accordion" id="learningOutcomesEnAccordion{{ group.id }}">
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header" id="learningOutcomesEnHeading{{ group.id }}">
-                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesEnCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesEnCollapse{{ group.id }}">
-                                            <strong>Programme Learning Outcomes (EN)</strong>
-                                        </button>
-                                    </h2>
-                                    <div id="learningOutcomesEnCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesEnHeading{{ group.id }}" data-bs-parent="#learningOutcomesEnAccordion{{ group.id }}">
-                                        <div class="accordion-body">
-                                            <div class="multiline">{{ group.learning_outcomes_en or '' }}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    {% endif %}
-
                     <!-- Програма підготовки включає (аккордеон) -->
                     <div class="{% if not group.program_includes_en or group.program_includes_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
                         <div class="accordion" id="programIncludesAccordion{{ group.id }}">
@@ -350,6 +312,42 @@
                                     <div id="programIncludesEnCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="programIncludesEnHeading{{ group.id }}" data-bs-parent="#programIncludesEnAccordion{{ group.id }}">
                                         <div class="accordion-body">
                                             <div class="multiline">{{ group.program_includes_en or '' }}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    {% endif %}
+					                    
+					<!-- Програмні результати навчання (аккордеон) -->
+                    <div class="{% if not group.learning_outcomes_en or group.learning_outcomes_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <div class="accordion" id="learningOutcomesAccordion{{ group.id }}">
+                            <div class="accordion-item">
+                                <h2 class="accordion-header" id="learningOutcomesHeading{{ group.id }}">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesCollapse{{ group.id }}">
+                                        <strong>Програмні результати навчання</strong>
+                                    </button>
+                                </h2>
+                                <div id="learningOutcomesCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesHeading{{ group.id }}" data-bs-parent="#learningOutcomesAccordion{{ group.id }}">
+                                    <div class="accordion-body">
+                                        <div class="multiline">{{ group.learning_outcomes or '' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% if group.learning_outcomes_en and group.learning_outcomes_en != '' %}
+                        <div class="col-md-6">
+                            <div class="accordion" id="learningOutcomesEnAccordion{{ group.id }}">
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header" id="learningOutcomesEnHeading{{ group.id }}">
+                                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#learningOutcomesEnCollapse{{ group.id }}" aria-expanded="false" aria-controls="learningOutcomesEnCollapse{{ group.id }}">
+                                            <strong>Programme Learning Outcomes (EN)</strong>
+                                        </button>
+                                    </h2>
+                                    <div id="learningOutcomesEnCollapse{{ group.id }}" class="accordion-collapse collapse" aria-labelledby="learningOutcomesEnHeading{{ group.id }}" data-bs-parent="#learningOutcomesEnAccordion{{ group.id }}">
+                                        <div class="accordion-body">
+                                            <div class="multiline">{{ group.learning_outcomes_en or '' }}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -468,20 +466,20 @@
                                         <textarea name="entry_requirements_en" id="entry_requirements_en{{ group.id }}" class="form-control" rows="4" >{{ group.entry_requirements_en or '' }}</textarea>
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="learning_outcomes{{ group.id }}" class="form-label">Програмні результати навчання</label>
-                                        <textarea name="learning_outcomes" id="learning_outcomes{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes or '' }}</textarea>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="learning_outcomes_en{{ group.id }}" class="form-label">Programme Learning Outcomes (EN)</label>
-                                        <textarea name="learning_outcomes_en" id="learning_outcomes_en{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes_en or '' }}</textarea>
-                                    </div>
-                                    <div class="col-md-6">
                                         <label for="program_includes{{ group.id }}" class="form-label">Програма підготовки включає</label>
                                         <textarea name="program_includes" id="program_includes{{ group.id }}" class="form-control" rows="4" >{{ group.program_includes or '' }}</textarea>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="program_includes_en{{ group.id }}" class="form-label">The Program Includes (EN)</label>
                                         <textarea name="program_includes_en" id="program_includes_en{{ group.id }}" class="form-control" rows="4" >{{ group.program_includes_en or '' }}</textarea>
+                                    </div>
+									<div class="col-md-6">
+                                        <label for="learning_outcomes{{ group.id }}" class="form-label">Програмні результати навчання</label>
+                                        <textarea name="learning_outcomes" id="learning_outcomes{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="learning_outcomes_en{{ group.id }}" class="form-label">Programme Learning Outcomes (EN)</label>
+                                        <textarea name="learning_outcomes_en" id="learning_outcomes_en{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes_en or '' }}</textarea>
                                     </div>
                                     <div class="col-12">
                                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
