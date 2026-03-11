@@ -610,8 +610,18 @@ def manage_subjects():
         cursor.execute('SELECT * FROM subjects WHERE group_id = ? ORDER BY position', (selected_group_id,))
         subjects = cursor.fetchall()
         if selected_subject_id:
-            cursor.execute('SELECT * FROM students WHERE group_id = ? ORDER BY last_name_UA', (selected_group_id,))
+            cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
             students = cursor.fetchall()
+
+            import locale
+            locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
+
+            students = sorted(
+                students,
+                key=lambda s: locale.strxfrm(
+                    f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+                )
+            )
             cursor.execute('SELECT id, student_id, subject_id, grade FROM grades WHERE subject_id = ?', (selected_subject_id,))
             grades = cursor.fetchall()
     
@@ -831,8 +841,18 @@ def manage_activities():
                 if selected_entity_id:
                     try:
                         selected_entity_id = int(selected_entity_id)
-                        cursor.execute('SELECT * FROM students WHERE group_id = ? ORDER BY last_name_UA', (selected_group_id,))
+                        cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
                         students = cursor.fetchall()
+
+                        import locale
+                        locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
+
+                        students = sorted(
+                            students,
+                            key=lambda s: locale.strxfrm(
+                                f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+                            )
+                        )
                         cursor.execute('SELECT id, student_id, entity_id, entity_type, grade, name FROM activity_grades WHERE entity_id = ? AND entity_type = ?', 
                                      (selected_entity_id, selected_entity_type))
                         grades = cursor.fetchall()

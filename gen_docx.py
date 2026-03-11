@@ -408,34 +408,57 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         raise
 
     # Проверка на диплом с отличием с отладочной информацией
-    context['diploma_with_honor_text'] = student_dict.get('last_name_UA', '')  # Значение по умолчанию
-    context['diploma_with_honor_text_en'] = student_dict.get('last_name_en', '')  # Значение по умолчанию
+    context['diploma_with_honor_text'] = student_dict.get('last_name_UA', '')
+    context['diploma_with_honor_text_en'] = student_dict.get('last_name_en', '')
+
     if 'adddiplom' in template.lower():
         global_logger.debug(f"Проверка диплома с отличием для шаблона {template}")
-        if context.get('subjects_grades') and context.get('practice_data') and \
-           context.get('coursework_data') and context.get('attestation_data'):
-            all_grades = (context['subjects_grades'] + context['practice_data'] + context['coursework_data'])
-            total_grades = len(all_grades)
-            # global_logger.debug(f"Всего оценок: {total_grades}, данные: {all_grades}")
-            if total_grades > 0:
-                excellent_count = sum(1 for grade in all_grades if 'Відмінно / Excellent' in grade.get('grade', ''))
-                good_count = sum(1 for grade in all_grades if 'Добре / Good' in grade.get('grade', ''))
-                other_count = total_grades - excellent_count - good_count
-                attestation_grade = next((grade.get('grade', '') for grade in context['attestation_data'] if grade.get('grade')), '')
-                # global_logger.debug(f"Отличных: {excellent_count}, Хороших: {good_count}, Других: {other_count}, Аттестация: {attestation_grade}")
 
-                if excellent_count / total_grades >= 0.75 and other_count == 0 and 'Відмінно / Excellent' in attestation_grade:
-                    context['diploma_with_honor_text'] = 'Диплом з відзнакою'
-                    context['diploma_with_honor_text_en'] = 'Diploma with honours'
-                    # global_logger.debug("Критерий выполнен: Диплом з відзнакою / Diploma with honours")
-                else:
-                    context['diploma_with_honor_text'] = 'Інформація відсутня'
-                    context['diploma_with_honor_text_en'] = 'Information is absent'
-                    # global_logger.debug("Критерий не выполнен: Информація відсутня / Information is absent")
+        all_grades = []
+
+        if context.get('subjects_grades'):
+            all_grades += context['subjects_grades']
+
+        if context.get('practice_data'):
+            all_grades += context['practice_data']
+
+        if context.get('coursework_data'):
+            all_grades += context['coursework_data']
+
+        total_grades = len(all_grades)
+
+        if total_grades > 0:
+            excellent_count = sum(
+                1 for grade in all_grades
+                if 'Відмінно / Excellent' in grade.get('grade', '')
+            )
+
+            good_count = sum(
+                1 for grade in all_grades
+                if 'Добре / Good' in grade.get('grade', '')
+            )
+
+            other_count = total_grades - excellent_count - good_count
+
+            attestation_grade = ''
+            if context.get('attestation_data'):
+                attestation_grade = next(
+                    (grade.get('grade', '') for grade in context['attestation_data'] if grade.get('grade')),
+                    ''
+                )
+
+            if (
+                excellent_count / total_grades >= 0.75
+                and other_count == 0
+                and (not attestation_grade or 'Відмінно / Excellent' in attestation_grade)
+            ):
+                context['diploma_with_honor_text'] = 'Диплом з відзнакою'
+                context['diploma_with_honor_text_en'] = 'Diploma with honours'
             else:
-                global_logger.debug("Нет оценок для анализа")
+                context['diploma_with_honor_text'] = 'Інформація відсутня'
+                context['diploma_with_honor_text_en'] = 'Information is absent'
         else:
-            global_logger.debug("Отсутствуют данные для проверки диплома с отличием")
+            global_logger.debug("Нет оценок для анализа")
 
     try:
         doc.render(context)
