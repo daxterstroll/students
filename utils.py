@@ -132,45 +132,75 @@ def permission_required(permission=None):
     return decorator
     
     
-def transliterate_ukrainian(text):
-    """Транслитерация украинского текста по правилам Постановления №55-2010."""
+import re
+
+def transliterate_ukrainian(text: str) -> str:
+    """
+    Транслитерация украинского текста согласно Постановлению КМУ №55-2010
+    https://zakon.rada.gov.ua/laws/show/55-2010-п
+    """
+
     if not text or not isinstance(text, str):
         return ""
 
-    # Правила транслитерации согласно Постановлению №55-2010
-    translit_rules = {
-        'а': 'a', 'б': 'b', 'в': 'v', 'г': 'h', 'ґ': 'g',
-        'д': 'd', 'е': 'e', 'є': 'ye', 'ж': 'zh', 'з': 'z',
-        'и': 'y', 'і': 'i', 'ї': 'yi', 'й': 'y', 'к': 'k',
-        'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p',
-        'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f',
-        'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
-        'ь': '', 'ю': 'yu', 'я': 'ya', 'є': 'ie', 'ї': 'i',
-        'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'H', 'Ґ': 'G',
-        'Д': 'D', 'Е': 'E', 'Є': 'Ye', 'Ж': 'Zh', 'З': 'Z',
-        'И': 'Y', 'І': 'I', ' Ї': 'Yi', 'Й': 'Y', 'К': 'K',
-        'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P',
-        'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F',
-        'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
-        'Ь': '', 'Ю': 'Yu', 'Я': 'Ya', 'Є': 'Ie', ' Ї': 'I'
+    # базовая таблица
+    base = {
+        'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e',
+        'ж':'zh','з':'z','и':'y','і':'i','й':'i','к':'k','л':'l',
+        'м':'m','н':'n','о':'o','п':'p','р':'r','с':'s','т':'t',
+        'у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch',
+        'ь':'','’':'','\'':'',
+
+        'А':'A','Б':'B','В':'V','Г':'H','Ґ':'G','Д':'D','Е':'E',
+        'Ж':'Zh','З':'Z','И':'Y','І':'I','Й':'I','К':'K','Л':'L',
+        'М':'M','Н':'N','О':'O','П':'P','Р':'R','С':'S','Т':'T',
+        'У':'U','Ф':'F','Х':'Kh','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Shch',
+        'Ь':''
     }
 
-    result = ''
+    # йотированные
+    special_start = {
+        'є':'ye','ї':'yi','ю':'yu','я':'ya',
+        'Є':'Ye','Ї':'Yi','Ю':'Yu','Я':'Ya'
+    }
+
+    special_other = {
+        'є':'ie','ї':'i','ю':'iu','я':'ia',
+        'Є':'Ie','Ї':'I','Ю':'Iu','Я':'Ia'
+    }
+
+    result = []
     i = 0
-    while i < len(text):
+    length = len(text)
+
+    while i < length:
+
+        # правило зг
+        if i + 1 < length and text[i:i+2].lower() == "зг":
+            if text[i].isupper():
+                result.append("Zgh")
+            else:
+                result.append("zgh")
+            i += 2
+            continue
+
         char = text[i]
-        if i + 1 < len(text):
-            # Проверяем сочетания для особых случаев (например, 'зг' -> 'zgh')
-            bigram = text[i:i+2].lower()
-            if bigram in {'зг': 'zgh', 'ЗГ': 'Zgh'}:
-                result += translit_rules.get(bigram[0], bigram[0]) + 'gh'
-                i += 2
-                continue
-        # Одиночный символ
-        result += translit_rules.get(char, char)
+
+        # начало слова
+        start = i == 0 or text[i-1] in " -'’"
+
+        # йотированные
+        if char in special_start:
+            if start:
+                result.append(special_start[char])
+            else:
+                result.append(special_other[char])
+        else:
+            result.append(base.get(char, char))
+
         i += 1
 
-    return result
+    return "".join(result)
 
 # Пример использования для генерации полного имени
 def generate_english_name(last_name_ua, first_name_ua):

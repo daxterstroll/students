@@ -638,7 +638,7 @@ def edit_student(student_id):
     return render_template('edit_student.html', student=student, groups=groups)
   
 @students_bp.route('/students/<int:student_id>/delete')
-@login_required('manage_students')
+@permission_required('manage_students')
 def delete_student(student_id):
     """Удаление студента по его ID."""
     conn = get_db()
