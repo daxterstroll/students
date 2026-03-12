@@ -413,6 +413,15 @@
                             </li>
                             {% endif %}
 
+                            {% if session.get('is_admin') or 'manage_accreditations' in session.get('permissions', []) %}
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('admin.manage_accreditations') }}">
+                                    <i class="bi bi-award"></i>
+                                    Управління акредитаціями
+                                </a>
+                            </li>
+                            {% endif %}
+
                             {% if session.get('is_admin') or 'manage_archive' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.archive') }}">
@@ -479,6 +488,13 @@
                             <a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link">
                                 <i class="bi bi-file-earmark-text"></i>
                                 Документи освіти
+                            </a>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_accreditations' in session.get('permissions', []) %}
+                            <a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link">
+                                <i class="bi bi-award"></i>
+                                Управління акредитаціями
                             </a>
                             {% endif %}
 

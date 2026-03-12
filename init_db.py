@@ -163,6 +163,13 @@ CREATE TABLE IF NOT EXISTS "users" (
 	"permissions"	TEXT DEFAULT '[]',
 	PRIMARY KEY("id" AUTOINCREMENT)
 );
+CREATE TABLE accreditations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    degree TEXT NOT NULL,          
+    specialty TEXT NOT NULL,       
+    text_ua TEXT,
+    text_en TEXT
+);
 """)
 
 # Додаємо користувачів

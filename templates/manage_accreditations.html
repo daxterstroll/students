@@ -1,0 +1,122 @@
+{% extends 'layout.html' %}
+
+{% block title %}Акредитація{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2><i class="bi bi-award"></i> Акредитація</h2>
+
+    <!-- Форма для додавання акредитації -->
+    <h4 class="mt-4">Додати акредитацію</h4>
+    <form method="post" class="mb-4 row g-3">
+        <input type="hidden" name="add" value="1">
+
+        <div class="col-md-3">
+            <label class="form-label">Ступінь</label>
+            <select name="degree" class="form-select">
+                <option value="Бакалавр">Бакалавр</option>
+                <option value="Магістр">Магістр</option>
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label class="form-label">Спеціальність</label>
+            <select name="specialty" class="form-select">
+                {% for g in groups %}
+                <option value="{{ g.specialty }}">{{ g.specialty }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label class="form-label">Акредитація (UA)</label>
+            <textarea name="text_ua" rows="1" class="form-control auto-height"></textarea>
+        </div>
+
+        <div class="col-md-3">
+            <label class="form-label">Accreditation (EN)</label>
+            <textarea name="text_en" rows="1" class="form-control auto-height"></textarea>
+        </div>
+
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
+        </div>
+    </form>
+
+    <hr>
+
+    <h4>Список акредитацій</h4>
+    {% if accreditations %}
+    <table class="table table-bordered table-striped table-hover">
+        <thead class="table-light">
+            <tr>
+                <th>ID</th>
+                <th>Ступінь</th>
+                <th>Спеціальність</th>
+                <th>UA</th>
+                <th>EN</th>
+                <th>Дії</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in accreditations %}
+            <tr>
+                <form method="post">
+                    <td>
+                        {{ a.id }}
+                        <input type="hidden" name="id" value="{{ a.id }}">
+                    </td>
+
+                    <td>
+                        <select name="degree" class="form-select">
+                            <option value="Бакалавр" {% if a.degree == 'Бакалавр' %}selected{% endif %}>Бакалавр</option>
+                            <option value="Магістр" {% if a.degree == 'Магістр' %}selected{% endif %}>Магістр</option>
+                        </select>
+                    </td>
+
+                    <td>
+                        <select name="specialty" class="form-select">
+                            {% for g in groups %}
+                            <option value="{{ g.specialty }}" {% if g.specialty == a.specialty %}selected{% endif %}>{{ g.specialty }}</option>
+                            {% endfor %}
+                        </select>
+                    </td>
+
+                    <td>
+                        <textarea name="text_ua" class="form-control auto-height">{{ a.text_ua }}</textarea>
+                    </td>
+
+                    <td>
+                        <textarea name="text_en" class="form-control auto-height">{{ a.text_en }}</textarea>
+                    </td>
+
+                    <td class="d-flex gap-1 mt-2">
+                        <button type="submit" name="edit" value="1" class="btn btn-sm btn-warning"><i class="bi bi-pencil me-1"></i>Зберегти</button>
+                        <button type="submit" name="delete" value="1" onclick="return confirm('Видалити?')" class="btn btn-sm btn-danger"><i class="bi bi-trash me-1"></i>Видалити</button>
+                    </td>
+                </form>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Акредитації відсутні</p>
+    {% endif %}
+</div>
+
+<script>
+    function autoResizeTextarea(textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const textareas = document.querySelectorAll('.auto-height');
+        textareas.forEach(textarea => {
+            autoResizeTextarea(textarea);
+            textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+        });
+    });
+</script>
+
+{% endblock %}

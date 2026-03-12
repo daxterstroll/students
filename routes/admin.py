@@ -28,10 +28,82 @@ PERMISSIONS = [
     'import_subjects',              # Імпорт предметів з Excel
     'archive',                      # Управління архівом
     'manage_students',              # Управління студентами
+    'manage_accreditations'         # Управління акредетаціями
     
     # Додайте інші, якщо є
     ]
 
+@admin_bp.route('/admin/manage_accreditations', methods=['GET', 'POST'])
+@permission_required('manage_accreditations')
+def manage_accreditations():
+    conn = get_db()
+    cursor = conn.cursor()
+
+    # Добавление
+    if request.method == 'POST' and 'add' in request.form:
+        degree = request.form.get('degree')
+        specialty = request.form.get('specialty')
+        text_ua = request.form.get('text_ua')
+        text_en = request.form.get('text_en')
+
+        cursor.execute("""
+            INSERT INTO accreditations (degree, specialty, text_ua, text_en)
+            VALUES (?, ?, ?, ?)
+        """, (degree, specialty, text_ua, text_en))
+
+        conn.commit()
+        return redirect(url_for('admin.manage_accreditations'))
+
+    # Редактирование
+    if request.method == 'POST' and 'edit' in request.form:
+        acc_id = request.form.get('id')
+        degree = request.form.get('degree')
+        specialty = request.form.get('specialty')
+        text_ua = request.form.get('text_ua')
+        text_en = request.form.get('text_en')
+
+        cursor.execute("""
+            UPDATE accreditations
+            SET degree=?, specialty=?, text_ua=?, text_en=?
+            WHERE id=?
+        """, (degree, specialty, text_ua, text_en, acc_id))
+
+        conn.commit()
+        return redirect(url_for('admin.manage_accreditations'))
+
+    # Удаление
+    if request.method == 'POST' and 'delete' in request.form:
+        acc_id = request.form.get('id')
+
+        cursor.execute("""
+            DELETE FROM accreditations
+            WHERE id=?
+        """, (acc_id,))
+
+        conn.commit()
+        return redirect(url_for('admin.manage_accreditations'))
+
+    # список аккредитаций
+    cursor.execute("""
+        SELECT id, degree, specialty, text_ua, text_en
+        FROM accreditations
+        ORDER BY degree, specialty
+    """)
+    accreditations = cursor.fetchall()
+
+    # список групп
+    cursor.execute("""
+        SELECT DISTINCT specialty
+        FROM groups
+        ORDER BY specialty
+    """)
+    groups = cursor.fetchall()
+
+    return render_template(
+        'manage_accreditations.html',
+        accreditations=accreditations,
+        groups=groups
+    )
 
 @admin_bp.route('/admin/manage_education_documents', methods=['GET', 'POST'])
 @permission_required('manage_education_documents')
@@ -1122,6 +1194,7 @@ def manage_users():
             'import_subjects':              'Імпорт предметів з Excel',
             'archive':                      'Управління архівом',
             'manage_students':              'Управління студентами (Видалення студента та його війс. док.)',
+            'manage_accreditations':        'Управління акредетаціями'
                  
         }
 

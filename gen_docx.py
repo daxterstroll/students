@@ -406,6 +406,46 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     except Exception as e:
         global_logger.error(f"Ошибка при получении данных для диплома для студента ID {student_dict.get('id', 'unknown')}: {e}")
         raise
+    
+    # -----------------------------
+    # Автоподстановка аккредитации для диплома с отладкой
+    # -----------------------------
+    try:
+        if 'adddiplom' in template.lower():
+            conn = get_db()
+            conn.row_factory = sqlite3.Row
+            acc = conn.execute("""
+                SELECT text_ua, text_en
+                FROM accreditations
+                WHERE degree = ? AND specialty = ?
+                ORDER BY id DESC LIMIT 1
+            """, (
+                student_dict.get('degree_level', ''),
+                student_dict.get('specialty', '')
+            )).fetchone()
+            conn.close()
+
+            if acc:
+                context['accreditation_text'] = acc['text_ua']
+                context['accreditation_text_en'] = acc['text_en']
+                # Вывод для отладки
+                #print("=== Автоподстановка аккредитации ===")
+                #print("UA:", acc['text_ua'])
+                #print("EN:", acc['text_en'])
+                #global_logger.debug(f"Автоподстановка аккредитации: UA='{acc['text_ua']}', EN='{acc['text_en']}'")
+            else:
+                context['accreditation_text'] = ''
+                context['accreditation_text_en'] = ''
+                #print("=== Автоподстановка аккредитации ===")
+                #print("Аккредитация не найдена для ступені и спеціальності:")
+                #print("degree_level:", student_dict.get('degree_level', ''))
+                #print("specialty:", student_dict.get('specialty', ''))
+                #global_logger.debug(f"Аккредитация не найдена: degree_level='{student_dict.get('degree_level', '')}', specialty='{student_dict.get('specialty', '')}'")
+
+    except Exception as e:
+        global_logger.error(f"Ошибка при получении аккредитации для диплома студента ID {student_dict.get('id', 'unknown')}: {e}")
+        context['accreditation_text'] = ''
+        context['accreditation_text_en'] = ''
 
     # Проверка на диплом с отличием с отладочной информацией
     context['diploma_with_honor_text'] = student_dict.get('last_name_UA', '')
