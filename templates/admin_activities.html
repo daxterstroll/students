@@ -13,7 +13,7 @@
                 <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
                     <option value="">-- Оберіть групу --</option>
                     {% for group in groups|default([]) %}
-                    <option value="{{ group.id }}" {% if group.id|string == selected_group_id|default('') %}selected{% endif %}>{{ group.display_name }}</option>
+                    <option value="{{ group.id }}" {% if group.id == selected_group_id %}selected{% endif %}>{{ group.display_name }}</option>
                     {% endfor %}
                 </select>
             </div>
@@ -210,20 +210,14 @@
                             {% endif %}
                             <td>
                                 <input type="hidden" name="grade_id_{{ student['id'] }}" value="{{ grade.id if grade else '' }}">
-                                <input type="number"
-									   name="grade_{{ student['id'] }}"
-									   value="{{ grade.grade if grade else '' }}"
-									   class="form-control form-control-sm grade-input"
-									   min="0"
-									   max="100"
-									   placeholder="0–100">
+                                <input type="number" name="grade_{{ student['id'] }}" value="{{ grade.grade if grade else '' }}" class="form-control form-control-sm grade-input" min="0" max="100" placeholder="0–100">
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-save"></i> Зберегти оцінки</button>
+            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-save"></i> Зберегти</button>
         </form>
     </div>
 </div>
