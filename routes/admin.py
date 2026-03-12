@@ -12,6 +12,7 @@ import openpyxl
 from werkzeug.utils import secure_filename
 import pandas as pd
 import json
+import locale
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -29,10 +30,99 @@ PERMISSIONS = [
     'archive',                      # Управління архівом
     'manage_students',              # Управління студентами
     'manage_accreditations'         # Управління акредетаціями
+    'manage_diplomas'               # Управління номерами диплома і додатку
     
     # Додайте інші, якщо є
     ]
 
+@admin_bp.route('/admin/manage_diplomas', methods=['GET', 'POST'])
+@permission_required('manage_diplomas')
+def manage_diplomas():
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    # ---------------- POST: сохранить дипломы ----------------
+    if request.method == "POST":
+        group_id = request.form.get("group_id")
+        cursor.execute("""
+            SELECT s.id
+            FROM students s
+            WHERE s.group_id = ?
+        """, (group_id,))
+        students = cursor.fetchall()
+
+        for student in students:
+            student_id = student['id']
+
+            diploma_number = request.form.get(f'diploma_number_{student_id}', '').strip()
+            appendix_number = request.form.get(f'appendix_number_{student_id}', '').strip()
+
+            # если диплом заполнен, дополняем нулями до 6 цифр
+            if diploma_number:
+                diploma_number = diploma_number.zfill(6)
+
+            # проверяем, есть ли запись
+            cursor.execute("SELECT id FROM diplomas WHERE student_id=?", (student_id,))
+            exists = cursor.fetchone()
+            if exists:
+                cursor.execute("""
+                    UPDATE diplomas
+                    SET diploma_number=?, appendix_number=?
+                    WHERE student_id=?
+                """, (diploma_number, appendix_number, student_id))
+            else:
+                cursor.execute("""
+                    INSERT INTO diplomas(student_id, diploma_number, appendix_number)
+                    VALUES (?, ?, ?)
+                """, (student_id, diploma_number, appendix_number))
+
+        conn.commit()
+        flash("Дані збережено")
+        return redirect(url_for('admin.manage_diplomas', group_id=group_id))
+
+    # ---------------- GET: список групп ----------------
+    cursor.execute("SELECT id, name, start_year FROM groups ORDER BY name")
+    groups = cursor.fetchall()
+    selected_group = request.args.get("group_id")
+    if selected_group is not None:
+        selected_group = int(selected_group)
+
+    # ---------------- GET: список студентов выбранной группы ----------------
+    students = []
+    if selected_group:
+        cursor.execute("""
+            SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+                   d.diploma_number, d.appendix_number
+            FROM students s
+            LEFT JOIN diplomas d ON s.id = d.student_id
+            WHERE s.group_id = ?
+        """, (selected_group,))
+        students = cursor.fetchall()
+
+        # Украинская сортировка
+        try:
+            locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
+        except locale.Error:
+            try:
+                locale.setlocale(locale.LC_COLLATE, 'Ukrainian_Ukraine.1251')
+            except locale.Error:
+                pass
+
+        students = sorted(
+            students,
+            key=lambda s: locale.strxfrm(
+                f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+            )
+        )
+
+    return render_template(
+        "manage_diplomas.html",
+        groups=groups,
+        students=students,
+        selected_group=selected_group
+    )
+    
 @admin_bp.route('/admin/manage_accreditations', methods=['GET', 'POST'])
 @permission_required('manage_accreditations')
 def manage_accreditations():
@@ -1197,6 +1287,7 @@ def manage_users():
             'archive':                      'Управління архівом',
             'manage_students':              'Управління студентами (Видалення студента та його війс. док.)',
             'manage_accreditations':        'Управління акредетаціями'
+            'manage_diplomas'               'Управління номерами диплому і додатку'
                  
         }
 

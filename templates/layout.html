@@ -422,6 +422,15 @@
                             </li>
                             {% endif %}
 
+                            {% if session.get('is_admin') or 'manage_diplomas' in session.get('permissions', []) %}
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('admin.manage_diplomas') }}">
+                                    <i class="bi bi-journal-bookmark"></i>
+                                    Управління номерами диплома та додатку
+                                </a>
+                            </li>
+                            {% endif %}
+
                             {% if session.get('is_admin') or 'manage_archive' in session.get('permissions', []) %}
                             <li>
                                 <a class="dropdown-item" href="{{ url_for('admin.archive') }}">
@@ -495,6 +504,13 @@
                             <a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link">
                                 <i class="bi bi-award"></i>
                                 Управління акредитаціями
+                            </a>
+                            {% endif %}
+
+                            {% if session.get('is_admin') or 'manage_diplomas' in session.get('permissions', []) %}
+                            <a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link">
+                                <i class="bi bi-journal-bookmark"></i>
+                                Управління номерами диплома та додатку
                             </a>
                             {% endif %}
 

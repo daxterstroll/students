@@ -517,6 +517,34 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
 
         else:
             global_logger.debug("Нет дифференцированных оценок для анализа")
+    
+    
+    # -----------------------------
+    # Подтягиваем диплом и додаток для Word
+    # -----------------------------
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    diploma_row = conn.execute("""
+        SELECT diploma_number, appendix_number
+        FROM diplomas
+        WHERE student_id = ?
+        ORDER BY id DESC LIMIT 1
+    """, (student['id'],)).fetchone()
+    conn.close()
+
+    if diploma_row:
+        # дополняем нулями до 6 цифр
+        diploma_number = diploma_row['diploma_number'] or ''
+        appendix_number = diploma_row['appendix_number'] or ''
+
+        diploma_number = diploma_number.zfill(6) if diploma_number else ''
+        appendix_number = appendix_number.zfill(6) if appendix_number else ''
+
+        context['diploma_number'] = diploma_number
+        context['appendix_number'] = appendix_number
+    else:
+        context['diploma_number'] = ''
+        context['appendix_number'] = ''
         
     try:
         doc.render(context)

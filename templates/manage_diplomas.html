@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+{% block title %}Дипломи студентів{% endblock %}
+
+{% block content %}
+<h1><i class="bi bi-journal-bookmark"></i> Додати номери дипломів</h1>
+
+<!-- Форма выбора группы -->
+<div class="card mb-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Оберіть групу</h5>
+        <form method="GET" action="{{ url_for('admin.manage_diplomas') }}" class="row g-3">
+            <div class="col-md-6">
+                <label for="group_id" class="form-label">Група</label>
+                <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">-- Оберіть групу --</option>
+                    {% for group in groups %}
+                        <option value="{{ group.id }}" {% if group.id == selected_group %}selected{% endif %}>
+                            {{ group.name }} ({{ group.start_year }})
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_group %}
+<div class="card mb-4 shadow-sm">
+    <div class="card-body">
+        <h5 class="card-title">Список студентів</h5>
+        <form method="POST" action="{{ url_for('admin.manage_diplomas') }}">
+            <input type="hidden" name="group_id" value="{{ selected_group }}">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead>
+                        <tr>
+                            <th scope="col" style="width: 40%;">ПІБ</th>
+                            <th scope="col" style="width: 30%;">Номер диплома</th>
+                            <th scope="col" style="width: 30%;">Номер додатку</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in students %}
+                        <tr>
+                            <td>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA }}</td>
+                            <td>
+                                <input type="text" name="diploma_number_{{ s.id }}" class="form-control form-control-sm diploma-input" value="{{ s.diploma_number or '' }}">
+                            </td>
+                            <td>
+                                <input type="text" name="appendix_number_{{ s.id }}" class="form-control form-control-sm appendix-input" value="{{ s.appendix_number or '' }}">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-save"></i> Зберегти</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const diplomaInputs = document.querySelectorAll(".diploma-input");
+    const appendixInputs = document.querySelectorAll(".appendix-input");
+
+    // Вставка столбца для диплома с доп. нулями
+    if (diplomaInputs.length) {
+        diplomaInputs[0].addEventListener("paste", function (event) {
+            event.preventDefault();
+            const pasteData = (event.clipboardData || window.clipboardData).getData("text");
+            const values = pasteData.split(/\r?\n/).map(v => v.trim()).filter(v => v !== "");
+            diplomaInputs.forEach((input, index) => {
+                if (values[index] !== undefined) input.value = values[index].padStart(6,'0');
+            });
+        });
+    }
+
+    // Вставка столбца для додатку
+    if (appendixInputs.length) {
+        appendixInputs[0].addEventListener("paste", function (event) {
+            event.preventDefault();
+            const pasteData = (event.clipboardData || window.clipboardData).getData("text");
+            const values = pasteData.split(/\r?\n/).map(v => v.trim()).filter(v => v !== "");
+            appendixInputs.forEach((input, index) => {
+                if (values[index] !== undefined) input.value = values[index];
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

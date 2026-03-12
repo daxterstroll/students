@@ -170,6 +170,14 @@ CREATE TABLE accreditations (
     text_ua TEXT,
     text_en TEXT
 );
+CREATE TABLE diplomas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    diploma_number TEXT,
+    appendix_number TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id)
+);
 """)
 
 # Додаємо користувачів
