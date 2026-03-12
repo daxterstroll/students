@@ -29,7 +29,7 @@ PERMISSIONS = [
     'import_subjects',              # Імпорт предметів з Excel
     'archive',                      # Управління архівом
     'manage_students',              # Управління студентами
-    'manage_accreditations'         # Управління акредетаціями
+    'manage_accreditations',         # Управління акредетаціями
     'manage_diplomas'               # Управління номерами диплома і додатку
     
     # Додайте інші, якщо є
@@ -1286,8 +1286,8 @@ def manage_users():
             'import_subjects':              'Імпорт предметів з Excel',
             'archive':                      'Управління архівом',
             'manage_students':              'Управління студентами (Видалення студента та його війс. док.)',
-            'manage_accreditations':        'Управління акредетаціями'
-            'manage_diplomas'               'Управління номерами диплому і додатку'
+            'manage_accreditations':        'Управління акредетаціями',
+            'manage_diplomas':              'Управління номерами диплому і додатку'
                  
         }
 
