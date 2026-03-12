@@ -1087,12 +1087,14 @@ def manage_activities():
                         grade_id = request.form.get(grade_id_key)
                         name = request.form.get(name_key, '') if entity_type == 'attestation' else ''
                         
-                        if grade:
+                        if grade or name:
                             try:
-                                grade = int(grade)
-                                if not (0 <= grade <= 100):
+                                grade = int(grade) if grade else None
+
+                                if grade is not None and not (0 <= grade <= 100):
                                     flash(f'Оценка для студента {student_id} должна быть от 0 до 100', 'error')
                                     continue
+
                                 if grade_id:
                                     cursor.execute(
                                         'UPDATE activity_grades SET grade = ?, name = ? WHERE id = ? AND student_id = ? AND entity_id = ? AND entity_type = ?',
