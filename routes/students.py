@@ -44,8 +44,13 @@ def student_list():
     group_ids = [row['group_id'] for row in conn.execute("SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)).fetchall()]
 
     # Логирование действия
-    log_action(session.get('username', 'невідомо'), f"переглянув список студентів (group_id={group_id})", group_ids=[group_id] if group_id else group_ids)
-
+    log_action(
+        session.get('username', 'невідомо'),
+        "переглянув список студентів",
+        group_ids=[group_id] if group_id else session.get('group_ids', []),
+        details=f"пошук: '{search}', сторінка: {page}, на сторінці: {per_page}"
+    )
+     
     # Базовый запрос для получения студентов (без избыточного WHERE)
     base_query = """
         SELECT s.*, 
@@ -244,14 +249,16 @@ def student_details(student_id):
     """, (student_id,)).fetchone()
     
     if not student:
-        conn.close()
+        log_action(session.get('username', 'невідомо'), "спроба перегляду неіснуючого студента", details=f"ID: {student_id}")
         flash("Студента не знайдено")
         return redirect(url_for('students.student_list'))
-    
-    if session.get('role') != 'admin' and student['group_id'] not in session.get('group_ids', []):
-        conn.close()
-        flash("Доступ заборонено: студент не належить до вашої групи")
-        return redirect(url_for('students.student_list'))
+
+    log_action(
+        session.get('username', 'невідомо'),
+        "переглянув картку студента",
+        group_ids=[student['group_id']],
+        details=f"ID: {student_id}, {student['last_name_UA']} {student['first_name_UA']}"
+    )
     
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
     
@@ -1045,6 +1052,12 @@ def edit_grades(student_id):
                         VALUES (?, ?, ?)
                     """, (student_id, subject["id"], grade_value))
         conn.commit()
+        log_action(
+            session.get('username', 'невідомо'),
+            "змінив оцінки з дисциплін",
+            group_ids=[student['group_id']],
+            details=f"студент ID {student_id}, предметів: {len(subjects)}"
+        )
         flash("Оцінки збережено")
         return redirect(url_for('students.student_list'))
 
