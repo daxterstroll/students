@@ -22,11 +22,6 @@ from deep_translator import GoogleTranslator
 translator = GoogleTranslator(source="auto", target="en")
 translation_cache = {}
 
-
-
-
-
-
 admin_bp = Blueprint('admin', __name__)
 
 # Список дозволів (на основі ваших роутів)
