@@ -12,3 +12,5 @@ unotools
 pandas
 xlrd
 bleach
+rapidfuzz
+deep-translator

@@ -175,7 +175,6 @@ CREATE TABLE diplomas (
     student_id INTEGER NOT NULL,
     diploma_number TEXT,
     appendix_number TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (student_id) REFERENCES students(id)
 );
 """)
