@@ -39,36 +39,40 @@ except Exception as e:
     logger.error(f"Ошибка при доступе к файлу логов {log_file_path}: {e}")
     print(f"Ошибка при доступе к файлу логов: {e}")
 
-def log_action(username, action, group_ids=None, mode=None):
-    """Логирование действий пользователя."""
+def log_action(username, action, group_ids=None, mode=None, details=None):
+    """Логирование действий пользователя с поддержкой деталей."""
     conn = get_db()
-    role = session.get('role')  # Получаем роль пользователя из сессии
+    role = session.get('role', 'невідомо')
 
-    # Определяем строку с группами только если есть group_ids и роль не admin
     group_names_str = ''
     if group_ids is not None and role != 'admin':
-        placeholders = ','.join('?' for _ in group_ids)
-        group_names = conn.execute(
-            f"""
-            SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
-            FROM groups
-            WHERE id IN ({placeholders})
-            ORDER BY name, start_year
-            """,
-            group_ids
-        ).fetchall()
-        group_names_str = ', '.join([row['display_name'] for row in group_names]) if group_names else 'немає груп'
+        if not isinstance(group_ids, list):
+            group_ids = [group_ids] if group_ids else []
+        if group_ids:
+            placeholders = ','.join('?' for _ in group_ids)
+            group_names = conn.execute(
+                f"""
+                SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
+                FROM groups
+                WHERE id IN ({placeholders})
+                ORDER BY name, start_year
+                """,
+                group_ids
+            ).fetchall()
+            group_names_str = ', '.join([row['display_name'] for row in group_names]) if group_names else 'немає груп'
 
     conn.close()
 
-    # Формируем лог с учетом режима, если он передан
+    log_msg = f"👤 {username} - {action}"
     if mode:
-        logger.info(f"👤 {username} - {action} (режим: {mode})")
-    elif group_names_str:
-        logger.info(f"👤 {username} - {action} (групи: {group_names_str})")
-    else:
-        logger.info(f"👤 {username} - {action}")
+        log_msg += f" (режим: {mode})"
+    if group_names_str:
+        log_msg += f" (групи: {group_names_str})"
+    if details:
+        log_msg += f" | {details}"
 
+    logger.info(log_msg)
+    
 def login_required(role=None):
     """Декоратор для проверки авторизации и роли пользователя (стара версія для сумісності).
     Args:
