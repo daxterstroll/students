@@ -1339,7 +1339,6 @@ def manage_users():
     finally:
         conn.close()
 
-
 @admin_bp.route('/admin/users/add', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def add_user():
@@ -1414,7 +1413,6 @@ def add_user():
 
     return render_template('add_user.html', groups=groups)
 
-
 @admin_bp.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def edit_user(user_id):
@@ -1486,7 +1484,6 @@ def edit_user(user_id):
 
     finally:
         conn.close()
-
 
 @admin_bp.route('/admin/users/<int:user_id>/change-password', methods=['GET', 'POST'])
 @permission_required('manage_users')
