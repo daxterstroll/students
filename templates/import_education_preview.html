@@ -1,0 +1,171 @@
+{% extends 'layout.html' %}
+{% block content %}
+
+<h3>Попередній перегляд імпорту</h3>
+
+<form method="post" action="{{ url_for('admin.import_docs_commit') }}">
+    <input type="hidden" name="preview_id" value="{{ preview_id }}">
+
+    <table class="table table-bordered table-sm table-hover">
+        <thead class="table-light">
+            <tr>
+                <th style="width:5%">Row</th>
+                <th style="width:6%">Додати</th>
+                <th style="width:28%">Студент</th>
+                <th style="width:10%">Збіг</th>
+                <th style="width:12%">Статус</th>
+                <th style="width:18%">Номер диплома</th>
+                <th style="width:15%">Дії</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for row in preview %}
+            <tr {% if row.error %}class="table-danger"{% endif %}>
+                <td>{{ row.row_index }}</td>
+                <td>
+                    {% if not row.error %}
+                        <input type="checkbox" name="add_{{ row.row_index }}" checked>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if row.matched_name %}
+                        <input type="text" name="matched_name_{{ row.row_index }}" 
+                               value="{{ row.matched_name }}" 
+                               class="form-control form-control-sm">
+                    {% else %}
+                        <span class="text-danger">{{ row.error or "" }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ row.score or "—" }}</td>
+                <td>
+                    <span class="{{ row.status_class or '' }}">{{ row.status or "—" }}</span>
+                </td>
+                <td>{{ row.document_number or "—" }}</td>
+                <td>
+                    {% if not row.error %}
+                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                data-bs-toggle="modal" data-bs-target="#editModal{{ row.row_index }}">
+                            Редагувати
+                        </button>
+                    {% endif %}
+                </td>
+            </tr>
+
+            <!-- Модальне вікно редагування -->
+            <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1" aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-centered">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="editModalLabel{{ row.row_index }}">
+                                Редагування рядка {{ row.row_index }} — {{ row.matched_name or "—" }}
+                                <small class="text-muted ms-2">({{ row.status }})</small>
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+
+                        <div class="modal-body">
+                            <div class="row g-3">
+
+                                <!-- Тип документа -->
+                                <div class="col-md-6">
+                                    <label class="form-label">Тип документа (укр)</label>
+                                    <input type="text" name="document_type_{{ row.row_index }}" 
+                                           value="{{ row.document_type or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_document_type %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_document_type }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label">Document type (en)</label>
+                                    <input type="text" name="document_type_en_{{ row.row_index }}" 
+                                           value="{{ row.document_type_en or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_document_type_en %}
+                                        <small class="text-muted d-block mt-1">was: {{ row.old_document_type_en }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Номер та дата -->
+                                <div class="col-md-3">
+                                    <label class="form-label">Номер документа</label>
+                                    <input type="text" name="document_number_{{ row.row_index }}" 
+                                           value="{{ row.document_number or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_document_number %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_document_number }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Дата завершення</label>
+                                    <input type="text" name="completion_date_{{ row.row_index }}" 
+                                           value="{{ row.completion_date or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_completion_date %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_completion_date }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Країна</label>
+                                    <input type="text" name="country_{{ row.row_index }}" 
+                                           value="{{ row.country or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_country %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_country }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-md-3">
+                                    <label class="form-label">Country</label>
+                                    <input type="text" name="country_en_{{ row.row_index }}" 
+                                           value="{{ row.country_en or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_country_en %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_country_en }}</small>
+                                    {% endif %}
+                                </div>
+						
+                                <!-- Навчальний заклад -->
+                                <div class="col-12">
+                                    <label class="form-label">Навчальний заклад (укр)</label>
+                                    <input type="text" name="institution_name_{{ row.row_index }}" 
+                                           value="{{ row.institution_name or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_institution_name %}
+                                        <small class="text-muted d-block mt-1">було: {{ row.old_institution_name }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Institution (en)</label>
+                                    <input type="text" name="institution_name_en_{{ row.row_index }}" 
+                                           value="{{ row.institution_name_en or '' }}" 
+                                           class="form-control">
+                                    {% if row.status == "Оновлення" and row.old_institution_name_en %}
+                                        <small class="text-muted d-block mt-1">was: {{ row.old_institution_name_en }}</small>
+                                    {% endif %}
+                                </div>
+
+                            </div>
+                        </div>
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="mt-3">
+        <button type="submit" class="btn btn-success">Додати / Оновити в базу</button>
+        <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-secondary">Скасувати</a>
+    </div>
+</form>
+
+{% endblock %}

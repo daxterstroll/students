@@ -13,6 +13,19 @@ from werkzeug.utils import secure_filename
 import pandas as pd
 import json
 import locale
+import uuid
+import re
+from openpyxl import load_workbook
+from rapidfuzz import process, fuzz
+from deep_translator import GoogleTranslator
+
+translator = GoogleTranslator(source="auto", target="en")
+translation_cache = {}
+
+
+
+
+
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -29,8 +42,9 @@ PERMISSIONS = [
     'import_subjects',              # Імпорт предметів з Excel
     'archive',                      # Управління архівом
     'manage_students',              # Управління студентами
-    'manage_accreditations',         # Управління акредетаціями
-    'manage_diplomas'               # Управління номерами диплома і додатку
+    'manage_accreditations',        # Управління акредетаціями
+    'manage_diplomas',              # Управління номерами диплома і додатку
+    'import_education_docs'         # Управління імпортом документів
     
     # Додайте інші, якщо є
     ]
@@ -82,7 +96,7 @@ def manage_diplomas():
         return redirect(url_for('admin.manage_diplomas', group_id=group_id))
 
     # ---------------- GET: список групп ----------------
-    cursor.execute("SELECT id, name, start_year FROM groups ORDER BY name")
+    cursor.execute("SELECT id, name, start_year FROM groups WHERE archived = FALSE ORDER BY name")
     groups = cursor.fetchall()
     selected_group = request.args.get("group_id")
     if selected_group is not None:
@@ -185,6 +199,7 @@ def manage_accreditations():
     cursor.execute("""
         SELECT DISTINCT specialty
         FROM groups
+        WHERE archived = FALSE
         ORDER BY specialty
     """)
     groups = cursor.fetchall()
@@ -1287,7 +1302,8 @@ def manage_users():
             'archive':                      'Управління архівом',
             'manage_students':              'Управління студентами (Видалення студента та його війс. док.)',
             'manage_accreditations':        'Управління акредетаціями',
-            'manage_diplomas':              'Управління номерами диплому і додатку'
+            'manage_diplomas':              'Управління номерами диплому і додатку',
+            'import_education_docs':        'Управління імпортом документів'
                  
         }
 
@@ -1517,7 +1533,6 @@ def change_password(user_id):
         conn.close()
 
     return render_template('change_password.html', user_id=user_id, username=user['username'])
-
 
 @admin_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 @permission_required('manage_users')
@@ -1934,3 +1949,279 @@ def archive():
     conn.close()
     log_action(session.get('username', 'невідомо'), "переглянув список архівних груп")
     return render_template('archive.html', groups=groups, students_by_group=students_by_group)
+   
+TEMP_PREVIEW_FOLDER = "temp_preview"
+
+def save_preview_to_file(preview):
+    os.makedirs(TEMP_PREVIEW_FOLDER, exist_ok=True)
+    preview_id = str(uuid.uuid4())
+    path = os.path.join(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(preview, f, ensure_ascii=False)
+    return preview_id
+
+def load_preview_from_file(preview_id):
+    path = os.path.join(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def translate_to_en(text):
+    if not text:
+        return ""
+    if text in translation_cache:
+        return translation_cache[text]
+    try:
+        result = translator.translate(text)
+        translation_cache[text] = result
+        return result
+    except:
+        return text
+
+def find_country(text):
+    countries = {
+        "польща": "Poland", "poland": "Poland",
+        "німеччина": "Germany", "germany": "Germany",
+        "чех": "Czech Republic", "czech": "Czech Republic",
+        "словач": "Slovakia", "slovakia": "Slovakia"
+    }
+    lower = text.lower()
+    for key, en in countries.items():
+        if key in lower:
+            return key.capitalize(), en
+    return "Україна", "Ukraine"
+
+def parse_document(text: str):
+    text = text.strip()
+    
+    pattern = re.compile(
+        r'^'
+        r'(?P<type>[^;]+?)'               # все до першого ; (тип + номер)
+        r'\s*;\s*'                        # ; з пробілами навколо
+        r'(?P<date>\d{2}\.\d{2}\.\d{4})'  # дата
+        r'\s*;\s*'
+        r'Ким видано:\s*'
+        r'(?P<institution>.+?)$',         # все після "Ким видано:"
+        re.IGNORECASE | re.UNICODE
+    )
+
+    match = pattern.search(text)          # search, а не match — щоб не вимагати початок рядка ідеально
+    if not match:
+        print("Не матчиться:", repr(text))  # для дебагу
+        return None
+
+    full_prefix = match.group("type").strip()
+    
+    # Тепер витягуємо номер з префіксу (все після останнього слова типу)
+    # Розділяємо на частини: тип + номер
+    parts = re.split(r'\s{2,}', full_prefix.strip())  # розділ по двом+ пробілам
+    if len(parts) < 2:
+        # якщо не розділилось — беремо останню "групу" як номер
+        doc_type = full_prefix
+        doc_number = ""
+    else:
+        doc_type = " ".join(parts[:-1]).strip()
+        doc_number = parts[-1].strip()
+
+    # Якщо номер виглядає як "B24 088851" або "BK 40920464" — ок
+    # Якщо ні — можна додати перевірку, але поки що цього вистачає
+
+    completion_date = match.group("date").strip()
+    institution = match.group("institution").strip()
+
+    country, country_en = find_country(institution)
+
+    return {
+        "document_type": doc_type,
+        "document_type_en": translate_to_en(doc_type) or "",
+        "document_number": doc_number,
+        "completion_date": completion_date,
+        "institution_name": institution,
+        "institution_name_en": translate_to_en(institution) or "",
+        "country": country,
+        "country_en": country_en
+    }
+    
+def fuzzy_find_student(cursor, full_name, threshold=80):
+    cursor.execute("""
+        SELECT id, last_name_UA, first_name_UA, middle_name_UA
+        FROM students
+        WHERE archived = FALSE
+    """)
+    students = cursor.fetchall()
+    names = ["{} {} {}".format(s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"]) for s in students]
+    matches = process.extract(full_name, names, scorer=fuzz.ratio, limit=3)
+    for match_name, score, idx in matches:
+        if score >= threshold:
+            return students[idx]["id"], match_name, score
+    return None, None, None
+
+def import_documents_preview(file_path, db):
+    wb = load_workbook(file_path)
+    sheet = wb.active
+    cursor = db.cursor()
+    preview_rows = []
+   
+    for row_index, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+        fio = row[0]
+        document_text = row[1]
+       
+        if not fio or not document_text:
+            preview_rows.append({"row_index": row_index, "error": "Пусті дані"})
+            continue
+           
+        student_id, matched_name, score = fuzzy_find_student(cursor, fio)
+        if not student_id:
+            preview_rows.append({"row_index": row_index, "error": f"Студент не знайдений: {fio}"})
+            continue
+           
+        data = parse_document(document_text)
+        if not data:
+            preview_rows.append({"row_index": row_index, "error": f"Не вдалося розпізнати документ: {document_text}"})
+            continue
+       
+        # ─── Перевіряємо, чи є вже документ у студента ───
+        cursor.execute("""
+            SELECT 
+                id,
+                document_type,
+                document_type_en,
+                document_number,
+                completion_date,
+                institution_name,
+                institution_name_en,
+                country,
+                country_en
+            FROM education_documents
+            WHERE student_id = ?
+        """, (student_id,))
+        existing_doc = cursor.fetchone()
+       
+        row_data = {
+            "row_index": row_index,
+            "student_id": student_id,
+            "matched_name": matched_name,
+            "score": score,
+            **data,  # document_type, document_type_en, document_number, completion_date, institution_name, institution_name_en, country
+        }
+       
+        if existing_doc:
+            row_data.update({
+                "status": "Оновлення",
+                "status_class": "text-warning",
+                "existing_info": f"(існує: {existing_doc['document_number'] or 'без номера'})",
+                "has_document": True,
+                
+                # старі значення — для відображення в інтерфейсі
+                "old_document_type":       existing_doc["document_type"]       or "",
+                "old_document_type_en":    existing_doc["document_type_en"]    or "",
+                "old_document_number":     existing_doc["document_number"]     or "",
+                "old_completion_date":     existing_doc["completion_date"]     or "",
+                "old_institution_name":    existing_doc["institution_name"]    or "",
+                "old_institution_name_en": existing_doc["institution_name_en"] or "",
+                "old_country":             existing_doc["country"]             or "",
+                "old_country_en":          existing_doc["country_en"]          or "",
+            })
+        else:
+            row_data.update({
+                "status": "Новий",
+                "status_class": "text-success",
+                "existing_info": "",
+                "has_document": False,
+            })
+       
+        preview_rows.append(row_data)
+  
+    return preview_rows
+    
+@admin_bp.route('/admin/import_education_docs_preview', methods=['GET', 'POST'])
+@permission_required('import_education_docs')
+def import_docs_preview():
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file:
+            flash("Файл не обрано", "danger")
+            return redirect(url_for('admin.manage_education_documents'))
+
+        path = os.path.join("uploads", file.filename)
+        file.save(path)
+
+        db = get_db()
+        preview = import_documents_preview(path, db)  # твоя функция парсинга + поиск студента
+        preview_id = save_preview_to_file(preview)
+
+        return render_template(
+            "import_education_preview.html",
+            preview=preview,
+            preview_id=preview_id
+        )
+
+    return render_template("import_education_upload.html")
+
+@admin_bp.route('/admin/import_docs_commit', methods=['POST'])
+@permission_required('import_education_docs')
+def import_docs_commit():
+    preview_id = request.form.get("preview_id")
+    preview = load_preview_from_file(preview_id)
+    db = get_db()
+    added = 0
+    updated = 0
+
+    for row in preview:
+        row_index = row["row_index"]
+        if f"add_{row_index}" not in request.form:
+            continue  # пропускаем если галочка снята
+
+        # Обновляем значения из формы (на случай редактирования)
+        if not row.get("error"):
+            row["document_type"]       = request.form.get(f"document_type_{row_index}",       row["document_type"])
+            row["document_type_en"]    = request.form.get(f"document_type_en_{row_index}",    row.get("document_type_en", "")) or ""
+            row["document_number"]     = request.form.get(f"document_number_{row_index}",     row["document_number"])
+            row["completion_date"]     = request.form.get(f"completion_date_{row_index}",     row["completion_date"])
+            row["institution_name"]    = request.form.get(f"institution_name_{row_index}",    row["institution_name"])
+            row["institution_name_en"] = request.form.get(f"institution_name_en_{row_index}", row.get("institution_name_en", "")) or ""
+            row["country"]             = request.form.get(f"country_{row_index}",             row["country"])
+            row["country_en"]          = request.form.get(f"country_en_{row_index}",             row["country_en"])
+
+            cursor = db.cursor()
+            # Проверяем наличие документа у студента
+            cursor.execute("""
+                SELECT id FROM education_documents
+                WHERE student_id = ?
+            """, (row["student_id"],))
+            existing = cursor.fetchone()
+
+            # берём значения с гарантией, что они не None
+            doc_type_en = row.get("document_type_en", "") or ""
+            inst_name_en = row.get("institution_name_en", "") or ""
+            country_en = row.get("country_en", "") or ""
+
+            if existing:
+                # Обновляем существующий документ
+                cursor.execute("""
+                    UPDATE education_documents
+                    SET document_type = ?, document_type_en = ?, document_number = ?, completion_date = ?,
+                        institution_name = ?, institution_name_en = ?, country = ?, country_en = ?
+                    WHERE id = ?
+                """, (
+                    row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
+                    row["institution_name"], inst_name_en, row["country"], row["country_en"], existing["id"]
+                ))
+                updated += 1
+            else:
+                # Добавляем новый документ
+                cursor.execute("""
+                    INSERT INTO education_documents (
+                        student_id, document_type, document_type_en, document_number,
+                        completion_date, institution_name, institution_name_en, country, country_en
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    row["student_id"], row["document_type"], doc_type_en, row["document_number"],
+                    row["completion_date"], row["institution_name"], inst_name_en, row["country"], country_en
+                ))
+                added += 1
+
+    db.commit()
+    flash(f"Додано записів: {added}, Оновлено записів: {updated}", "success")
+    return redirect(url_for('admin.manage_education_documents'))
