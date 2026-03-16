@@ -452,7 +452,6 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     context['diploma_with_honor_text_en'] = student_dict.get('last_name_en', '')
 
     if 'adddiplom' in template.lower():
-        global_logger.debug(f"Проверка диплома с отличием для шаблона {template}")
 
         all_grades = []
 
@@ -462,61 +461,47 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         if context.get('practice_data'):
             all_grades += context['practice_data']
 
-        if context.get('coursework_data'):
-            all_grades += context['coursework_data']
+        total_grades = 0
+        excellent_count = 0
+        satisfactory_count = 0
 
-        # Берем только дифференцированные оценки
-        graded = [
-            g for g in all_grades
-            if any(x in g.get('grade', '') for x in [
-                'Відмінно / Excellent',
-                'Добре / Good',
-                'Задовільно / Satisfactory'
-            ])
-        ]
+        for g in all_grades:
+            grade_text = g.get('grade', '')
 
-        total_grades = len(graded)
+            if not grade_text:
+                continue
 
-        if total_grades > 0:
+            total_grades += 1
 
-            excellent_count = sum(
-                1 for g in graded
-                if 'Відмінно / Excellent' in g.get('grade', '')
+            if ' A' in grade_text:
+                excellent_count += 1
+
+            elif ' D' in grade_text or ' E' in grade_text:
+                satisfactory_count += 1
+
+        # аттестация
+        attestation_grade = ''
+
+        if context.get('attestation_data'):
+            attestation_grade = next(
+                (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')),
+                ''
             )
 
-            good_count = sum(
-                1 for g in graded
-                if 'Добре / Good' in g.get('grade', '')
-            )
+        diploma_with_honours = (
+            total_grades > 0
+            and excellent_count / total_grades >= 0.75
+            and satisfactory_count == 0
+            and ' A' in attestation_grade
+        )
 
-            satisfactory_count = sum(
-                1 for g in graded
-                if 'Задовільно / Satisfactory' in g.get('grade', '')
-            )
-
-            # Аттестация
-            attestation_grade = ''
-            if context.get('attestation_data'):
-                attestation_grade = next(
-                    (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')),
-                    ''
-                )
-
-            diploma_with_honours = (
-                excellent_count / total_grades >= 0.75
-                and satisfactory_count == 0
-                and 'Відмінно / Excellent' in attestation_grade
-            )
-
-            if diploma_with_honours:
-                context['diploma_with_honor_text'] = 'Диплом з відзнакою'
-                context['diploma_with_honor_text_en'] = 'Diploma with honours'
-            else:
-                context['diploma_with_honor_text'] = 'Інформація відсутня'
-                context['diploma_with_honor_text_en'] = 'Information is absent'
-
+        if diploma_with_honours:
+            context['diploma_with_honor_text'] = 'Диплом з відзнакою'
+            context['diploma_with_honor_text_en'] = 'Diploma with honours'
         else:
-            global_logger.debug("Нет дифференцированных оценок для анализа")
+            context['diploma_with_honor_text'] = 'Інформація відсутня'
+            context['diploma_with_honor_text_en'] = 'Information is absent'
+
     
     
     # -----------------------------

@@ -1143,31 +1143,48 @@ def import_from_excel():
                 else:
                     issued_VOD = ''
 
-                conn.execute("""
-                    INSERT INTO military (
+                # Проверяем есть ли вообще военные данные
+                if any(military_data):
+
+                    issued_VOD_raw = military_data[2]
+
+                    if isinstance(issued_VOD_raw, datetime):
+                        issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
+                    elif isinstance(issued_VOD_raw, str):
+                        issued_VOD = issued_VOD_raw.strip().replace('-', '.')
+                        try:
+                            parsed = datetime.strptime(issued_VOD, "%d.%m.%Y")
+                            issued_VOD = parsed.strftime("%d.%m.%Y")
+                        except ValueError:
+                            issued_VOD = ''
+                    else:
+                        issued_VOD = ''
+
+                    conn.execute("""
+                        INSERT INTO military (
+                            student_id,
+                            registration_number_of_the_DRPVR,
+                            military_registration_document,
+                            issued_VOD,
+                            military_accounting_specialty_number,
+                            military_rank,
+                            change_credentials,
+                            reason_for_changing_credentials,
+                            being_on_military_registration,
+                            address_of_residence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
                         student_id,
-                        registration_number_of_the_DRPVR,
-                        military_registration_document,
+                        military_data[0],
+                        military_data[1],
                         issued_VOD,
-                        military_accounting_specialty_number,
-                        military_rank,
-                        change_credentials,
-                        reason_for_changing_credentials,
-                        being_on_military_registration,
-                        address_of_residence
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    student_id,
-                    military_data[0],
-                    military_data[1],
-                    issued_VOD,
-                    military_data[3],
-                    military_data[4],
-                    military_data[5],
-                    military_data[6],
-                    military_data[7],
-                    military_data[8]
-                ))
+                        military_data[3],
+                        military_data[4],
+                        military_data[5],
+                        military_data[6],
+                        military_data[7],
+                        military_data[8]
+                    ))
 
                 inserted += 1
 
