@@ -18,6 +18,8 @@ import re
 from openpyxl import load_workbook
 from rapidfuzz import process, fuzz
 from deep_translator import GoogleTranslator
+from openpyxl.utils.exceptions import InvalidFileException
+import time
 
 translator = GoogleTranslator(source="auto", target="en")
 translation_cache = {}
@@ -1642,6 +1644,7 @@ def import_subjects():
     """Импорт предметов из Excel-файла."""
     conn = get_db()
     cursor = conn.cursor()
+
     try:
         cursor.execute("""
             SELECT id, name, start_year, study_form, program_credits,
@@ -1651,9 +1654,10 @@ def import_subjects():
             ORDER BY name, start_year
         """)
         groups = cursor.fetchall()
-        logging.info(f"Fetched {len(groups)} groups from database")
+
         if not groups:
             flash("Немає доступних груп", "warning")
+
     except sqlite3.Error as e:
         logging.error(f"Database error while fetching groups: {e}")
         flash("Помилка бази даних при отриманні груп", "error")
@@ -1662,89 +1666,122 @@ def import_subjects():
     selected_group_id = request.args.get('group_id', '')
 
     if request.method == 'POST':
+
         file = request.files.get('excel_file')
         group_id = request.form.get('group_id')
 
-        if not file or not allowed_file(file.filename):
-            flash("Будь ласка, виберіть файл формату .xlsx", "error")
+        if not file:
+            flash("Будь ласка, виберіть файл", "error")
             return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
-        
+
+        ext = file.filename.lower().split('.')[-1]
+
+        if ext not in ['xlsx', 'xlsm', 'xltx', 'xltm']:
+            flash("❗ Підтримуються тільки Excel файли формату .xlsx", "error")
+            return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
+
         if not group_id:
             flash("ID групи не вказано", "error")
             return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
-        
+
         try:
             group_id = int(group_id)
-            cursor.execute('SELECT id FROM groups WHERE id = ?', (group_id,))
+
+            cursor.execute("SELECT id FROM groups WHERE id = ?", (group_id,))
             if not cursor.fetchone():
                 flash("Обрана група не існує", "error")
                 return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
+
         except ValueError:
             flash("Некоректний ID групи", "error")
             return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
-        filename = secure_filename(file.filename)
+        filename = f"subjects_{int(time.time())}.xlsx"
         filepath = os.path.join(UPLOAD_FOLDER, filename)
+
         os.makedirs(UPLOAD_FOLDER, exist_ok=True)
         file.save(filepath)
 
         try:
-            wb = openpyxl.load_workbook(filepath)
-            sheet = wb.active
+            try:
+                wb = openpyxl.load_workbook(filepath, data_only=True)
+                sheet = wb.active
+            except InvalidFileException:
+                flash("❗ Файл має неправильний формат. Збережіть його як Excel (*.xlsx)", "error")
+                os.remove(filepath)
+                return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
             inserted = 0
             skipped = 0
-
-            if sheet.max_row < 2:
-                flash("Excel-файл порожній або не містить даних", "error")
-                os.remove(filepath)
-                return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
             cursor.execute("SELECT MAX(position) FROM subjects WHERE group_id = ?", (group_id,))
             max_position = cursor.fetchone()[0] or 0
             current_position = max_position + 1
 
-            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            for i, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+
+                if not row or all(cell is None for cell in row):
+                    continue
+
                 try:
                     code, name, credits, type_ = row
+
                     if not all([code, name, credits, type_]):
-                        flash(f"❗ Неповні дані у рядку {i}", "error")
                         skipped += 1
                         continue
+
+                    code = str(code).strip()
+                    name = str(name).strip()
+                    type_ = str(type_).strip()
+
                     if type_ not in ['Залік', 'Екзамен']:
                         flash(f"❗ Невірний тип у рядку {i}: {type_}", "error")
                         skipped += 1
                         continue
+
                     credits = int(credits)
+
                     if credits < 1:
                         flash(f"❗ Некоректні кредити у рядку {i}", "error")
                         skipped += 1
                         continue
 
-                    cursor.execute("SELECT id FROM subjects WHERE group_id = ? AND code = ?", (group_id, code))
+                    cursor.execute(
+                        "SELECT id FROM subjects WHERE group_id = ? AND code = ?",
+                        (group_id, code)
+                    )
+
                     if cursor.fetchone():
-                        flash(f"❗ Предмет з кодом {code} уже існує у групі {group_id}", "error")
                         skipped += 1
                         continue
 
-                    cursor.execute(
-                        "INSERT INTO subjects (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)",
-                        (code, name, credits, type_, current_position, group_id)
-                    )
+                    cursor.execute("""
+                        INSERT INTO subjects (code, name, credits, type, position, group_id)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (code, name, credits, type_, current_position, group_id))
+
                     inserted += 1
                     current_position += 1
+
                 except Exception as e:
-                    flash(f"⚠️ Помилка в рядку {i}: {e}", "error")
+                    logging.error(f"Row {i} error: {e}")
                     skipped += 1
                     continue
 
             conn.commit()
+
             flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}", "success")
-            logging.info(f"User {session.get('username', 'невідомо')} imported subjects: added {inserted}, skipped {skipped} for group_id={group_id}")
+
+            logging.info(
+                f"User {session.get('username', 'невідомо')} imported subjects: "
+                f"added {inserted}, skipped {skipped}, group_id={group_id}"
+            )
+
         except Exception as e:
             conn.rollback()
             flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
-            logging.error(f"Error importing Excel for group_id={group_id}, subjects: {e}")
+            logging.error(f"Error importing Excel for group_id={group_id}: {e}")
+
         finally:
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -1752,10 +1789,14 @@ def import_subjects():
 
         return redirect(url_for('admin.manage_subjects', group_id=group_id))
 
-    logging.info(f"User {session.get('username', 'невідомо')} opened import_subjects form")
     conn.close()
-    return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
+    return render_template(
+        'import_subjects.html',
+        groups=groups,
+        selected_group_id=selected_group_id
+    )
+    
 @admin_bp.route('/admin/generate_group_docs', methods=['GET', 'POST'])
 @permission_required('group_export')
 def generate_group_docs():
