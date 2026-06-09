@@ -1,24 +1,161 @@
 {% extends 'layout.html' %}
-{% block title %}Завантажити Excel з документами студентів{% endblock %}
+{% block title %}Імпорт документів про освіту{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h3>Завантажити Excel з документами студентів</h3>
-    <p>Студенти мають починатись з 2го рядка<p>
-    <p>Файл повинен містити дві колонки: <strong>Здобувач</strong> (ФІО студента) та <strong>Документ</strong> (наприклад: Диплом бакалавра B24 088726; 20.06.2024; Ким видано: ...).</p>
-    
-    <!-- Показ повідомлень Flash -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category }} mt-2">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-    
-<form method="post" enctype="multipart/form-data">
-    <input type="file" name="file" required>
-    <button type="submit" class="btn btn-primary">Завантажити</button>
-</form>
-</div>
 
+<h2 class="mb-4"><i class="bi bi-file-earmark-arrow-up"></i> Імпорт документів про освіту</h2>
+
+<div class="row g-4">
+
+  {# ── Форма ── #}
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Завантажити файл</h5>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="file" class="form-label">Excel-файл (.xlsx)</label>
+            <input type="file" name="file" id="file" class="form-control" accept=".xlsx" required>
+            <div class="form-text">Тільки формат .xlsx</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-cloud-arrow-up me-1"></i> Завантажити та переглянути
+          </button>
+        </form>
+
+        <hr>
+
+        <h6 class="mb-2">Що робить імпорт</h6>
+        <ul class="list-unstyled small mb-0">
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить студента нечітким пошуком по ПІБ</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбирає рядок документа на поля автоматично</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає країну та перекладає назви англійською</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує превью — можна відредагувати перед збереженням</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Якщо документ вже є — пропонує оновлення</li>
+        </ul>
+
+        <hr>
+
+        <a href="{{ url_for('static', filename='templates/import_education_docs.xlsx') }}" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="bi bi-download me-1"></i> Завантажити шаблон .xlsx
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {# ── Документація формату ── #}
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Формат файлу</h5>
+
+        <p class="small text-muted mb-3">
+          Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
+          Файл містить рівно дві колонки.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered small align-middle mb-4">
+            <thead class="table-dark">
+              <tr>
+                <th style="width:40px">#</th>
+                <th>Колонка</th>
+                <th style="width:90px" class="text-center">Обов'язкова</th>
+                <th>Приклад</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-center fw-bold">A</td>
+                <td>ПІБ студента</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>Шевченко Іван Олександрович</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">B</td>
+                <td>Рядок документа</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>Диплом бакалавра B24 088726; 20.06.2024; Ким видано: ...</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {# Формат рядка документа #}
+        <h6 class="mb-2">Формат рядка документа (колонка B)</h6>
+        <div class="alert alert-secondary small py-2 font-monospace mb-3">
+          [Тип]&nbsp;&nbsp;[Номер]&nbsp;&nbsp;;&nbsp;&nbsp;[Дата ДД.ММ.РРРР]&nbsp;&nbsp;;&nbsp;&nbsp;Ким видано:&nbsp;[Заклад]
+        </div>
+
+        <p class="small mb-1">Між типом документа і номером — <strong>два або більше пробіли</strong>. Між частинами — крапка з комою (<code>;</code>).</p>
+
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered small align-middle">
+            <thead class="table-secondary">
+              <tr>
+                <th>Частина</th>
+                <th>Опис</th>
+                <th>Приклад</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Тип документа</td>
+                <td>Назва документа</td>
+                <td><code>Диплом бакалавра</code></td>
+              </tr>
+              <tr>
+                <td>Номер</td>
+                <td>Серія та номер (через пробіл)</td>
+                <td><code>B24 088726</code></td>
+              </tr>
+              <tr>
+                <td>Дата</td>
+                <td>Дата видачі ДД.ММ.РРРР</td>
+                <td><code>20.06.2024</code></td>
+              </tr>
+              <tr>
+                <td>Ким видано</td>
+                <td>Назва закладу (визначає країну)</td>
+                <td><code>Київський університет ім. Шевченка</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {# Приклади рядків #}
+        <h6 class="mb-2">Приклади рядків</h6>
+        <ul class="small mb-3">
+          <li class="mb-1">
+            <code>Диплом бакалавра  B24 088726; 20.06.2024; Ким видано: Харківський національний університет</code>
+          </li>
+          <li class="mb-1">
+            <code>Атестат про повну загальну середню освіту  БК 40920464; 15.06.2021; Ким видано: Ліцей №5 м. Одеса</code>
+          </li>
+          <li>
+            <code>Диплом молодшого спеціаліста  КМ 12345678; 30.06.2022; Ким видано: Київський коледж технологій</code>
+          </li>
+        </ul>
+
+        {# Причини пропуску #}
+        <h6 class="mb-2">Коли рядок позначається як помилковий</h6>
+        <ul class="small mb-0">
+          <li>Студента з таким ПІБ не знайдено (або схожість менше 80%)</li>
+          <li>Рядок документа не відповідає формату (відсутній <code>;</code> або <code>Ким видано:</code>)</li>
+          <li>Будь-яке з двох полів порожнє</li>
+        </ul>
+
+      </div>
+    </div>
+  </div>
+
+</div>
 {% endblock %}
