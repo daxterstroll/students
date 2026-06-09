@@ -649,17 +649,56 @@ def edit_student(student_id):
 def delete_student(student_id):
     """Удаление студента по его ID."""
     conn = get_db()
-    student = conn.execute("SELECT last_name_UA, group_id FROM students WHERE id = ?", (student_id,)).fetchone()
-    if student:
-        conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM activity_grades WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
-        conn.commit()
-        log_action(session.get('username', 'невідомо'), f"видалив студента ID {student_id}: {student['last_name_UA']}", group_ids=[student['group_id']])
-    else:
+    student = conn.execute(
+        "SELECT last_name_UA, group_id FROM students WHERE id = ?", (student_id,)
+    ).fetchone()
+
+    if not student:
         flash("Студента не знайдено")
-    conn.close()
+        conn.close()
+        return redirect(url_for('students.student_list'))
+
+    try:
+        # 1. Спочатку видаляємо foreign_education_docs (посилається на education_documents)
+        conn.execute("""
+            DELETE FROM foreign_education_docs
+            WHERE education_doc_id IN (
+                SELECT id FROM education_documents WHERE student_id = ?
+            )
+        """, (student_id,))
+
+        # 2. Потім education_documents
+        conn.execute("DELETE FROM education_documents WHERE student_id = ?", (student_id,))
+
+        # 3. Дипломи
+        conn.execute("DELETE FROM diplomas WHERE student_id = ?", (student_id,))
+
+        # 4. Військові дані
+        conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
+
+        # 5. Оцінки з предметів
+        conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))
+
+        # 6. Оцінки з активностей (практики, курсові, атестації)
+        conn.execute("DELETE FROM activity_grades WHERE student_id = ?", (student_id,))
+
+        # 7. Сам студент — останнім
+        conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
+
+        conn.commit()
+        log_action(
+            session.get('username', 'невідомо'),
+            f"видалив студента ID {student_id}: {student['last_name_UA']}",
+            group_ids=[student['group_id']]
+        )
+
+    except Exception as e:
+        conn.rollback()
+        flash(f"Помилка при видаленні студента: {e}", "error")
+
+    finally:
+        conn.close()
+
     return redirect(url_for('students.student_list'))
 
 @students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
