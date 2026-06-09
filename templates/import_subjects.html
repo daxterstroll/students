@@ -1,29 +1,154 @@
 {% extends "layout.html" %}
+{% block title %}Імпорт предметів з Excel{% endblock %}
 {% block content %}
-<div class="container">
-    <h1><i class="bi bi-cloud-plus"></i> Імпорт предметів з Excel</h1>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('admin.import_subjects', group_id=selected_group_id) }}" class="row g-3">
-        <div class="col-md-12">
+
+<h2 class="mb-4"><i class="bi bi-file-earmark-arrow-up"></i> Імпорт предметів з Excel</h2>
+
+<div class="row g-4">
+
+  {# ── Форма ── #}
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Завантажити файл</h5>
+        <form method="post" enctype="multipart/form-data" action="{{ url_for('admin.import_subjects', group_id=selected_group_id) }}">
+          <div class="mb-3">
             <label for="group_id" class="form-label">Група</label>
-                <select name="group_id" id="group_id" class="form-select" required>
-                    <option value="" disabled {% if not selected_group_id %}selected{% endif %}>Виберіть групу</option>
-                    {% for group in groups|default([]) %}
-                        <option value="{{ group.id }}" {% if group.id|string == selected_group_id|default('') %}selected{% endif %}>{{ group.display_name }}</option>
-                    {% endfor %}
-                </select>
-        </div>
-        <div class="col-md-12">
-            <label for="excel_file" class="form-label">Файл Excel (.xlsx)</label>
+            <select name="group_id" id="group_id" class="form-select" required>
+              <option value="" disabled {% if not selected_group_id %}selected{% endif %}>Виберіть групу</option>
+              {% for group in groups|default([]) %}
+                <option value="{{ group.id }}" {% if group.id|string == selected_group_id|default('') %}selected{% endif %}>
+                  {{ group.display_name }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label for="excel_file" class="form-label">Excel-файл (.xlsx)</label>
             <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+            <div class="form-text">Тільки формат .xlsx</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-cloud-arrow-up me-1"></i> Імпортувати
+          </button>
+        </form>
+
+        <hr>
+
+        <h6 class="mb-2">Що робить імпорт</h6>
+        <ul class="list-unstyled small mb-0">
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Додає предмети до обраної групи</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Автоматично розставляє позиції після існуючих предметів</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Пропускає предмет якщо код вже існує в цій групі</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує помилки по кожному рядку окремо</li>
+        </ul>
+
+        <hr>
+
+        <a href="{{ url_for('static', filename='templates/import_subjects.xlsx') }}" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="bi bi-download me-1"></i> Завантажити шаблон .xlsx
+        </a>
+      </div>
+    </div>
+  </div>
+
+  {# ── Документація формату ── #}
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Формат файлу</h5>
+
+        <p class="small text-muted mb-3">
+          Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
+          Порядок колонок фіксований, всі 4 поля обов'язкові.
+        </p>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered small align-middle mb-4">
+            <thead class="table-dark">
+              <tr>
+                <th style="width:40px">#</th>
+                <th>Колонка</th>
+                <th style="width:90px" class="text-center">Обов'язкова</th>
+                <th>Приклад / Формат</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-center fw-bold">A</td>
+                <td>Код предмету</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>ОП.01</code> — унікальний в межах групи</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">B</td>
+                <td>Назва предмету</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>Українська мова</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">C</td>
+                <td>Кількість кредитів</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>3</code> — ціле число, мінімум 1</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">D</td>
+                <td>Тип підсумкового контролю</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>Залік</code> або <code>Екзамен</code> — точно так, з великої літери</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-        <div class="col-md-12">
-            <button type="submit" class="btn btn-primary"><i class="bi bi-upload"></i> Імпортувати</button>
+
+        {# Причини пропуску рядка #}
+        <h6 class="mb-2">Коли рядок пропускається</h6>
+        <ul class="small mb-3">
+          <li>Будь-яке з 4 полів порожнє</li>
+          <li>Предмет з таким кодом вже існує в обраній групі</li>
+          <li>Тип контролю відрізняється від <code>Залік</code> або <code>Екзамен</code></li>
+          <li>Кількість кредитів менше 1 або не є числом</li>
+        </ul>
+
+        {# Приклад #}
+        <h6 class="mb-2">Приклад заповнення</h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered small mb-0">
+            <thead class="table-secondary">
+              <tr>
+                <th>A — Код</th>
+                <th>B — Назва</th>
+                <th>C — Кредити</th>
+                <th>D — Тип</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>ВОК 4/ OEC 4</code></td>
+                <td>Моделювання систем та теорія ігор/ System modeling and game theory</td>
+                <td>5</td>
+                <td>Залік</td>
+              </tr>
+              <tr>
+                <td><code>ВОК 1/ OEC 1</code></td>
+                <td>Педагогіка та методика викладання у вищій школі/Pedagogy and teaching methods in higher education</td>
+                <td>5</td>
+                <td>Екзамен</td>
+              </tr>
+              <tr>
+                <td><code>ВОК 3/ OEC 3</code></td>
+                <td>Проектування захищених вузлів та сервісів в мережі Інтернет/ Design of protected nodes and services on the Internet</td>
+                <td>3</td>
+                <td>Залік</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
-    </form>
-	<br>
-	✅ Колонка А - Код
-	✅ Колонка B - Назва предмету
-	✅ Колонка С - Кредит
-	✅ Колонка D - "Екзамен" або "Залік"
+
+      </div>
+    </div>
+  </div>
+
 </div>
 {% endblock %}
