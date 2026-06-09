@@ -1,18 +1,170 @@
 {% extends 'layout.html' %}
 {% block title %}Імпорт студентів з Excel{% endblock %}
 {% block content %}
-<h2><i class="bi bi-person-add"></i> Імпорт студентів з Excel</h2>
-<form method="post" enctype="multipart/form-data">
-    <div class="mb-3">
-        <label for="excel_file" class="form-label">Завантажити Excel-файл (.xlsx)</label>
-        <input type="file" name="excel_file" class="form-control" required>
+
+<h2 class="mb-4"><i class="bi bi-file-earmark-arrow-up"></i> Імпорт студентів з Excel</h2>
+
+<div class="row g-4">
+
+  {# ── Форма ── #}
+  <div class="col-12 col-lg-5">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Завантажити файл</h5>
+        <form method="post" enctype="multipart/form-data">
+          <div class="mb-3">
+            <label for="excel_file" class="form-label">Excel-файл (.xlsx)</label>
+            <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+            <div class="form-text">Тільки формат .xlsx</div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100">
+            <i class="bi bi-cloud-arrow-up me-1"></i> Імпортувати
+          </button>
+        </form>
+
+        <hr>
+
+        <h6 class="mb-2">Що робить імпорт</h6>
+        <ul class="list-unstyled small mb-0">
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбиває ПІБ на прізвище, ім'я та по батькові</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Автоматично транслітерує прізвище та ім'я англійською (КМУ №55-2010)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Імпортує військові дані (якщо заповнені)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Перевіряє групу — пропускає рядок якщо група не існує або недоступна</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Пропускає дублікати (ПІБ + дата народження)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує помилки по кожному рядку окремо</li>
+        </ul>
+
+        <hr>
+
+        <a href="{{ url_for('static', filename='templates/import.xlsx') }}" class="btn btn-outline-secondary btn-sm w-100">
+          <i class="bi bi-download me-1"></i> Завантажити шаблон .xlsx
+        </a>
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-arrow-up"></i> Імпортувати</button>
-</form>
-<br>
-<i class="bi bi-check-square"></i> Завантажує Excel <br>
-<i class="bi bi-check-square"></i> Поділяє ПІБ на 3 поля <br>
-<i class="bi bi-check-square"></i> Імпортує студента та його військові дані <br>
-<i class="bi bi-check-square"></i> Перевіряє: якщо студент із таким ПІБ та датою вже існує — не додає <br>
-<i class="bi bi-check-square"></i> Приклад шаблону \template_word\import.xlsx
+  </div>
+
+  {# ── Документація формату ── #}
+  <div class="col-12 col-lg-7">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Формат файлу</h5>
+
+        <p class="small text-muted mb-3">
+          Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
+          Порядок колонок фіксований, порожні клітинки допустимі для необов'язкових полів.
+        </p>
+
+        {# Таблиця колонок #}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered small align-middle mb-4">
+            <thead class="table-dark">
+              <tr>
+                <th style="width:40px"><center>#</center></th>
+                <th>Колонка</th>
+                <th style="width:90px" class="text-center">Обов'язкова</th>
+                <th>Приклад / Формат</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="text-center fw-bold">A</td>
+                <td>ID групи</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>1</code> — числовий ID з таблиці груп</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">B</td>
+                <td>ПІБ повністю</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>Шевченко Іван Олександрович</code> — рівно 3 слова через пробіл</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">C</td>
+                <td>Дата народження</td>
+                <td class="text-center"><span class="badge bg-danger">Так</span></td>
+                <td><code>15.03.2001</code> або дата Excel (формат ДД.ММ.РРРР)</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">D</td>
+                <td>Код ЄДЕБО</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>12345678</code></td>
+              </tr>
+              <tr class="table-light">
+                <td colspan="4" class="small text-muted py-1 ps-2">
+                  <i class="bi bi-shield me-1"></i>Військові дані (колонки E–M) — всі необов'язкові. Якщо всі порожні — запис у таблицю <code>military</code> не створюється.
+                </td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">E</td>
+                <td>Реєстраційний номер ДРПВР</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>ВО-12345</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">F</td>
+                <td>Документ військового обліку</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Посвідчення №123</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">G</td>
+                <td>Дата видачі ВОД</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>10.06.2020</code> (ДД.ММ.РРРР)</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">H</td>
+                <td>Номер військово-облікової спеціальності</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>111-22-333</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">I</td>
+                <td>Військове звання</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Рядовий</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">J</td>
+                <td>Зміна облікових даних</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Зміна прізвища</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">K</td>
+                <td>Причина зміни облікових даних</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Одруження</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">L</td>
+                <td>Перебування на військовому обліку</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Стоїть</code></td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">M</td>
+                <td>Адреса проживання</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>м. Київ, вул. Хрещатик 1</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {# Причини пропуску рядка #}
+        <h6 class="mb-2">Коли рядок пропускається</h6>
+        <ul class="small mb-0">
+          <li>ПІБ містить не рівно 3 слова</li>
+          <li>ID групи не існує в системі або група заархівована</li>
+          <li>ID групи недоступний поточному користувачу</li>
+          <li>Студент з таким самим ПІБ і датою народження вже є в базі</li>
+          <li>Рядок містить менше 4 заповнених колонок</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
 {% endblock %}
