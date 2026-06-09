@@ -1067,7 +1067,7 @@ def edit_grades(student_id):
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
 @permission_required('import_from_excel')
 def import_from_excel():
-    """Импорт студентов из Excel-файла."""
+    """Імпорт студентів з Excel-файлу."""
     if request.method == 'POST':
         file = request.files.get('excel_file')
         if not file or not file.filename.endswith('.xlsx'):
@@ -1079,124 +1079,161 @@ def import_from_excel():
         os.makedirs('uploads', exist_ok=True)
         file.save(filepath)
 
-        wb = openpyxl.load_workbook(filepath)
-        sheet = wb.active
-
         conn = get_db()
         inserted = 0
         skipped = 0
 
-        for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-            try:
-                group_id = row[0]
-                full_name = row[1]
-                birth_date_raw = row[2]
-                edebo_code = row[3] if row[3] else ''  # Добавляем edebo_code из 4-го столбца
-                military_data = row[4:13]  # Сдвигаем военные данные на один столбец вправо
+        # [ВИПРАВЛЕННЯ 3] Завантажуємо допустимі group_id ДО циклу
+        role = session.get('role')
+        user_group_ids = session.get('group_ids', [])
 
-                if not full_name:
-                    continue
-                name_parts = full_name.strip().split()
-                if len(name_parts) != 3:
-                    flash(f"❗ Невірний формат ПІБ у рядку {i}: '{full_name}'")
-                    skipped += 1
-                    continue
-                last_name, first_name, middle_name = name_parts
+        if role == 'admin':
+            allowed_group_ids = {
+                row['id'] for row in conn.execute(
+                    "SELECT id FROM groups WHERE archived = FALSE"
+                ).fetchall()
+            }
+        else:
+            # Не-адмін може імпортувати тільки у свої групи
+            if not user_group_ids:
+                allowed_group_ids = set()
+            else:
+                placeholders = ','.join('?' * len(user_group_ids))
+                allowed_group_ids = {
+                    row['id'] for row in conn.execute(
+                        f"SELECT id FROM groups WHERE id IN ({placeholders}) AND archived = FALSE",
+                        user_group_ids
+                    ).fetchall()
+                }
 
-                if isinstance(birth_date_raw, datetime):
-                    birth_date = birth_date_raw.strftime("%d.%m.%Y")
-                else:
-                    birth_date = str(birth_date_raw).strip()
+        try:
+            wb = openpyxl.load_workbook(filepath)
+            sheet = wb.active
 
-                existing = conn.execute("""
-                    SELECT id FROM students
-                    WHERE last_name_UA=? AND first_name_UA=? AND middle_name_UA=? AND birth_date=?
-                """, (last_name, first_name, middle_name, birth_date)).fetchone()
-                if existing:
-                    skipped += 1
-                    continue
+            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                try:
+                    # Захист від рядків що коротші за очікуване
+                    if not row or len(row) < 4:
+                        skipped += 1
+                        continue
 
-                # Генерация английских имен
-                last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
+                    group_id = row[0]
+                    full_name = row[1]
+                    birth_date_raw = row[2]
+                    edebo_code = row[3] if len(row) > 3 and row[3] else ''
 
-                conn.execute("""
-                    INSERT INTO students (
-                        last_name_UA, first_name_UA, middle_name_UA,
-                        last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    last_name, first_name, middle_name,
-                    last_name_eng, first_name_eng, birth_date, group_id, edebo_code
-                ))
-                student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    # Паддинг військових даних до 9 елементів щоб уникнути IndexError
+                    raw_military = list(row[4:13]) if len(row) > 4 else []
+                    military_data = raw_military + [None] * max(0, 9 - len(raw_military))
 
-                issued_VOD_raw = military_data[2]
-                if isinstance(issued_VOD_raw, datetime):
-                    issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
-                elif isinstance(issued_VOD_raw, str):
-                    issued_VOD = issued_VOD_raw.strip().replace('-', '.')
+                    if not full_name:
+                        continue
+
+                    # [ВИПРАВЛЕННЯ 3] Валідація group_id
                     try:
-                        parsed = datetime.strptime(issued_VOD, "%d.%m.%Y")
-                        issued_VOD = parsed.strftime("%d.%m.%Y")
-                    except ValueError:
-                        issued_VOD = ''
-                else:
-                    issued_VOD = ''
+                        group_id = int(group_id)
+                    except (ValueError, TypeError):
+                        flash(f"❗ Рядок {i}: некоректний ID групи '{row[0]}'")
+                        skipped += 1
+                        continue
 
-                # Проверяем есть ли вообще военные данные
-                if any(military_data):
+                    if group_id not in allowed_group_ids:
+                        flash(f"❗ Рядок {i}: група {group_id} не існує або недоступна")
+                        skipped += 1
+                        continue
 
-                    issued_VOD_raw = military_data[2]
+                    name_parts = full_name.strip().split()
+                    if len(name_parts) != 3:
+                        flash(f"❗ Рядок {i}: невірний формат ПІБ '{full_name}'")
+                        skipped += 1
+                        continue
+                    last_name, first_name, middle_name = name_parts
 
-                    if isinstance(issued_VOD_raw, datetime):
-                        issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
-                    elif isinstance(issued_VOD_raw, str):
-                        issued_VOD = issued_VOD_raw.strip().replace('-', '.')
-                        try:
-                            parsed = datetime.strptime(issued_VOD, "%d.%m.%Y")
-                            issued_VOD = parsed.strftime("%d.%m.%Y")
-                        except ValueError:
-                            issued_VOD = ''
+                    if isinstance(birth_date_raw, datetime):
+                        birth_date = birth_date_raw.strftime("%d.%m.%Y")
                     else:
-                        issued_VOD = ''
+                        birth_date = str(birth_date_raw).strip()
+
+                    existing = conn.execute("""
+                        SELECT id FROM students
+                        WHERE last_name_UA=? AND first_name_UA=? AND middle_name_UA=? AND birth_date=?
+                    """, (last_name, first_name, middle_name, birth_date)).fetchone()
+                    if existing:
+                        skipped += 1
+                        continue
+
+                    last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
 
                     conn.execute("""
-                        INSERT INTO military (
-                            student_id,
-                            registration_number_of_the_DRPVR,
-                            military_registration_document,
-                            issued_VOD,
-                            military_accounting_specialty_number,
-                            military_rank,
-                            change_credentials,
-                            reason_for_changing_credentials,
-                            being_on_military_registration,
-                            address_of_residence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO students (
+                            last_name_UA, first_name_UA, middle_name_UA,
+                            last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
-                        student_id,
-                        military_data[0],
-                        military_data[1],
-                        issued_VOD,
-                        military_data[3],
-                        military_data[4],
-                        military_data[5],
-                        military_data[6],
-                        military_data[7],
-                        military_data[8]
+                        last_name, first_name, middle_name,
+                        last_name_eng, first_name_eng, birth_date, group_id, edebo_code
                     ))
+                    student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-                inserted += 1
+                    # [ВИПРАВЛЕННЯ 4] Парсинг issued_VOD тільки один раз
+                    if any(military_data):
+                        issued_VOD_raw = military_data[2]
+                        if isinstance(issued_VOD_raw, datetime):
+                            issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
+                        elif isinstance(issued_VOD_raw, str):
+                            issued_VOD = issued_VOD_raw.strip().replace('-', '.')
+                            try:
+                                datetime.strptime(issued_VOD, "%d.%m.%Y")
+                            except ValueError:
+                                issued_VOD = ''
+                        else:
+                            issued_VOD = ''
 
-            except Exception as e:
-                flash(f"⚠️ Помилка в рядку {i}: {e}")
-                skipped += 1
-                continue
+                        conn.execute("""
+                            INSERT INTO military (
+                                student_id,
+                                registration_number_of_the_DRPVR,
+                                military_registration_document,
+                                issued_VOD,
+                                military_accounting_specialty_number,
+                                military_rank,
+                                change_credentials,
+                                reason_for_changing_credentials,
+                                being_on_military_registration,
+                                address_of_residence
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            student_id,
+                            military_data[0],
+                            military_data[1],
+                            issued_VOD,
+                            military_data[3],
+                            military_data[4],
+                            military_data[5],
+                            military_data[6],
+                            military_data[7],
+                            military_data[8]
+                        ))
 
-        conn.commit()
-        conn.close()
+                    inserted += 1
 
-        log_action(session.get('username', 'невідомо'), f"виконав імпорт студентів: додано {inserted}, пропущено {skipped}")
+                except Exception as e:
+                    flash(f"⚠️ Помилка в рядку {i}: {e}")
+                    skipped += 1
+                    continue
+
+            conn.commit()
+
+        except Exception as e:
+            conn.rollback()
+            flash(f"⚠️ Помилка при читанні файлу: {e}")
+        finally:
+            conn.close()
+
+        log_action(
+            session.get('username', 'невідомо'),
+            f"виконав імпорт студентів: додано {inserted}, пропущено {skipped}"
+        )
         flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}")
         return redirect(url_for('students.student_list'))
 
