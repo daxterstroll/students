@@ -1241,22 +1241,68 @@ def manage_activities():
 @admin_bp.route('/admin/view_logs')
 @permission_required('view_logs')
 def view_logs():
-    """Отображение логов действий пользователей."""
+    """Відображення журналу дій користувачів з парсингом у структуровані об'єкти."""
     current_dir = os.path.dirname(__file__)
     project_root = os.path.dirname(current_dir)
     log_file_path = os.path.join(project_root, 'app.log')
-    
-    logs = []
+ 
+    parsed_logs = []
+ 
     if os.path.exists(log_file_path):
         try:
-            with open(log_file_path, 'r', encoding='utf-8') as file:
-                logs = [line.strip() for line in file if line.strip()]
+            with open(log_file_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+ 
+                    # Формат: "2025-01-15 | 14:23:01 | INFO | 👤 username - дія ..."
+                    entry = {
+                        'raw': line,
+                        'date': '',
+                        'time': '',
+                        'level': 'INFO',
+                        'username': '',
+                        'action': line,
+                    }
+ 
+                    # Парсимо дату і час
+                    import re
+                    m = re.match(
+                        r'(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*)',
+                        line
+                    )
+                    if m:
+                        entry['date']   = m.group(1)
+                        entry['time']   = m.group(2)
+                        entry['level']  = m.group(3)
+                        rest            = m.group(4).strip()
+                        entry['action'] = rest
+ 
+                        # Витягуємо username після "👤 " або просто перед " - "
+                        u = re.match(r'👤\s*([^\s-][^-]*?)\s+-\s+(.*)', rest)
+                        if u:
+                            entry['username'] = u.group(1).strip()
+                            entry['action']   = u.group(2).strip()
+ 
+                    parsed_logs.append(entry)
+ 
         except Exception as e:
-            logging.error(f"Ошибка при чтении файла: {e}")
+            logging.error(f"Помилка при читанні логів: {e}")
+ 
+    # Зворотній порядок (нові зверху)
+    parsed_logs.reverse()
+ 
+    # Унікальні юзернейми для фільтра
+    usernames = sorted({e['username'] for e in parsed_logs if e['username']})
+ 
+    log_action(session.get('username', 'невідомо'), "переглянув журнал дій")
+    return render_template(
+        'view_logs.html',
+        logs=parsed_logs,
+        usernames=usernames,
+    )
     
-    log_action(session.get('username', 'невідомо'), "переглянув логи дій користувачів")
-    return render_template('view_logs.html', logs=logs[::-1])
-
 @admin_bp.route('/admin/users', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def manage_users():
