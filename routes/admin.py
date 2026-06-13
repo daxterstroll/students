@@ -188,7 +188,25 @@ def manage_education_documents():
     cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
     groups = cursor.fetchall()
 
+    # --- Отримуємо студента, якщо перейшли з картки студента ---
+    student = None
+    student_id_param = request.args.get('student_id', type=int)
+    if student_id_param:
+        cursor.execute("""
+            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
+            FROM students WHERE id = ?
+        """, (student_id_param,))
+        srow = cursor.fetchone()
+        if srow:
+            student = dict(srow)
+            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
+            grow = cursor.fetchone()
+            student['group_name'] = grow['name'] if grow else ''
+    # -------------------------------------------------------------
+
     selected_group_id = request.args.get('group_id', type=int)
+    if not selected_group_id and student:
+        selected_group_id = student['group_id']
 
     students_without_docs = []
     if selected_group_id:
@@ -227,6 +245,18 @@ def manage_education_documents():
         documents_by_group[gid]['docs'].append(row)
 
     sorted_documents_by_group = sorted(documents_by_group.items(), key=lambda x: x[1]['group_name'])
+
+    # --- Перевіряємо, чи є у студента документ, і якщо є - його doc_id ---
+    student_doc_id = None
+    if student:
+        for gid, gdata in documents_by_group.items():
+            for doc in gdata['docs']:
+                if doc['student_id'] == student['id']:
+                    student_doc_id = doc['doc_id']
+                    break
+            if student_doc_id:
+                break
+    # ----------------------------------------------------------------------
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -405,9 +435,10 @@ def manage_education_documents():
         groups=groups, selected_group_id=selected_group_id,
         students_without_docs=students_without_docs,
         documents_by_group=sorted_documents_by_group,
-        students=students
+        students=students,
+        student=student,
+        student_doc_id=student_doc_id
     )
-
 
 @admin_bp.route('/admin/manage_groups', methods=['GET', 'POST'])
 @permission_required('manage_groups')
