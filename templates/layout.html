@@ -304,17 +304,17 @@
             opacity: 0.5;
         }
 
-        /* ===== PAGE ENTRANCE ===== */
-        main.container {
-            animation: pageIn .45s cubic-bezier(.2,.7,.2,1) both;
-        }
-        @keyframes pageIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to   { opacity: 1; transform: translateY(0); }
-        }
-        @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after { animation: none !important; transition: none !important; }
-        }
+			/* ===== PAGE ENTRANCE ===== */
+main.container {
+    animation: pageIn .45s ease-out both;
+}
+@keyframes pageIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}
 
         /* ===== GENERAL CONTENT TOUCHES ===== */
         .card {
@@ -550,6 +550,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!menu) return;
         item.addEventListener('shown.bs.dropdown', () => menu.classList.add('show'));
         item.addEventListener('hide.bs.dropdown', () => menu.classList.remove('show'));
+    });
+});
+document.addEventListener('DOMContentLoaded', () => {
+    // Переносимо всі модальні вікна напряму в <body>,
+    // щоб уникнути проблем з z-index/overflow усередині акордеонів і таблиць
+    document.querySelectorAll('.modal').forEach(modal => {
+        if (modal.parentElement !== document.body) {
+            document.body.appendChild(modal);
+        }
     });
 });
 </script>
