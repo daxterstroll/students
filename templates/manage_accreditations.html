@@ -1,113 +1,263 @@
 {% extends 'layout.html' %}
-
-{% block title %}Акредитація{% endblock %}
+{% block title %}Акредитації{% endblock %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2><i class="bi bi-award"></i> Акредитація</h2>
 
-    <!-- Форма для додавання акредитації -->
-    <h4 class="mt-4">Додати акредитацію</h4>
-    <form method="post" class="mb-4 row g-3">
-        <input type="hidden" name="add" value="1">
+<style>
+    .page-header {
+        background: linear-gradient(135deg, var(--ink), var(--ink-2));
+        color: var(--brass-lt);
+        padding: 2.25rem 1.75rem;
+        border-radius: 16px;
+        margin-bottom: 2.5rem;
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+        border-bottom: 4px solid var(--brass);
+    }
 
-        <div class="col-md-3">
-            <label class="form-label">Ступінь</label>
-            <select name="degree" class="form-select">
-                <option value="Бакалавр">Бакалавр</option>
-                <option value="Магістр">Магістр</option>
-            </select>
+    .page-header h2 {
+        margin-bottom: 0.4rem;
+        color: var(--brass-lt);
+        font-size: 2.1rem;
+    }
+
+    .card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 6px 25px -8px rgba(31,42,58,0.18);
+    }
+
+    .form-label {
+        font-weight: 600;
+        color: var(--ink-2);
+    }
+
+    .form-control, .form-select {
+        border-radius: 10px;
+        border: 1.5px solid var(--line);
+        padding: 0.75rem 1rem;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: var(--brass);
+        box-shadow: 0 0 0 4px var(--brass-soft);
+    }
+
+    .section-title {
+        font-family: 'Lora', serif;
+        color: var(--ink);
+        position: relative;
+        padding-bottom: 0.6rem;
+    }
+
+    .section-title:after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 65px;
+        height: 3px;
+        background: var(--brass);
+        border-radius: 3px;
+    }
+
+    .accreditation-card {
+        transition: all 0.25s ease;
+        border: 1px solid var(--line);
+    }
+    .accreditation-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 30px -10px rgba(31,42,58,0.25);
+    }
+
+    .text-ua { 
+        background: #f8f1e3; 
+        border-left: 4px solid var(--brass);
+    }
+    .text-en { 
+        background: #e9f0f8; 
+        border-left: 4px solid #4a6ea8;
+    }
+</style>
+
+<div class="container py-4">
+
+    <!-- Header -->
+	<div class="page-header text-center text-md-start">
+        <div class="d-flex align-items-center gap-3">
+            <i class="bi bi-award-fill fs-1"></i>
+            <div>
+                <h2 class="mb-1">Акредитації</h2>
+                <p class="mb-0 opacity-90">Управління акредитаціями освітніх програм</p>
+            </div>
         </div>
+    </div>
 
-        <div class="col-md-3">
-            <label class="form-label">Спеціальність</label>
-            <select name="specialty" class="form-select">
-                {% for g in groups %}
-                <option value="{{ g.specialty }}">{{ g.specialty }}</option>
-                {% endfor %}
-            </select>
+    <!-- Форма додавання -->
+    <div class="card mb-5">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати нову акредитацію</h5>
         </div>
+        <div class="card-body">
+            <form method="post" class="row g-4">
+                <input type="hidden" name="add" value="1">
 
-        <div class="col-md-3">
-            <label class="form-label">Акредитація (UA)</label>
-            <textarea name="text_ua" rows="1" class="form-control auto-height"></textarea>
+                <div class="col-md-6">
+                    <label class="form-label">Ступінь</label>
+                    <select name="degree" class="form-select" required>
+                        <option value="Бакалавр">Бакалавр</option>
+                        <option value="Магістр">Магістр</option>
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Спеціальність</label>
+                    <select name="specialty" class="form-select" required>
+                        <option value="">— Оберіть спеціальність —</option>
+                        {% for g in groups %}
+                        <option value="{{ g.specialty }}">{{ g.specialty }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Акредитація (українською)</label>
+                    <textarea name="text_ua" class="form-control" placeholder="Наприклад: Акредитована за спеціальністю 051 Економіка" required></textarea>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label">Accreditation (English)</label>
+                    <textarea name="text_en" class="form-control" placeholder="E.g.: Accredited in the specialty 051 Economics" required></textarea>
+                </div>
+
+                <div class="col-12 pt-2">
+                    <button type="submit" class="btn btn-primary btn-lg px-5">
+                        <i class="bi bi-save me-2"></i>Додати акредитацію
+                    </button>
+                </div>
+            </form>
         </div>
+    </div>
 
-        <div class="col-md-3">
-            <label class="form-label">Accreditation (EN)</label>
-            <textarea name="text_en" rows="1" class="form-control auto-height"></textarea>
-        </div>
+    <!-- Список акредитацій -->
+    <h4 class="section-title mb-4">Список акредитацій</h4>
 
-        <div class="col-md-2 d-flex align-items-end">
-            <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
-        </div>
-    </form>
-
-    <hr>
-
-    <h4>Список акредитацій</h4>
     {% if accreditations %}
-    <table class="table table-bordered table-striped table-hover">
-        <thead class="table-light">
-            <tr>
-                <th>ID</th>
-                <th>Ступінь</th>
-                <th>Спеціальність</th>
-                <th>UA</th>
-                <th>EN</th>
-                <th>Дії</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for a in accreditations %}
-            <tr>
-                <form method="post">
-                    <td>
-                        {{ a.id }}
-                        <input type="hidden" name="id" value="{{ a.id }}">
-                    </td>
-
-                    <td>
-                        <select name="degree" class="form-select">
-                            <option value="Бакалавр" {% if a.degree == 'Бакалавр' %}selected{% endif %}>Бакалавр</option>
-                            <option value="Магістр" {% if a.degree == 'Магістр' %}selected{% endif %}>Магістр</option>
-                        </select>
-                    </td>
-
-                    <td>
-                        <select name="specialty" class="form-select">
-                            {% for g in groups %}
-                            <option value="{{ g.specialty }}" {% if g.specialty == a.specialty %}selected{% endif %}>{{ g.specialty }}</option>
-                            {% endfor %}
-                        </select>
-                    </td>
-
-                    <td>
-                        <textarea name="text_ua" class="form-control auto-height">{{ a.text_ua }}</textarea>
-                    </td>
-
-                    <td>
-                        <textarea name="text_en" class="form-control auto-height">{{ a.text_en }}</textarea>
-                    </td>
-
-                    <td class="d-flex gap-1 mt-2">
-                        <button type="submit" name="edit" value="1" class="btn btn-sm btn-warning"><i class="bi bi-pencil me-1"></i>Зберегти</button>
-                        <button type="submit" name="delete" value="1" onclick="return confirm('Видалити?')" class="btn btn-sm btn-danger"><i class="bi bi-trash me-1"></i>Видалити</button>
-                    </td>
-                </form>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th width="80px">ID</th>
+                            <th>Ступінь</th>
+                            <th>Спеціальність</th>
+                            <th>Акредитація (UA)</th>
+                            <th>Акредитація (EN)</th>
+                            <th width="140px" class="text-end">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for a in accreditations %}
+                        <tr>
+                            <td><strong>#{{ a.id }}</strong></td>
+                            <td>{{ a.degree }}</td>
+                            <td>{{ a.specialty }}</td>
+                            <td>{{ a.text_ua|truncate(90) }}</td>
+                            <td>{{ a.text_en|truncate(90) }}</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-warning me-2" 
+                                        data-bs-toggle="modal" data-bs-target="#editModal{{ a.id }}">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                                <form method="post" style="display: inline;" 
+                                      onsubmit="return confirm('Видалити цю акредитацію?')">
+                                    <input type="hidden" name="id" value="{{ a.id }}">
+                                    <button type="submit" name="delete" value="1" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
     {% else %}
-    <p class="text-muted">Акредитації відсутні</p>
+    <div class="card">
+        <div class="card-body text-center py-5 text-muted">
+            <i class="bi bi-award display-1 opacity-25"></i>
+            <p class="mt-3">Акредитацій ще немає</p>
+        </div>
+    </div>
     {% endif %}
+
 </div>
 
+<!-- Модальні вікна редагування -->
+{% for a in accreditations %}
+<div class="modal fade" id="editModal{{ a.id }}" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Редагування акредитації #{{ a.id }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form method="post">
+                    <input type="hidden" name="id" value="{{ a.id }}">
+                    <input type="hidden" name="edit" value="1">
+
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <label class="form-label">Ступінь</label>
+                            <select name="degree" class="form-select">
+                                <option value="Бакалавр" {% if a.degree == 'Бакалавр' %}selected{% endif %}>Бакалавр</option>
+                                <option value="Магістр" {% if a.degree == 'Магістр' %}selected{% endif %}>Магістр</option>
+                            </select>
+                        </div>
+
+                        <div class="col-md-8">
+                            <label class="form-label">Спеціальність</label>
+                            <select name="specialty" class="form-select">
+                                {% for g in groups %}
+                                <option value="{{ g.specialty }}" {% if g.specialty == a.specialty %}selected{% endif %}>
+                                    {{ g.specialty }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Акредитація (українською)</label>
+                            <textarea name="text_ua" class="form-control auto-height" required>{{ a.text_ua }}</textarea>
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label">Accreditation (English)</label>
+                            <textarea name="text_en" class="form-control auto-height" required>{{ a.text_en }}</textarea>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer mt-4">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-2"></i>Зберегти зміни
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
 <script>
+    // Авто-розмір textarea
     function autoResizeTextarea(textarea) {
         textarea.style.height = 'auto';
-        textarea.style.height = (textarea.scrollHeight) + 'px';
+        textarea.style.height = (textarea.scrollHeight + 10) + 'px';
     }
 
     document.addEventListener('DOMContentLoaded', () => {
@@ -115,6 +265,13 @@
         textareas.forEach(textarea => {
             autoResizeTextarea(textarea);
             textarea.addEventListener('input', () => autoResizeTextarea(textarea));
+        });
+
+        // Авто-розмір у модальних вікнах після відкриття
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('shown.bs.modal', () => {
+                modal.querySelectorAll('.auto-height').forEach(ta => autoResizeTextarea(ta));
+            });
         });
     });
 </script>
