@@ -37,7 +37,8 @@
         <ul class="list-unstyled small mb-0">
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить студента нечітким пошуком по ПІБ</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбирає рядок документа на поля автоматично</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає країну та перекладає назви англійською</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Змінює . на / в даті документа</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає країну та перекладає назву закладу англійською</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує превью — можна відредагувати перед збереженням</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Якщо документ вже є — пропонує оновлення</li>
         </ul>
@@ -85,6 +86,30 @@
                 <td class="text-center"><span class="badge bg-danger">Так</span></td>
                 <td><code>Диплом бакалавра B24 088726; 20.06.2024; Ким видано: ...</code></td>
               </tr>
+			  <tr>
+				<td class="text-center fw-bold">C</td>
+				<td>Академічна довідка (укр)</td>
+				<td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+				<td><code>08-17/04; ТОВ Кавказький університет; Грузія; 02.06.2017</code></td>
+			</tr>
+			<tr>
+				<td class="text-center fw-bold">D</td>
+				<td>Академічна довідка (en)</td>
+				<td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+				<td><code>08-17/04; Caucasus University LLC; Georgia; 02.06.2017</code></td>
+			</tr>
+			<tr>
+				<td class="text-center fw-bold">E</td>
+				<td>Свідоцтво про визнання (укр)</td>
+				<td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+				<td><code>№ N-7916-20; Приватний ВНЗ «Європейський університет»; 12.05.2020</code></td>
+			</tr>
+			<tr>
+				<td class="text-center fw-bold">F</td>
+				<td>Свідоцтво про визнання (en)</td>
+				<td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+				<td><code>№ N-7916-20; Private HEI "European University"; 12.05.2020</code></td>
+			</tr>
             </tbody>
           </table>
         </div>
@@ -94,8 +119,21 @@
         <div class="alert alert-secondary small py-2 font-monospace mb-3">
           [Тип]&nbsp;&nbsp;[Номер]&nbsp;&nbsp;;&nbsp;&nbsp;[Дата ДД.ММ.РРРР]&nbsp;&nbsp;;&nbsp;&nbsp;Ким видано:&nbsp;[Заклад]
         </div>
-
         <p class="small mb-1">Між типом документа і номером — <strong>два або більше пробіли</strong>. Між частинами — крапка з комою (<code>;</code>).</p>
+
+		<h6 class="mb-2">Формат колонок C та D (Академічна довідка)</h6>
+		<div class="alert alert-secondary small py-2 font-monospace mb-1">
+		  C: [Номер довідки]&nbsp;;&nbsp;[Заклад укр]&nbsp;;&nbsp;[Країна укр]&nbsp;;&nbsp;[Дата видачі]<br>
+		  D: [Номер довідки]&nbsp;;&nbsp;[Institution EN]&nbsp;;&nbsp;[Country EN]&nbsp;;&nbsp;[Дата видачі]
+		</div>
+		<p class="small text-muted mb-3">У колонці D номер та дата дублюються — використовуються лише заклад та країна англійською.</p>
+
+		<h6 class="mb-2">Формат колонок E та F (Свідоцтво про визнання)</h6>
+		<div class="alert alert-secondary small py-2 font-monospace mb-1">
+		  E: [Номер свідоцтва]&nbsp;;&nbsp;[Орган укр]&nbsp;;&nbsp;[Дата видачі]<br>
+		  F: [Номер свідоцтва]&nbsp;;&nbsp;[Issuer EN]&nbsp;;&nbsp;[Дата видачі]
+		</div>
+		<p class="small text-muted mb-0">У колонці F номер та дата дублюються — використовується лише орган англійською. Колонки C–F необов'язкові.</p>
 
         <div class="table-responsive mb-3">
           <table class="table table-sm table-bordered small align-middle">

@@ -188,7 +188,7 @@ def manage_education_documents():
     cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
     groups = cursor.fetchall()
 
-    # --- Отримуємо студента, якщо перейшли з картки студента ---
+    # --- Отримуємо студента, якщо перейшли з картки ---
     student = None
     student_id_param = request.args.get('student_id', type=int)
     if student_id_param:
@@ -202,7 +202,6 @@ def manage_education_documents():
             cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
             grow = cursor.fetchone()
             student['group_name'] = grow['name'] if grow else ''
-    # -------------------------------------------------------------
 
     selected_group_id = request.args.get('group_id', type=int)
     if not selected_group_id and student:
@@ -219,6 +218,7 @@ def manage_education_documents():
         """, (selected_group_id,))
         students_without_docs = cursor.fetchall()
 
+    # Основний запит документів
     cursor.execute("""
         SELECT g.id AS group_id, g.name AS group_name, s.id AS student_id,
                s.last_name_UA, s.first_name_UA,
@@ -246,7 +246,7 @@ def manage_education_documents():
 
     sorted_documents_by_group = sorted(documents_by_group.items(), key=lambda x: x[1]['group_name'])
 
-    # --- Перевіряємо, чи є у студента документ, і якщо є - його doc_id ---
+    # Перевіряємо doc_id для студента
     student_doc_id = None
     if student:
         for gid, gdata in documents_by_group.items():
@@ -256,8 +256,8 @@ def manage_education_documents():
                     break
             if student_doc_id:
                 break
-    # ----------------------------------------------------------------------
 
+    # ====================== POST ======================
     if request.method == 'POST':
         action = request.form.get('action')
 
@@ -267,10 +267,7 @@ def manage_education_documents():
                 cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 cursor.execute("DELETE FROM education_documents WHERE id = ?", (doc_id,))
                 db.commit()
-                log_action(
-                    session.get('username', 'невідомо'),
-                    f"ВИДАЛИВ документ про освіту ID {doc_id}"
-                )
+                log_action(session.get('username', 'невідомо'), f"ВИДАЛИВ документ про освіту ID {doc_id}")
                 flash('Документ успішно видалено', 'success')
             except sqlite3.Error as e:
                 db.rollback()
@@ -279,24 +276,9 @@ def manage_education_documents():
         elif action == 'edit':
             doc_id = request.form.get('doc_id')
             student_id = request.form.get('student_id')
-            document_type = request.form.get('document_type')
-            document_type_en = request.form.get('document_type_en')
-            document_number = request.form.get('document_number')
-            institution_name = request.form.get('institution_name')
-            institution_name_en = request.form.get('institution_name_en')
-            country = request.form.get('country')
-            country_en = request.form.get('country_en')
-            completion_date = request.form.get('completion_date')
-            reference_number = request.form.get('reference_number') or None
-            reference_institution = request.form.get('reference_institution') or None
-            reference_institution_en = request.form.get('reference_institution_en') or None
-            reference_country = request.form.get('reference_country') or None
-            reference_country_en = request.form.get('reference_country_en') or None
-            reference_issue_date = request.form.get('reference_issue_date') or None
-            recognition_certificate_number = request.form.get('recognition_certificate_number') or None
-            recognition_issuer = request.form.get('recognition_issuer') or None
-            recognition_issuer_en = request.form.get('recognition_issuer_en') or None
-            recognition_date = request.form.get('recognition_date') or None
+
+            country = request.form.get('country') or ''
+            country_en = request.form.get('country_en') or ''
 
             try:
                 cursor.execute("SELECT student_id FROM education_documents WHERE id = ?", (doc_id,))
@@ -304,6 +286,7 @@ def manage_education_documents():
                 if not existing:
                     flash('Документ не знайдено', 'danger')
                     return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+
                 if student_id:
                     cursor.execute("SELECT id FROM students WHERE id = ? AND archived = FALSE", (student_id,))
                     if not cursor.fetchone():
@@ -312,35 +295,59 @@ def manage_education_documents():
                 else:
                     student_id = existing[0]
 
+                # Оновлення основного документа (зберігаємо country як ввели)
                 cursor.execute("""
                     UPDATE education_documents SET
                         student_id=?, document_type=?, document_type_en=?, document_number=?,
                         institution_name=?, institution_name_en=?, country=?, country_en=?, completion_date=?
                     WHERE id=?
-                """, (student_id, document_type, document_type_en, document_number,
-                      institution_name, institution_name_en, country, country_en, completion_date, doc_id))
+                """, (student_id, request.form.get('document_type'), request.form.get('document_type_en'),
+                      request.form.get('document_number'), request.form.get('institution_name'),
+                      request.form.get('institution_name_en'), country, country_en,
+                      request.form.get('completion_date'), doc_id))
+
+                # Foreign fields
+                reference_number = request.form.get('reference_number') or None
+                reference_institution = request.form.get('reference_institution') or None
+                reference_institution_en = request.form.get('reference_institution_en') or None
+                reference_country = request.form.get('reference_country') or None
+                reference_country_en = request.form.get('reference_country_en') or None
+                reference_issue_date = request.form.get('reference_issue_date') or None
+                recognition_certificate_number = request.form.get('recognition_certificate_number') or None
+                recognition_issuer = request.form.get('recognition_issuer') or None
+                recognition_issuer_en = request.form.get('recognition_issuer_en') or None
+                recognition_date = request.form.get('recognition_date') or None
+
+                # Рішення приймаємо тільки на основі того, чи заповнені самі поля довідки/визнання,
+                # а НЕ на основі значення country. Це прибирає випадкове видалення довідки
+                # через неправильно передане/незмінене поле "Країна".
+                has_foreign_data = any([
+                    reference_number, reference_institution, reference_country,
+                    reference_issue_date, recognition_certificate_number,
+                    recognition_issuer, recognition_date
+                ])
 
                 cursor.execute("SELECT id FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 foreign_exists = cursor.fetchone()
-                is_foreign = country and country.strip().lower() not in ('україна', 'ukraine')
 
                 if foreign_exists:
-                    cursor.execute("""
-                        UPDATE foreign_education_docs SET
-                            reference_number=?, reference_institution=?, reference_institution_en=?,
-                            reference_country=?, reference_country_en=?, reference_issue_date=?,
-                            recognition_certificate_number=?, recognition_issuer=?,
-                            recognition_issuer_en=?, recognition_date=?
-                        WHERE education_doc_id=?
-                    """, (reference_number, reference_institution, reference_institution_en,
-                          reference_country, reference_country_en, reference_issue_date,
-                          recognition_certificate_number, recognition_issuer,
-                          recognition_issuer_en, recognition_date, doc_id))
+                    if has_foreign_data:
+                        cursor.execute("""
+                            UPDATE foreign_education_docs SET
+                                reference_number=?, reference_institution=?, reference_institution_en=?,
+                                reference_country=?, reference_country_en=?, reference_issue_date=?,
+                                recognition_certificate_number=?, recognition_issuer=?,
+                                recognition_issuer_en=?, recognition_date=?
+                            WHERE education_doc_id=?
+                        """, (reference_number, reference_institution, reference_institution_en,
+                              reference_country, reference_country_en, reference_issue_date,
+                              recognition_certificate_number, recognition_issuer,
+                              recognition_issuer_en, recognition_date, doc_id))
+                    else:
+                        # Видаляємо запис тільки якщо користувач сам очистив усі поля довідки/визнання
+                        cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 else:
-                    has_foreign_data = any([reference_number, reference_institution, reference_country,
-                                            reference_issue_date, recognition_certificate_number,
-                                            recognition_issuer, recognition_date])
-                    if is_foreign and has_foreign_data:
+                    if has_foreign_data:
                         cursor.execute("""
                             INSERT INTO foreign_education_docs (
                                 education_doc_id, reference_number, reference_institution, reference_institution_en,
@@ -354,30 +361,33 @@ def manage_education_documents():
                 db.commit()
                 log_action(
                     session.get('username', 'невідомо'),
-                    f"редагував документ про освіту ID {doc_id}: {document_type} №{document_number}",
-                    details=f"заклад: {institution_name}, країна: {country}"
+                    f"редагував документ про освіту ID {doc_id}",
+                    details=f"країна: {country}"
                 )
                 flash('Документ успішно оновлено', 'success')
 
             except sqlite3.Error as e:
                 db.rollback()
-                flash(f'Помилка при редагуванні документа: {e}', 'danger')
+                flash(f'Помилка при редагуванні: {e}', 'danger')
             except Exception as e:
                 db.rollback()
                 flash(f'Непередбачена помилка: {str(e)}', 'danger')
 
             return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
 
+        # === Додавання нового документа ===
         else:
+            country = request.form.get('country') or ''
+            country_en = request.form.get('country_en') or ''
+
             student_id = request.form.get('student_id')
             document_type = request.form.get('document_type')
             document_type_en = request.form.get('document_type_en')
             document_number = request.form.get('document_number')
             institution_name = request.form.get('institution_name')
             institution_name_en = request.form.get('institution_name_en')
-            country = request.form.get('country')
-            country_en = request.form.get('country_en')
             completion_date = request.form.get('completion_date')
+
             reference_number = request.form.get('reference_number') or None
             reference_institution = request.form.get('reference_institution') or None
             reference_institution_en = request.form.get('reference_institution_en') or None
@@ -392,6 +402,7 @@ def manage_education_documents():
             try:
                 if not student_id:
                     raise ValueError("Не обрано студента")
+
                 cursor.execute("""
                     INSERT INTO education_documents (
                         student_id, document_type, document_type_en, document_number,
@@ -399,12 +410,16 @@ def manage_education_documents():
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (student_id, document_type, document_type_en, document_number,
                       institution_name, institution_name_en, country, country_en, completion_date))
+
                 education_doc_id = cursor.lastrowid
 
-                is_foreign = country and country.strip().lower() not in ('україна', 'ukraine')
-                has_foreign_data = any([reference_number, reference_institution, reference_country,
-                                        recognition_certificate_number, recognition_issuer, recognition_date])
-                if is_foreign and has_foreign_data:
+                has_foreign_data = any([
+                    reference_number, reference_institution, reference_country,
+                    reference_issue_date, recognition_certificate_number,
+                    recognition_issuer, recognition_date
+                ])
+
+                if has_foreign_data:
                     cursor.execute("""
                         INSERT INTO foreign_education_docs (
                             education_doc_id, reference_number, reference_institution, reference_institution_en,
@@ -418,28 +433,29 @@ def manage_education_documents():
                 db.commit()
                 log_action(
                     session.get('username', 'невідомо'),
-                    f"додав документ про освіту: {document_type} №{document_number} (студент ID {student_id})",
-                    details=f"заклад: {institution_name}, країна: {country}"
+                    f"додав документ про освіту: {document_type} №{document_number}",
+                    details=f"країна: {country}"
                 )
                 flash('Документ успішно додано', 'success')
 
             except (sqlite3.Error, ValueError) as e:
                 db.rollback()
-                flash(f'Помилка при додаванні документа: {str(e)}', 'danger')
+                flash(f'Помилка при додаванні: {str(e)}', 'danger')
 
         return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
 
     cursor.close()
     return render_template(
         'manage_education_documents.html',
-        groups=groups, selected_group_id=selected_group_id,
+        groups=groups,
+        selected_group_id=selected_group_id,
         students_without_docs=students_without_docs,
         documents_by_group=sorted_documents_by_group,
         students=students,
         student=student,
         student_doc_id=student_doc_id
     )
-
+    
 @admin_bp.route('/admin/manage_groups', methods=['GET', 'POST'])
 @permission_required('manage_groups')
 def manage_groups():
@@ -1167,9 +1183,12 @@ def add_user():
                 flash(f'Користувач з іменем "{username}" вже існує', 'danger')
                 return redirect(url_for('admin.add_user'))
 
-            conn.execute("INSERT INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
-                         (username, generate_password_hash(password), role, is_admin, permissions))
-            user_id = conn.lastrowid
+            cursor = conn.execute(
+                "INSERT INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
+                (username, generate_password_hash(password), role, is_admin, permissions)
+            )
+
+            user_id = cursor.lastrowid
 
             for gid in group_ids:
                 if gid:
@@ -1675,6 +1694,16 @@ def load_preview_from_file(preview_id):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def fuzzy_find_student(cursor, full_name, threshold=80):
+    cursor.execute("SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE archived=FALSE")
+    students = cursor.fetchall()
+    names = ["{} {} {}".format(s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"]) for s in students]
+    matches = process.extract(full_name, names, scorer=fuzz.ratio, limit=3)
+    for match_name, score, idx in matches:
+        if score >= threshold:
+            return students[idx]["id"], match_name, score
+    return None, None, None
+
 def translate_to_en(text):
     if not text:
         return ""
@@ -1687,18 +1716,28 @@ def translate_to_en(text):
     except Exception as e:
         logging.warning(f"Помилка перекладу '{text}': {e}")
         return text
-
+        
 def find_country(text):
     countries = {
-        "польща": "Poland", "poland": "Poland",
-        "німеччина": "Germany", "germany": "Germany",
-        "чех": "Czech Republic", "czech": "Czech Republic",
-        "словач": "Slovakia", "slovakia": "Slovakia"
+        "польща": "Poland",
+        "poland": "Poland",
+        "німеччина": "Germany",
+        "germany": "Germany",
+        "чех": "Czech Republic",
+        "czech": "Czech Republic",
+        "словач": "Slovakia",
+        "slovakia": "Slovakia"
     }
+
     lower = text.lower()
+
     for key, en in countries.items():
         if key in lower:
             return key.capitalize(), en
+
+    if "україна " in lower:
+        return "Україна ", "Ukraine"
+
     return "Україна", "Ukraine"
 
 def parse_document(text: str):
@@ -1721,7 +1760,8 @@ def parse_document(text: str):
         doc_number = parts[-1].strip()
 
     completion_date = match.group("date").strip()
-    institution = match.group("institution").strip()
+    completion_date = completion_date.replace(".", "/")
+    institution = match.group("institution")
     country, country_en = find_country(institution)
 
     return {
@@ -1735,38 +1775,91 @@ def parse_document(text: str):
         "country_en": country_en
     }
 
-def fuzzy_find_student(cursor, full_name, threshold=80):
-    cursor.execute("SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE archived=FALSE")
-    students = cursor.fetchall()
-    names = ["{} {} {}".format(s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"]) for s in students]
-    matches = process.extract(full_name, names, scorer=fuzz.ratio, limit=3)
-    for match_name, score, idx in matches:
-        if score >= threshold:
-            return students[idx]["id"], match_name, score
-    return None, None, None
+def parse_reference_cell_ua(text):
+    if not text or not str(text).strip():
+        return {
+            "reference_number": "",
+            "reference_institution": "",
+            "reference_country": "",
+            "reference_issue_date": "",
+        }
+    parts = [p.strip() for p in str(text).split(";")]
+    parts += [""] * (4 - len(parts))
+    return {
+        "reference_number": parts[0],
+        "reference_institution": parts[1],
+        "reference_country": parts[2],
+        "reference_issue_date": parts[3],
+    }
+
+def parse_reference_cell_en(text):
+    if not text or not str(text).strip():
+        return {
+            "reference_institution_en": "",
+            "reference_country_en": "",
+        }
+    parts = [p.strip() for p in str(text).split(";")]
+    parts += [""] * (4 - len(parts))
+    return {
+        "reference_institution_en": parts[1],
+        "reference_country_en": parts[2],
+    }
+
+def parse_recognition_cell_ua(text):
+    if not text or not str(text).strip():
+        return {
+            "recognition_certificate_number": "",
+            "recognition_issuer": "",
+            "recognition_date": "",
+        }
+    parts = [p.strip() for p in str(text).split(";")]
+    parts += [""] * (3 - len(parts))
+    return {
+        "recognition_certificate_number": parts[0],
+        "recognition_issuer": parts[1],
+        "recognition_date": parts[2],
+    }
+
+def parse_recognition_cell_en(text):
+    if not text or not str(text).strip():
+        return {
+            "recognition_issuer_en": "",
+        }
+    parts = [p.strip() for p in str(text).split(";")]
+    parts += [""] * (3 - len(parts))
+    return {
+        "recognition_issuer_en": parts[1],
+    }
 
 def import_documents_preview(file_path, db):
     wb = load_workbook(file_path)
     sheet = wb.active
     cursor = db.cursor()
     preview_rows = []
-
     for row_index, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
         fio = row[0]
         document_text = row[1]
+        reference_ua_text = row[2] if len(row) > 2 else None
+        reference_en_text = row[3] if len(row) > 3 else None
+        recognition_ua_text = row[4] if len(row) > 4 else None
+        recognition_en_text = row[5] if len(row) > 5 else None
+
         if not fio or not document_text:
             preview_rows.append({"row_index": row_index, "error": "Пусті дані"})
             continue
-
         student_id, matched_name, score = fuzzy_find_student(cursor, fio)
         if not student_id:
             preview_rows.append({"row_index": row_index, "error": f"Студент не знайдений: {fio}"})
             continue
-
         data = parse_document(document_text)
         if not data:
             preview_rows.append({"row_index": row_index, "error": f"Не вдалося розпізнати документ: {document_text}"})
             continue
+
+        data.update(parse_reference_cell_ua(reference_ua_text))
+        data.update(parse_reference_cell_en(reference_en_text))
+        data.update(parse_recognition_cell_ua(recognition_ua_text))
+        data.update(parse_recognition_cell_en(recognition_en_text))
 
         cursor.execute("""
             SELECT id, document_type, document_type_en, document_number, completion_date,
@@ -1782,6 +1875,7 @@ def import_documents_preview(file_path, db):
                 "status": "Оновлення", "status_class": "text-warning",
                 "existing_info": f"(існує: {existing_doc['document_number'] or 'без номера'})",
                 "has_document": True,
+                "existing_doc_id": existing_doc["id"],
                 "old_document_type": existing_doc["document_type"] or "",
                 "old_document_type_en": existing_doc["document_type_en"] or "",
                 "old_document_number": existing_doc["document_number"] or "",
@@ -1791,14 +1885,33 @@ def import_documents_preview(file_path, db):
                 "old_country": existing_doc["country"] or "",
                 "old_country_en": existing_doc["country_en"] or "",
             })
+
+            cursor.execute("""
+                SELECT reference_number, reference_institution, reference_institution_en,
+                       reference_country, reference_country_en, reference_issue_date,
+                       recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
+                FROM foreign_education_docs WHERE education_doc_id=?
+            """, (existing_doc["id"],))
+            existing_foreign = cursor.fetchone()
+            if existing_foreign:
+                row_data.update({
+                    "old_reference_number": existing_foreign["reference_number"] or "",
+                    "old_reference_institution": existing_foreign["reference_institution"] or "",
+                    "old_reference_institution_en": existing_foreign["reference_institution_en"] or "",
+                    "old_reference_country": existing_foreign["reference_country"] or "",
+                    "old_reference_country_en": existing_foreign["reference_country_en"] or "",
+                    "old_reference_issue_date": existing_foreign["reference_issue_date"] or "",
+                    "old_recognition_certificate_number": existing_foreign["recognition_certificate_number"] or "",
+                    "old_recognition_issuer": existing_foreign["recognition_issuer"] or "",
+                    "old_recognition_issuer_en": existing_foreign["recognition_issuer_en"] or "",
+                    "old_recognition_date": existing_foreign["recognition_date"] or "",
+                })
         else:
             row_data.update({"status": "Новий", "status_class": "text-success", "existing_info": "", "has_document": False})
 
         preview_rows.append(row_data)
-
     return preview_rows
-
-
+    
 @admin_bp.route('/admin/import_education_docs_preview', methods=['GET', 'POST'])
 @permission_required('import_education_docs')
 def import_docs_preview():
@@ -1820,7 +1933,6 @@ def import_docs_preview():
         return render_template("import_education_preview.html", preview=preview, preview_id=preview_id)
 
     return render_template("import_education_upload.html")
-
 
 @admin_bp.route('/admin/import_docs_commit', methods=['POST'])
 @permission_required('import_education_docs')
@@ -1846,6 +1958,21 @@ def import_docs_commit():
             row["country"]             = request.form.get(f"country_{row_index}",             row["country"])
             row["country_en"]          = request.form.get(f"country_en_{row_index}",          row["country_en"])
 
+            reference_number = request.form.get(f"reference_number_{row_index}", row.get("reference_number", "")) or None
+            reference_institution = request.form.get(f"reference_institution_{row_index}", row.get("reference_institution", "")) or None
+            reference_institution_en = request.form.get(f"reference_institution_en_{row_index}", row.get("reference_institution_en", "")) or None
+            reference_country = request.form.get(f"reference_country_{row_index}", row.get("reference_country", "")) or None
+            reference_country_en = request.form.get(f"reference_country_en_{row_index}", row.get("reference_country_en", "")) or None
+            reference_issue_date = request.form.get(f"reference_issue_date_{row_index}", row.get("reference_issue_date", "")) or None
+            recognition_certificate_number = request.form.get(f"recognition_certificate_number_{row_index}", row.get("recognition_certificate_number", "")) or None
+            recognition_issuer = request.form.get(f"recognition_issuer_{row_index}", row.get("recognition_issuer", "")) or None
+            recognition_issuer_en = request.form.get(f"recognition_issuer_en_{row_index}", row.get("recognition_issuer_en", "")) or None
+            recognition_date = request.form.get(f"recognition_date_{row_index}", row.get("recognition_date", "")) or None
+
+            country_lower = (row["country"] or "").lower()
+
+            is_foreign = not (country_lower in ('україна', 'ukraine'))
+
             cursor = db.cursor()
             cursor.execute("SELECT id FROM education_documents WHERE student_id=?", (row["student_id"],))
             existing = cursor.fetchone()
@@ -1855,13 +1982,14 @@ def import_docs_commit():
             country_en   = row.get("country_en", "") or ""
 
             if existing:
+                education_doc_id = existing["id"]
                 cursor.execute("""
                     UPDATE education_documents SET
                         document_type=?, document_type_en=?, document_number=?, completion_date=?,
                         institution_name=?, institution_name_en=?, country=?, country_en=?
                     WHERE id=?
                 """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
-                      row["institution_name"], inst_name_en, row["country"], row["country_en"], existing["id"]))
+                      row["institution_name"], inst_name_en, row["country"], row["country_en"], education_doc_id))
                 updated += 1
             else:
                 cursor.execute("""
@@ -1871,7 +1999,86 @@ def import_docs_commit():
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (row["student_id"], row["document_type"], doc_type_en, row["document_number"],
                       row["completion_date"], row["institution_name"], inst_name_en, row["country"], country_en))
+                education_doc_id = cursor.lastrowid
                 added += 1
+
+            # --- Foreign / recognition data ---
+            cursor.execute(
+                "SELECT id FROM foreign_education_docs WHERE education_doc_id = ?",
+                (education_doc_id,)
+            )
+            foreign_exists = cursor.fetchone()
+
+            # Если заполнена хотя бы одна колонка аккредитации/признания
+            has_foreign_data = any([
+                reference_number,
+                reference_institution,
+                reference_country,
+                reference_issue_date,
+                recognition_certificate_number,
+                recognition_issuer,
+                recognition_date
+            ])
+
+            if foreign_exists:
+                if has_foreign_data:
+                    cursor.execute("""
+                        UPDATE foreign_education_docs SET
+                            reference_number=?, reference_institution=?, reference_institution_en=?,
+                            reference_country=?, reference_country_en=?, reference_issue_date=?,
+                            recognition_certificate_number=?, recognition_issuer=?,
+                            recognition_issuer_en=?, recognition_date=?
+                        WHERE education_doc_id=?
+                    """, (
+                        reference_number,
+                        reference_institution,
+                        reference_institution_en,
+                        reference_country,
+                        reference_country_en,
+                        reference_issue_date,
+                        recognition_certificate_number,
+                        recognition_issuer,
+                        recognition_issuer_en,
+                        recognition_date,
+                        education_doc_id
+                    ))
+                else:
+                    # если все поля пустые - удаляем старую запись
+                    cursor.execute(
+                        "DELETE FROM foreign_education_docs WHERE education_doc_id=?",
+                        (education_doc_id,)
+                    )
+
+            else:
+                if has_foreign_data:
+                    cursor.execute("""
+                        INSERT INTO foreign_education_docs (
+                            education_doc_id,
+                            reference_number,
+                            reference_institution,
+                            reference_institution_en,
+                            reference_country,
+                            reference_country_en,
+                            reference_issue_date,
+                            recognition_certificate_number,
+                            recognition_issuer,
+                            recognition_issuer_en,
+                            recognition_date
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        education_doc_id,
+                        reference_number,
+                        reference_institution,
+                        reference_institution_en,
+                        reference_country,
+                        reference_country_en,
+                        reference_issue_date,
+                        recognition_certificate_number,
+                        recognition_issuer,
+                        recognition_issuer_en,
+                        recognition_date
+                    ))
 
     db.commit()
 
