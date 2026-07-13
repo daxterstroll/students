@@ -223,14 +223,17 @@
                                                                 <div class="col-md-6"><strong>Country (EN):</strong> {{ doc.country_en }}</div>
                                                                 <div class="col-12"><strong>Дата закінчення:</strong> {{ doc.completion_date }}</div>
                                                                 {% if doc.reference_number %}
-                                                                    <div class="col-12 mt-3 border-top pt-3"><h6>Дані про визнання / довідка</h6></div>
+                                                                    <div class="col-12 mt-3 border-top pt-3"><h6>Академічна довідка</h6></div>
                                                                     <div class="col-12"><strong>Номер довідки:</strong> {{ doc.reference_number }}</div>
                                                                     <div class="col-md-6"><strong>Заклад довідки:</strong> {{ doc.reference_institution }}</div>
                                                                     <div class="col-md-6"><strong>Reference Institution:</strong> {{ doc.reference_institution_en }}</div>
                                                                     <div class="col-md-6"><strong>Країна довідки:</strong> {{ doc.reference_country }}</div>
                                                                     <div class="col-md-6"><strong>Reference Country:</strong> {{ doc.reference_country_en }}</div>
-                                                                    <div class="col-12"><strong>Дата видачі довідки:</strong> {{ doc.reference_issue_date }}</div>
-                                                                    <div class="col-12"><strong>Свідоцтво про визнання №:</strong> {{ doc.recognition_certificate_number }}</div>
+                                                                    <div class="col-12"><strong>Дата видачі довідки:</strong> {{ doc.reference_issue_date }}</div>																	
+                                                                {% endif %}
+																{% if doc.recognition_certificate_number %}
+																	<div class="col-12 mt-3 border-top pt-3">Свідоцтво про визнання в Україні іноземного документа про освіту:</div>
+																	<div class="col-md-6"><strong>Номер:</strong> {{ doc.recognition_certificate_number }}</div>
                                                                     <div class="col-md-6"><strong>Видав:</strong> {{ doc.recognition_issuer }}</div>
                                                                     <div class="col-md-6"><strong>Issuer (EN):</strong> {{ doc.recognition_issuer_en }}</div>
                                                                     <div class="col-12"><strong>Дата видачі свідоцтва:</strong> {{ doc.recognition_date }}</div>
@@ -294,8 +297,8 @@
                                                                     </div>
 
                                                                     <!-- Іноземні поля -->
-                                                                   <div id="edit_foreign_fields{{ doc.doc_id }}" style="display: none;">
-																	<h6 class="mt-4">Додаткові дані (для іноземних документів)</h6>
+																	{% if doc.reference_number %}
+																	<h6 class="mt-4">Академічна довідка:</h6>
 																	<div class="row g-3">
 																		<div class="col-md-12">
 																			<label for="edit_reference_number{{ doc.doc_id }}" class="form-label">Номер довідки</label>
@@ -326,14 +329,19 @@
 																			<label for="edit_reference_issue_date{{ doc.doc_id }}" class="form-label">Дата видачі довідки</label>
 																			<input type="text" name="reference_issue_date" id="edit_reference_issue_date{{ doc.doc_id }}" 
 																				   class="form-control" value="{{ doc.reference_issue_date or '' }}">
-																		</div>
+																		</div>																	
+																	</div>																	
+																	{% endif %}
+																	{% if doc.recognition_certificate_number %}
+																	<h6 class="mt-4">Свідоцтво про визнання в Україні іноземного документа про освіту:</h6>
+																	<div class="row g-3">
 																		<div class="col-md-12">
-																			<label for="edit_recognition_certificate_number{{ doc.doc_id }}" class="form-label">Номер свідоцтва про визнання</label>
+																			<label for="edit_recognition_certificate_number{{ doc.doc_id }}" class="form-label">Номер</label>
 																			<input type="text" name="recognition_certificate_number" id="edit_recognition_certificate_number{{ doc.doc_id }}" 
 																				   class="form-control" value="{{ doc.recognition_certificate_number or '' }}">
 																		</div>
 																		<div class="col-md-6">
-																			<label for="edit_recognition_issuer{{ doc.doc_id }}" class="form-label">Хто видав свідоцтво</label>
+																			<label for="edit_recognition_issuer{{ doc.doc_id }}" class="form-label">Хто видав</label>
 																			<input type="text" name="recognition_issuer" id="edit_recognition_issuer{{ doc.doc_id }}" 
 																				   class="form-control" value="{{ doc.recognition_issuer or '' }}">
 																		</div>
@@ -343,12 +351,12 @@
 																				   class="form-control" value="{{ doc.recognition_issuer_en or '' }}">
 																		</div>
 																		<div class="col-md-12">
-																			<label for="edit_recognition_date{{ doc.doc_id }}" class="form-label">Дата видачі свідоцтва</label>
+																			<label for="edit_recognition_date{{ doc.doc_id }}" class="form-label">Дата видачі</label>
 																			<input type="text" name="recognition_date" id="edit_recognition_date{{ doc.doc_id }}" 
 																				   class="form-control" value="{{ doc.recognition_date or '' }}">
 																		</div>
-																	</div>
-																</div>
+																	</div>																	
+																	{% endif %}
                                                                 <div class="col-12 mt-3">
                                                                     <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
                                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
@@ -417,20 +425,20 @@
         }
     });
 
-    // Ініціалізація модальних вікон редагування
-    document.addEventListener('DOMContentLoaded', function() {
-        document.querySelectorAll('[id^="editModal"]').forEach(modal => {
-            const docId = modal.id.replace('editModal', '');
-            const countryInput = document.getElementById('edit_country' + docId);
-            if (countryInput) {
-                const foreignContainer = document.getElementById('edit_foreign_fields' + docId);
-                if (foreignContainer) {
-                    const val = (countryInput.value || '').trim().toLowerCase();
-                    foreignContainer.style.display = (val !== 'україна' && val !== 'ukraine') ? 'block' : 'none';
-                }
-            }
-        });
-    });
+    <!-- // Ініціалізація модальних вікон редагування -->
+    <!-- document.addEventListener('DOMContentLoaded', function() { -->
+        <!-- document.querySelectorAll('[id^="editModal"]').forEach(modal => { -->
+            <!-- const docId = modal.id.replace('editModal', ''); -->
+            <!-- const countryInput = document.getElementById('edit_country' + docId); -->
+            <!-- if (countryInput) { -->
+                <!-- const foreignContainer = document.getElementById('edit_foreign_fields' + docId); -->
+                <!-- if (foreignContainer) { -->
+                    <!-- const val = (countryInput.value || '').toLowerCase(); -->
+                    <!-- foreignContainer.style.display = (val !== 'україна' && val !== 'ukraine') ? 'block' : 'none'; -->
+                <!-- } -->
+            <!-- } -->
+        <!-- }); -->
+    <!-- }); -->
 
     // --- НОВЕ: автоматичне відкриття редагування/форми додавання для студента з картки ---
     window.addEventListener('load', function () {
