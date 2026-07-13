@@ -178,6 +178,39 @@
                                             </tbody>
                                         </table>
                                     </div>
+							{% if doc.reference_number or doc.reference_institution or doc.reference_institution_en or doc.reference_country or doc.reference_country_en or doc.reference_issue_date %}
+                                    <div class="border rounded-3 p-4 mb-4">
+                                        <h5>Академічна довідка</h5>
+                                        <table class="table table-sm table-borderless">
+                                            <tbody>
+                                                <tr><th class="w-50 text-muted">Номер</th><td>{{ doc.reference_number | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Заклад</th><td>{{ doc.reference_institution | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Reference Institution (EN)</th><td>{{ doc.reference_institution_en | default('-') }}</td></tr>
+												<tr><th class="text-muted">Країна</th><td>{{ doc.reference_country | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Reference Country (EN)</th><td>{{ doc.reference_country_en | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Дата закінчення</th><td>{{ doc.reference_issue_date | default('-') }}</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>							
+                            {% endif %}
+														
+							{% if doc.recognition_certificate_number or doc.recognition_issuer or doc.recognition_issuer_en or doc.recognition_date %}
+                                    <div class="border rounded-3 p-4 mb-4">
+                                        <h5>Свідоцтво про визнання в Україні іноземного документа про освіту</h5>
+                                        <table class="table table-sm table-borderless">
+                                            <tbody>
+                                                <tr><th class="w-50 text-muted">Номер свідоцтва про визнання</th><td>{{ doc.recognition_certificate_number | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Орган, що видав свідоцтво</th><td>{{ doc.recognition_issuer | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Recognition Issuer (EN)</th><td>{{ doc.recognition_issuer_en | default('-') }}</td></tr>
+												<tr><th class="text-muted">Дата видачі свідоцтва</th><td>{{ doc.recognition_date | default('-') }}</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>							
+                            {% endif %}
+									
+									
+									
+									
                                 {% endfor %}
                             {% else %}
                                 <p class="text-muted text-center py-5">Документи про освіту відсутні</p>
@@ -190,7 +223,6 @@
         </div>
     </div>
 </div>
-
 <style>
     .accordion-button:not(.collapsed) {
         background-color: var(--paper-2) !important;
