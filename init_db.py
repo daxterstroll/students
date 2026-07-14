@@ -177,6 +177,19 @@ CREATE TABLE diplomas (
     appendix_number TEXT,
     FOREIGN KEY (student_id) REFERENCES students(id)
 );
+CREATE TABLE student_study_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    filiya TEXT NOT NULL,             
+    filiya_en TEXT NOT NULL,             
+    group_name TEXT,                  
+    start_date TEXT,                   
+    end_date TEXT,                    
+    period_order INTEGER NOT NULL DEFAULT 0,  
+    note TEXT                         
+);
+
+CREATE INDEX idx_study_periods_student ON student_study_periods(student_id);
 """)
 
 # Додаємо користувачів

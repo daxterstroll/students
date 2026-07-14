@@ -200,7 +200,6 @@ def student_list():
         sort_order=sort_order
     )
 
-
 @students_bp.route('/students/<int:student_id>')
 @login_required('')
 def student_details(student_id):
@@ -304,6 +303,13 @@ def student_details(student_id):
         WHERE ed.student_id = ?
         ORDER BY ed.completion_date DESC
     """, (student_id,)).fetchall()
+    
+    study_periods = conn.execute("""
+        SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
+        FROM student_study_periods
+        WHERE student_id = ?
+        ORDER BY period_order ASC, start_date ASC
+    """, (student_id,)).fetchall()
 
     student_dict = dict(student)
     military_dict = dict(military) if military else None
@@ -317,9 +323,98 @@ def student_details(student_id):
         practice_data=practice_data,
         coursework_data=coursework_data,
         attestation_data=attestation_data,
-        education_docs=education_docs
+        education_docs=education_docs,
+        study_periods=study_periods
     )
 
+@students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
+@permission_required('study_periods')
+def manage_study_periods(student_id):
+    db = get_db()
+    cursor = db.cursor()
+
+    cursor.execute("""
+        SELECT id, last_name_UA, first_name_UA, middle_name_UA
+        FROM students WHERE id = ?
+    """, (student_id,))
+    student = cursor.fetchone()
+    if not student:
+        flash('Студента не знайдено', 'danger')
+        return redirect(url_for('admin.manage_education_documents'))
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            filiya = (request.form.get('filiya') or '').strip()
+            filiya_en = (request.form.get('filiya_en') or '').strip() or None
+            group_name = (request.form.get('group_name') or '').strip() or None
+            start_date = (request.form.get('start_date') or '').strip() or None
+            end_date = (request.form.get('end_date') or '').strip() or None
+            period_order = request.form.get('period_order', type=int) or 0
+            note = (request.form.get('note') or '').strip() or None
+
+            if not filiya:
+                flash('Потрібно вказати філію', 'danger')
+            else:
+                cursor.execute("""
+                    INSERT INTO student_study_periods
+                        (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note))
+                db.commit()
+                log_action(session.get('username', 'невідомо'),
+                           f"додав період навчання студенту ID {student_id}: {filiya}")
+                flash('Період навчання додано', 'success')
+
+        elif action == 'edit':
+            period_id = request.form.get('period_id')
+            filiya = (request.form.get('filiya') or '').strip()
+            filiya_en = (request.form.get('filiya_en') or '').strip() or None
+            group_name = (request.form.get('group_name') or '').strip() or None
+            start_date = (request.form.get('start_date') or '').strip() or None
+            end_date = (request.form.get('end_date') or '').strip() or None
+            period_order = request.form.get('period_order', type=int) or 0
+            note = (request.form.get('note') or '').strip() or None
+
+            if not filiya:
+                flash('Потрібно вказати філію', 'danger')
+            else:
+                cursor.execute("""
+                    UPDATE student_study_periods SET
+                        filiya=?, filiya_en=?, group_name=?, start_date=?, end_date=?, period_order=?, note=?
+                    WHERE id=? AND student_id=?
+                """, (filiya, filiya_en, group_name, start_date, end_date, period_order, note, period_id, student_id))
+                db.commit()
+                log_action(session.get('username', 'невідомо'),
+                           f"оновив період навчання ID {period_id} студенту ID {student_id}")
+                flash('Період навчання оновлено', 'success')
+
+        elif action == 'delete':
+            period_id = request.form.get('period_id')
+            cursor.execute("""
+                DELETE FROM student_study_periods WHERE id=? AND student_id=?
+            """, (period_id, student_id))
+            db.commit()
+            log_action(session.get('username', 'невідомо'),
+                       f"видалив період навчання ID {period_id} студенту ID {student_id}")
+            flash('Період навчання видалено', 'success')
+
+        return redirect(url_for('admin.manage_study_periods', student_id=student_id))
+
+    cursor.execute("""
+        SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
+        FROM student_study_periods
+        WHERE student_id = ?
+        ORDER BY period_order ASC, start_date ASC
+    """, (student_id,))
+    periods = cursor.fetchall()
+
+    return render_template(
+        'manage_study_periods.html',
+        student=student,
+        periods=periods
+    )
 
 @students_bp.route('/students/add', methods=['GET', 'POST'])
 @login_required('')
@@ -434,7 +529,6 @@ def add_student():
     conn.close()
     return render_template('add_student.html', groups=groups)
 
-
 @students_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
 @login_required('')
 def edit_student(student_id):
@@ -537,7 +631,6 @@ def edit_student(student_id):
     conn.close()
     return render_template('edit_student.html', student=student, groups=groups)
 
-
 @students_bp.route('/students/<int:student_id>/delete')
 @permission_required('manage_students')
 def delete_student(student_id):
@@ -577,7 +670,6 @@ def delete_student(student_id):
         conn.close()
 
     return redirect(url_for('students.student_list'))
-
 
 @students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
 @login_required('')
@@ -632,7 +724,6 @@ def add_military(student_id):
         return redirect(url_for('students.student_list'))
 
     return render_template('add_military.html', student_id=student_id)
-
 
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
 @login_required('')
@@ -698,7 +789,6 @@ def military_data(student_id):
     conn.close()
     return render_template('edit_military.html', student_id=student_id, military=military)
 
-
 @students_bp.route('/students/<int:student_id>/military/delete')
 @permission_required('manage_students')
 def delete_military(student_id):
@@ -716,7 +806,6 @@ def delete_military(student_id):
         group_ids=[student_row['group_id']] if student_row else []
     )
     return redirect(url_for('students.student_list'))
-
 
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
@@ -789,7 +878,6 @@ def generate(student_id):
         return redirect(url_for('students.student_list'))
 
     return render_template('generate_word.html', student_id=student_id)
-
 
 @students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
 @login_required('')
@@ -898,7 +986,6 @@ def edit_activities_grades(student_id):
         attestations=attestations, grade_map=grade_map
     )
 
-
 @students_bp.route('/grades/<int:student_id>', methods=['GET', 'POST'])
 @login_required('')
 def edit_grades(student_id):
@@ -944,7 +1031,6 @@ def edit_grades(student_id):
 
     conn.close()
     return render_template("edit_grades.html", student=student, subjects=subjects, grade_map=grade_map)
-
 
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
 @permission_required('import_from_excel')
