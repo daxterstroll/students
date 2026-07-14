@@ -3,10 +3,84 @@ import re
 import sqlite3
 from datetime import datetime
 from docxtpl import DocxTemplate
-
 from utils import log_action, logger as global_logger
 from db import get_db
 from datetime import datetime
+from docxtpl import RichText
+
+
+def _to_richtext_multiline(text, separator=";", font_size_pt=8, font_name='Times New Roman'):
+    """
+    Превращает 'Назва 1; Назва 2' в RichText с реальным переносом строки
+    после каждого separator, с заданным размером и шрифтом.
+    """
+    rt = RichText()
+    if not text:
+        rt.add("", size=font_size_pt * 2, font=font_name)
+        return rt
+
+    parts = [p.strip() for p in text.split(separator) if p.strip()]
+    for i, part in enumerate(parts):
+        if i > 0:
+            rt.add(separator + " ", size=font_size_pt * 2, font=font_name)
+            rt.add("\n", size=font_size_pt * 2, font=font_name)
+        rt.add(part, size=font_size_pt * 2, font=font_name)
+    return rt
+
+def _format_date_ddmmyyyy(date_str):
+    """Приводит дату из БД (YYYY-MM-DD, DD.MM.YYYY или уже DD/MM/YYYY) к формату DD/MM/YYYY."""
+    if not date_str:
+        return ""
+    date_str = date_str.strip()
+    for fmt in ('%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(date_str, fmt).strftime('%d/%m/%Y')
+        except ValueError:
+            continue
+    return date_str  # неизвестный формат — вернуть как есть
+
+def get_study_periods(cursor, student_id, lang='ua',
+                       default_filiya="Львівська філія Приватного вищого навчального закладу «Європейський університет»",
+                       default_filiya_en="Lviv Branch of Private Higher Education Establishment «European University»"):
+    """
+    Единый хелпер для подстановки в docx-шаблон.
+    Возвращает кортеж (names_text, dates_text):
+      names_text -> "Назва 1; Назва 2"
+      dates_text -> "01/09/2022-31/05/2025; 01/09/2025-31/05/2026"
+
+    lang='ua' -> використовує filiya
+    lang='en' -> використовує filiya_en
+
+    Якщо записів немає — повертає дефолтну філію і порожні дати.
+    """
+    cursor.execute("""
+        SELECT filiya, filiya_en, group_name, start_date, end_date
+        FROM student_study_periods
+        WHERE student_id = ?
+        ORDER BY period_order ASC, start_date ASC
+    """, (student_id,))
+    periods = cursor.fetchall()
+
+    if not periods:
+        default_name = default_filiya if lang == 'ua' else default_filiya_en
+        return default_name, ""
+
+    names = []
+    dates = []
+    for p in periods:
+        name = p['filiya'] if lang == 'ua' else (p['filiya_en'] or p['filiya'])
+        names.append(name)
+
+        start = _format_date_ddmmyyyy(p['start_date'])
+        end = _format_date_ddmmyyyy(p['end_date'])
+        if start and end:
+            dates.append(f"{start}-{end}")
+        elif start:
+            dates.append(f"{start}-т.ч." if lang == 'ua' else f"{start}-present")
+        else:
+            dates.append("")
+
+    return "; ".join(names), "; ".join(dates)
 
 def insert_subjects_table(doc, student_id):
     """Вставка таблицы с предметами и оценками студента."""
@@ -516,6 +590,39 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         ORDER BY id DESC LIMIT 1
     """, (student['id'],)).fetchone()
     conn.close()
+    
+# -----------------------------
+    # Період навчання (назви окремо, дати окремо, з переносом рядків)
+    # -----------------------------
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        names_ua, dates_ua = get_study_periods(
+            cursor, student_dict['id'], lang='ua',
+            default_filiya=student_dict.get('institution_name', 'Львівська філія'),
+            default_filiya_en=student_dict.get('institution_name_en', 'Lviv branch')
+        )
+        names_en, dates_en = get_study_periods(
+            cursor, student_dict['id'], lang='en',
+            default_filiya=student_dict.get('institution_name', 'Львівська філія'),
+            default_filiya_en=student_dict.get('institution_name_en', 'Lviv branch')
+        )
+    except Exception as e:
+        global_logger.error(f"Ошибка при получении периодов навчання для студента ID {student_dict.get('id', 'unknown')}: {e}")
+        names_ua = student_dict.get('institution_name', '')
+        dates_ua = ''
+        names_en = student_dict.get('institution_name_en', '')
+        dates_en = ''
+    finally:
+        conn.close()
+
+    context['study_period_names'] = _to_richtext_multiline(names_ua, font_size_pt=8, font_name='Times New Roman')
+    context['study_period_dates'] = _to_richtext_multiline(dates_ua, font_size_pt=8, font_name='Times New Roman')
+    context['study_period_names_en'] = _to_richtext_multiline(names_en, font_size_pt=8, font_name='Times New Roman')
+    context['study_period_dates_en'] = _to_richtext_multiline(dates_en, font_size_pt=8, font_name='Times New Roman')
+    
+    
 
     if diploma_row:
         # дополняем нулями до 6 цифр

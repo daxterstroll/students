@@ -426,6 +426,9 @@ main.container {
 				{% if is_admin or 'manage_education_documents' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
                 {% endif %}
+				{% if is_admin or 'bulk_assign' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_study_periods_bulk_assign') }}"><i class="bi bi-calendar2-date"></i> Періоди навчання</a></li>
+                {% endif %}
                 {% if is_admin or 'manage_accreditations' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_accreditations') }}"><i class="bi bi-award"></i> Акредитації</a></li>
                 {% endif %}
@@ -470,6 +473,7 @@ main.container {
             {% if is_admin or 'manage_subjects' in perms %}<a href="{{ url_for('admin.manage_subjects') }}" class="admin-link d-block"><i class="bi bi-journal"></i> Предмети</a>{% endif %}
 			{% if is_admin or 'manage_activities' in perms %}<a href="{{ url_for('admin.manage_activities') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark-fill"></i> Практика / атестація / курсові</a>{% endif %}
             {% if is_admin or 'manage_education_documents' in perms %}<a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link d-block"><i class="bi bi-file-earmark-text"></i> Документи освіти</a>{% endif %}
+            {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
             {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'manage_archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}

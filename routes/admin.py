@@ -32,6 +32,7 @@ PERMISSIONS = [
     'group_export',
     'import_from_excel',
     'manage_education_documents',
+    'study_periods',
     'manage_groups',
     'manage_subjects',
     'manage_activities',
@@ -42,6 +43,143 @@ PERMISSIONS = [
     'manage_diplomas',
     'import_education_docs'
 ]
+
+
+
+
+@admin_bp.route('/admin/study_periods/bulk_assign', methods=['GET', 'POST'])
+@permission_required('study_periods')
+def manage_study_periods_bulk_assign():
+    db = get_db()
+    cursor = db.cursor()
+
+    # -------------------- POST --------------------
+    if request.method == 'POST':
+        mode = request.form.get('mode')
+        group_id = request.form.get('group_id', type=int)
+        student_ids_raw = request.form.get('student_ids_hidden', '')
+        extra_student_ids = [int(x) for x in student_ids_raw.split(',') if x.strip().isdigit()]
+
+        target_student_ids = set(extra_student_ids)
+
+        if group_id and mode in ('whole_group', 'some_from_group'):
+            cursor.execute("""
+                SELECT id FROM students WHERE group_id = ? AND archived = FALSE
+            """, (group_id,))
+            target_student_ids.update(r['id'] for r in cursor.fetchall())
+
+        if not target_student_ids:
+            flash('Не обрано жодного студента', 'danger')
+            return redirect(url_for('admin.manage_study_periods_bulk_assign'))
+
+        filiya = (request.form.get('filiya') or '').strip()
+        filiya_en = (request.form.get('filiya_en') or '').strip() or None
+        group_name = (request.form.get('group_name') or '').strip() or None
+        start_date = (request.form.get('start_date') or '').strip() or None
+        end_date = (request.form.get('end_date') or '').strip() or None
+        period_order = request.form.get('period_order', type=int) or 0
+        note = (request.form.get('note') or '').strip() or None
+
+        if not filiya:
+            flash('Потрібно вказати філію', 'danger')
+            return redirect(url_for('admin.manage_study_periods_bulk_assign',
+                                  group_id=group_id or '',
+                                  student_ids=','.join(map(str, extra_student_ids)),
+                                  mode=mode))
+
+        added = 0
+        try:
+            for student_id in target_student_ids:
+                cursor.execute("""
+                    INSERT INTO student_study_periods
+                        (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note))
+                added += 1
+
+            db.commit()
+            log_action(
+                session.get('username', 'невідомо'),
+                f"масово присвоїв період навчання ({filiya}) для {added} студент(ів)"
+            )
+            flash(f'Період навчання успішно додано {added} студент(ам)', 'success')
+        except sqlite3.Error as e:
+            db.rollback()
+            flash(f'Помилка збереження: {e}', 'danger')
+
+        return redirect(url_for('admin.manage_study_periods_bulk_assign',
+                              group_id=group_id or '',
+                              student_ids=','.join(map(str, extra_student_ids)),
+                              mode=mode))
+
+    # -------------------- GET --------------------
+    cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
+    groups = cursor.fetchall()
+
+    # Всі студенти з інформацією про групу (для JS-фільтрації)
+    cursor.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA, 
+               s.group_id, g.name AS group_name
+        FROM students s
+        LEFT JOIN groups g ON s.group_id = g.id
+        WHERE s.archived = FALSE
+        ORDER BY s.last_name_UA, s.first_name_UA
+    """)
+    all_students = cursor.fetchall()
+
+    # Параметри
+    mode = request.args.get('mode', 'any_students')
+    group_id = request.args.get('group_id', type=int)
+    student_ids_param = request.args.get('student_ids', '')
+    extra_student_ids = [int(x) for x in student_ids_param.split(',') if x.strip().isdigit()]
+
+    target_student_ids = set(extra_student_ids)
+
+    if group_id and mode in ('whole_group', 'some_from_group'):
+        cursor.execute("""
+            SELECT id FROM students WHERE group_id = ? AND archived = FALSE
+        """, (group_id,))
+        target_student_ids.update(r['id'] for r in cursor.fetchall())
+
+    # Прев'ю
+    target_students = []
+    if target_student_ids:
+        placeholders = ','.join('?' for _ in target_student_ids)
+        cursor.execute(f"""
+            SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA, g.name AS group_name
+            FROM students s
+            LEFT JOIN groups g ON s.group_id = g.id
+            WHERE s.id IN ({placeholders})
+            ORDER BY s.last_name_UA, s.first_name_UA
+        """, tuple(target_student_ids))
+        target_students_rows = cursor.fetchall()
+
+        cursor.execute(f"""
+            SELECT student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
+            FROM student_study_periods
+            WHERE student_id IN ({placeholders})
+            ORDER BY student_id, period_order ASC, start_date ASC
+        """, tuple(target_student_ids))
+        periods_rows = cursor.fetchall()
+
+        periods_by_student = {}
+        for p in periods_rows:
+            periods_by_student.setdefault(p['student_id'], []).append(p)
+
+        for s in target_students_rows:
+            s_dict = dict(s)
+            s_dict['existing_periods'] = periods_by_student.get(s['id'], [])
+            target_students.append(s_dict)
+
+    return render_template(
+        'manage_study_periods_bulk_assign.html',
+        groups=groups,
+        all_students=all_students,
+        selected_group_id=group_id,
+        selected_student_ids=extra_student_ids,
+        target_students=target_students,
+        selected_mode=mode
+    )
 
 
 @admin_bp.route('/admin/manage_diplomas', methods=['GET', 'POST'])
@@ -1117,6 +1255,7 @@ def manage_users():
             'group_export': 'Масова генерація документів',
             'import_from_excel': 'Інпорт студентів',
             'manage_education_documents': 'Управління документами про освіту',
+            'study_periods': 'Періоди навчання',
             'manage_groups': 'Управління групами',
             'manage_subjects': 'Предмети',
             'manage_activities': 'Управління діяльностями',
