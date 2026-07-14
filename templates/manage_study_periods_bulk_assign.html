@@ -1,0 +1,199 @@
+{% extends 'layout.html' %}
+{% block content %}
+<h3>Присвоєння періоду навчання кільком студентам</h3>
+<p class="text-muted">Оберіть, кому саме буде присвоєно період навчання.</p>
+
+<form method="get" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="row g-3 mb-4" id="filterForm">
+
+    <div class="col-12">
+        <label class="form-label fw-bold">Кому присвоїти період?</label>
+        <div class="btn-group w-100" role="group">
+            <input type="radio" name="mode" id="mode_whole" value="whole_group" class="btn-check" 
+                   {% if selected_mode == 'whole_group' %}checked{% endif %}>
+            <label class="btn btn-outline-primary" for="mode_whole">Усій групі</label>
+
+            <input type="radio" name="mode" id="mode_some" value="some_from_group" class="btn-check" 
+                   {% if selected_mode == 'some_from_group' %}checked{% endif %}>
+            <label class="btn btn-outline-primary" for="mode_some">Кільком зі групи</label>
+
+            <input type="radio" name="mode" id="mode_any" value="any_students" class="btn-check" 
+                   {% if selected_mode == 'any_students' %}checked{% endif %}>
+            <label class="btn btn-outline-primary" for="mode_any">Будь-яким студентам</label>
+        </div>
+    </div>
+
+    <div class="col-md-5" id="group_block">
+        <label class="form-label">Група</label>
+        <select name="group_id" id="group_select" class="form-select">
+            <option value="">— оберіть групу —</option>
+            {% for g in groups %}
+                <option value="{{ g.id }}" {% if selected_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="col-md-7" id="students_block">
+        <label class="form-label" id="students_label">Студенти</label>
+        <select name="student_ids" class="form-select" multiple size="7" id="studentPicker"></select>
+        <small class="text-muted">Утримуйте Ctrl/Cmd для вибору кількох</small>
+    </div>
+
+    <div class="col-12">
+        <button type="submit" class="btn btn-outline-primary">Показати, кого торкнеться</button>
+    </div>
+</form>
+
+{% if not target_students %}
+    <div class="alert alert-info">Оберіть режим та студентів/групу вище.</div>
+{% else %}
+    <div class="card mb-4">
+        <div class="card-header">
+            Буде застосовано до <strong>{{ target_students|length }}</strong> студент(ів):
+        </div>
+        <ul class="list-group list-group-flush">
+            {% for s in target_students %}
+            <li class="list-group-item">
+                <div class="d-flex justify-content-between align-items-start">
+                    <span>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</span>
+                    <span class="text-muted small">{{ s.group_name or 'без групи' }}</span>
+                </div>
+                {% if s.existing_periods %}
+                    <div class="mt-2 ps-3 border-start border-2">
+                        <div class="text-muted small mb-1">Вже присвоєні періоди:</div>
+                        {% for p in s.existing_periods %}
+                        <div class="small">
+                            <span class="fw-semibold">{{ p.filiya }}</span>
+                            — <span class="font-monospace">{{ p.start_date or '?' }} – {{ p.end_date or 'т.ч.' }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <i class="bi bi-signpost-split"></i> Дані періоду (однакові для всіх)
+        </div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}"
+                  onsubmit="return confirm('Присвоїти період {{ target_students|length }} студентам?');">
+                
+                <input type="hidden" name="mode" value="{{ selected_mode }}">
+                <input type="hidden" name="group_id" value="{{ selected_group_id or '' }}">
+                <input type="hidden" name="student_ids_hidden" value="{{ selected_student_ids|join(',') }}">
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Філія (укр) <span class="text-danger">*</span></label>
+                        <input type="text" name="filiya" class="form-control" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Filiya (en)</label>
+                        <input type="text" name="filiya_en" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Група в той період</label>
+                        <input type="text" name="group_name" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата початку</label>
+                        <input type="text" name="start_date" class="form-control" placeholder="ДД/ММ/РРРР">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата закінчення</label>
+                        <input type="text" name="end_date" class="form-control" placeholder="порожньо = поточний">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Порядок сортування</label>
+                        <input type="number" name="period_order" class="form-control" value="0">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Примітка</label>
+                        <input type="text" name="note" class="form-control">
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button type="submit" class="btn btn-success btn-lg">
+                        <i class="bi bi-check2-all"></i> Застосувати до {{ target_students|length }} студент(ів)
+                    </button>
+                    <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-secondary">Скасувати</a>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const modeRadios = document.querySelectorAll('input[name="mode"]');
+    const groupSelect = document.getElementById('group_select');
+    const studentPicker = document.getElementById('studentPicker');
+    const studentsLabel = document.getElementById('students_label');
+    const groupBlock = document.getElementById('group_block');
+
+    const allStudentsData = [
+        {% for s in all_students %}
+        {
+            id: {{ s.id }},
+            name: "{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}",
+            group_id: {{ s.group_id or 'null' }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    function filterStudents() {
+        const mode = document.querySelector('input[name="mode"]:checked').value;
+        const selectedGroupId = groupSelect.value ? parseInt(groupSelect.value) : null;
+
+        studentPicker.innerHTML = '';
+
+        if (mode === 'any_students') {
+            studentsLabel.textContent = 'Виберіть студентів';
+            groupBlock.style.display = 'none';
+        } else {
+            groupBlock.style.display = 'block';
+            if (mode === 'whole_group') {
+                studentsLabel.textContent = 'Додати студентів з інших груп (опціонально)';
+            } else {
+                studentsLabel.textContent = 'Виберіть студентів з групи';
+            }
+        }
+
+        allStudentsData.forEach(student => {
+            const option = document.createElement('option');
+            option.value = student.id;
+            option.textContent = student.name;
+
+            if (mode === 'any_students') {
+                studentPicker.appendChild(option);
+            } else if (selectedGroupId && student.group_id === selectedGroupId) {
+                studentPicker.appendChild(option);
+            } else if (!selectedGroupId) {
+                studentPicker.appendChild(option);
+            }
+        });
+    }
+
+    modeRadios.forEach(radio => radio.addEventListener('change', filterStudents));
+    groupSelect.addEventListener('change', filterStudents);
+
+    filterStudents(); // initial load
+
+    // Передача вибраних студентів
+    const filterForm = document.getElementById('filterForm');
+    filterForm.addEventListener('submit', () => {
+        const selected = Array.from(studentPicker.selectedOptions).map(o => o.value);
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'student_ids';
+        hidden.value = selected.join(',');
+        filterForm.appendChild(hidden);
+        studentPicker.removeAttribute('name');
+    });
+});
+</script>
+{% endblock %}
