@@ -1919,29 +1919,22 @@ def parse_reference_cell_ua(text):
         return {
             "reference_number": "",
             "reference_institution": "",
+            "reference_institution_en": "",
             "reference_country": "",
+            "reference_country_en": "",
             "reference_issue_date": "",
         }
     parts = [p.strip() for p in str(text).split(";")]
     parts += [""] * (4 - len(parts))
+    reference_number, reference_institution, reference_country, reference_issue_date = parts[:4]
+    reference_issue_date = reference_issue_date.replace(".", "/")
     return {
-        "reference_number": parts[0],
-        "reference_institution": parts[1],
-        "reference_country": parts[2],
-        "reference_issue_date": parts[3],
-    }
-
-def parse_reference_cell_en(text):
-    if not text or not str(text).strip():
-        return {
-            "reference_institution_en": "",
-            "reference_country_en": "",
-        }
-    parts = [p.strip() for p in str(text).split(";")]
-    parts += [""] * (4 - len(parts))
-    return {
-        "reference_institution_en": parts[1],
-        "reference_country_en": parts[2],
+        "reference_number": reference_number,
+        "reference_institution": reference_institution,
+        "reference_institution_en": translate_to_en(reference_institution) or "",
+        "reference_country": reference_country,
+        "reference_country_en": translate_to_en(reference_country) or "",
+        "reference_issue_date": reference_issue_date,
     }
 
 def parse_recognition_cell_ua(text):
@@ -1949,25 +1942,18 @@ def parse_recognition_cell_ua(text):
         return {
             "recognition_certificate_number": "",
             "recognition_issuer": "",
+            "recognition_issuer_en": "",
             "recognition_date": "",
         }
     parts = [p.strip() for p in str(text).split(";")]
     parts += [""] * (3 - len(parts))
+    recognition_certificate_number, recognition_issuer, recognition_date = parts[:3]
+    recognition_date = recognition_date.replace(".", "/")
     return {
-        "recognition_certificate_number": parts[0],
-        "recognition_issuer": parts[1],
-        "recognition_date": parts[2],
-    }
-
-def parse_recognition_cell_en(text):
-    if not text or not str(text).strip():
-        return {
-            "recognition_issuer_en": "",
-        }
-    parts = [p.strip() for p in str(text).split(";")]
-    parts += [""] * (3 - len(parts))
-    return {
-        "recognition_issuer_en": parts[1],
+        "recognition_certificate_number": recognition_certificate_number,
+        "recognition_issuer": recognition_issuer,
+        "recognition_issuer_en": translate_to_en(recognition_issuer) or "",
+        "recognition_date": recognition_date,
     }
 
 def import_documents_preview(file_path, db):
@@ -1979,9 +1965,7 @@ def import_documents_preview(file_path, db):
         fio = row[0]
         document_text = row[1]
         reference_ua_text = row[2] if len(row) > 2 else None
-        reference_en_text = row[3] if len(row) > 3 else None
-        recognition_ua_text = row[4] if len(row) > 4 else None
-        recognition_en_text = row[5] if len(row) > 5 else None
+        recognition_ua_text = row[3] if len(row) > 3 else None
 
         if not fio or not document_text:
             preview_rows.append({"row_index": row_index, "error": "Пусті дані"})
@@ -1996,9 +1980,8 @@ def import_documents_preview(file_path, db):
             continue
 
         data.update(parse_reference_cell_ua(reference_ua_text))
-        data.update(parse_reference_cell_en(reference_en_text))
         data.update(parse_recognition_cell_ua(recognition_ua_text))
-        data.update(parse_recognition_cell_en(recognition_en_text))
+
 
         cursor.execute("""
             SELECT id, document_type, document_type_en, document_number, completion_date,
