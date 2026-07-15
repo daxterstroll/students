@@ -400,7 +400,7 @@ def manage_study_periods(student_id):
                        f"видалив період навчання ID {period_id} студенту ID {student_id}")
             flash('Період навчання видалено', 'success')
 
-        return redirect(url_for('admin.manage_study_periods', student_id=student_id))
+        return redirect(url_for('students.manage_study_periods', student_id=student_id))
 
     cursor.execute("""
         SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note

@@ -599,23 +599,36 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     cursor = conn.cursor()
     try:
         names_ua, dates_ua = get_study_periods(
-            cursor, student_dict['id'], lang='ua',
-            default_filiya=student_dict.get('institution_name', 'Львівська філія'),
-            default_filiya_en=student_dict.get('institution_name_en', 'Lviv branch')
+            cursor, student_dict['id'], lang='ua'
         )
         names_en, dates_en = get_study_periods(
-            cursor, student_dict['id'], lang='en',
-            default_filiya=student_dict.get('institution_name', 'Львівська філія'),
-            default_filiya_en=student_dict.get('institution_name_en', 'Lviv branch')
+            cursor, student_dict['id'], lang='en'
         )
     except Exception as e:
         global_logger.error(f"Ошибка при получении периодов навчання для студента ID {student_dict.get('id', 'unknown')}: {e}")
-        names_ua = student_dict.get('institution_name', '')
+        names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»"
         dates_ua = ''
-        names_en = student_dict.get('institution_name_en', '')
+        names_en = "Lviv Branch of Private Higher Education Establishment «European University»"
         dates_en = ''
     finally:
         conn.close()
+
+    # Якщо періодів немає (дати порожні) — формуємо дати та назву на основі даних студента
+    if not dates_ua:
+        start_year = student_dict.get('start_year', '')
+        end_year = student_dict.get('end_year', '')
+        if start_year and end_year:
+            dates_ua = f"01/09/{start_year}–25/06/{end_year}"
+            dates_en = f"01/09/{start_year}–25/06/{end_year}"
+
+        institution_name_and_status = student_dict.get('institution_name_and_status', '')
+
+        if institution_name_and_status == "Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.":
+            names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»."
+            names_en = "Lviv Branch of Private Higher Education Establishment «European University»."
+        elif institution_name_and_status == "Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.":
+            names_ua = "Приватний вищий навчальний заклад «Європейський університет»."
+            names_en = "Private Higher Educational Institution 'European University'."
 
     context['study_period_names'] = _to_richtext_multiline(names_ua, font_size_pt=8, font_name='Times New Roman')
     context['study_period_dates'] = _to_richtext_multiline(dates_ua, font_size_pt=8, font_name='Times New Roman')
