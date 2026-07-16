@@ -2,13 +2,13 @@ from functools import wraps
 from flask import session, redirect, url_for, flash
 import logging
 import os
-from db import get_db
+from routes.db import get_db
 import json
 import re
 
 # Настройка пути к файлу
-project_root = os.path.dirname(os.path.abspath(__file__))
-log_file_path = os.path.join(project_root, 'app.log')
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+log_file_path = os.path.join(PROJECT_ROOT, 'app.log')
 
 # Настройка глобального логгера
 logger = logging.getLogger('Students')

@@ -3,11 +3,10 @@ import re
 import sqlite3
 from datetime import datetime
 from docxtpl import DocxTemplate
-from utils import log_action, logger as global_logger
-from db import get_db
+from routes.utils import log_action, logger as global_logger
+from routes.db import get_db
 from datetime import datetime
 from docxtpl import RichText
-
 
 def _to_richtext_multiline(text, separator=";", font_size_pt=8, font_name='Times New Roman'):
     """
