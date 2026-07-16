@@ -21,6 +21,9 @@ from deep_translator import GoogleTranslator
 from openpyxl.utils.exceptions import InvalidFileException
 import time
 
+
+from utils import get_available_templates
+
 translator = GoogleTranslator(source="auto", target="en")
 translation_cache = {}
 
@@ -43,6 +46,8 @@ PERMISSIONS = [
     'manage_diplomas',
     'import_education_docs'
 ]
+
+
 
 
 
@@ -1482,12 +1487,15 @@ def group_export():
         FROM groups WHERE archived = FALSE ORDER BY name, start_year
     """).fetchall()
 
+    available_templates = get_available_templates()
+    default_template = available_templates[0] if available_templates else ''
+
     current_year = datetime.now().year
     years = list(range(1980, current_year + 1))
     students = []
     selected_group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
     selected_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
-    selected_template = request.args.get('template', 'template_word/template_adddiplom.docx') if request.method == 'GET' else request.form.get('template', 'template_word/template_adddiplom.docx')
+    selected_template = request.args.get('template', default_template) if request.method == 'GET' else request.form.get('template', default_template)
 
     if selected_group_id:
         group_check = conn.execute("SELECT id FROM groups WHERE id=? AND archived=FALSE", (selected_group_id,)).fetchone()
@@ -1523,7 +1531,8 @@ def group_export():
     conn.close()
     return render_template('group_export.html', students=students, groups=groups, years=years,
                            selected_group_id=selected_group_id, selected_year=selected_year,
-                           selected_template=selected_template)
+                           selected_template=selected_template,
+                           available_templates=available_templates)
 
 
 UPLOAD_FOLDER = 'Uploads'
@@ -1663,7 +1672,7 @@ def import_subjects():
 def generate_group_docs():
     group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
     birth_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
-    selected_template = request.args.get('template', 'template_word/template_adddiplom.docx') if request.method == 'GET' else request.form.get('template', 'template_word/template_adddiplom.docx')
+    selected_template = request.args.get('template', '') if request.method == 'GET' else request.form.get('template', '')
     active_students = request.args.get('active_students', '').split(',') if request.args.get('active_students') else []
 
     if not group_id and not birth_year:

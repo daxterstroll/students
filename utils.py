@@ -4,6 +4,7 @@ import logging
 import os
 from db import get_db
 import json
+import re
 
 # Настройка пути к файлу
 project_root = os.path.dirname(os.path.abspath(__file__))
@@ -134,10 +135,7 @@ def permission_required(permission=None):
 
         return decorated_function
     return decorator
-    
-    
-import re
-
+  
 def transliterate_ukrainian(text: str) -> str:
     """
     Транслитерация украинского текста согласно Постановлению КМУ №55-2010
@@ -211,3 +209,16 @@ def generate_english_name(last_name_ua, first_name_ua):
     last_name_eng = transliterate_ukrainian(last_name_ua)
     first_name_eng = transliterate_ukrainian(first_name_ua)
     return last_name_eng, first_name_eng
+    
+TEMPLATE_FOLDER = os.path.join(os.getcwd(), 'template_word')  
+    
+def get_available_templates():
+    """Возвращает список .docx файлов из папки template_word (относительный путь для передачи в gen_doc)."""
+    if not os.path.isdir(TEMPLATE_FOLDER):
+        return []
+    files = [
+        f for f in os.listdir(TEMPLATE_FOLDER)
+        if f.lower().endswith('.docx') and os.path.isfile(os.path.join(TEMPLATE_FOLDER, f))
+    ]
+    files.sort()
+    return [f"template_word/{f}" for f in files]

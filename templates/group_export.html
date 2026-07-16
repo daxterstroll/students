@@ -22,13 +22,16 @@
                 {% endfor %}
             </select>
         </div>
-        <div class="form-group">
-            <label class="form-label" for="template">Оберіть шаблон:</label>
-            <select name="template" id="template" class="form-select" onchange="submitForm()">
-                <option value="template_word/template_adddiplom.docx" {% if selected_template == 'template_word/template_adddiplom.docx' %}selected{% endif %}>Шаблон для додатку до диплому</option>
-                <option value="template_word/template_tck.docx" {% if selected_template == 'template_word/template_tck.docx' %}selected{% endif %}>Шаблон для ТЦК</option>
-            </select>
-        </div>
+		<div class="form-group">
+			<label class="form-label" for="template">Оберіть шаблон:</label>
+			<select name="template" id="template" class="form-select" onchange="submitForm()">
+				{% for tpl in available_templates %}
+					<option value="{{ tpl }}" {% if tpl == selected_template %}selected{% endif %}>
+						{{ tpl.split('/')[-1] }}
+					</option>
+				{% endfor %}
+			</select>
+		</div>
         <br>
         <div class="form-group">
             <button type="submit" class="btn btn-primary">Показати студентів</button>
