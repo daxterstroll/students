@@ -4,14 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}База даних студентів Львівської філії ПВНЗ "Європейський університет"{% endblock %}</title>
-    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.png') }}" type="image/png">
+    <link rel="shortcut icon" href="{{ url_for('static', filename='style/images/favicon.png') }}" type="image/png">
 
-    <link href="{{ url_for('static', filename='css/bootstrap.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
-
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Lora:wght@600;700&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style/css/bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='style/css/fonts.css') }}" rel="stylesheet">
 
     <style>
         :root {
@@ -527,7 +524,7 @@ main.container {
     {% block content %}{% endblock %}
 </main>
 
-<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+<script src="{{ url_for('static', filename='style/js/bootstrap.bundle.min.js') }}"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

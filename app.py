@@ -1,17 +1,25 @@
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="docxcompose")
 from flask import Flask
-from config import SECRET_KEY
+from routes.config import SECRET_KEY
 from routes.auth import auth_bp
 from routes.students import students_bp
 from routes.admin import admin_bp
 import argparse
-from utils import log_action
-from gen_docx import format_grade
+from routes.utils import log_action
+from routes.gen_docx import format_grade
 import json
+import os
 
 # Инициализация приложения Flask
-app = Flask(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'static', 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
 
 @app.template_filter('fromjson')
 def fromjson(value):
