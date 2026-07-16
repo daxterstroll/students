@@ -4,9 +4,9 @@ from zipfile import ZipFile
 import os
 import sqlite3
 from werkzeug.security import generate_password_hash
-from db import get_db
-from utils import log_action, permission_required
-from gen_docx import gen_doc
+from routes.db import get_db
+from routes.utils import log_action, permission_required
+from routes.gen_docx import gen_doc
 import logging
 import openpyxl
 from werkzeug.utils import secure_filename
@@ -22,7 +22,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 import time
 
 
-from utils import get_available_templates
+from routes.utils import get_available_templates
 
 translator = GoogleTranslator(source="auto", target="en")
 translation_cache = {}

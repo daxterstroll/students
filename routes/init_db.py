@@ -1,7 +1,11 @@
 import sqlite3
+import os
 from werkzeug.security import generate_password_hash
 
-conn = sqlite3.connect('students.db')
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, 'students.db')
+
+conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
 cur.executescript("""
@@ -193,8 +197,8 @@ CREATE INDEX idx_study_periods_student ON student_study_periods(student_id);
 """)
 
 # Додаємо користувачів
-for u, p, r, g in [('admin', 'admin123', 'admin', '1')]:
-    cur.execute("INSERT OR IGNORE INTO users (username, password_hash, role, is_admin) VALUES (?, ?, ?, ?)",
+for u, p, r, g in [('admin', 'admin123', 'admin', '1', '[]')]:
+    cur.execute("INSERT OR IGNORE INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
                 (u, generate_password_hash(p), r, g))
 conn.commit()
 conn.close()
