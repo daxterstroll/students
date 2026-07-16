@@ -8,8 +8,10 @@ from db import get_db
 from utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
 from gen_docx import gen_doc
 import sqlite3
+from utils import get_available_templates
 
 students_bp = Blueprint('students', __name__)
+
 
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
@@ -812,6 +814,13 @@ def delete_military(student_id):
 def generate(student_id):
     if request.method == 'POST':
         selected_template = request.form.get('template', 'template.docx')
+
+        # Защита: если пользователь не админ, запрещаем шаблоны диплома,
+        # даже если их прислали вручную через POST
+        if 'adddiplom' in selected_template.lower() and session.get('role') != 'admin':
+            flash("У вас немає прав для генерації цього документа")
+            return redirect(url_for('students.student_list'))
+
         conn = get_db()
         conn.row_factory = sqlite3.Row
         student = conn.execute("""
@@ -877,7 +886,10 @@ def generate(student_id):
         flash("Студента не знайдено")
         return redirect(url_for('students.student_list'))
 
-    return render_template('generate_word.html', student_id=student_id)
+    available_templates = get_available_templates()
+    return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
+
+    
 
 @students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
 @login_required('')
