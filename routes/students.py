@@ -4,11 +4,11 @@ import os
 import openpyxl
 import logging
 from werkzeug.utils import secure_filename
-from db import get_db
-from utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
-from gen_docx import gen_doc
+from routes.db import get_db
+from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
+from routes.gen_docx import gen_doc
 import sqlite3
-from utils import get_available_templates
+from routes.utils import get_available_templates
 
 students_bp = Blueprint('students', __name__)
 
