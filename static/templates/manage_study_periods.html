@@ -1,173 +1,168 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Періоди навчання{% endblock %}
 {% block content %}
+<div class="container py-4">
 
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h3 class="mb-0">
-        Періоди навчання —
-        {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
-    </h3>
-	<a href="/" class="btn btn-sm btn-secondary" onclick="event.preventDefault(); window.history.back();">
-		<i class="bi bi-arrow-left"></i> Назад
-	</a>
-</div>
+    {{ ui.page_header('bi-calendar2-date-fill', 'Періоди навчання', student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')) }}
 
-<!-- ==================== СПИСОК ІСНУЮЧИХ ПЕРІОДІВ ==================== -->
-<table class="table table-bordered table-sm table-hover align-middle">
-    <thead class="table-light">
-        <tr>
-            <th style="width:16%">Філія (укр)</th>
-            <th style="width:16%">Filiya (en)</th>
-            <th style="width:12%">Група в той період</th>
-            <th style="width:11%">Дата початку</th>
-            <th style="width:11%">Дата закінчення</th>
-            <th style="width:6%">Порядок</th>
-            <th style="width:18%">Примітка</th>
-            <th style="width:10%">Дії</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for p in periods %}
-        <tr>
-            <td>{{ p.filiya }}</td>
-            <td>{{ p.filiya_en or '—' }}</td>
-            <td>{{ p.group_name or '—' }}</td>
-            <td>{{ p.start_date or '—' }}</td>
-            <td>{{ p.end_date or '—' }}</td>
-            <td>{{ p.period_order }}</td>
-            <td>{{ p.note or '—' }}</td>
-            <td>
-                <button type="button" class="btn btn-sm btn-outline-primary"
-                        data-bs-toggle="modal" data-bs-target="#editPeriodModal{{ p.id }}">
-                    <i class="bi bi-pencil"></i>
-                </button>
+    <div class="d-flex justify-content-end mb-3">
+        <a href="/" class="btn btn-outline-secondary btn-sm" onclick="event.preventDefault(); window.history.back();">
+            <i class="bi bi-arrow-left me-1"></i> Назад
+        </a>
+    </div>
 
-                <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
-                      style="display:inline"
-                      onsubmit="return confirm('Видалити цей період навчання?');">
-                    <input type="hidden" name="action" value="delete">
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width:16%">Філія (укр)</th>
+                            <th style="width:16%">Filiya (en)</th>
+                            <th style="width:12%">Група в той період</th>
+                            <th style="width:11%">Дата початку</th>
+                            <th style="width:11%">Дата закінчення</th>
+                            <th style="width:6%">Порядок</th>
+                            <th style="width:18%">Примітка</th>
+                            <th style="width:10%">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in periods %}
+                        <tr>
+                            <td>{{ p.filiya }}</td>
+                            <td>{{ p.filiya_en or '—' }}</td>
+                            <td>{{ p.group_name or '—' }}</td>
+                            <td>{{ p.start_date or '—' }}</td>
+                            <td>{{ p.end_date or '—' }}</td>
+                            <td>{{ p.period_order }}</td>
+                            <td>{{ p.note or '—' }}</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        data-bs-toggle="modal" data-bs-target="#editPeriodModal{{ p.id }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
+                                      style="display:inline"
+                                      onsubmit="return confirm('Видалити цей період навчання?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="period_id" value="{{ p.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">Періодів ще не додано</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальні вікна редагування -->
+    {% for p in periods %}
+    <div class="modal fade" id="editPeriodModal{{ p.id }}" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}">
+                    <input type="hidden" name="action" value="edit">
                     <input type="hidden" name="period_id" value="{{ p.id }}">
-                    <button type="submit" class="btn btn-sm btn-outline-danger">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </form>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="8" class="text-center text-muted">Періодів ще не додано</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-<!-- ==================== МОДАЛЬНІ ВІКНА РЕДАГУВАННЯ (кожне — самодостатня форма) ==================== -->
-{% for p in periods %}
-<div class="modal fade" id="editPeriodModal{{ p.id }}" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-            <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}">
-                <input type="hidden" name="action" value="edit">
-                <input type="hidden" name="period_id" value="{{ p.id }}">
-
-                <div class="modal-header">
-                    <h5 class="modal-title">Редагування періоду навчання</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-
-                <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label">Філія (укр)</label>
-                            <input type="text" name="filiya" value="{{ p.filiya or '' }}" class="form-control" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Filiya (en)</label>
-                            <input type="text" name="filiya_en" value="{{ p.filiya_en or '' }}" class="form-control">
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">Група в той період</label>
-                            <input type="text" name="group_name" value="{{ p.group_name or '' }}" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Дата початку</label>
-                            <input type="text" name="start_date" value="{{ p.start_date or '' }}" class="form-control" placeholder="ДД/ММ/РРРР">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Дата закінчення</label>
-                            <input type="text" name="end_date" value="{{ p.end_date or '' }}" class="form-control" placeholder="ДД/ММ/РРРР">
-                        </div>
-
-                        <div class="col-md-4">
-                            <label class="form-label">Порядок сортування</label>
-                            <input type="number" name="period_order" value="{{ p.period_order or 0 }}" class="form-control">
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Примітка</label>
-                            <input type="text" name="note" value="{{ p.note or '' }}" class="form-control">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Редагування періоду навчання</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Філія (укр)</label>
+                                <input type="text" name="filiya" value="{{ p.filiya or '' }}" class="form-control" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Filiya (en)</label>
+                                <input type="text" name="filiya_en" value="{{ p.filiya_en or '' }}" class="form-control">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Група в той період</label>
+                                <input type="text" name="group_name" value="{{ p.group_name or '' }}" class="form-control">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Дата початку</label>
+                                <input type="text" name="start_date" value="{{ p.start_date or '' }}" class="form-control" placeholder="ДД/ММ/РРРР">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Дата закінчення</label>
+                                <input type="text" name="end_date" value="{{ p.end_date or '' }}" class="form-control" placeholder="ДД/ММ/РРРР">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Порядок сортування</label>
+                                <input type="number" name="period_order" value="{{ p.period_order or 0 }}" class="form-control">
+                            </div>
+                            <div class="col-md-8">
+                                <label class="form-label">Примітка</label>
+                                <input type="text" name="note" value="{{ p.note or '' }}" class="form-control">
+                            </div>
                         </div>
                     </div>
-                </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрити</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
 
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
-                    <button type="submit" class="btn btn-success">Зберегти</button>
+    <!-- Форма додавання нового періоду -->
+    <div class="card">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати новий період навчання</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}">
+                <input type="hidden" name="action" value="add">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Філія (укр)</label>
+                        <input type="text" name="filiya" class="form-control" placeholder="напр. Миколаївська філія" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Filiya (en)</label>
+                        <input type="text" name="filiya_en" class="form-control" placeholder="e.g. Mykolaiv branch">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Група в той період</label>
+                        <input type="text" name="group_name" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата початку</label>
+                        <input type="text" name="start_date" class="form-control" placeholder="ДД/ММ/РРРР">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата закінчення</label>
+                        <input type="text" name="end_date" class="form-control" placeholder="ДД/ММ/РРРР (порожньо — поточний)">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Порядок сортування</label>
+                        <input type="number" name="period_order" class="form-control" value="0">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label">Примітка</label>
+                        <input type="text" name="note" class="form-control" placeholder="напр. переведений у зв'язку з ...">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-2"></i>Додати період</button>
                 </div>
             </form>
         </div>
     </div>
+
 </div>
-{% endfor %}
-
-<!-- ==================== ФОРМА ДОДАВАННЯ НОВОГО ПЕРІОДУ ==================== -->
-<div class="card mt-4">
-    <div class="card-header">
-        <i class="bi bi-plus-circle"></i> Додати новий період навчання
-    </div>
-    <div class="card-body">
-        <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}">
-            <input type="hidden" name="action" value="add">
-
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label">Філія (укр)</label>
-                    <input type="text" name="filiya" class="form-control" placeholder="напр. Миколаївська філія" required>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label">Filiya (en)</label>
-                    <input type="text" name="filiya_en" class="form-control" placeholder="e.g. Mykolaiv branch">
-                </div>
-
-                <div class="col-md-6">
-                    <label class="form-label">Група в той період</label>
-                    <input type="text" name="group_name" class="form-control">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Дата початку</label>
-                    <input type="text" name="start_date" class="form-control" placeholder="ДД/ММ/РРРР">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label">Дата закінчення</label>
-                    <input type="text" name="end_date" class="form-control" placeholder="ДД/ММ/РРРР (порожньо — поточний)">
-                </div>
-
-                <div class="col-md-4">
-                    <label class="form-label">Порядок сортування</label>
-                    <input type="number" name="period_order" class="form-control" value="0">
-                </div>
-                <div class="col-md-8">
-                    <label class="form-label">Примітка</label>
-                    <input type="text" name="note" class="form-control" placeholder="напр. переведений у зв'язку з ...">
-                </div>
-            </div>
-
-            <div class="mt-3">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-plus-lg"></i> Додати період
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
 {% endblock %}

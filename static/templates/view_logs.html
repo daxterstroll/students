@@ -1,9 +1,12 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
 {% block title %}Журнал дій{% endblock %}
 {% block content %}
+<div class="container py-4">
 
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h2 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Журнал дій</h2>
+{{ ui.page_header('bi-file-earmark-text-fill', 'Журнал дій', 'Історія всіх дій користувачів у системі') }}
+
+<div class="d-flex justify-content-end mb-3">
   <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Назад
   </a>
@@ -93,7 +96,7 @@
 {# ── Таблиця логів ── #}
 <div class="card">
   <div class="card-body p-0">
-    <div style="max-height: 620px; overflow-y: auto;">
+    <div class="table-responsive" style="max-height: 620px; overflow-y: auto;">
       <table class="table table-sm table-hover mb-0 align-middle" id="logs-table">
         <thead class="table-dark sticky-top">
           <tr>
@@ -149,10 +152,10 @@
 </div>
 
 {% else %}
-  <div class="alert alert-secondary mt-3">
-    <i class="bi bi-info-circle me-2"></i>Журнал порожній або файл не знайдено.
-  </div>
+  {{ ui.empty_state('bi-file-earmark-text', 'Журнал порожній або файл не знайдено') }}
 {% endif %}
+
+</div>
 
 <script>
 const rows = document.querySelectorAll('.log-row');

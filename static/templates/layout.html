@@ -108,7 +108,7 @@
         .nav-link.active::after { transform: scaleX(1); }
 
         .nav-link:hover, .nav-link.active,
-        .dropdown-item:hover, .admin-link:hover {
+        #mainNavbar .dropdown-item:hover, .admin-link:hover {
             background: var(--brass-semi);
             color: var(--brass-lt) !important;
         }
@@ -120,7 +120,7 @@
         .nav-item.show .dropdown-toggle::after { transform: rotate(180deg); }
 
         /* dropdown open/close animation */
-        .dropdown-menu {
+        #mainNavbar .dropdown-menu {
             background: var(--ink-2);
             border: 1px solid var(--brass-semi);
             border-radius: 8px;
@@ -135,14 +135,14 @@
             visibility: hidden;
             pointer-events: none;
         }
-        .dropdown-menu.show {
+        #mainNavbar .dropdown-menu.show {
             opacity: 1;
             transform: translateY(0) scale(1);
             visibility: visible;
             pointer-events: auto;
         }
 
-        .dropdown-menu .dropdown-item {
+        #mainNavbar .dropdown-menu .dropdown-item {
             display: flex;
             align-items: center;
             gap: 0.6rem;
@@ -150,32 +150,32 @@
             border-radius: 6px;
             transition: background .15s ease, padding-left .15s ease, color .15s ease;
         }
-        .dropdown-menu .dropdown-item:hover {
+        #mainNavbar .dropdown-menu .dropdown-item:hover {
             padding-left: .95rem;
             background: var(--brass-soft);
         }
-        .dropdown-menu .dropdown-item .bi {
+        #mainNavbar .dropdown-menu .dropdown-item .bi {
             transition: transform .2s ease, color .2s ease;
         }
-        .dropdown-menu .dropdown-item:hover .bi {
+        #mainNavbar .dropdown-menu .dropdown-item:hover .bi {
             transform: scale(1.15);
             color: var(--brass-lt);
         }
 
         /* staggered fade-in for dropdown items */
-        .dropdown-menu.show .dropdown-item {
+        #mainNavbar .dropdown-menu.show .dropdown-item {
             animation: dropItemIn .28s cubic-bezier(.2,.7,.2,1) both;
         }
-        .dropdown-menu.show .dropdown-item:nth-child(1)  { animation-delay: .02s; }
-        .dropdown-menu.show .dropdown-item:nth-child(2)  { animation-delay: .05s; }
-        .dropdown-menu.show .dropdown-item:nth-child(3)  { animation-delay: .08s; }
-        .dropdown-menu.show .dropdown-item:nth-child(4)  { animation-delay: .11s; }
-        .dropdown-menu.show .dropdown-item:nth-child(5)  { animation-delay: .14s; }
-        .dropdown-menu.show .dropdown-item:nth-child(6)  { animation-delay: .17s; }
-        .dropdown-menu.show .dropdown-item:nth-child(7)  { animation-delay: .20s; }
-        .dropdown-menu.show .dropdown-item:nth-child(8)  { animation-delay: .23s; }
-        .dropdown-menu.show .dropdown-item:nth-child(9)  { animation-delay: .26s; }
-        .dropdown-menu.show .dropdown-item:nth-child(10) { animation-delay: .29s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(1)  { animation-delay: .02s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(2)  { animation-delay: .05s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(3)  { animation-delay: .08s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(4)  { animation-delay: .11s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(5)  { animation-delay: .14s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(6)  { animation-delay: .17s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(7)  { animation-delay: .20s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(8)  { animation-delay: .23s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(9)  { animation-delay: .26s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(10) { animation-delay: .29s; }
         @keyframes dropItemIn {
             from { opacity: 0; transform: translateX(-6px); }
             to   { opacity: 1; transform: translateX(0); }
@@ -315,12 +315,13 @@ main.container {
 
         /* ===== GENERAL CONTENT TOUCHES ===== */
         .card {
-            border: 1px solid var(--line);
-            border-radius: 10px;
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 6px 25px -8px rgba(31,42,58,0.18);
             transition: box-shadow .25s ease, transform .25s ease;
         }
         .card:hover {
-            box-shadow: 0 12px 28px -16px rgba(31,42,58,.35);
+            box-shadow: 0 12px 28px -10px rgba(31,42,58,.28);
         }
         .btn-primary {
             background: linear-gradient(160deg, var(--brass-lt), var(--brass));
@@ -345,6 +346,113 @@ main.container {
         }
         .table tbody tr:hover {
             background: var(--brass-soft);
+        }
+
+        /* ======================================================================
+           СПІЛЬНІ КОМПОНЕНТИ СТОРІНОК (page-header / section-title / empty-state)
+           ----------------------------------------------------------------------
+           Раніше кожна сторінка (crud-розділ) заново описувала свій "хедер"
+           і заголовки секцій у власному <style> - і всюди трохи по-різному.
+           Тепер це визначено ОДИН РАЗ тут, а самі сторінки просто підключають
+           готові макроси з _macros.html (page_header/section_title/empty_state).
+           Це і робить сайт єдиним цілим за виглядом.
+           ====================================================================== */
+        .page-header {
+            background: linear-gradient(135deg, var(--ink), var(--ink-2));
+            color: var(--brass-lt);
+            padding: 2.1rem 1.75rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+            border-bottom: 4px solid var(--brass);
+        }
+        .page-header h2 {
+            margin-bottom: 0.3rem;
+            color: var(--brass-lt);
+            font-size: 1.9rem;
+        }
+        .page-header .bi { color: var(--brass); }
+        .page-header-badge {
+            background: var(--brass-soft);
+            border: 1px solid var(--brass-semi);
+            color: var(--brass-lt);
+            font-weight: 600;
+            font-size: .78rem;
+            padding: .5rem .85rem;
+        }
+
+        .section-title {
+            font-family: 'Lora', serif;
+            color: var(--ink);
+            position: relative;
+            padding-bottom: 0.55rem;
+        }
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 56px; height: 3px;
+            background: var(--brass);
+            border-radius: 3px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3.5rem 1.5rem;
+            color: var(--muted);
+        }
+        .empty-state .bi {
+            font-size: 3rem;
+            opacity: .3;
+            display: block;
+            margin-bottom: .75rem;
+        }
+        .empty-state-hint {
+            font-size: .85rem;
+            margin-top: .35rem;
+            opacity: .8;
+        }
+
+        /* Уніфіковані форми на всіх сторінках (раніше рамки/фокус форм-полів
+           були описані окремо в manage_accreditations.html - тепер це для всіх) */
+        .form-label { font-weight: 600; color: var(--ink-2); }
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 1.5px solid var(--line);
+            padding: 0.65rem 0.9rem;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--brass);
+            box-shadow: 0 0 0 4px var(--brass-soft);
+        }
+
+        .card-header {
+            background: var(--paper-2);
+            border-bottom: 1px solid var(--line);
+        }
+
+        /* Картка з "підйомом" при наведенні - для списків карток (акредитації тощо) */
+        .hover-lift {
+            transition: all .25s ease;
+            border: 1px solid var(--line);
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px -10px rgba(31,42,58,.25);
+        }
+
+        /* Компактний бейдж лічильника (наприклад "12 студентів") у заголовках секцій */
+        .count-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            background: var(--brass-soft);
+            border: 1px solid var(--brass-semi);
+            color: var(--ink-2);
+            font-weight: 700;
+            font-size: .78rem;
+            padding: .3rem .7rem;
+            border-radius: 999px;
         }
     </style>
 </head>
@@ -423,7 +531,7 @@ main.container {
 				{% if is_admin or 'manage_education_documents' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
                 {% endif %}
-				{% if is_admin or 'bulk_assign' in perms %}
+				{% if is_admin or 'study_periods' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_study_periods_bulk_assign') }}"><i class="bi bi-calendar2-date"></i> Періоди навчання</a></li>
                 {% endif %}
                 {% if is_admin or 'manage_accreditations' in perms %}
@@ -433,13 +541,13 @@ main.container {
                 {% if is_admin or 'manage_groups' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
                 {% endif %}
-                {% if is_admin or 'manage_archive' in perms %}
+                {% if is_admin or 'archive' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.archive') }}"><i class="bi bi-archive"></i> Архів груп</a></li>
                 {% endif %}
             </ul>
         </li>
 		
-		                {% if is_admin or 'generate_docs' in perms %}
+		                {% if is_admin or 'group_export' in perms %}
 <li class="nav-item d-none d-lg-block">
         <a class="nav-link" href="{{ url_for('admin.group_export') }}">
             <i class="bi bi-file-zip"></i> Масова генерація документів
@@ -449,7 +557,7 @@ main.container {
 
         <!-- Мобільна версія адмін-меню -->
         <div class="d-lg-none mt-2">
-		{% if is_admin or 'generate_docs' in perms %}<a href="{{ url_for('admin.group_export') }}" class="admin-link d-block"><i class="bi bi-file-zip"></i> Масова генерація</a>{% endif %}
+		{% if is_admin or 'group_export' in perms %}<a href="{{ url_for('admin.group_export') }}" class="admin-link d-block"><i class="bi bi-file-zip"></i> Масова генерація</a>{% endif %}
 
             <div class="admin-section-title">Імпорт</div>
             {% if is_admin or 'import_from_excel' in perms %}
@@ -473,7 +581,7 @@ main.container {
             {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
             {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
-            {% if is_admin or 'manage_archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
+            {% if is_admin or 'archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
             {% if is_admin or 'manage_diplomas' in perms %}<a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a>{% endif %}
             
             </div>

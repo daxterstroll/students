@@ -1,47 +1,59 @@
 {% extends 'layout.html' %}
-
+{% import '_macros.html' as ui %}
 {% block title %}Військовий облік{% endblock %}
-
 {% block content %}
-<h2 class="mb-4"><i class="bi bi-shield-shaded"></i> Додати військові дані</h2>
-<form method="POST">
-    <div class="mb-3">
-        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
-        <input type="text" name="registration_number_of_the_DRPVR" class="form-control">
+<div class="container py-4">
+
+    {{ ui.page_header('bi-shield-shaded', 'Додати військові дані', 'Заповніть дані військового обліку студента') }}
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
+                        <input type="text" name="registration_number_of_the_DRPVR" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Військово-обліковий документ</label>
+                        <input type="text" name="military_registration_document" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Виданий ВОД</label>
+                        <input type="text" name="issued_VOD" placeholder="ДД.ММ.РРРР" value="" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Номер військово-облікової спеціальності</label>
+                        <input type="text" name="military_accounting_specialty_number" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Військове звання</label>
+                        <input type="text" name="military_rank" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Зміна облікових данних</label>
+                        <input type="text" name="change_credentials" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Підстава для зміни облікових даних</label>
+                        <input type="text" name="reason_for_changing_credentials" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Перебування на військовому обліку</label>
+                        <input type="text" name="being_on_military_registration" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Адреса місця проживання</label>
+                        <input type="text" name="address_of_residence" class="form-control">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+                        <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Скасувати</a>
+                    </div>
+                </div>
+            </form>
+        </div>
     </div>
-    <div class="mb-3">
-        <label class="form-label">Військово-обліковий документ</label>
-        <input type="text" name="military_registration_document" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Виданий ВОД</label>
-		<input type="text" name="issued_VOD" placeholder="ДД.ММ.РРРР" value="" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Номер військово-облікової спеціальності</label>
-        <input type="text" name="military_accounting_specialty_number" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Військове звання</label>
-        <input type="text" name="military_rank" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Зміна облікових данних</label>
-        <input type="text" name="change_credentials" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Підстава для зміни облікових даних</label>
-        <input type="text" name="reason_for_changing_credentials" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Перебування на військовому обліку</label>
-        <input type="text" name="being_on_military_registration" class="form-control">
-    </div>
-    <div class="mb-3">
-        <label class="form-label">Адреса місця проживання</label>
-        <input type="text" name="address_of_residence" class="form-control">
-    </div>
-    <button type="submit" class="btn btn-success">Зберегти</button>
-    <a href="{{ url_for('students.student_list') }}" class="btn btn-secondary">Скасувати</a>
-</form>
+
+</div>
 {% endblock %}

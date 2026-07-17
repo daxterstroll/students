@@ -1,10 +1,13 @@
 {% extends "layout.html" %}
+{% import '_macros.html' as ui %}
 {% block title %}Управління предметами{% endblock %}
 {% block content %}
-<h1><i class="bi bi-journal"></i> Управління предметами</h1>
+<div class="container py-4">
+
+{{ ui.page_header('bi-journal-fill', 'Управління предметами', 'Предмети, позиції та оцінки для обраної групи') }}
 
 <!-- Форма выбора группы -->
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Оберіть групу</h5>
         <form method="GET" action="{{ url_for('admin.manage_subjects') }}" class="row g-3">
@@ -27,7 +30,7 @@
 </h2>
 
 <!-- Форма добавления нового предмета -->
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Додати новий предмет</h5>
         <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}" class="row g-3">
@@ -65,7 +68,7 @@
 
 <!-- Таблица предметов -->
 {% if subjects|default([]) %}
-<div class="card shadow-sm">
+<div class="card">
     <div class="card-body">
         <h5 class="card-title">Список предметів</h5>
         <div class="table-responsive">
@@ -155,7 +158,7 @@
 
 <!-- Таблица оценок -->
 {% if selected_subject_id and students|default([]) %}
-<div class="card mt-4 shadow-sm">
+<div class="card mt-4">
     <div class="card-body">
         <h5 class="card-title">Оцінки для предмета: {{ (subjects|selectattr('id', 'equalto', selected_subject_id|int)|map(attribute='name')|first)|default('Невідомий предмет') }}</h5>
         <form method="post" action="{{ url_for('admin.manage_subjects', group_id=selected_group_id) }}">
@@ -234,4 +237,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 </script>
+
+</div>
 {% endblock %}

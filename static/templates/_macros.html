@@ -1,0 +1,40 @@
+{# =========================================================================
+   _macros.html
+   =============
+   Спільні шаблонні "цеглинки" для однакового вигляду всіх сторінок.
+   Використання в будь-якому шаблоні:
+
+       {% import '_macros.html' as ui %}
+       {{ ui.page_header('bi-award-fill', 'Акредитації', 'Управління акредитаціями освітніх програм') }}
+
+   Стилі, на які спираються ці макроси (page-header, section-title,
+   empty-state, tab-pills тощо), визначені один раз у layout.html, а не
+   копіюються в кожному шаблоні - це і є "єдиний стиль" для всього сайту.
+   ========================================================================= #}
+
+{% macro page_header(icon, title, subtitle=None, badge=None) %}
+<div class="page-header text-center text-md-start">
+    <div class="d-flex flex-column flex-md-row align-items-center align-items-md-center gap-3">
+        <i class="bi {{ icon }} fs-1"></i>
+        <div class="flex-grow-1">
+            <h2 class="mb-1">{{ title }}</h2>
+            {% if subtitle %}<p class="mb-0 opacity-90">{{ subtitle }}</p>{% endif %}
+        </div>
+        {% if badge %}<span class="badge page-header-badge">{{ badge }}</span>{% endif %}
+    </div>
+</div>
+{% endmacro %}
+
+{% macro section_title(text, icon=None) %}
+<h4 class="section-title mb-4">{% if icon %}<i class="bi {{ icon }} me-2"></i>{% endif %}{{ text }}</h4>
+{% endmacro %}
+
+{% macro empty_state(icon, text, hint=None) %}
+<div class="card">
+    <div class="card-body empty-state">
+        <i class="bi {{ icon }}"></i>
+        <p class="mb-0">{{ text }}</p>
+        {% if hint %}<p class="empty-state-hint">{{ hint }}</p>{% endif %}
+    </div>
+</div>
+{% endmacro %}
