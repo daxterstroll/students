@@ -1,4 +1,22 @@
+"""
+routes/init_db.py
+==================
+Одноразовий скрипт для створення бази даних students.db "з нуля" разом
+з усіма таблицями та користувачем admin/admin123 за замовчуванням.
+
+Запуск: `python init_db.py` з кореня проєкту (або routes/, шлях до БД
+обчислюється відносно розташування цього файлу).
+
+Використовує CREATE TABLE IF NOT EXISTS, тож повторний запуск на вже
+існуючій базі не видаляє наявні дані, а лише додає відсутні таблиці.
+УВАГА: якщо в майбутньому додається нова колонка до вже існуючої
+таблиці (як це один раз уже сталося з таблицею "groups" - див.
+коментар нижче), для існуючих баз даних CREATE TABLE IF NOT EXISTS
+її не додасть - потрібна окрема ALTER TABLE-міграція.
+"""
+
 import sqlite3
+import logging
 import os
 from werkzeug.security import generate_password_hash
 
@@ -96,6 +114,15 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	"educational_program_en"	TEXT NOT NULL,
 	"qualification_name"	TEXT NOT NULL,
 	"qualification_name_en"	TEXT NOT NULL,
+	"course"	INTEGER NOT NULL DEFAULT 1,
+	"institution_name_and_status"	TEXT,
+	"institution_name_and_status_en"	TEXT,
+	"entry_requirements"	TEXT,
+	"entry_requirements_en"	TEXT,
+	"learning_outcomes"	TEXT,
+	"learning_outcomes_en"	TEXT,
+	"program_includes"	TEXT,
+	"program_includes_en"	TEXT,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	UNIQUE("name","start_year")
@@ -196,10 +223,33 @@ CREATE TABLE student_study_periods (
 CREATE INDEX idx_study_periods_student ON student_study_periods(student_id);
 """)
 
-# Додаємо користувачів
-for u, p, r, g in [('admin', 'admin123', 'admin', '1', '[]')]:
-    cur.execute("INSERT OR IGNORE INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
-                (u, generate_password_hash(p), r, g))
+# Додаємо користувачів.
+# ВИПРАВЛЕНО: тут раніше було
+#     for u, p, r, g in [('admin', 'admin123', 'admin', '1', '[]')]:
+# - кортеж мав 5 елементів (логін, пароль, роль, is_admin, permissions),
+# а розпаковувався лише в 4 змінні (u, p, r, g). Це кидало
+# `ValueError: too many values to unpack` і скрипт init_db.py падав
+# щоразу при спробі його запустити, ще ДО створення користувача-адміна.
+# Крім того, INSERT нижче мав 5 плейсхолдерів (?, ?, ?, ?, ?), але
+# отримував лише 4 значення (u, hash, r, g) - це також викликало б
+# помилку sqlite3 навіть після виправлення розпакування кортежу.
+DEFAULT_USERS = [
+    # (username, password, role, is_admin, permissions_json)
+    ('admin', 'admin123', 'admin', 1, '[]'),
+]
+
+for username, password, role, is_admin, permissions in DEFAULT_USERS:
+    try:
+        cur.execute(
+            "INSERT OR IGNORE INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
+            (username, generate_password_hash(password), role, is_admin, permissions)
+        )
+    except sqlite3.Error as e:
+        logging.error(f"Не вдалося створити користувача за замовчуванням '{username}': {e}")
+
 conn.commit()
 conn.close()
 print("✅ DB та користувачі створені.")
+print("⚠️  УВАГА: користувач 'admin' створений зі стандартним паролем 'admin123'. "
+      "Обов'язково змініть його одразу після першого входу через "
+      "/admin/users/<id>/change-password.")

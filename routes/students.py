@@ -1,8 +1,21 @@
+"""
+routes/students.py
+===================
+Основний робочий простір користувача: список студентів (з пошуком,
+фільтрами, пагінацією), картка студента, персональні оцінки, військовий
+облік, генерація документа для одного студента та імпорт студентів з
+Excel.
+
+Опис призначення кожної функції - див. докстрінг під відповідним
+`def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
+"""
+
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, send_file
 from datetime import datetime
 import os
 import openpyxl
-import logging
+from routes.utils import logger
+from routes.helpers import current_username
 from werkzeug.utils import secure_filename
 from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
@@ -16,6 +29,7 @@ students_bp = Blueprint('students', __name__)
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
 def student_list():
+    """Головна сторінка списку студентів: пошук, фільтр по групі, пагінація, сортування (в т.ч. українська колація для ПІБ), а також обмеження видимості для не-адмінів лише їхніми групами. Для кожного студента одразу рахує заповненість особистих даних, військового обліку, оцінок та активностей (для індикаторів прогресу в UI)."""
     search = request.args.get('search', '')
     group_id = request.args.get('group_id', type=int)
     page = request.args.get('page', 1, type=int)
@@ -205,6 +219,7 @@ def student_list():
 @students_bp.route('/students/<int:student_id>')
 @login_required('')
 def student_details(student_id):
+    """Картка студента: особисті дані, військовий облік, оцінки з предметів/практик/курсових/атестацій, документи про освіту та періоди навчання."""
     conn = get_db()
     student = conn.execute("""
         SELECT s.*, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name
@@ -214,13 +229,13 @@ def student_details(student_id):
     """, (student_id,)).fetchone()
 
     if not student:
-        log_action(session.get('username', 'невідомо'), f"спроба перегляду неіснуючого студента (ID {student_id})")
+        log_action(current_username(), f"спроба перегляду неіснуючого студента (ID {student_id})")
         flash("Студента не знайдено")
         return redirect(url_for('students.student_list'))
 
     # Один виклик log_action замість двох
     log_action(
-        session.get('username', 'невідомо'),
+        current_username(),
         f"переглянув картку студента: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
         group_ids=[student['group_id']],
         details=f"група: {student['group_name']}"
@@ -332,6 +347,7 @@ def student_details(student_id):
 @students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
 @permission_required('study_periods')
 def manage_study_periods(student_id):
+    """CRUD-сторінка періодів навчання (філія, дати, примітка) конкретного студента."""
     db = get_db()
     cursor = db.cursor()
 
@@ -365,7 +381,7 @@ def manage_study_periods(student_id):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note))
                 db.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"додав період навчання студенту ID {student_id}: {filiya}")
                 flash('Період навчання додано', 'success')
 
@@ -388,7 +404,7 @@ def manage_study_periods(student_id):
                     WHERE id=? AND student_id=?
                 """, (filiya, filiya_en, group_name, start_date, end_date, period_order, note, period_id, student_id))
                 db.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"оновив період навчання ID {period_id} студенту ID {student_id}")
                 flash('Період навчання оновлено', 'success')
 
@@ -398,7 +414,7 @@ def manage_study_periods(student_id):
                 DELETE FROM student_study_periods WHERE id=? AND student_id=?
             """, (period_id, student_id))
             db.commit()
-            log_action(session.get('username', 'невідомо'),
+            log_action(current_username(),
                        f"видалив період навчання ID {period_id} студенту ID {student_id}")
             flash('Період навчання видалено', 'success')
 
@@ -421,6 +437,7 @@ def manage_study_periods(student_id):
 @students_bp.route('/students/add', methods=['GET', 'POST'])
 @login_required('')
 def add_student():
+    """Форма додавання нового студента (особисті дані + прив'язка до групи)."""
     conn = get_db()
     role = session.get('role')
     group_ids = session.get('group_ids', [])
@@ -520,7 +537,7 @@ def add_student():
             conn.commit()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"додав студента: {last_name_ua} {first_name_ua} {middle_name_ua} (ID {student_id}, дата нар.: {birth_date})",
             group_ids=[group_int],
             details=f"ЄДЕБО: {request.form.get('edebo_code') or 'не вказано'}, військові дані: {'так' if has_military else 'ні'}"
@@ -534,6 +551,7 @@ def add_student():
 @students_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
 @login_required('')
 def edit_student(student_id):
+    """Форма редагування особистих даних студента."""
     conn = get_db()
     role = session.get('role')
     group_ids = session.get('group_ids', [])
@@ -586,7 +604,7 @@ def edit_student(student_id):
             """, (last_name_eng, first_name_eng, student_id))
             conn.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"оновив англійські імена: {last_name_ua} {first_name_ua} (ID {student_id})",
                 group_ids=[group_int],
                 details=f"→ {last_name_eng} {first_name_eng}"
@@ -622,7 +640,7 @@ def edit_student(student_id):
 
             details = f"стара група: {old_group} → нова група: {group_int}" if old_group != group_int else f"група: {group_int}"
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"редагував студента: {request.form['last_name_UA']} {request.form['first_name_UA']} (ID {student_id})",
                 group_ids=[group_int],
                 details=details
@@ -636,6 +654,7 @@ def edit_student(student_id):
 @students_bp.route('/students/<int:student_id>/delete')
 @permission_required('manage_students')
 def delete_student(student_id):
+    """Видаляє студента разом з усіма пов'язаними записами (military, grades, activity_grades, education_documents, diplomas)."""
     conn = get_db()
     student = conn.execute(
         "SELECT last_name_UA, first_name_UA, middle_name_UA, group_id FROM students WHERE id = ?", (student_id,)
@@ -660,13 +679,14 @@ def delete_student(student_id):
         conn.commit()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
             details="каскадне видалення: military, grades, activity_grades, education_documents, diplomas"
         )
     except Exception as e:
         conn.rollback()
+        logger.error(f"Помилка при видаленні студента ID {student_id}: {e}", exc_info=True)
         flash(f"Помилка при видаленні студента: {e}", "error")
     finally:
         conn.close()
@@ -676,6 +696,7 @@ def delete_student(student_id):
 @students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
 @login_required('')
 def add_military(student_id):
+    """Форма додавання даних військового обліку студенту, який ще їх не має."""
     if request.method == 'POST':
         issued_VOD_raw = request.form.get('issued_VOD', '').strip()
         if issued_VOD_raw:
@@ -719,7 +740,7 @@ def add_military(student_id):
         conn.close()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"додав військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
             group_ids=[student_row['group_id']]
         )
@@ -730,6 +751,7 @@ def add_military(student_id):
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
 @login_required('')
 def military_data(student_id):
+    """Форма перегляду/редагування наявних даних військового обліку студента."""
     conn = get_db()
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
 
@@ -782,7 +804,7 @@ def military_data(student_id):
 
         action_name = "редагував" if military else "додав"
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"{action_name} військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
             group_ids=[student_row['group_id']]
         )
@@ -794,6 +816,7 @@ def military_data(student_id):
 @students_bp.route('/students/<int:student_id>/military/delete')
 @permission_required('manage_students')
 def delete_military(student_id):
+    """Видаляє запис військового обліку студента."""
     conn = get_db()
     student_row = conn.execute(
         "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
@@ -803,7 +826,7 @@ def delete_military(student_id):
     conn.close()
 
     log_action(
-        session.get('username', 'невідомо'),
+        current_username(),
         f"ВИДАЛИВ військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
         group_ids=[student_row['group_id']] if student_row else []
     )
@@ -812,6 +835,7 @@ def delete_military(student_id):
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
 def generate(student_id):
+    """Генерує .docx-документ для одного студента за обраним шаблоном та завантажує його користувачу."""
     if request.method == 'POST':
         selected_template = request.form.get('template', 'template.docx')
 
@@ -851,7 +875,7 @@ def generate(student_id):
             student_dict = dict(student)
             required_fields = ['last_name_UA', 'first_name_UA', 'id', 'group_id']
             if not all(key in student_dict for key in required_fields):
-                logging.error(f"Неповні дані студента ID {student_id}: {student_dict}")
+                logger.error(f"Неповні дані студента ID {student_id}: {student_dict}")
                 flash("Дані студента неповні (відсутні необхідні поля)")
                 return redirect(url_for('students.student_list'))
 
@@ -864,14 +888,14 @@ def generate(student_id):
 
             try:
                 gen_doc(student_dict, military_dict, template=selected_template, out=output_path,
-                        user_name=session.get('username', 'невідомо'))
+                        user_name=current_username())
             except Exception as e:
-                logging.error(f"Помилка при генерації документа для студента ID {student_id}: {str(e)}")
+                logger.error(f"Помилка при генерації документа для студента ID {student_id}: {str(e)}")
                 flash(f"Помилка при генерації документа: {str(e)}")
                 return redirect(url_for('students.student_list'))
 
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"згенерував документ: {student_dict['last_name_UA']} {student_dict['first_name_UA']} (ID {student_id})",
                 group_ids=[student_dict['group_id']],
                 details=f"шаблон: {selected_template}"
@@ -879,7 +903,7 @@ def generate(student_id):
             try:
                 return send_file(output_path, as_attachment=True)
             except Exception as e:
-                logging.error(f"Помилка при відправленні файлу {output_path}: {str(e)}")
+                logger.error(f"Помилка при відправленні файлу {output_path}: {str(e)}")
                 flash(f"Помилка при відправленні файлу: {str(e)}")
                 return redirect(url_for('students.student_list'))
 
@@ -894,6 +918,7 @@ def generate(student_id):
 @students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
 @login_required('')
 def edit_activities_grades(student_id):
+    """Масове виставлення оцінок студентам групи з практик/курсових/атестацій (аналог admin.manage_activities, але з боку картки студента/групи)."""
     conn = get_db()
 
     student = conn.execute("""
@@ -980,7 +1005,7 @@ def edit_activities_grades(student_id):
             conn.commit()
             flash("Оцінки успішно збережено", "success")
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"змінив активності: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
                 group_ids=[student['group_id']],
                 details=f"практики: {len(practices)}, курсові: {len(courseworks)}, атестації: {len(attestations)}"
@@ -989,6 +1014,7 @@ def edit_activities_grades(student_id):
             return redirect(url_for('students.student_list'))
         except Exception as e:
             conn.rollback()
+            logger.error(f"Помилка при збереженні оцінок з активностей (student_id={student_id}): {e}", exc_info=True)
             flash(f"Помилка при збереженні оцінок: {str(e)}", "error")
 
     conn.close()
@@ -1001,6 +1027,7 @@ def edit_activities_grades(student_id):
 @students_bp.route('/grades/<int:student_id>', methods=['GET', 'POST'])
 @login_required('')
 def edit_grades(student_id):
+    """Форма виставлення/редагування оцінок одного студента з усіх предметів його групи."""
     conn = get_db()
 
     student = conn.execute("""
@@ -1033,7 +1060,7 @@ def edit_grades(student_id):
         conn.close()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"змінив оцінки з дисциплін: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
             details=f"заповнено {filled} з {len(subjects)} предметів"
@@ -1174,6 +1201,7 @@ def import_from_excel():
                     inserted += 1
 
                 except Exception as e:
+                    logger.debug(f"Пропущено рядок {i} при імпорті студентів з Excel: {e}")
                     flash(f"⚠️ Помилка в рядку {i}: {e}")
                     skipped += 1
                     continue
@@ -1182,12 +1210,13 @@ def import_from_excel():
 
         except Exception as e:
             conn.rollback()
+            logger.error(f"Помилка при імпорті студентів з Excel (файл: {filename}): {e}", exc_info=True)
             flash(f"⚠️ Помилка при читанні файлу: {e}")
         finally:
             conn.close()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"імпорт студентів з Excel: додано {inserted}, пропущено {skipped}",
             details=f"файл: {filename}"
         )
