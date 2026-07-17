@@ -1,4 +1,5 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
 {% block title %}Управління документами про освіту{% endblock %}
 
 {% block content %}
@@ -10,12 +11,13 @@
     }
 </style>
 
-<div class="container mt-4">
-    <h2><i class="bi bi-file-earmark-text"></i> Управління документами про освіту</h2>
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-text-fill', 'Документи про освіту', 'Атестати, дипломи та документи про визнання іноземної освіти') }}
 
     <!-- Інформація про студента, якщо відкрито з картки студента -->
     {% if student %}
-        <div class="alert alert-info d-flex justify-content-between align-items-center mb-4">
+        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
             <div>
                 <strong>Студент:</strong> {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}
                 <span class="badge bg-secondary ms-2">{{ student.group_name | default('') }}</span>
@@ -27,12 +29,12 @@
         </div>
     {% endif %}
 
-    <!-- Вибір групи та студента (оригінальний блок) -->
-    <div class="col-md-12">
+    <!-- Вибір групи та студента -->
+    <div class="card mb-4">
         <div class="card-body">
             <form method="GET" class="row g-3 align-items-end">
                 <div class="col-md-6">
-                    <label for="group_id" class="form-label fw-bold">Група</label>
+                    <label for="group_id" class="form-label">Група</label>
                     <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()" required>
                         <option value="">— оберіть групу —</option>
                         {% for group in groups %}
@@ -44,7 +46,7 @@
                 </div>
                 {% if selected_group_id and students_without_docs %}
                     <div class="col-md-6">
-                        <label for="student_id" class="form-label fw-bold">Студент (без документів)</label>
+                        <label for="student_id" class="form-label">Студент (без документів)</label>
                         <select name="student_id" id="student_id_select" class="form-select" form="addDocumentForm">
                             <option value="">— оберіть студента —</option>
                             {% for s in students_without_docs %}
@@ -58,11 +60,14 @@
             </form>
         </div>
     </div>
-    <hr>
 
     <!-- Форма додавання документа -->
-    <h4 class="mt-4">Додати документ про освіту</h4>
-    <form id="addDocumentForm" method="POST" class="mb-5">
+    <div class="card mb-5">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати документ про освіту</h5>
+        </div>
+        <div class="card-body">
+    <form id="addDocumentForm" method="POST">
         <input type="hidden" name="student_id" id="hidden_student_id" value="{{ student.id if student else '' }}">
 
         <div class="row g-3">
@@ -153,9 +158,11 @@
             </div>
         </div>
     </form>
+        </div>
+    </div>
 
-    <!-- Список документів (оригінальний блок) -->
-    <h4 class="mt-5">Список документів</h4>
+    <!-- Список документів -->
+    {{ ui.section_title('Список документів') }}
     {% if documents_by_group %}
         <div class="accordion" id="groupsAccordion">
             {% for group_id, group_data in documents_by_group %}
@@ -361,6 +368,7 @@
                                                                     <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
                                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
                                                                 </div>
+                                                                </div>
                                                             </form>
                                                         </div>
                                                     </div>
@@ -376,9 +384,7 @@
             {% endfor %}
         </div>
     {% else %}
-        <div class="alert alert-info mt-3">
-            Документів ще немає (або не вибрано групу)
-        </div>
+        {{ ui.empty_state('bi-file-earmark-text', 'Документів ще немає (або не вибрано групу)') }}
     {% endif %}
 
     <!-- Порожнє місце внизу сторінки -->

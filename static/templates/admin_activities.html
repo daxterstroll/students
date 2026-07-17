@@ -1,10 +1,13 @@
 {% extends "layout.html" %}
+{% import '_macros.html' as ui %}
 {% block title %}Управління діяльностями{% endblock %}
 {% block content %}
-<h1><i class="bi bi-journal-bookmark"></i> Управління діяльностями</h1>
+<div class="container py-4">
+
+{{ ui.page_header('bi-journal-bookmark-fill', 'Управління діяльностями', 'Практики, курсові роботи та атестації по групах') }}
 
 <!-- Форма выбора группы -->
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Оберіть групу</h5>
         <form method="GET" action="{{ url_for('admin.manage_activities') }}" class="row g-3">
@@ -23,7 +26,7 @@
 
 {% if selected_group_id %}
 <!-- Форма выбора типа деятельности -->
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Тип діяльності</h5>
         <form method="GET" action="{{ url_for('admin.manage_activities') }}" class="row g-3">
@@ -46,7 +49,7 @@
 </h2>
 
 <!-- Форма добавления новой деятельности -->
-<div class="card mb-4 shadow-sm">
+<div class="card mb-4">
     <div class="card-body">
         <h5 class="card-title">Додати нову діяльність</h5>
         <form method="post" action="{{ url_for('admin.manage_activities', group_id=selected_group_id, entity_type=entity_type|default('practice')) }}" class="row g-3">
@@ -85,7 +88,7 @@
 
 <!-- Таблица деятельностей -->
 {% if entities|default([]) %}
-<div class="card shadow-sm">
+<div class="card">
     <div class="card-body">
         <h5 class="card-title">Список {% if entity_type|default('practice') == 'practice' %}практик{% elif entity_type|default('practice') == 'coursework' %}курсових робіт{% else %}атестацій{% endif %}</h5>
         <div class="table-responsive">
@@ -179,7 +182,7 @@
 
 <!-- Таблица оценок -->
 {% if selected_entity_id and students|default([]) %}
-<div class="card mt-4 shadow-sm">
+<div class="card mt-4">
     <div class="card-body">
         <h5 class="card-title">Оцінки для {{ 'практики' if entity_type|default('practice') == 'practice' else 'курсової роботи' if entity_type|default('practice') == 'coursework' else 'атестації' }}: {{ (entities|selectattr('id', 'equalto', selected_entity_id|int)|map(attribute='name')|first)|default('Невідома діяльність') }}</h5>
         <form method="post" action="{{ url_for('admin.manage_activities', group_id=selected_group_id, entity_type=entity_type|default('practice')) }}">
@@ -261,4 +264,6 @@ document.addEventListener("DOMContentLoaded", function () {
 
 });
 </script>
+
+</div>
 {% endblock %}
