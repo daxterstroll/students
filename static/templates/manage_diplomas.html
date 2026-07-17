@@ -1,71 +1,87 @@
 {% extends "layout.html" %}
+{% import '_macros.html' as ui %}
 {% block title %}Дипломи студентів{% endblock %}
 
 {% block content %}
-<h1><i class="bi bi-journal-bookmark"></i> Додати номери дипломів</h1>
+<div class="container py-4">
 
-<!-- Форма выбора группы -->
-<div class="card mb-4 shadow-sm">
-    <div class="card-body">
-        <h5 class="card-title">Оберіть групу</h5>
-        <form method="GET" action="{{ url_for('admin.manage_diplomas') }}" class="row g-3">
-            <div class="col-md-6">
-                <label for="group_id" class="form-label">Група</label>
-                <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
-                    <option value="">-- Оберіть групу --</option>
-                    {% for group in groups %}
-                        <option value="{{ group.id }}" {% if group.id == selected_group %}selected{% endif %}>
-                            {{ group.name }} ({{ group.start_year }})
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-        </form>
-    </div>
-</div>
+    {{ ui.page_header('bi-journal-bookmark-fill', 'Номери диплому та додатку', 'Присвоєння номерів дипломів студентам групи') }}
 
-{% if selected_group %}
-<div class="card mb-4 shadow-sm">
-    <div class="card-body">
-        <h5 class="card-title">Список студентів</h5>
-        <form method="POST" action="{{ url_for('admin.manage_diplomas') }}">
-            <input type="hidden" name="group_id" value="{{ selected_group }}">
-            <div class="table-responsive">
-                <table class="table table-hover table-sm">
-                    <thead>
-                        <tr>
-                            <th scope="col" style="width: 40%;">ПІБ</th>
-                            <th scope="col" style="width: 30%;">Номер диплома</th>
-                            <th scope="col" style="width: 30%;">Номер додатку</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in students %}
-                        <tr>
-                            <td>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA }}</td>
-                            <td>
-                                <input type="text" name="diploma_number_{{ s.id }}" class="form-control form-control-sm diploma-input" value="{{ s.diploma_number or '' }}">
-                            </td>
-                            <td>
-                                <input type="text" name="appendix_number_{{ s.id }}" class="form-control form-control-sm appendix-input" value="{{ s.appendix_number or '' }}">
-                            </td>
-                        </tr>
+    <!-- Форма вибору групи -->
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-funnel me-2"></i>Оберіть групу</h5>
+        </div>
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('admin.manage_diplomas') }}" class="row g-3">
+                <div class="col-md-6">
+                    <label for="group_id" class="form-label">Група</label>
+                    <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()">
+                        <option value="">— Оберіть групу —</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}" {% if group.id == selected_group %}selected{% endif %}>
+                                {{ group.name }} ({{ group.start_year }})
+                            </option>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <button type="submit" class="btn btn-primary btn-sm mt-3"><i class="bi bi-save"></i> Зберегти</button>
-        </form>
+                    </select>
+                </div>
+            </form>
+        </div>
     </div>
+
+    {% if selected_group %}
+    <div class="card">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 section-title"><i class="bi bi-people me-2"></i>Список студентів</h5>
+            <span class="count-pill"><i class="bi bi-person-lines-fill"></i>{{ students|length }} студент(ів)</span>
+        </div>
+        <div class="card-body p-0">
+            <form method="POST" action="{{ url_for('admin.manage_diplomas') }}">
+                <input type="hidden" name="group_id" value="{{ selected_group }}">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th style="width: 40%;">ПІБ</th>
+                                <th style="width: 30%;">Номер диплома</th>
+                                <th style="width: 30%;">Номер додатку</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in students %}
+                            <tr>
+                                <td>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA }}</td>
+                                <td>
+                                    <input type="text" name="diploma_number_{{ s.id }}" class="form-control form-control-sm diploma-input" value="{{ s.diploma_number or '' }}">
+                                </td>
+                                <td>
+                                    <input type="text" name="appendix_number_{{ s.id }}" class="form-control form-control-sm appendix-input" value="{{ s.appendix_number or '' }}">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="p-3">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+                    <span class="text-muted small ms-2"><i class="bi bi-info-circle"></i> Можна вставити (Ctrl+V) стовпець номерів з Excel одразу в перше поле</span>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% elif groups %}
+        {{ ui.empty_state('bi-arrow-up-circle', 'Оберіть групу вище, щоб побачити список студентів') }}
+    {% else %}
+        {{ ui.empty_state('bi-person-rolodex', 'Немає активних груп') }}
+    {% endif %}
+
 </div>
-{% endif %}
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
     const diplomaInputs = document.querySelectorAll(".diploma-input");
     const appendixInputs = document.querySelectorAll(".appendix-input");
 
-    // Вставка столбца для диплома с доп. нулями
     if (diplomaInputs.length) {
         diplomaInputs[0].addEventListener("paste", function (event) {
             event.preventDefault();
@@ -77,7 +93,6 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     }
 
-    // Вставка столбца для додатку
     if (appendixInputs.length) {
         appendixInputs[0].addEventListener("paste", function (event) {
             event.preventDefault();

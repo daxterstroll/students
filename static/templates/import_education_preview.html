@@ -1,12 +1,18 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Попередній перегляд імпорту{% endblock %}
 {% block content %}
+<div class="container py-4">
 
-<h3>Попередній перегляд імпорту</h3>
+{{ ui.page_header('bi-eyeglasses', 'Попередній перегляд імпорту', 'Перевірте розпізнані документи перед збереженням у базу') }}
 
 <form method="post" action="{{ url_for('admin.import_docs_commit') }}" id="importForm">
     <input type="hidden" name="preview_id" value="{{ preview_id }}">
 
-    <table class="table table-bordered table-sm table-hover">
+    <div class="card mb-4">
+    <div class="card-body p-0">
+    <div class="table-responsive">
+    <table class="table table-hover mb-0 align-middle">
         <thead class="table-light">
             <tr>
                 <th style="width:5%">Row</th>
@@ -53,6 +59,9 @@
         {% endfor %}
         </tbody>
     </table>
+    </div>
+    </div>
+    </div>
 
     <!-- ==================== МОДАЛЬНІ ВІКНА (винесені за межі table) ==================== -->
     {% for row in preview %}
@@ -286,9 +295,10 @@
     <!-- ==================== кінець модальних вікон ==================== -->
 
     <div class="mt-3">
-        <button type="submit" class="btn btn-success">Додати / Оновити в базу</button>
-        <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-secondary">Скасувати</a>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-2"></i>Додати / Оновити в базу</button>
+        <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-outline-secondary">Скасувати</a>
     </div>
 </form>
 
+</div>
 {% endblock %}

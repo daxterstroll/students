@@ -1,91 +1,102 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
 {% block title %}Масова генерація документів{% endblock %}
 {% block content %}
-<h2 class="page-title"><i class="bi bi-file-zip"></i> Масова генерація документів</h2>
-<div class="form-container">
-    <form method="GET" id="filter-form" class="filter-form">
-        <div class="form-group">
-            <label class="form-label" for="group_id">Оберіть групу:</label>
-            <select name="group_id" id="group_id" class="form-select" onchange="submitForm()">
-                <option value="">-- Оберіть групу --</option>
-                {% for group in groups %}
-                    <option value="{{ group.id }}" {% if group.id|string == selected_group_id|string %}selected{% endif %}>{{ group.display_name }}</option>
-                {% endfor %}
-            </select>
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-zip-fill', 'Масова генерація документів', 'Оберіть групу, рік народження та шаблон, щоб згенерувати документи для декількох студентів одразу') }}
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" id="filter-form" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label" for="group_id">Група</label>
+                    <select name="group_id" id="group_id" class="form-select" onchange="submitForm()">
+                        <option value="">— Оберіть групу —</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}" {% if group.id|string == selected_group_id|string %}selected{% endif %}>{{ group.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="birth_year">Рік народження (від)</label>
+                    <select name="birth_year" id="birth_year" class="form-select" onchange="submitForm()">
+                        <option value="">— Усі роки —</option>
+                        {% for y in years %}
+                            <option value="{{ y }}" {% if y|string == selected_year|string %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label" for="template">Шаблон документа</label>
+                    <select name="template" id="template" class="form-select" onchange="submitForm()">
+                        {% for tpl in available_templates %}
+                            <option value="{{ tpl }}" {% if tpl == selected_template %}selected{% endif %}>
+                                {{ tpl.split('/')[-1] }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-search me-2"></i>Показати студентів</button>
+                </div>
+            </form>
         </div>
-        <div class="form-group">
-            <label class="form-label" for="birth_year">Оберіть рік народження (починаючи з):</label>
-            <select name="birth_year" id="birth_year" class="form-select" onchange="submitForm()">
-                <option value="">-- Усі роки --</option>
-                {% for y in years %}
-                    <option value="{{ y }}" {% if y|string == selected_year|string %}selected{% endif %}>{{ y }}</option>
-                {% endfor %}
-            </select>
-        </div>
-		<div class="form-group">
-			<label class="form-label" for="template">Оберіть шаблон:</label>
-			<select name="template" id="template" class="form-select" onchange="submitForm()">
-				{% for tpl in available_templates %}
-					<option value="{{ tpl }}" {% if tpl == selected_template %}selected{% endif %}>
-						{{ tpl.split('/')[-1] }}
-					</option>
-				{% endfor %}
-			</select>
-		</div>
-        <br>
-        <div class="form-group">
-            <button type="submit" class="btn btn-primary">Показати студентів</button>
-        </div>
-    </form>
-</div>
-<script>
-function submitForm() {
-    const form = document.getElementById('filter-form');
-    form.submit();
-}
-</script>
-{% if students %}
-    <h3 class="results-title">
-        Результати для
-        {% if selected_group_id %}
-            групи: {{ groups|selectattr('id', 'equalto', selected_group_id)|map(attribute='display_name')|first }}
-        {% endif %}
-        {% if selected_year %} (рік народження: ≥{{ selected_year }}){% endif %}
-    </h3>
-    <div class="table-container">
-        <form method="POST" action="{{ url_for('admin.group_export') }}" class="generate-form">
-            <table class="student-table">
-                <thead>
-                    <tr>
-                        <th>Активний</th>
-                        <th>ПІБ</th>
-                        <th>Дата народження</th>
-                        <th>Група</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for student in students %}
-                        <tr>
-                            <td>
-                                <input type="checkbox" name="active_students" value="{{ student.id }}" checked>
-                            </td>
-                            <td>{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}</td>
-                            <td>{{ student.birth_date }}</td>
-                            <td>{{ groups|selectattr('id', 'equalto', student.group_id)|map(attribute='display_name')|first }}</td>
-                        </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            <input type="hidden" name="group_id" value="{{ selected_group_id or '' }}">
-            <input type="hidden" name="birth_year" value="{{ selected_year or '' }}">
-            <input type="hidden" name="template" value="{{ selected_template }}">
-            <br>
-            <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-download"></i> Згенерувати документи</button>
-        </form>
     </div>
-{% else %}
-    {% if selected_group_id or selected_year %}
-        <p class="no-results">У цій групі або за обраними роками немає студентів.</p>
+
+    <script>
+    function submitForm() {
+        document.getElementById('filter-form').submit();
+    }
+    </script>
+
+    {% if students %}
+        {{ ui.section_title(
+            'Результати для ' ~
+            (groups|selectattr('id', 'equalto', selected_group_id)|map(attribute='display_name')|first if selected_group_id else 'усіх груп') ~
+            (' · рік народження від ' ~ selected_year if selected_year else '')
+        ) }}
+        <div class="card">
+            <div class="card-body p-0">
+                <form method="POST" action="{{ url_for('admin.group_export') }}">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                            <thead>
+                                <tr>
+                                    <th style="width:80px" class="text-center">Активний</th>
+                                    <th>ПІБ</th>
+                                    <th>Дата народження</th>
+                                    <th>Група</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for student in students %}
+                                    <tr>
+                                        <td class="text-center">
+                                            <input type="checkbox" name="active_students" value="{{ student.id }}" class="form-check-input" checked>
+                                        </td>
+                                        <td>{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}</td>
+                                        <td>{{ student.birth_date }}</td>
+                                        <td>{{ groups|selectattr('id', 'equalto', student.group_id)|map(attribute='display_name')|first }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    <input type="hidden" name="group_id" value="{{ selected_group_id or '' }}">
+                    <input type="hidden" name="birth_year" value="{{ selected_year or '' }}">
+                    <input type="hidden" name="template" value="{{ selected_template }}">
+                    <div class="p-3">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-download me-2"></i>Згенерувати документи (ZIP)</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    {% else %}
+        {% if selected_group_id or selected_year %}
+            {{ ui.empty_state('bi-people', 'За обраними фільтрами студентів не знайдено') }}
+        {% endif %}
     {% endif %}
-{% endif %}
+
+</div>
 {% endblock %}

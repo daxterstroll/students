@@ -1,8 +1,10 @@
 {% extends "layout.html" %}
+{% import '_macros.html' as ui %}
 {% block title %}Імпорт предметів з Excel{% endblock %}
 {% block content %}
+<div class="container py-4">
 
-<h2 class="mb-4"><i class="bi bi-file-earmark-arrow-up"></i> Імпорт предметів з Excel</h2>
+{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт предметів з Excel', 'Масове додавання предметів до обраної групи з файлу .xlsx') }}
 
 <div class="row g-4">
 
@@ -149,6 +151,8 @@
       </div>
     </div>
   </div>
+
+</div>
 
 </div>
 {% endblock %}

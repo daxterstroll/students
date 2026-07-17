@@ -485,6 +485,24 @@ def add_student():
         middle_name_ua = request.form.get('middle_name_UA', '')
         last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
 
+        # ВИПРАВЛЕНО: раніше issued_VOD валідувався ПІСЛЯ INSERT+commit
+        # студента. Якщо формат дати видачі ВОД був невірний, форма
+        # знову показувалась як помилка (нібито нічого не збереглось),
+        # але студент вже був у базі - повторна відправка форми
+        # створювала ДУБЛІКАТ студента. Тепер усі перевірки формату дат
+        # виконуються до того, як щось записується в БД.
+        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
+        issued_VOD = None
+        if issued_VOD_raw:
+            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
+            try:
+                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
+                issued_VOD = issued_VOD_clean
+            except ValueError:
+                flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
+                conn.close()
+                return render_template('add_student.html', groups=groups)
+
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
@@ -494,19 +512,6 @@ def add_student():
               birth_date, group_int, request.form.get('edebo_code')))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
-        if issued_VOD_raw:
-            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
-            try:
-                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
-                issued_VOD = issued_VOD_clean
-            except ValueError:
-                flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
-                conn.close()
-                return render_template('add_student.html', groups=groups, student_id=student_id)
-        else:
-            issued_VOD = None
 
         military_fields_list = [
             'military_registration_document', 'registration_number_of_the_DRPVR',
