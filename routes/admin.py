@@ -1,4 +1,17 @@
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, send_file
+"""
+routes/admin.py
+================
+Усі адміністративні розділи додатку: групи, предмети, практики/курсові/
+атестації, документи про освіту, дипломи, акредитації, користувачі та
+їхні права, журнал дій, імпорт з Excel та масова генерація .docx-
+документів. Доступ до кожного маршруту обмежений через
+`@permission_required('<назва_дозволу>')` (routes/utils.py).
+
+Опис призначення кожної функції - див. докстрінг під відповідним
+`def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
+"""
+
+from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file
 from datetime import datetime
 from zipfile import ZipFile
 import os
@@ -7,12 +20,12 @@ from werkzeug.security import generate_password_hash
 from routes.db import get_db
 from routes.utils import log_action, permission_required
 from routes.gen_docx import gen_doc
-import logging
+from routes.utils import logger
+from routes.helpers import current_username, sort_ukrainian
 import openpyxl
 from werkzeug.utils import secure_filename
 import pandas as pd
 import json
-import locale
 import uuid
 import re
 from openpyxl import load_workbook
@@ -55,6 +68,7 @@ PERMISSIONS = [
 @admin_bp.route('/admin/study_periods/bulk_assign', methods=['GET', 'POST'])
 @permission_required('study_periods')
 def manage_study_periods_bulk_assign():
+    """Масове призначення періоду навчання (філія, дати, група) одразу декільком студентам — обраній групі цілком та/або довільному списку студентів."""
     db = get_db()
     cursor = db.cursor()
 
@@ -104,12 +118,13 @@ def manage_study_periods_bulk_assign():
 
             db.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"масово присвоїв період навчання ({filiya}) для {added} студент(ів)"
             )
             flash(f'Період навчання успішно додано {added} студент(ам)', 'success')
         except sqlite3.Error as e:
             db.rollback()
+            logger.error(f"Помилка масового призначення періоду навчання (group_id={group_id}): {e}", exc_info=True)
             flash(f'Помилка збереження: {e}', 'danger')
 
         return redirect(url_for('admin.manage_study_periods_bulk_assign',
@@ -190,6 +205,7 @@ def manage_study_periods_bulk_assign():
 @admin_bp.route('/admin/manage_diplomas', methods=['GET', 'POST'])
 @permission_required('manage_diplomas')
 def manage_diplomas():
+    """Перегляд і масове збереження номерів диплома/додатка для всіх студентів обраної групи."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
@@ -221,7 +237,7 @@ def manage_diplomas():
         group_row = cursor.execute("SELECT name FROM groups WHERE id=?", (group_id,)).fetchone()
         group_name = group_row['name'] if group_row else f"ID {group_id}"
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"зберіг дипломи для групи: {group_name} (ID {group_id})",
             details=f"студентів оброблено: {len(students)}"
         )
@@ -245,16 +261,9 @@ def manage_diplomas():
             WHERE s.group_id = ?
         """, (selected_group,))
         students = cursor.fetchall()
-        try:
-            locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
-        except locale.Error:
-            try:
-                locale.setlocale(locale.LC_COLLATE, 'Ukrainian_Ukraine.1251')
-            except locale.Error:
-                pass
-        students = sorted(
+        students = sort_ukrainian(
             students,
-            key=lambda s: locale.strxfrm(f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}")
+            key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
         )
 
     return render_template("manage_diplomas.html", groups=groups, students=students, selected_group=selected_group)
@@ -263,6 +272,7 @@ def manage_diplomas():
 @admin_bp.route('/admin/manage_accreditations', methods=['GET', 'POST'])
 @permission_required('manage_accreditations')
 def manage_accreditations():
+    """CRUD-сторінка довідників акредитацій (ступінь + спеціальність + текст українською/англійською) для підстановки в документи."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -276,7 +286,7 @@ def manage_accreditations():
         """, (degree, specialty, text_ua, text_en))
         conn.commit()
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"додав акредитацію: {degree} / {specialty}"
         )
         return redirect(url_for('admin.manage_accreditations'))
@@ -292,7 +302,7 @@ def manage_accreditations():
         """, (degree, specialty, text_ua, text_en, acc_id))
         conn.commit()
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"редагував акредитацію ID {acc_id}: {degree} / {specialty}"
         )
         return redirect(url_for('admin.manage_accreditations'))
@@ -303,7 +313,7 @@ def manage_accreditations():
         cursor.execute("DELETE FROM accreditations WHERE id=?", (acc_id,))
         conn.commit()
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"ВИДАЛИВ акредитацію ID {acc_id}: {row[0] if row else ''} / {row[1] if row else ''}"
         )
         return redirect(url_for('admin.manage_accreditations'))
@@ -319,6 +329,7 @@ def manage_accreditations():
 @admin_bp.route('/admin/manage_education_documents', methods=['GET', 'POST'])
 @permission_required('manage_education_documents')
 def manage_education_documents():
+    """CRUD-сторінка документів про освіту студентів (атестат/диплом попереднього рівня) разом із додатковими даними про визнання іноземного документа (foreign_education_docs)."""
     db = get_db()
     cursor = db.cursor()
 
@@ -410,10 +421,11 @@ def manage_education_documents():
                 cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 cursor.execute("DELETE FROM education_documents WHERE id = ?", (doc_id,))
                 db.commit()
-                log_action(session.get('username', 'невідомо'), f"ВИДАЛИВ документ про освіту ID {doc_id}")
+                log_action(current_username(), f"ВИДАЛИВ документ про освіту ID {doc_id}")
                 flash('Документ успішно видалено', 'success')
             except sqlite3.Error as e:
                 db.rollback()
+                logger.error(f"Помилка видалення документа про освіту (ID {doc_id}): {e}", exc_info=True)
                 flash(f'Помилка видалення: {e}', 'danger')
 
         elif action == 'edit':
@@ -503,7 +515,7 @@ def manage_education_documents():
 
                 db.commit()
                 log_action(
-                    session.get('username', 'невідомо'),
+                    current_username(),
                     f"редагував документ про освіту ID {doc_id}",
                     details=f"країна: {country}"
                 )
@@ -511,9 +523,11 @@ def manage_education_documents():
 
             except sqlite3.Error as e:
                 db.rollback()
+                logger.error(f"Помилка БД при редагуванні документа про освіту (ID {doc_id}): {e}", exc_info=True)
                 flash(f'Помилка при редагуванні: {e}', 'danger')
             except Exception as e:
                 db.rollback()
+                logger.error(f"Непередбачена помилка при редагуванні документа про освіту (ID {doc_id}): {e}", exc_info=True)
                 flash(f'Непередбачена помилка: {str(e)}', 'danger')
 
             return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
@@ -575,7 +589,7 @@ def manage_education_documents():
 
                 db.commit()
                 log_action(
-                    session.get('username', 'невідомо'),
+                    current_username(),
                     f"додав документ про освіту: {document_type} №{document_number}",
                     details=f"країна: {country}"
                 )
@@ -602,6 +616,7 @@ def manage_education_documents():
 @admin_bp.route('/admin/manage_groups', methods=['GET', 'POST'])
 @permission_required('manage_groups')
 def manage_groups():
+    """CRUD-сторінка навчальних груп: додавання, редагування та видалення (видалення заборонено, якщо є пов'язані студенти/предмети/активності)."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -665,7 +680,7 @@ def manage_groups():
                         conn.commit()
                         flash("Групу додано успішно.", "success")
                         log_action(
-                            session.get('username', 'невідомо'),
+                            current_username(),
                             f"додав групу: {name} ({start_year}, {study_form}, {program_credits} кредитів)",
                             details=f"спеціальність: {specialty or 'не вказано'}, ступінь: {degree_level or 'не вказано'}"
                         )
@@ -736,7 +751,7 @@ def manage_groups():
                         conn.commit()
                         flash("Групу відредаговано успішно.", "success")
                         log_action(
-                            session.get('username', 'невідомо'),
+                            current_username(),
                             f"редагував групу: {name} (ID {group_id})",
                             details=f"рік: {start_year}, форма: {study_form}, кредити: {program_credits}"
                         )
@@ -763,7 +778,7 @@ def manage_groups():
                 conn.commit()
                 flash("Групу видалено успішно.", "success")
                 log_action(
-                    session.get('username', 'невідомо'),
+                    current_username(),
                     f"ВИДАЛИВ групу: {group_row['name']} ({group_row['start_year']}) (ID {group_id})"
                 )
 
@@ -786,6 +801,7 @@ def manage_groups():
 @admin_bp.route('/admin/manage_subjects', methods=['GET', 'POST'])
 @permission_required('manage_subjects')
 def manage_subjects():
+    """CRUD-сторінка навчальних предметів групи: додавання/редагування/видалення/переміщення по позиції, а також масове виставлення оцінок студентам з цього предмету."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -808,10 +824,10 @@ def manage_subjects():
         if selected_subject_id:
             cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
             students = cursor.fetchall()
-            import locale
-            locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
-            students = sorted(students, key=lambda s: locale.strxfrm(
-                f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"))
+            students = sort_ukrainian(
+                students,
+                key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+            )
             cursor.execute('SELECT id, student_id, subject_id, grade FROM grades WHERE subject_id = ?', (selected_subject_id,))
             grades = cursor.fetchall()
 
@@ -836,7 +852,7 @@ def manage_subjects():
                     cursor.execute('INSERT INTO subjects (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)',
                                    (code, name, credits, type_, position, group_id))
                     conn.commit()
-                    log_action(session.get('username', 'невідомо'),
+                    log_action(current_username(),
                                f"додав предмет: {code} — {name} (група ID {group_id})",
                                details=f"кредити: {credits}, тип: {type_}, позиція: {position}")
                     flash(f'Добавлен предмет {code}', 'success')
@@ -864,7 +880,7 @@ def manage_subjects():
                         if subj['position'] != i:
                             cursor.execute('UPDATE subjects SET position=? WHERE id=? AND group_id=?', (i, subj['id'], group_id))
                     conn.commit()
-                    log_action(session.get('username', 'невідомо'),
+                    log_action(current_username(),
                                f"редагував предмет: {code} — {name} (група ID {group_id})",
                                details=f"кредити: {credits}, тип: {type_}, позиція: {position}")
                     flash(f'Обновлен предмет {code}', 'success')
@@ -889,12 +905,13 @@ def manage_subjects():
                     cursor.execute('DELETE FROM subjects WHERE id=? AND group_id=?', (subject_id, group_id))
                     cursor.execute('UPDATE subjects SET position=position-1 WHERE position>? AND group_id=?', (position, group_id))
                     conn.commit()
-                    log_action(session.get('username', 'невідомо'),
+                    log_action(current_username(),
                                f"ВИДАЛИВ предмет: {subj_code} — {subj_name} (група ID {group_id})",
                                details=f"разом з {grade_count} оцінками" if grade_count > 0 else "оцінок не було")
                     flash(f'Предмет успешно удалён{"" if grade_count == 0 else f" вместе с {grade_count} оценками!"}', 'success')
             except Exception as e:
                 conn.rollback()
+                logger.error(f"Помилка при видаленні предмету ID {subject_id} (група {group_id}): {e}", exc_info=True)
                 flash(f'Ошибка при удалении предмета: {str(e)}', 'error')
 
         elif action == 'move_up':
@@ -958,7 +975,7 @@ def manage_subjects():
                             cursor.execute('DELETE FROM grades WHERE id=? AND student_id=? AND subject_id=?',
                                            (grade_id, sid, subject_id))
                 conn.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"змінив оцінки з предмету: {subj_name} (група ID {group_id})",
                            details=f"заповнено {filled} з {len(student_ids)} студентів")
                 flash('Оценки обновлены', 'success')
@@ -976,6 +993,7 @@ def manage_subjects():
 @admin_bp.route('/admin/manage_activities', methods=['GET', 'POST'])
 @permission_required('manage_activities')
 def manage_activities():
+    """CRUD-сторінка практик/курсових/атестацій (спільна логіка для трьох типів activity-сутностей через ALLOWED_TABLES) з масовим виставленням оцінок."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -1011,10 +1029,10 @@ def manage_activities():
                         selected_entity_id = int(selected_entity_id)
                         cursor.execute('SELECT * FROM students WHERE group_id=?', (selected_group_id,))
                         students = cursor.fetchall()
-                        import locale
-                        locale.setlocale(locale.LC_COLLATE, 'uk_UA.UTF-8')
-                        students = sorted(students, key=lambda s: locale.strxfrm(
-                            f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"))
+                        students = sort_ukrainian(
+                            students,
+                            key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+                        )
                         cursor.execute('SELECT id, student_id, entity_id, entity_type, grade, name FROM activity_grades WHERE entity_id=? AND entity_type=?',
                                        (selected_entity_id, selected_entity_type))
                         grades = cursor.fetchall()
@@ -1071,7 +1089,7 @@ def manage_activities():
                 cursor.execute(f'INSERT INTO {entity_table} (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)',
                                (code, name or '', credits, type_, position, group_id))
                 conn.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"додав {entity_type}: {code} — {name} (група ID {group_id})",
                            details=f"кредити: {credits}, тип: {type_}")
                 flash('Діяльність додано', 'success')
@@ -1105,7 +1123,7 @@ def manage_activities():
                 cursor.execute(f'UPDATE {entity_table} SET code=?, name=?, credits=?, type=?, position=? WHERE id=? AND group_id=?',
                                (code, name or '', credits, type_, position, entity_id, group_id))
                 conn.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"редагував {entity_type}: {code} — {name} (група ID {group_id})")
                 flash('Діяльність оновлено', 'success')
 
@@ -1118,7 +1136,7 @@ def manage_activities():
                 cursor.execute(f'UPDATE {entity_table} SET position=position-1 WHERE position>? AND group_id=?', (position, group_id))
                 cursor.execute('DELETE FROM activity_grades WHERE entity_id=? AND entity_type=?', (entity_id, entity_type))
                 conn.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"ВИДАЛИВ {entity_type}: {row[1]} — {row[2]} (група ID {group_id})")
                 flash('Діяльність видалено', 'success')
 
@@ -1180,7 +1198,7 @@ def manage_activities():
                             cursor.execute('DELETE FROM activity_grades WHERE id=? AND student_id=? AND entity_id=? AND entity_type=?',
                                            (grade_id, sid, entity_id, entity_type))
                 conn.commit()
-                log_action(session.get('username', 'невідомо'),
+                log_action(current_username(),
                            f"змінив оцінки з {entity_type}: {entity_name} (група ID {group_id})",
                            details=f"заповнено {filled} з {len(student_ids)} студентів")
                 flash('Оценки обновлены', 'success')
@@ -1201,6 +1219,7 @@ def manage_activities():
 @admin_bp.route('/admin/view_logs')
 @permission_required('view_logs')
 def view_logs():
+    """Показує журнал дій (app.log) у зручному розібраному вигляді: дата/час/рівень/користувач/дія, з можливістю фільтрації на фронтенді."""
     current_dir = os.path.dirname(__file__)
     project_root = os.path.dirname(current_dir)
     log_file_path = os.path.join(project_root, 'app.log')
@@ -1228,12 +1247,12 @@ def view_logs():
                             entry['action'] = u.group(2).strip()
                     parsed_logs.append(entry)
         except Exception as e:
-            logging.error(f"Помилка при читанні логів: {e}")
+            logger.error(f"Помилка при читанні логів: {e}")
 
     parsed_logs.reverse()
     usernames = sorted({e['username'] for e in parsed_logs if e['username']})
 
-    log_action(session.get('username', 'невідомо'), "переглянув журнал дій")
+    log_action(current_username(), "переглянув журнал дій")
 
     from datetime import date
     return render_template('view_logs.html', logs=parsed_logs, usernames=usernames,
@@ -1243,6 +1262,7 @@ def view_logs():
 @admin_bp.route('/admin/users', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def manage_users():
+    """Список користувачів системи та редагування їхніх прав доступу (is_admin + список дозволів permissions)."""
     conn = get_db()
     try:
         users = conn.execute("""
@@ -1288,7 +1308,7 @@ def manage_users():
             conn.commit()
 
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"змінив права: {target_user['username']} (ID {user_id})",
                 details=f"is_admin: {bool(is_admin)}, дозволи: {', '.join(selected_perms) or 'жодного'}"
             )
@@ -1298,6 +1318,7 @@ def manage_users():
         return render_template('manage_users.html', users=users, permissions=PERMISSIONS, perm_names_ua=perm_names_ua)
 
     except sqlite3.Error as e:
+        logger.error(f"Помилка бази даних у manage_users: {e}", exc_info=True)
         flash(f'Помилка бази даних: {e}', 'danger')
         return redirect(url_for('admin.manage_users'))
     finally:
@@ -1307,6 +1328,7 @@ def manage_users():
 @admin_bp.route('/admin/users/add', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def add_user():
+    """Форма створення нового користувача (логін/пароль/роль/групи)."""
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -1340,7 +1362,7 @@ def add_user():
 
             conn.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"додав користувача: {username} (ID {user_id})",
                 details=f"роль: {role}, груп: {len(group_ids)}"
             )
@@ -1348,6 +1370,7 @@ def add_user():
             return redirect(url_for('admin.manage_users'))
 
         except sqlite3.IntegrityError as e:
+            logger.error(f"Помилка БД при додаванні користувача '{username}': {e}", exc_info=True)
             flash(f'Помилка бази даних: {e}', 'danger')
         finally:
             conn.close()
@@ -1367,6 +1390,7 @@ def add_user():
 @admin_bp.route('/admin/users/<int:user_id>/edit', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def edit_user(user_id):
+    """Форма редагування ролі та прив'язаних груп існуючого користувача."""
     conn = get_db()
     try:
         if request.method == 'POST':
@@ -1388,7 +1412,7 @@ def edit_user(user_id):
 
             conn.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"змінив роль/групи: {user_row['username']} (ID {user_id})",
                 details=f"роль: {role}, груп: {len(group_ids)}"
             )
@@ -1416,6 +1440,7 @@ def edit_user(user_id):
 @admin_bp.route('/admin/users/<int:user_id>/change-password', methods=['GET', 'POST'])
 @permission_required('manage_users')
 def change_password(user_id):
+    """Форма зміни пароля вказаного користувача адміністратором."""
     if request.method == 'POST':
         password = request.form.get('password')
         if not password or len(password) < 6:
@@ -1428,7 +1453,7 @@ def change_password(user_id):
             conn.execute("UPDATE users SET password_hash=? WHERE id=?", (generate_password_hash(password), user_id))
             conn.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"змінив пароль: {target['username']} (ID {user_id})"
             )
             flash('Пароль успішно змінено', 'success')
@@ -1451,6 +1476,7 @@ def change_password(user_id):
 @admin_bp.route('/admin/users/<int:user_id>/delete', methods=['POST'])
 @permission_required('manage_users')
 def delete_user(user_id):
+    """Видалення користувача та його зв'язків з групами (user_groups)."""
     conn = get_db()
     try:
         username_row = conn.execute("SELECT username FROM users WHERE id=?", (user_id,)).fetchone()
@@ -1463,11 +1489,12 @@ def delete_user(user_id):
         conn.commit()
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"ВИДАЛИВ користувача: {username_row['username']} (ID {user_id})"
         )
         flash('Користувача успішно видалено', 'success')
     except sqlite3.Error as e:
+        logger.error(f"Помилка БД при видаленні користувача (ID {user_id}): {e}", exc_info=True)
         flash(f'Помилка при видаленні: {e}', 'danger')
     finally:
         conn.close()
@@ -1478,6 +1505,7 @@ def delete_user(user_id):
 @admin_bp.route('/admin/group_export', methods=['GET', 'POST'])
 @permission_required('group_export')
 def group_export():
+    """Сторінка вибору параметрів (група і/або рік народження, шаблон .docx) перед масовою генерацією документів студентів."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -1524,7 +1552,7 @@ def group_export():
         try:
             students = conn.execute(base_query, params).fetchall()
         except Exception as e:
-            logging.error(f"Помилка при отриманні студентів: {e}")
+            logger.error(f"Помилка при отриманні студентів: {e}")
             conn.close()
             return "Помилка бази даних", 500
 
@@ -1539,12 +1567,14 @@ UPLOAD_FOLDER = 'Uploads'
 ALLOWED_EXTENSIONS = {'xlsx'}
 
 def allowed_file(filename):
+    """Перевіряє, чи має файл дозволене розширення (.xlsx) для імпорту."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
 @admin_bp.route('/admin/import_subjects', methods=['GET', 'POST'])
 @permission_required('import_subjects')
 def import_subjects():
+    """Імпорт списку предметів групи з Excel-файлу."""
     conn = get_db()
     cursor = conn.cursor()
 
@@ -1558,7 +1588,7 @@ def import_subjects():
         if not groups:
             flash("Немає доступних груп", "warning")
     except sqlite3.Error as e:
-        logging.error(f"Database error while fetching groups: {e}")
+        logger.error(f"Database error while fetching groups: {e}")
         flash("Помилка бази даних при отриманні груп", "error")
         groups = []
 
@@ -1640,13 +1670,13 @@ def import_subjects():
                     inserted += 1
                     current_position += 1
                 except Exception as e:
-                    logging.error(f"Row {i} error: {e}")
+                    logger.error(f"Row {i} error: {e}")
                     skipped += 1
                     continue
 
             conn.commit()
             log_action(
-                session.get('username', 'невідомо'),
+                current_username(),
                 f"імпорт предметів з Excel: додано {inserted}, пропущено {skipped}",
                 details=f"група ID: {group_id}, файл: {filename}"
             )
@@ -1655,7 +1685,7 @@ def import_subjects():
         except Exception as e:
             conn.rollback()
             flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
-            logging.error(f"Error importing Excel for group_id={group_id}: {e}")
+            logger.error(f"Error importing Excel for group_id={group_id}: {e}")
         finally:
             if os.path.exists(filepath):
                 os.remove(filepath)
@@ -1670,6 +1700,7 @@ def import_subjects():
 @admin_bp.route('/admin/generate_group_docs', methods=['GET', 'POST'])
 @permission_required('group_export')
 def generate_group_docs():
+    """Генерує .docx-документи (за обраним шаблоном) для всіх студентів, що підпадають під фільтр (група і/або рік народження), і повертає їх одним ZIP-архівом."""
     group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
     birth_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
     selected_template = request.args.get('template', '') if request.method == 'GET' else request.form.get('template', '')
@@ -1706,7 +1737,7 @@ def generate_group_docs():
             conn.close()
             return "Студенты не найдены по заданным фильтрам", 404
     except Exception as e:
-        logging.error(f"Ошибка при выполнении SQL-запроса: {e}")
+        logger.error(f"Ошибка при выполнении SQL-запроса: {e}")
         conn.close()
         return "Ошибка базы данных", 500
 
@@ -1732,14 +1763,14 @@ def generate_group_docs():
                 full_path = os.path.join(output_dir, filename)
                 try:
                     gen_doc(student_dict, military_dict, template=selected_template, out=full_path,
-                            user_name=session.get('username', 'невідомо'))
+                            user_name=current_username())
                     zipf.write(full_path, arcname=filename)
                 except Exception as e:
-                    logging.error(f"Ошибка при генерации документа для {student_dict.get('last_name_UA', '')}: {e}")
+                    logger.error(f"Ошибка при генерации документа для {student_dict.get('last_name_UA', '')}: {e}")
                     continue
 
         log_action(
-            session.get('username', 'невідомо'),
+            current_username(),
             f"масова генерація документів: {group_name}",
             details=f"шаблон: {selected_template}, рік нар.: {birth_year or 'всі'}, студентів: {len(students)}"
         )
@@ -1752,6 +1783,7 @@ def generate_group_docs():
 @admin_bp.route('/admin/archive/<int:group_id>', methods=['POST'])
 @permission_required('archive')
 def archive_group(group_id):
+    """Архівує групу разом з усіма її студентами (archived=TRUE)."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, start_year FROM groups WHERE id=?", (group_id,))
@@ -1767,7 +1799,7 @@ def archive_group(group_id):
     conn.close()
 
     log_action(
-        session.get('username', 'невідомо'),
+        current_username(),
         f"заархівував групу: {group_row['name']} ({group_row['start_year']}) (ID {group_id})"
     )
     flash('Групу успішно заархівовано', 'success')
@@ -1777,6 +1809,7 @@ def archive_group(group_id):
 @admin_bp.route('/admin/unarchive_group/<int:group_id>', methods=['POST'])
 @permission_required('archive')
 def unarchive_group(group_id):
+    """Повертає архівну групу разом зі студентами назад в активні (archived=FALSE)."""
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, name, start_year FROM groups WHERE id=? AND archived=TRUE", (group_id,))
@@ -1792,7 +1825,7 @@ def unarchive_group(group_id):
     conn.close()
 
     log_action(
-        session.get('username', 'невідомо'),
+        current_username(),
         f"розархівував групу: {group_row['name']} ({group_row['start_year']}) (ID {group_id})"
     )
     flash('Групу успішно розархівовано', 'success')
@@ -1802,6 +1835,7 @@ def unarchive_group(group_id):
 @admin_bp.route('/admin/archive')
 @permission_required('archive')
 def archive():
+    """Показує список заархівованих груп та їхніх студентів."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -1821,13 +1855,14 @@ def archive():
         students_by_group[group['id']] = students
 
     conn.close()
-    log_action(session.get('username', 'невідомо'), "переглянув список архівних груп")
+    log_action(current_username(), "переглянув список архівних груп")
     return render_template('archive.html', groups=groups, students_by_group=students_by_group)
 
 
 TEMP_PREVIEW_FOLDER = "temp_preview"
 
 def save_preview_to_file(preview):
+    """Зберігає проміжний результат парсингу Excel-файлу імпорту документів про освіту у тимчасовий JSON-файл (щоб не тримати великі дані в сесії) і повертає його ID."""
     os.makedirs(TEMP_PREVIEW_FOLDER, exist_ok=True)
     preview_id = str(uuid.uuid4())
     path = os.path.join(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
@@ -1836,6 +1871,7 @@ def save_preview_to_file(preview):
     return preview_id
 
 def load_preview_from_file(preview_id):
+    """Завантажує раніше збережений (save_preview_to_file) прев'ю-результат імпорту за його ID."""
     path = os.path.join(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
     if not os.path.exists(path):
         return []
@@ -1843,6 +1879,7 @@ def load_preview_from_file(preview_id):
         return json.load(f)
 
 def fuzzy_find_student(cursor, full_name, threshold=80):
+    """Нечіткий пошук студента за повним ім'ям (ПІБ) серед активних студентів, використовуючи rapidfuzz; повертає ID найкращого збігу, якщо він проходить поріг схожості threshold."""
     cursor.execute("SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE archived=FALSE")
     students = cursor.fetchall()
     names = ["{} {} {}".format(s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"]) for s in students]
@@ -1853,6 +1890,7 @@ def fuzzy_find_student(cursor, full_name, threshold=80):
     return None, None, None
 
 def translate_to_en(text):
+    """Перекладає текст на англійську через GoogleTranslator з кешуванням результатів (translation_cache), щоб не робити повторні запити до перекладача для однакового тексту."""
     if not text:
         return ""
     if text in translation_cache:
@@ -1862,10 +1900,11 @@ def translate_to_en(text):
         translation_cache[text] = result
         return result
     except Exception as e:
-        logging.warning(f"Помилка перекладу '{text}': {e}")
+        logger.warning(f"Помилка перекладу '{text}': {e}")
         return text
         
 def find_country(text):
+    """Визначає країну (укр./англ. назву) за ключовими словами в тексті установи/довідки; за замовчуванням вважає, що це Україна."""
     countries = {
         "польща": "Poland",
         "poland": "Poland",
@@ -1889,6 +1928,7 @@ def find_country(text):
     return "Україна", "Ukraine"
 
 def parse_document(text: str):
+    """Розбирає текстовий опис документа про освіту (формат 'Тип документа Номер; ДД.ММ.РРРР; Ким видано: Установа') на структуровані поля (тип, номер, дата, установа, країна) для імпорту."""
     text = text.strip()
     pattern = re.compile(
         r'^(?P<type>[^;]+?)\s*;\s*(?P<date>\d{2}\.\d{2}\.\d{4})\s*;\s*Ким видано:\s*(?P<institution>.+?)$',
@@ -1924,6 +1964,7 @@ def parse_document(text: str):
     }
 
 def parse_reference_cell_ua(text):
+    """Розбирає комірку Excel з даними довідки про визнання документа (номер; установа; країна; дата) на окремі поля."""
     if not text or not str(text).strip():
         return {
             "reference_number": "",
@@ -1947,6 +1988,7 @@ def parse_reference_cell_ua(text):
     }
 
 def parse_recognition_cell_ua(text):
+    """Розбирає комірку Excel з даними про визнання (номер сертифіката; орган; дата) на окремі поля."""
     if not text or not str(text).strip():
         return {
             "recognition_certificate_number": "",
@@ -1966,6 +2008,7 @@ def parse_recognition_cell_ua(text):
     }
 
 def import_documents_preview(file_path, db):
+    """Читає Excel-файл з документами про освіту, для кожного рядка знаходить студента (fuzzy_find_student), парсить документ (parse_document) та формує прев'ю-список змін (нові/оновлення) для підтвердження користувачем перед комітом у import_docs_commit."""
     wb = load_workbook(file_path)
     sheet = wb.active
     cursor = db.cursor()
@@ -2046,6 +2089,7 @@ def import_documents_preview(file_path, db):
 @admin_bp.route('/admin/import_education_docs_preview', methods=['GET', 'POST'])
 @permission_required('import_education_docs')
 def import_docs_preview():
+    """Приймає завантажений Excel-файл, будує прев'ю через import_documents_preview і показує сторінку підтвердження перед фактичним імпортом."""
     if request.method == "POST":
         file = request.files.get("file")
         if not file:
@@ -2068,6 +2112,7 @@ def import_docs_preview():
 @admin_bp.route('/admin/import_docs_commit', methods=['POST'])
 @permission_required('import_education_docs')
 def import_docs_commit():
+    """Записує в БД документи про освіту (та дані про визнання), підтверджені користувачем на сторінці прев'ю (тільки позначені чекбоксом рядки)."""
     preview_id = request.form.get("preview_id")
     preview = load_preview_from_file(preview_id)
     db = get_db()
@@ -2214,7 +2259,7 @@ def import_docs_commit():
     db.commit()
 
     log_action(
-        session.get('username', 'невідомо'),
+        current_username(),
         f"імпорт документів про освіту: додано {added}, оновлено {updated}"
     )
 
