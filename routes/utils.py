@@ -1,3 +1,18 @@
+"""
+routes/utils.py
+================
+Спільні утиліти: логер додатку, логування дій користувачів (log_action),
+декоратори перевірки авторизації/прав (login_required, permission_required),
+транслітерація українських імен та пошук шаблонів .docx.
+
+Логування: усі модулі, які хочуть писати помилки/події в app.log,
+ПОВИННІ використовувати саме логер `logger`, визначений нижче
+(`from routes.utils import logger`), а не голий `import logging`.
+Лише `logger` тут налаштований з файловим обробником (app.log) та
+консольним виводом; звичайний кореневий логер Python (`logging.error(...)`)
+обробників не має і в файл нічого не пише.
+"""
+
 from functools import wraps
 from flask import session, redirect, url_for, flash
 import logging
@@ -41,43 +56,77 @@ except Exception as e:
     print(f"Ошибка при доступе к файлу логов: {e}")
 
 def log_action(username, action, group_ids=None, mode=None, details=None):
-    """Логирование действий пользователя с поддержкой деталей."""
-    conn = get_db()
-    role = session.get('role', 'невідомо')
+    """
+    Записує дію користувача в лог-файл (app.log) у вигляді:
+    "YYYY-MM-DD | HH:MM:SS | INFO | 👤 username - дія (групи: ...) | деталі"
 
-    group_names_str = ''
-    if group_ids is not None and role != 'admin':
-        if not isinstance(group_ids, list):
-            group_ids = [group_ids] if group_ids else []
-        if group_ids:
-            placeholders = ','.join('?' for _ in group_ids)
-            group_names = conn.execute(
-                f"""
-                SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
-                FROM groups
-                WHERE id IN ({placeholders})
-                ORDER BY name, start_year
-                """,
-                group_ids
-            ).fetchall()
-            group_names_str = ', '.join([row['display_name'] for row in group_names]) if group_names else 'немає груп'
+    Параметри:
+        username   - ім'я користувача, що виконав дію (див. helpers.current_username())
+        action     - короткий опис дії, наприклад "додав студента"
+        group_ids  - ID груп, яких стосується дія (для не-адмінів ці ID
+                     перетворюються на людські назви груп)
+        mode       - необов'язковий режим/контекст дії
+        details    - додаткові деталі (наприклад, кількість оброблених рядків)
 
-    conn.close()
+    ВАЖЛИВО: раніше ця функція не мала обробки помилок. Якщо get_db()
+    не міг відкрити файл БД (немає прав доступу, диск переповнений тощо)
+    або запит до groups падав, виняток "вилітав" з log_action() і міг
+    зламати весь HTTP-запит - навіть якщо основна дія (наприклад,
+    збереження студента) вже завершилась успішно. Тепер збій самого
+    логування ніколи не ламає основний функціонал, але обов'язково
+    фіксується як ERROR в лог, щоб про проблему було відомо.
+    """
+    conn = None
+    try:
+        conn = get_db()
+        role = session.get('role', 'невідомо')
 
-    log_msg = f"👤 {username} - {action}"
-    if mode:
-        log_msg += f" (режим: {mode})"
-    if group_names_str:
-        log_msg += f" (групи: {group_names_str})"
-    if details:
-        log_msg += f" | {details}"
+        group_names_str = ''
+        if group_ids is not None and role != 'admin':
+            if not isinstance(group_ids, list):
+                group_ids = [group_ids] if group_ids else []
+            if group_ids:
+                placeholders = ','.join('?' for _ in group_ids)
+                group_names = conn.execute(
+                    f"""
+                    SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
+                    FROM groups
+                    WHERE id IN ({placeholders})
+                    ORDER BY name, start_year
+                    """,
+                    group_ids
+                ).fetchall()
+                group_names_str = ', '.join([row['display_name'] for row in group_names]) if group_names else 'немає груп'
 
-    logger.info(log_msg)
+        log_msg = f"👤 {username} - {action}"
+        if mode:
+            log_msg += f" (режим: {mode})"
+        if group_names_str:
+            log_msg += f" (групи: {group_names_str})"
+        if details:
+            log_msg += f" | {details}"
+
+        logger.info(log_msg)
+
+    except Exception as e:
+        # Логування НІКОЛИ не повинно "ронити" запит користувача, що його викликав.
+        logger.error(f"Не вдалося записати дію в лог (username={username}, action={action}): {e}", exc_info=True)
+    finally:
+        if conn is not None:
+            conn.close()
     
 def login_required(role=None):
-    """Декоратор для проверки авторизации и роли пользователя (стара версія для сумісності).
+    """
+    Декоратор: пускає на сторінку тільки авторизованих користувачів.
+    Стара версія для зворотної сумісності - для нових перевірок прав
+    краще використовувати permission_required() нижче.
+
     Args:
-        role (str, optional): Требуемая роль пользователя (например, 'admin').
+        role (str, optional): якщо вказано (напр. 'admin'), доступ
+            дозволено лише користувачам з саме такою роллю; інакше -
+            403 Forbidden. Якщо None/'' - достатньо просто бути залогіненим.
+
+    Поведінка при відсутності сесії: редірект на сторінку логіну.
     """
     def decorator(f):
         @wraps(f)
@@ -91,10 +140,19 @@ def login_required(role=None):
     return decorator
 
 def permission_required(permission=None):
-    """Розширений декоратор для перевірки дозволів.
-    - Якщо permission=None: тільки перевірка логіну.
-    - Якщо permission вказано: потрібен is_admin=1 або цей дозвіл в permissions.
-    - Зворотна сумісність з role='admin'.
+    """
+    Декоратор: перевіряє авторизацію та (за потреби) конкретний дозвіл
+    користувача (permission) із таблиці users.permissions (JSON-список).
+
+    - Якщо permission=None: достатньо просто бути залогіненим.
+    - Якщо permission вказано: потрібен is_admin=1 АБО цей дозвіл
+      присутній у списку permissions користувача.
+    - Значення is_admin/permissions спочатку читаються з сесії (кеш),
+      і лише якщо їх там ще немає - підвантажуються з БД один раз і
+      кешуються в сесії (щоб не робити зайвий SELECT на кожен запит).
+
+    Незалогінених користувачів редіректить на логін;
+    користувачів без потрібного дозволу - на список студентів.
     """
     def decorator(f):
         @wraps(f)
@@ -107,15 +165,29 @@ def permission_required(permission=None):
             is_admin = session.get('is_admin', False)
             perms = session.get('permissions', [])
 
-            # Якщо немає в сесії, завантажуємо з БД
-            if not hasattr(session, 'is_admin'):
-                conn = get_db()
-                user = conn.execute("""
-                    SELECT role, is_admin, permissions 
-                    FROM users 
-                    WHERE id = ?
-                """, (session['user_id'],)).fetchone()
-                conn.close()
+            # Якщо немає в сесії, завантажуємо з БД.
+            # ВИПРАВЛЕНО: раніше тут було `if not hasattr(session, 'is_admin')`.
+            # Flask-об'єкт session - це словникоподібний контейнер, і
+            # реального python-атрибута 'is_admin' на ньому ніколи не буває,
+            # тож ця умова була ЗАВЖДИ істинною. Через це кеш у сесії ніколи
+            # не спрацьовував і кожен захищений запит робив зайвий SELECT
+            # до таблиці users. Правильна перевірка - через `in`.
+            if 'is_admin' not in session:
+                try:
+                    conn = get_db()
+                    try:
+                        user = conn.execute("""
+                            SELECT role, is_admin, permissions 
+                            FROM users 
+                            WHERE id = ?
+                        """, (session['user_id'],)).fetchone()
+                    finally:
+                        conn.close()
+                except Exception as e:
+                    logger.error(f"Не вдалося перевірити права користувача (user_id={session.get('user_id')}): {e}", exc_info=True)
+                    flash('Помилка бази даних під час перевірки прав доступу', 'danger')
+                    return redirect(url_for('auth.login'))
+
                 if not user:
                     session.clear()
                     return redirect(url_for('auth.login'))
@@ -138,8 +210,12 @@ def permission_required(permission=None):
   
 def transliterate_ukrainian(text: str) -> str:
     """
-    Транслитерация украинского текста согласно Постановлению КМУ №55-2010
+    Транслітерація українського тексту згідно з Постановою КМУ №55-2010
     https://zakon.rada.gov.ua/laws/show/55-2010-п
+
+    Використовується для автоматичного заповнення англомовних версій
+    прізвища/імені студента при імпорті з Excel (див. generate_english_name).
+    Повертає порожній рядок, якщо на вхід передано не-рядок або None.
     """
 
     if not text or not isinstance(text, str):
@@ -206,14 +282,31 @@ def transliterate_ukrainian(text: str) -> str:
 
 # Пример использования для генерации полного имени
 def generate_english_name(last_name_ua, first_name_ua):
+    """
+    Транслітерує українські прізвище та ім'я в англійський варіант
+    (використовуючи transliterate_ukrainian). Викликається при імпорті
+    студентів з Excel, коли англомовних ПІБ немає у файлі.
+
+    Повертає кортеж (last_name_eng, first_name_eng).
+    """
     last_name_eng = transliterate_ukrainian(last_name_ua)
     first_name_eng = transliterate_ukrainian(first_name_ua)
     return last_name_eng, first_name_eng
-    
-TEMPLATE_FOLDER = os.path.join(os.getcwd(), 'template_word')  
-    
+
+
+TEMPLATE_FOLDER = os.path.join(os.getcwd(), 'template_word')
+
+
 def get_available_templates():
-    """Возвращает список .docx файлов из папки template_word (относительный путь для передачи в gen_doc)."""
+    """
+    Повертає список шляхів (у форматі 'template_word/файл.docx') до всіх
+    .docx-шаблонів у папці template_word - вони показуються користувачу
+    як варіанти шаблону при масовій генерації документів
+    (admin.group_export / admin.generate_group_docs).
+
+    Якщо папки template_word не існує - повертає порожній список
+    (а не кидає помилку).
+    """
     if not os.path.isdir(TEMPLATE_FOLDER):
         return []
     files = [
