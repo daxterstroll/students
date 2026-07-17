@@ -1,9 +1,27 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Періоди навчання — масове присвоєння{% endblock %}
 {% block content %}
-<h3>Присвоєння періоду навчання кільком студентам</h3>
-<p class="text-muted">Оберіть, кому саме буде присвоєно період навчання.</p>
+<style>
+    @media (max-width: 576px) {
+        #filterForm .btn-group[role="group"] {
+            flex-direction: column;
+            width: 100%;
+            gap: .5rem;
+        }
+        #filterForm .btn-group[role="group"] .btn {
+            border-radius: 10px !important;
+            width: 100%;
+        }
+    }
+</style>
+<div class="container py-4">
 
-<form method="get" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="row g-3 mb-4" id="filterForm">
+{{ ui.page_header('bi-calendar2-date-fill', 'Присвоєння періоду навчання кільком студентам', 'Оберіть, кому саме буде присвоєно період навчання') }}
+
+<div class="card mb-4">
+<div class="card-body">
+<form method="get" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="row g-3" id="filterForm">
 
     <div class="col-12">
         <label class="form-label fw-bold">Кому присвоїти період?</label>
@@ -42,9 +60,11 @@
         <button type="submit" class="btn btn-outline-primary">Показати, кого торкнеться</button>
     </div>
 </form>
+</div>
+</div>
 
 {% if not target_students %}
-    <div class="alert alert-info">Оберіть режим та студентів/групу вище.</div>
+    {{ ui.empty_state('bi-people', 'Оберіть режим та студентів/групу вище') }}
 {% else %}
     <div class="card mb-4">
         <div class="card-header">
@@ -53,7 +73,7 @@
         <ul class="list-group list-group-flush">
             {% for s in target_students %}
             <li class="list-group-item">
-                <div class="d-flex justify-content-between align-items-start">
+                <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
                     <span>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</span>
                     <span class="text-muted small">{{ s.group_name or 'без групи' }}</span>
                 </div>
@@ -117,15 +137,17 @@
                 </div>
 
                 <div class="mt-4">
-                    <button type="submit" class="btn btn-success btn-lg">
-                        <i class="bi bi-check2-all"></i> Застосувати до {{ target_students|length }} студент(ів)
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-check2-all me-2"></i>Застосувати до {{ target_students|length }} студент(ів)
                     </button>
-                    <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-secondary">Скасувати</a>
+                    <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-outline-secondary">Скасувати</a>
                 </div>
             </form>
         </div>
     </div>
 {% endif %}
+
+</div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

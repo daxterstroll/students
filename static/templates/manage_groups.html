@@ -1,5 +1,5 @@
 {% extends 'layout.html' %}
-
+{% import '_macros.html' as ui %}
 {% block title %}Управління групами{% endblock %}
 
 {% block content %}
@@ -11,12 +11,17 @@
     }
 </style>
 
-<div class="container mt-4">
-    <h2><i class="bi bi-person-rolodex"></i> Управління групами</h2>
+<div class="container py-4">
+
+    {{ ui.page_header('bi-person-rolodex', 'Управління групами', 'Навчальні групи, спеціальності та освітні програми') }}
 
     <!-- Форма для добавления группы -->
-    <h4 class="mt-4">Додати групу</h4>
-    <form method="POST" class="mb-4">
+    <div class="card mb-4">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати групу</h5>
+        </div>
+        <div class="card-body">
+    <form method="POST">
         <input type="hidden" name="action" value="add">
         <div class="row g-3">
             <div class="col-md-4">
@@ -91,7 +96,7 @@
             </div>
             <div class="col-md-6">
                 <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
-            	<select name="institution_name_and_status" id="degree_level" class="form-select" required>
+            	<select name="institution_name_and_status" id="institution_name_and_status" class="form-select" required>
                     <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
 					<option value="Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.">Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
                 </select>
@@ -99,7 +104,7 @@
 			</div>
             <div class="col-md-6">
                 <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                <select name="institution_name_and_status_en" id="degree_level_en" class="form-select" required>
+                <select name="institution_name_and_status_en" id="institution_name_and_status_en" class="form-select" required>
                     <option value="Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.</option>
 					<option value="Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.">Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.</option>
                 </select>
@@ -133,11 +138,16 @@
             </div>
         </div>
     </form>
+        </div>
+    </div>
 
     <!-- Список групп -->
-    <h4 class="mt-4">Список груп</h4>
+    {{ ui.section_title('Список груп') }}
     {% if groups %}
-        <table class="table table-bordered table-striped table-hover">
+    <div class="card">
+        <div class="card-body p-0">
+        <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
             <thead class="table-light">
                 <tr>
                     <th>ID</th>
@@ -186,6 +196,9 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
+        </div>
+    </div>
 
         <!-- Модальное окно для деталей группы -->
         {% for group in groups %}
@@ -422,7 +435,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label for="degree_level_en{{ group.id }}" class="form-label">Degree Level (EN)</label>										
-										<select name="degree_level_en" id="degree_level{{ group.id }}" class="form-select" required>
+										<select name="degree_level_en" id="degree_level_en{{ group.id }}" class="form-select" required>
                                             <option value="Bachelor" {% if group.degree_level_en == "Bachelor" %}selected{% endif %}>Bachelor</option>
                                             <option value="Master Degree" {% if group.degree_level_en == "Master Degree" %}selected{% endif %}>Master Degree</option>
                                         </select>
@@ -495,7 +508,7 @@
             </div>
         {% endfor %}
     {% else %}
-        <p class="text-muted">Групи відсутні</p>
+        {{ ui.empty_state('bi-person-rolodex', 'Групи відсутні') }}
     {% endif %}
 </div>
 {% endblock %}

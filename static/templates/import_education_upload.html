@@ -1,8 +1,10 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
 {% block title %}Імпорт документів про освіту{% endblock %}
 {% block content %}
+<div class="container py-4">
 
-<h2 class="mb-4"><i class="bi bi-file-earmark-arrow-up"></i> Імпорт документів про освіту</h2>
+{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт документів про освіту', 'Розпізнавання документів про освіту студентів із файлу .xlsx') }}
 
 <div class="row g-4">
 
@@ -11,14 +13,6 @@
     <div class="card h-100">
       <div class="card-body">
         <h5 class="card-title mb-3">Завантажити файл</h5>
-
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for category, message in messages %}
-              <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
 
         <form method="post" enctype="multipart/form-data">
           <div class="mb-3">
@@ -183,6 +177,8 @@
       </div>
     </div>
   </div>
+
+</div>
 
 </div>
 {% endblock %}

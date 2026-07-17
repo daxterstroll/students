@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Вхід — Реєстр студентів</title>
+	<link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
 	<link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
 <style>
 :root{
@@ -429,15 +430,14 @@ html,body{
     <!-- FORM -->
     <div class="ticket__form">
 
-      <!-- {% with errors = get_flashed_messages(category_filter=['error']) %}
+      {% with errors = get_flashed_messages(category_filter=['error']) %}
         {% if errors %}
-        <div class="form-alert"> -->
-      <div class="form-alert" style="display:none;" id="demoAlert">
-        <span>Невірний логін або пароль</span>
-      </div>
-      <!--
+        <div class="form-alert">
+          <i class="bi bi-exclamation-triangle-fill"></i>
+          <span>{{ errors[0] }}</span>
+        </div>
         {% endif %}
-      {% endwith %} -->
+      {% endwith %}
 
       <span class="form__eyebrow">Деканат · цифровий реєстр</span>
       <h1 class="form__title">Вхід до системи</h1>
@@ -482,9 +482,6 @@ html,body{
     label.textContent = 'Перевірка…';
     btn.disabled = true;
   });
-
-  // demo only — toggle the error alert for preview
-  // document.getElementById('demoAlert').style.display = 'flex';
 </script>
 </body>
 </html>

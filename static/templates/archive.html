@@ -1,55 +1,60 @@
 {% extends 'layout.html' %}
-
-{% block title %}Архів{% endblock %}
-
+{% import '_macros.html' as ui %}
+{% block title %}Архів груп{% endblock %}
 {% block content %}
-<div class="container mt-4">
-    <h1><i class="bi bi-archive"></i> Архів</h1>
-    <p>Список усіх архівних груп. Натисніть на кнопку, щоб переглянути студентів.</p>
+<div class="container py-4">
+
+    {{ ui.page_header('bi-archive-fill', 'Архів груп', 'Заархівовані групи та їхні студенти') }}
 
     {% if not groups %}
-    <div class="alert alert-info">Немає архівних груп.</div>
+        {{ ui.empty_state('bi-archive', 'Немає архівних груп') }}
     {% else %}
-    <div class="list-group">
-        {% for group in groups %}
-        <div class="list-group-item">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">{{ group.display_name }} (Студентів: {{ group.student_count }})</h5>
-                <div>
-                    <button class="btn btn-sm btn-primary toggle-students me-1" data-group-id="{{ group.id }}" title="Переглянути студентів">
-                        <i class="bi bi-chevron-down"></i> Переглянути студентів
-                    </button>
-                    <form method="POST" action="{{ url_for('admin.unarchive_group', group_id=group.id) }}" class="d-inline">
-                        <button type="submit" class="btn btn-sm btn-success" onclick="return confirm('Розархівувати групу {{ group.display_name }}?');" title="Розархівувати групу">
-                            <i class="bi bi-box-arrow-in-up"></i>
-                        </button>
-                    </form>
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="list-group list-group-flush">
+                {% for group in groups %}
+                <div class="list-group-item p-3">
+                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <h5 class="mb-0 section-title" style="padding-bottom:0;">
+                            {{ group.display_name }}
+                            <span class="count-pill ms-2"><i class="bi bi-people"></i>{{ group.student_count }}</span>
+                        </h5>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-secondary toggle-students" data-group-id="{{ group.id }}" title="Переглянути студентів">
+                                <i class="bi bi-chevron-down"></i> Студенти
+                            </button>
+                            <form method="POST" action="{{ url_for('admin.unarchive_group', group_id=group.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-success" onclick="return confirm('Розархівувати групу {{ group.display_name }}?');" title="Розархівувати групу">
+                                    <i class="bi bi-box-arrow-in-up"></i> Розархівувати
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    <div class="students-list collapse mt-2" id="students-{{ group.id }}">
+                        {% if students_by_group[group.id] %}
+                        <ul class="list-group mt-2">
+                            {% for student in students_by_group[group.id] %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                <span>{{ student.last_name_UA }} {{ student.first_name_UA }} <span class="text-muted">({{ student.birth_date }})</span></span>
+                                <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-primary" title="Деталі студента">Деталі</a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% else %}
+                        <p class="text-muted mt-2 mb-0">Немає студентів у цій групі.</p>
+                        {% endif %}
+                    </div>
                 </div>
-            </div>
-            <div class="students-list collapse" id="students-{{ group.id }}">
-                {% if students_by_group[group.id] %}
-                <ul class="list-group mt-2">
-                    {% for student in students_by_group[group.id] %}
-                    <li class="list-group-item">
-                        {{ student.last_name_UA }} {{ student.first_name_UA }} ({{ student.birth_date }})
-                        <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-info ms-2" title="Деталі студента">Деталі</a>
-                    </li>
-                    {% endfor %}
-                </ul>
-                {% else %}
-                <p class="text-muted mt-2">Немає студентів у цій групі.</p>
-                {% endif %}
+                {% endfor %}
             </div>
         </div>
-        {% endfor %}
     </div>
     {% endif %}
 </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const toggleButtons = document.querySelectorAll('.toggle-students');
-    toggleButtons.forEach(button => {
+    document.querySelectorAll('.toggle-students').forEach(button => {
         button.addEventListener('click', function () {
             const groupId = this.getAttribute('data-group-id');
             const studentsList = document.getElementById(`students-${groupId}`);
@@ -63,11 +68,7 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <style>
-.students-list {
-    display: none;
-}
-.students-list.show {
-    display: block;
-}
+.students-list { display: none; }
+.students-list.show { display: block; }
 </style>
 {% endblock %}

@@ -1,25 +1,9 @@
 {% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
 {% block title %}Список студентів{% endblock %}
 {% block content %}
 
 <style>
-    :root {
-        --ink:        #0e1b2c;
-        --ink-2:      #16283f;
-        --paper:      #f4efe3;
-        --paper-2:    #e9e0cc;
-        --ink-text:   #1f2a3a;
-        --muted:      #8a8071;
-        --brass:      #c8a24a;
-        --brass-lt:   #e3c87a;
-        --brass-soft: rgba(200,162,74,.16);
-        --brass-semi: rgba(200,162,74,.32);
-        --stamp:      #a23b2e;
-        --stamp-soft: rgba(162,59,46,.10);
-        --stamp-semi: rgba(162,59,46,.32);
-        --line:       rgba(31,42,58,.14);
-    }
-
     /* ===== HEADER ===== */
     .page-title {
         font-family: 'Lora', serif;
@@ -288,10 +272,13 @@
     .dropdown-menu { z-index: 1060 !important; }
 </style>
 
-<div class="container mt-4">
-    <h2 class="mb-4 page-title"><i class="bi bi-person-vcard"></i> Список студентів</h2>
+<div class="container py-4">
 
-    <a href="{{ url_for('students.add_student') }}" class="btn btn-add btn-sm mb-3"><i class="bi bi-plus-circle"></i> Додати студента</a>
+    {{ ui.page_header('bi-person-vcard', 'Список студентів', 'Реєстр студентів, оцінки, документи та військовий облік') }}
+
+    <div class="d-flex justify-content-end mb-3">
+        <a href="{{ url_for('students.add_student') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i> Додати студента</a>
+    </div>
 
     <!-- Фильтры и поиск -->
     <div class="row mb-3">
