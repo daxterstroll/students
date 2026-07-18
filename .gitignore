@@ -2,6 +2,7 @@ generated_docs/
 uploads/
 template_word/
 temp_preview/
+office_sessions/
 *.db
 
 

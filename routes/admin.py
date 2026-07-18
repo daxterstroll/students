@@ -11,15 +11,15 @@ routes/admin.py
 `def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session
 from datetime import datetime
-from zipfile import ZipFile
 import os
 import sqlite3
 from werkzeug.security import generate_password_hash
 from routes.db import get_db
 from routes.utils import log_action, permission_required
 from routes.gen_docx import gen_doc
+from routes import office_editor
 from routes.utils import logger
 from routes.helpers import current_username, sort_ukrainian
 import openpyxl
@@ -1700,7 +1700,7 @@ def import_subjects():
 @admin_bp.route('/admin/generate_group_docs', methods=['GET', 'POST'])
 @permission_required('group_export')
 def generate_group_docs():
-    """Генерує .docx-документи (за обраним шаблоном) для всіх студентів, що підпадають під фільтр (група і/або рік народження), і повертає їх одним ZIP-архівом."""
+    """Генерує .docx-документи (за обраним шаблоном) для всіх студентів, що підпадають під фільтр (група і/або рік народження), і відкриває сторінку перегляду/редагування кожного в ONLYOFFICE перед завантаженням підсумкового ZIP-архіву (routes/office_editor.py)."""
     group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
     birth_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
     selected_template = request.args.get('template', '') if request.method == 'GET' else request.form.get('template', '')
@@ -1748,26 +1748,30 @@ def generate_group_docs():
     if group_id and students:
         group_name = students[0]['group_name'] if students[0]['group_name'] else f"Група_{group_id}"
 
-    output_dir = os.path.join(os.getcwd(), 'generated_docs')
-    os.makedirs(output_dir, exist_ok=True)
-    zip_filename = f"{group_name}_{str(birth_year) if birth_year else 'Всі роки народження'}.zip"
-    zip_path = os.path.join(output_dir, zip_filename)
+    batch_id = office_editor.new_batch_id()
+    items = []
 
     try:
-        with ZipFile(zip_path, 'w') as zipf:
-            for student in students:
-                student_dict = dict(student)
-                military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
-                military_dict = dict(military) if military else {}
-                filename = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
-                full_path = os.path.join(output_dir, filename)
-                try:
-                    gen_doc(student_dict, military_dict, template=selected_template, out=full_path,
-                            user_name=current_username())
-                    zipf.write(full_path, arcname=filename)
-                except Exception as e:
-                    logger.error(f"Ошибка при генерации документа для {student_dict.get('last_name_UA', '')}: {e}")
-                    continue
+        for student in students:
+            student_dict = dict(student)
+            military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
+            military_dict = dict(military) if military else {}
+            filename = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
+            full_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
+            try:
+                gen_doc(student_dict, military_dict, template=selected_template, out=full_path,
+                        user_name=current_username())
+                doc_id = office_editor.create_editing_session(
+                    full_path, filename, session['user_id'], batch_id=batch_id
+                )
+                items.append({
+                    'doc_id': doc_id,
+                    'name': f"{student_dict['last_name_UA']} {student_dict['first_name_UA']}",
+                    'filename': filename,
+                })
+            except Exception as e:
+                logger.error(f"Ошибка при генерации документа для {student_dict.get('last_name_UA', '')}: {e}")
+                continue
 
         log_action(
             current_username(),
@@ -1777,7 +1781,14 @@ def generate_group_docs():
     finally:
         conn.close()
 
-    return send_file(zip_path, as_attachment=True)
+    if not items:
+        flash('Не вдалося згенерувати жодного документа', 'danger')
+        return redirect(url_for('admin.group_export'))
+
+    # Перегляд/редагування кожного документа в ONLYOFFICE перед
+    # завантаженням фінального ZIP-архіву (замість негайного
+    # завантаження "наосліп").
+    return render_template('group_docs_preview.html', items=items, batch_id=batch_id, group_name=group_name)
 
 
 @admin_bp.route('/admin/archive/<int:group_id>', methods=['POST'])
