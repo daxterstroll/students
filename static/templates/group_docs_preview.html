@@ -1,0 +1,53 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перегляд згенерованих документів{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-zip-fill', 'Згенеровані документи', group_name ~ ' · ' ~ items|length ~ ' документ(ів)') }}
+
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill me-2"></i>
+        Перегляньте кожен документ і за потреби відредагуйте його (кнопка «Переглянути / Редагувати»).
+        Коли все готово — натисніть «Завантажити всі (ZIP)» внизу: у архів потраплять
+        документи з урахуванням усіх збережених правок.
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th>Студент</th>
+                            <th>Файл</th>
+                            <th class="text-end" style="width: 220px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>{{ item.name }}</td>
+                            <td class="text-muted small font-monospace">{{ item.filename }}</td>
+                            <td class="text-end">
+                                <a href="{{ url_for('office.edit', doc_id=item.doc_id) }}" class="btn btn-sm btn-outline-primary" target="_blank">
+                                    <i class="bi bi-pencil-square me-1"></i>Переглянути / Редагувати
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('office.download_batch_zip', batch_id=batch_id) }}" class="btn btn-primary btn-lg">
+            <i class="bi bi-cloud-download me-2"></i>Завантажити всі (ZIP)
+        </a>
+        <a href="{{ url_for('admin.group_export') }}" class="btn btn-outline-secondary btn-lg">Назад</a>
+    </div>
+
+</div>
+{% endblock %}
