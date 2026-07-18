@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Перегляд документа — {{ display_name }}</title>
+    <!--
+        ВАЖЛИВО: ця сторінка НАВМИСНО НЕ розширює спільний шаблон сайту
+        і не підключає спільні макроси. Було підтверджено на практиці,
+        що спільні стилі й скрипти сайту конфліктували з внутрішнім
+        рендерингом редактора ONLYOFFICE - документ завантажувався
+        (текст можна було виділити й скопіювати), але візуально не
+        малювався. Ізоляція цієї сторінки від решти сайту вирішила
+        проблему. Тому тут навмисно проста, самодостатня розмітка
+        замість спільного шаблону.
+    -->
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+            background: #f4efe3;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .bar {
+            flex: 0 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem;
+            padding: .75rem 1.25rem;
+            background: #0e1b2c;
+            color: #f4efe3;
+            flex-wrap: wrap;
+        }
+        .bar .title {
+            display: flex;
+            align-items: center;
+            gap: .6rem;
+            font-weight: 700;
+            font-size: 1.05rem;
+            min-width: 0;
+        }
+        .bar .title span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .bar .hint {
+            font-size: .82rem;
+            opacity: .75;
+            display: block;
+            font-weight: 400;
+        }
+        .bar .actions { display: flex; gap: .6rem; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            padding: .5rem 1rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: .9rem;
+            border: 1px solid transparent;
+            cursor: pointer;
+        }
+        .btn-primary { background: #c8a24a; color: #0e1b2c; }
+        .btn-primary:hover { background: #e3c87a; }
+        .btn-outline { background: transparent; color: #f4efe3; border-color: rgba(244,239,227,.4); }
+        .btn-outline:hover { background: rgba(244,239,227,.12); }
+        #onlyoffice-placeholder {
+            flex: 1 1 auto;
+            min-height: 0;
+            width: 100%;
+            background: #fff;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="bar">
+        <div class="title">
+            📄 <span>{{ display_name }}</span>
+            <span class="hint" style="margin-left:.5rem;">Зміни зберігаються автоматично</span>
+        </div>
+        <div class="actions">
+            {% if batch_id %}
+            <a href="{{ url_for('office.download_batch_zip', batch_id=batch_id) }}" class="btn btn-outline"> Скачати zip</a>
+            {% else %}
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-outline">← На головну</a>
+            {% endif %}
+            <a href="{{ url_for('office.finalize', doc_id=doc_id) }}" class="btn btn-primary">⬇ Завершити і завантажити</a>
+        </div>
+    </div>
+
+    <div id="onlyoffice-placeholder"></div>
+
+    <script src="{{ onlyoffice_public_url }}web-apps/apps/api/documents/api.js"></script>
+    <script>
+        const editorConfig = {{ editor_config | tojson }};
+        editorConfig.width = "100%";
+        editorConfig.height = "100%";
+        window.docEditor = new DocsAPI.DocEditor("onlyoffice-placeholder", editorConfig);
+    </script>
+</body>
+</html>

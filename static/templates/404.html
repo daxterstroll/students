@@ -1,0 +1,12 @@
+{% extends 'layout.html' %}
+{% block title %}Сторінку не знайдено{% endblock %}
+{% block content %}
+<div class="container py-5 text-center">
+    <i class="bi bi-signpost-2 display-1" style="color: var(--brass);"></i>
+    <h2 class="mt-4 mb-2 section-title d-inline-block">404 — Сторінку не знайдено</h2>
+    <p class="text-muted mb-4">Такої сторінки не існує, або її було переміщено.</p>
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-primary">
+        <i class="bi bi-house-door me-2"></i>На головну
+    </a>
+</div>
+{% endblock %}

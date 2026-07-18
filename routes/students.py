@@ -10,9 +10,10 @@ Excel.
 `def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, session, flash
 from datetime import datetime
 import os
+import uuid
 import openpyxl
 from routes.utils import logger
 from routes.helpers import current_username
@@ -20,6 +21,7 @@ from werkzeug.utils import secure_filename
 from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
 from routes.gen_docx import gen_doc
+from routes import office_editor
 import sqlite3
 from routes.utils import get_available_templates
 
@@ -840,7 +842,7 @@ def delete_military(student_id):
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
 def generate(student_id):
-    """Генерує .docx-документ для одного студента за обраним шаблоном та завантажує його користувачу."""
+    """Генерує .docx-документ для одного студента за обраним шаблоном і відкриває його для перегляду/редагування в ONLYOFFICE перед завантаженням (routes/office_editor.py)."""
     if request.method == 'POST':
         selected_template = request.form.get('template', 'template.docx')
 
@@ -876,44 +878,42 @@ def generate(student_id):
         military = conn.execute("SELECT * FROM military WHERE student_id=?", (student_id,)).fetchone()
         conn.close()
 
-        if student:
-            student_dict = dict(student)
-            required_fields = ['last_name_UA', 'first_name_UA', 'id', 'group_id']
-            if not all(key in student_dict for key in required_fields):
-                logger.error(f"Неповні дані студента ID {student_id}: {student_dict}")
-                flash("Дані студента неповні (відсутні необхідні поля)")
-                return redirect(url_for('students.student_list'))
+        if not student:
+            flash("Студента не знайдено")
+            return redirect(url_for('students.student_list'))
 
-            military_dict = dict(military) if military else {}
-            student_name_part = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}".replace(" ", "_")
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            output_dir = os.path.join(project_root, 'generated_docs')
-            os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, f"{student_name_part}.docx")
+        student_dict = dict(student)
+        required_fields = ['last_name_UA', 'first_name_UA', 'id', 'group_id']
+        if not all(key in student_dict for key in required_fields):
+            logger.error(f"Неповні дані студента ID {student_id}: {student_dict}")
+            flash("Дані студента неповні (відсутні необхідні поля)")
+            return redirect(url_for('students.student_list'))
 
-            try:
-                gen_doc(student_dict, military_dict, template=selected_template, out=output_path,
-                        user_name=current_username())
-            except Exception as e:
-                logger.error(f"Помилка при генерації документа для студента ID {student_id}: {str(e)}")
-                flash(f"Помилка при генерації документа: {str(e)}")
-                return redirect(url_for('students.student_list'))
+        military_dict = dict(military) if military else {}
+        student_name_part = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}".replace(" ", "_")
+        output_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
 
-            log_action(
-                current_username(),
-                f"згенерував документ: {student_dict['last_name_UA']} {student_dict['first_name_UA']} (ID {student_id})",
-                group_ids=[student_dict['group_id']],
-                details=f"шаблон: {selected_template}"
-            )
-            try:
-                return send_file(output_path, as_attachment=True)
-            except Exception as e:
-                logger.error(f"Помилка при відправленні файлу {output_path}: {str(e)}")
-                flash(f"Помилка при відправленні файлу: {str(e)}")
-                return redirect(url_for('students.student_list'))
+        try:
+            gen_doc(student_dict, military_dict, template=selected_template, out=output_path,
+                    user_name=current_username())
+        except Exception as e:
+            logger.error(f"Помилка при генерації документа для студента ID {student_id}: {str(e)}")
+            flash(f"Помилка при генерації документа: {str(e)}")
+            return redirect(url_for('students.student_list'))
 
-        flash("Студента не знайдено")
-        return redirect(url_for('students.student_list'))
+        log_action(
+            current_username(),
+            f"згенерував документ: {student_dict['last_name_UA']} {student_dict['first_name_UA']} (ID {student_id})",
+            group_ids=[student_dict['group_id']],
+            details=f"шаблон: {selected_template}"
+        )
+
+        display_name = f"{student_name_part}.docx"
+        doc_id = office_editor.create_editing_session(output_path, display_name, session['user_id'])
+        # Переглянути і за потреби відредагувати документ у браузері
+        # перед завантаженням (ONLYOFFICE), замість негайного скачування
+        # "наосліп".
+        return redirect(url_for('office.edit', doc_id=doc_id))
 
     available_templates = get_available_templates()
     return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
