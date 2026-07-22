@@ -28,6 +28,13 @@ from routes.utils import get_templates_with_metadata
 students_bp = Blueprint('students', __name__)
 
 
+@students_bp.route('/faq')
+@login_required('')
+def faq():
+    """Довідка (FAQ): опис усіх сторінок системи, які дані куди вносити, і покрокова інструкція заповнення додатка до диплома."""
+    return render_template('faq.html')
+
+
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
 def student_list():

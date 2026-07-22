@@ -1,0 +1,387 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Довідка{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-question-circle-fill', 'Довідка', 'Опис усіх сторінок системи та покрокова інструкція заповнення додатка до диплома') }}
+
+    {# ================================================================ #}
+    {# ЧАСТИНА 1: Покрокова інструкція для додатка до диплома           #}
+    {# ================================================================ #}
+    <div class="card mb-4 border-primary">
+        <div class="card-header py-3 bg-primary-subtle">
+            <h5 class="mb-0 section-title"><i class="bi bi-mortarboard-fill me-2"></i>Як заповнити додаток до диплома: покрокова інструкція</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">Порядок важливий: кожен наступний крок спирається на дані попереднього. Якщо якийсь крок уже виконано раніше (наприклад, група вже створена) — просто перевірте його і йдіть далі.</p>
+
+            <div class="d-flex flex-column gap-3">
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">1</span>
+                    <div>
+                        <strong>Створіть/перевірте групу</strong> — <span class="text-muted">Адміністрування → Групи</span><br>
+                        <span class="small text-muted">Заповніть УСІ поля освітньої програми, обов'язково разом з англійськими версіями: кваліфікація, ступінь, спеціальність, освітня програма, галузь знань, кредити, форма навчання, рік початку, найменування та статус закладу, вимоги до вступу, результати навчання (кожен пункт з нового рядка), «програма включає» (кожен пункт з нового рядка).
+                        У додатку це: назва кваліфікації, ступінь, спеціальність, програма, галузь, тривалість і роки навчання, форма (укр. і Full/Part), блоки «Вимоги до вступу», «Результати навчання», «Програма включає» обома мовами.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">2</span>
+                    <div>
+                        <strong>Додайте студента</strong> — <span class="text-muted">Студенти → Додати студента</span> (або Імпорт з Excel для цілої групи)<br>
+                        <span class="small text-muted">ПІБ українською та англійською (транслітерація підставляється автоматично - перевірте написання за закордонним паспортом!), дата народження, код ЄДЕБО, група.
+                        У додатку це: ім'я і прізвище обома мовами, дата народження, реєстраційний номер.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">3</span>
+                    <div>
+                        <strong>Додайте предмети групи</strong> — <span class="text-muted">Адміністрування → Предмети</span> (або Імпорт предметів)<br>
+                        <span class="small text-muted">Для кожного предмета: код, назва укр., назва англ., кредити. Порядок у списку = порядок рядків у таблиці додатка.
+                        У додатку це: таблиця «Освітні компоненти» (код / назва / кредити / оцінка).</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">4</span>
+                    <div>
+                        <strong>Додайте практики, курсові та атестацію групи</strong> — <span class="text-muted">Адміністрування → Практика / атестація / курсові</span><br>
+                        <span class="small text-muted">Так само: код, назви обома мовами, кредити. Атестація має окреме поле теми роботи для кожного студента (заповнюється на кроці 6).
+                        У додатку це: окремі рядки/блоки практик, курсових робіт і підсумкової атестації в таблиці компонентів.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">5</span>
+                    <div>
+                        <strong>Виставте оцінки з предметів</strong> — <span class="text-muted">Картка студента → Оцінки</span> (або майбутній імпорт з Excel)<br>
+                        <span class="small text-muted">Оцінка для кожного предмета студента. Порожня оцінка = порожня клітинка в таблиці додатка.
+                        Також з цих оцінок автоматично обчислюється «Диплом з відзнакою» (потрібно: не менше 75% оцінок «A», жодної «D»/«E», атестація на «A»).</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">6</span>
+                    <div>
+                        <strong>Виставте оцінки за практики / курсові / атестацію</strong> — <span class="text-muted">Картка студента → Практика та атестація</span><br>
+                        <span class="small text-muted">Оцінки за кожну активність + тема кваліфікаційної роботи для атестації (якщо передбачена).
+                        У додатку це: колонка оцінок у відповідних рядках таблиці та назва теми роботи.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">7</span>
+                    <div>
+                        <strong>Додайте попередній документ про освіту</strong> — <span class="text-muted">Адміністрування → Документи про освіту</span> (або Імпорт документів)<br>
+                        <span class="small text-muted">Тип документа (укр.+англ.), номер, заклад (укр.+англ.), країна, дата завершення. Для іноземних документів - додатково блок довідки та визнання (номер довідки, заклад, дата, свідоцтво про визнання).
+                        У додатку це: розділ «Попередній документ про освіту» обома мовами.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">8</span>
+                    <div>
+                        <strong>Призначте номери диплома і додатка</strong> — <span class="text-muted">Адміністрування → Номери диплому / додатку</span><br>
+                        <span class="small text-muted">Номер диплома і номер додатка для кожного студента (система сама доповнює їх нулями до 6 цифр).
+                        У додатку це: поля номера диплома та номера самого додатка.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-primary rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">9</span>
+                    <div>
+                        <strong>Перевірте акредитацію</strong> — <span class="text-muted">Адміністрування → Акредитації</span><br>
+                        <span class="small text-muted">Запис із текстом акредитації (укр.+англ.) для пари «ступінь + спеціальність» вашої групи. Підставляється в додаток автоматично - якщо запису немає, поле буде порожнім.</span>
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <span class="badge bg-success rounded-circle fs-6 flex-shrink-0" style="width:2rem;height:2rem;line-height:1.4rem;">10</span>
+                    <div>
+                        <strong>Згенеруйте документ</strong> — <span class="text-muted">Картка студента → Генерувати документ → шаблон додатка</span><br>
+                        <span class="small text-muted">Відкриється попередній перегляд з можливістю редагування прямо в браузері - перевірте всі поля (особливо місяці завершення!), за потреби поправте, і натисніть «Завершити і завантажити». Для цілої групи одразу: Адміністрування → Експорт по групі.</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {# ================================================================ #}
+    {# ЧАСТИНА 2: Довідник сторінок                                      #}
+    {# ================================================================ #}
+    {{ ui.section_title('Довідник сторінок') }}
+    <p class="text-muted small">Що робить кожна сторінка, які дані туди вносити і де вони з'являться у згенерованих документах.</p>
+
+    <div class="accordion mb-4" id="faqAccordion">
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-students">
+                    <i class="bi bi-people me-2"></i>Студенти (головна)
+                </button>
+            </h2>
+            <div id="p-students" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Список усіх студентів з пошуком за ПІБ, фільтром по групі та індикаторами заповненості (особисті дані / військовий облік / оцінки / активності). Не-адміністратори бачать лише студентів своїх груп. Звідси відкривається картка студента - центральна точка для всіх подальших дій із конкретною людиною.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-card">
+                    <i class="bi bi-person-vcard me-2"></i>Картка студента / Додати / Редагувати
+                </button>
+            </h2>
+            <div id="p-student-card" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> ПІБ українською; прізвище та ім'я англійською (автоматична транслітерація - звірте із закордонним паспортом); дата народження; код ЄДЕБО; група.<br>
+                    <strong>У документах:</strong> ПІБ обома мовами, дата народження (дд/мм/рррр), реєстраційний номер ЄДЕБО - у всіх шаблонах, включно з додатком до диплома і повідомленням у ТЦК.<br>
+                    <strong>Порада:</strong> помилка в англійському написанні імені - найчастіша причина передруку додатка, перевіряйте одразу.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-military">
+                    <i class="bi bi-shield me-2"></i>Військові дані студента
+                </button>
+            </h2>
+            <div id="p-military" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> реєстраційний номер ДРПВР, військово-обліковий документ і дату його видачі, номер ВОС, звання, що і чому змінилось в облікових даних, перебування на обліку, адресу проживання.<br>
+                    <strong>У документах:</strong> шаблон повідомлення в ТЦК про зміну облікових даних. На додаток до диплома не впливає.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-grades">
+                    <i class="bi bi-journal-check me-2"></i>Оцінки студента
+                </button>
+            </h2>
+            <div id="p-grades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> оцінку за кожен предмет групи (шкала A-E або числова - залежно від типу предмета).<br>
+                    <strong>У документах:</strong> колонка оцінок у таблиці освітніх компонентів додатка. З цих же оцінок автоматично визначається «Диплом з відзнакою» (≥75% «A», без «D»/«E», атестація «A»).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-actgrades">
+                    <i class="bi bi-clipboard-check me-2"></i>Оцінки за практику / атестацію / курсові
+                </button>
+            </h2>
+            <div id="p-actgrades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> оцінки за кожну активність групи (практики, курсові, атестація) + тему кваліфікаційної роботи для атестації.<br>
+                    <strong>У документах:</strong> відповідні рядки таблиці компонентів додатка з оцінками; тема роботи - у рядку атестації.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-periods">
+                    <i class="bi bi-calendar-range me-2"></i>Періоди навчання студента
+                </button>
+            </h2>
+            <div id="p-periods" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> якщо студент навчався в кількох філіях/закладах або з перервами - кожен період окремо: філія (укр.+англ.), назва групи, дати з-по, порядок. Для цілої групи одразу - Адміністрування → Масове призначення періодів.<br>
+                    <strong>У документах:</strong> багаторядкові поля «де навчався» і «в які роки» у шаблонах, що їх використовують. Якщо періоди не вказані - формуються автоматично з даних групи.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-generate">
+                    <i class="bi bi-file-earmark-word me-2"></i>Генерувати документ
+                </button>
+            </h2>
+            <div id="p-generate" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Вибір шаблону (під списком показується опис обраного шаблону) → документ генерується і відкривається для перегляду й редагування прямо в браузері → «Завершити і завантажити». Зміни, зроблені в редакторі, потрапляють у завантажений файл, але не в базу даних - якщо помилка в даних, краще виправити її на відповідній сторінці і згенерувати заново.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-groups">
+                    <i class="bi bi-person-rolodex me-2"></i>Адміністрування → Групи
+                </button>
+            </h2>
+            <div id="p-groups" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Найважливіша сторінка для додатка до диплома.</strong> Тут живе вся освітня програма групи.<br>
+                    <strong>Що вносити:</strong> назва групи, рік початку, форма навчання, кредити, ступінь, спеціальність, кваліфікація, освітня програма, галузь знань, найменування та статус закладу, вимоги до вступу, результати навчання, «програма включає» - все з англійськими версіями. У багаторядкових полях кожен рядок = окремий пункт списку в документі.<br>
+                    <strong>У документах:</strong> практично весь «паспорт» додатка: кваліфікація, ступінь, спеціальність, програма, галузь, кредити, форма навчання (і Full/Part), роки й тривалість навчання (обчислюються автоматично: 240 кредитів → 4 роки, 180 → 3, 120 → 2, 90 → 1.5), заклад, вимоги до вступу, результати навчання, склад програми.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-subjects">
+                    <i class="bi bi-book me-2"></i>Адміністрування → Предмети
+                </button>
+            </h2>
+            <div id="p-subjects" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> предмети кожної групи: код (напр. ОК1), назва укр., назва англ., кредити, тип (впливає на формат оцінки). Порядок предметів = порядок рядків у таблиці додатка.<br>
+                    <strong>У документах:</strong> таблиця «Освітні компоненти» додатка: код, назва (обома мовами), кредити, оцінка.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-activities">
+                    <i class="bi bi-briefcase me-2"></i>Адміністрування → Практика / атестація / курсові
+                </button>
+            </h2>
+            <div id="p-activities" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> для кожної групи - практики, курсові роботи та підсумкову атестацію: код, назви обома мовами, кредити.<br>
+                    <strong>У документах:</strong> окремі блоки в таблиці компонентів додатка. Оцінки та теми робіт вносяться окремо на картці студента.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-edudocs">
+                    <i class="bi bi-mortarboard me-2"></i>Адміністрування → Документи про освіту
+                </button>
+            </h2>
+            <div id="p-edudocs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> попередній документ про освіту кожного студента: тип (укр.+англ.), номер, заклад (укр.+англ.), країна (укр.+англ.), дата завершення. Для іноземних документів - додатковий блок: номер і дані довідки, свідоцтво про визнання (номер, ким видано, дата).<br>
+                    <strong>У документах:</strong> розділ «Попередній документ про освіту» додатка обома мовами. Береться найновіший (останній доданий) документ студента.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-diplomas">
+                    <i class="bi bi-journal-bookmark me-2"></i>Адміністрування → Номери диплому / додатку
+                </button>
+            </h2>
+            <div id="p-diplomas" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> номер диплома і номер додатка для кожного студента (можна вводити без провідних нулів - система сама доповнить до 6 цифр).<br>
+                    <strong>У документах:</strong> відповідні поля номерів у шаблоні додатка.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-accred">
+                    <i class="bi bi-patch-check me-2"></i>Адміністрування → Акредитації
+                </button>
+            </h2>
+            <div id="p-accred" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Що вносити:</strong> для кожної пари «ступінь + спеціальність» - текст акредитації українською та англійською.<br>
+                    <strong>У документах:</strong> підставляється автоматично за ступенем і спеціальністю групи студента. Якщо відповідного запису немає - поле в додатку буде порожнім (документ не зламається, але перевіряйте).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-imports">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Імпорти з Excel (студенти / предмети / документи про освіту)
+                </button>
+            </h2>
+            <div id="p-imports" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Імпорт студентів</strong> - масове додавання студентів групи з Excel-файлу замість ручного введення по одному.<br>
+                    <strong>Імпорт предметів</strong> - масове додавання предметів групи (код/назви/кредити) з Excel.<br>
+                    <strong>Імпорт документів про освіту</strong> - двокроковий: спершу попередній перегляд із перевіркою відповідності, потім підтвердження.<br>
+                    Для всіх імпортів: перед завантаженням звірте формат колонок із прикладом на самій сторінці імпорту.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export">
+                    <i class="bi bi-files me-2"></i>Адміністрування → Експорт по групі
+                </button>
+            </h2>
+            <div id="p-export" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Масова генерація документів: оберіть групу (та/або рік народження), шаблон - і система згенерує документи для всіх вибраних студентів одразу, з попереднім переглядом кожного і завантаженням усього пакета zip-архівом.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-templates">
+                    <i class="bi bi-file-earmark-arrow-up me-2"></i>Адміністрування → Шаблони документів
+                </button>
+            </h2>
+            <div id="p-templates" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Завантаження і управління Word-шаблонами: назва для списків вибору, опис, «тільки для адміністратора», приховування зі списків, завантаження поточної версії файлу. Там же - повний довідник змінних, які можна використовувати всередині шаблону (звідки береться кожне поле і як його вставити).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-archive">
+                    <i class="bi bi-archive me-2"></i>Адміністрування → Архів груп
+                </button>
+            </h2>
+            <div id="p-archive" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Випущені групи переносяться в архів: зникають з активних списків і фільтрів, але всі дані зберігаються. Будь-яку групу можна повернути з архіву.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-users">
+                    <i class="bi bi-people-fill me-2"></i>Адміністрування → Користувачі та права
+                </button>
+            </h2>
+            <div id="p-users" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Створення користувачів, зміна паролів, призначення груп (не-адміністратор бачить лише студентів своїх груп) і детальних прав доступу до кожного розділу адміністрування.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-logs">
+                    <i class="bi bi-list-check me-2"></i>Адміністрування → Журнал дій
+                </button>
+            </h2>
+            <div id="p-logs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Хто, коли і що зробив у системі: додавання/редагування/видалення даних, генерація документів, зміни шаблонів. Незамінний, коли треба з'ясувати, звідки взялася зміна.
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+</div>
+{% endblock %}
