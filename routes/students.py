@@ -23,7 +23,7 @@ from routes.utils import log_action, login_required, permission_required, transl
 from routes.gen_docx import gen_doc
 from routes import office_editor
 import sqlite3
-from routes.utils import get_available_templates
+from routes.utils import get_templates_with_metadata
 
 students_bp = Blueprint('students', __name__)
 
@@ -846,10 +846,13 @@ def generate(student_id):
     if request.method == 'POST':
         selected_template = request.form.get('template', 'template.docx')
 
-        # Защита: если пользователь не админ, запрещаем шаблоны диплома,
-        # даже если их прислали вручную через POST
-        if 'adddiplom' in selected_template.lower() and session.get('role') != 'admin':
-            flash("У вас немає прав для генерації цього документа")
+        # Захист: навіть якщо форму підмінили вручну (наприклад, надіслали
+        # POST-запит напряму), забороняємо шаблони, позначені "тільки для
+        # адміністратора" (routes.utils.get_templates_with_metadata),
+        # для не-адміністраторів.
+        allowed_paths = {t['path'] for t in get_templates_with_metadata(is_admin=session.get('is_admin', False))}
+        if selected_template not in allowed_paths:
+            flash("У вас немає прав для генерації цього документа", "danger")
             return redirect(url_for('students.student_list'))
 
         conn = get_db()
@@ -915,7 +918,7 @@ def generate(student_id):
         # "наосліп".
         return redirect(url_for('office.edit', doc_id=doc_id))
 
-    available_templates = get_available_templates()
+    available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))
     return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
 
     

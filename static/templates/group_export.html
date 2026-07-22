@@ -31,8 +31,8 @@
                     <label class="form-label" for="template">Шаблон документа</label>
                     <select name="template" id="template" class="form-select" onchange="submitForm()">
                         {% for tpl in available_templates %}
-                            <option value="{{ tpl }}" {% if tpl == selected_template %}selected{% endif %}>
-                                {{ tpl.split('/')[-1] }}
+                            <option value="{{ tpl.path }}" {% if tpl.path == selected_template %}selected{% endif %}>
+                                {{ tpl.display_name }}{% if tpl.admin_only %} 🔒{% endif %}
                             </option>
                         {% endfor %}
                     </select>

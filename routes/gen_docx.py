@@ -388,18 +388,19 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     student_dict['study_years'] = study_years
     
     # Вычисление study_form_eu на основе study_form
-    if 'adddiplom' in template.lower():
-        study_form = student_dict.get('study_form', '')
-        study_form_eu = ''
-        if study_form == 'Денна':
-            study_form_eu = 'Full'
-        elif study_form == 'Заочна':
-            study_form_eu = 'Part'
-        else:
-            study_form_eu = study_form
-        # global_logger.debug(f"study_form: {study_form}, study_form_eu: {study_form_eu}")
-    
-        student_dict['study_form_eu'] = study_form_eu
+    # (раніше обчислювалось лише для шаблонів з "adddiplom" у назві -
+    # тепер доступне у будь-якому шаблоні)
+    study_form = student_dict.get('study_form', '')
+    study_form_eu = ''
+    if study_form == 'Денна':
+        study_form_eu = 'Full'
+    elif study_form == 'Заочна':
+        study_form_eu = 'Part'
+    else:
+        study_form_eu = study_form
+    # global_logger.debug(f"study_form: {study_form}, study_form_eu: {study_form_eu}")
+
+    student_dict['study_form_eu'] = study_form_eu
     
     # Вычисление end_year на основе start_year, program_credits и degree_level
     end_year = ''
@@ -465,9 +466,11 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     context = {**student_dict, **military_dict}
     # global_logger.debug(f"Контекст перед рендерингом: {context}")
 
-    # Данные для диплома
+    # Дані для диплома (список оцінок з предметів, практик, курсових,
+    # атестацій) - раніше збиралися лише для шаблонів з "adddiplom" у
+    # назві, тепер доступні у будь-якому шаблоні.
     try:
-        if 'adddiplom' in template.lower() and 'group_id' in student_dict and 'id' in student_dict:
+        if 'group_id' in student_dict and 'id' in student_dict:
             context['subjects_grades'] = get_subjects_grades(student_dict['id'], student_dict['group_id']) or []
             context['practice_data'] = get_practice_data(student_dict['id'], student_dict['group_id']) or []
             context['coursework_data'] = get_coursework_data(student_dict['id'], student_dict['group_id']) or []
@@ -482,98 +485,100 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     
     # -----------------------------
     # Автоподстановка аккредитации для диплома с отладкой
+    # (раніше обчислювалось лише для шаблонів з "adddiplom" у назві,
+    # тепер доступне у будь-якому шаблоні)
     # -----------------------------
     try:
-        if 'adddiplom' in template.lower():
-            conn = get_db()
-            conn.row_factory = sqlite3.Row
-            acc = conn.execute("""
-                SELECT text_ua, text_en
-                FROM accreditations
-                WHERE degree = ? AND specialty = ?
-                ORDER BY id DESC LIMIT 1
-            """, (
-                student_dict.get('degree_level', ''),
-                student_dict.get('specialty', '')
-            )).fetchone()
-            conn.close()
+        conn = get_db()
+        conn.row_factory = sqlite3.Row
+        acc = conn.execute("""
+            SELECT text_ua, text_en
+            FROM accreditations
+            WHERE degree = ? AND specialty = ?
+            ORDER BY id DESC LIMIT 1
+        """, (
+            student_dict.get('degree_level', ''),
+            student_dict.get('specialty', '')
+        )).fetchone()
+        conn.close()
 
-            if acc:
-                context['accreditation_text'] = acc['text_ua']
-                context['accreditation_text_en'] = acc['text_en']
-                # Вывод для отладки
-                #print("=== Автоподстановка аккредитации ===")
-                #print("UA:", acc['text_ua'])
-                #print("EN:", acc['text_en'])
-                #global_logger.debug(f"Автоподстановка аккредитации: UA='{acc['text_ua']}', EN='{acc['text_en']}'")
-            else:
-                context['accreditation_text'] = ''
-                context['accreditation_text_en'] = ''
-                #print("=== Автоподстановка аккредитации ===")
-                #print("Аккредитация не найдена для ступені и спеціальності:")
-                #print("degree_level:", student_dict.get('degree_level', ''))
-                #print("specialty:", student_dict.get('specialty', ''))
-                #global_logger.debug(f"Аккредитация не найдена: degree_level='{student_dict.get('degree_level', '')}', specialty='{student_dict.get('specialty', '')}'")
+        if acc:
+            context['accreditation_text'] = acc['text_ua']
+            context['accreditation_text_en'] = acc['text_en']
+            # Вывод для отладки
+            #print("=== Автоподстановка аккредитации ===")
+            #print("UA:", acc['text_ua'])
+            #print("EN:", acc['text_en'])
+            #global_logger.debug(f"Автоподстановка аккредитации: UA='{acc['text_ua']}', EN='{acc['text_en']}'")
+        else:
+            context['accreditation_text'] = ''
+            context['accreditation_text_en'] = ''
+            #print("=== Автоподстановка аккредитации ===")
+            #print("Аккредитация не найдена для ступені и спеціальності:")
+            #print("degree_level:", student_dict.get('degree_level', ''))
+            #print("specialty:", student_dict.get('specialty', ''))
+            #global_logger.debug(f"Аккредитация не найдена: degree_level='{student_dict.get('degree_level', '')}', specialty='{student_dict.get('specialty', '')}'")
 
     except Exception as e:
         global_logger.error(f"Ошибка при получении аккредитации для диплома студента ID {student_dict.get('id', 'unknown')}: {e}")
         context['accreditation_text'] = ''
         context['accreditation_text_en'] = ''
 
-    # Проверка на диплом с отличием с отладочной информацией
-    context['diploma_with_honor_text'] = student_dict.get('last_name_UA', '')
-    context['diploma_with_honor_text_en'] = student_dict.get('last_name_en', '')
+    # Проверка на диплом с отличием
+    # (раніше обчислювалось лише для "adddiplom"; за замовчуванням тут
+    # раніше стояло прізвище студента - це виглядало як забутий
+    # налагоджувальний код, а не навмисна поведінка, тому прибрано)
+    context['diploma_with_honor_text'] = ''
+    context['diploma_with_honor_text_en'] = ''
 
-    if 'adddiplom' in template.lower():
+    all_grades = []
 
-        all_grades = []
+    if context.get('subjects_grades'):
+        all_grades += context['subjects_grades']
 
-        if context.get('subjects_grades'):
-            all_grades += context['subjects_grades']
+    if context.get('practice_data'):
+        all_grades += context['practice_data']
 
-        if context.get('practice_data'):
-            all_grades += context['practice_data']
+    total_grades = 0
+    excellent_count = 0
+    satisfactory_count = 0
 
-        total_grades = 0
-        excellent_count = 0
-        satisfactory_count = 0
+    for g in all_grades:
+        grade_text = g.get('grade', '')
 
-        for g in all_grades:
-            grade_text = g.get('grade', '')
+        if not grade_text:
+            continue
 
-            if not grade_text:
-                continue
+        total_grades += 1
 
-            total_grades += 1
+        if ' A' in grade_text:
+            excellent_count += 1
 
-            if ' A' in grade_text:
-                excellent_count += 1
+        elif ' D' in grade_text or ' E' in grade_text:
+            satisfactory_count += 1
 
-            elif ' D' in grade_text or ' E' in grade_text:
-                satisfactory_count += 1
+    # аттестация
+    attestation_grade = ''
 
-        # аттестация
-        attestation_grade = ''
-
-        if context.get('attestation_data'):
-            attestation_grade = next(
-                (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')),
-                ''
-            )
-
-        diploma_with_honours = (
-            total_grades > 0
-            and excellent_count / total_grades >= 0.75
-            and satisfactory_count == 0
-            and ' A' in attestation_grade
+    if context.get('attestation_data'):
+        attestation_grade = next(
+            (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')),
+            ''
         )
 
-        if diploma_with_honours:
-            context['diploma_with_honor_text'] = 'Диплом з відзнакою'
-            context['diploma_with_honor_text_en'] = 'Diploma with honours'
-        else:
-            context['diploma_with_honor_text'] = 'Інформація відсутня'
-            context['diploma_with_honor_text_en'] = 'Information is absent'
+    diploma_with_honours = (
+        total_grades > 0
+        and excellent_count / total_grades >= 0.75
+        and satisfactory_count == 0
+        and ' A' in attestation_grade
+    )
+
+    if diploma_with_honours:
+        context['diploma_with_honor_text'] = 'Диплом з відзнакою'
+        context['diploma_with_honor_text_en'] = 'Diploma with honours'
+    else:
+        context['diploma_with_honor_text'] = 'Інформація відсутня'
+        context['diploma_with_honor_text_en'] = 'Information is absent'
 
     
     
