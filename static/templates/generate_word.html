@@ -11,32 +11,28 @@
             <form method="POST">
                 <div class="mb-3">
                     <label class="form-label">Оберіть шаблон</label>
-                    <select name="template" class="form-select">
+                    <select name="template" class="form-select" id="templateSelect">
                     {% for tpl in available_templates %}
-                        {% if 'adddiplom' in tpl.lower() and session.get('role') != 'admin' %}
-                            {# ховаємо адмінський шаблон для не-адмінів #}
-                        {% else %}
-                            <option value="{{ tpl }}">
-                                {% if 'adddiplom1' in tpl.lower() %}
-                                    Шаблон для додатку до диплому
-                                {% elif 'tck1' in tpl.lower() %}
-                                    Повідомлення про зміну облікових даних в ТЦК
-                                {% else %}
-                                    {{ tpl.split('/')[-1] }}
-                                {% endif %}
-                            </option>
-                        {% endif %}
+                        <option value="{{ tpl.path }}" data-description="{{ tpl.description }}">
+                            {{ tpl.display_name }}{% if tpl.admin_only %} 🔒{% endif %}
+                        </option>
                     {% endfor %}
                     </select>
+                    <div class="form-text" id="templateDescription"></div>
                 </div>
 
-                {% if session.get('role') == 'admin' %}
-                <div class="alert alert-warning">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    Шаблони з <code>adddiplom</code> у назві бачить лише адміністратор.<br>
-                    <strong>Увага!</strong> Перевірте місяць закінчення навчання в шаблоні додатку в трьох місцях!
-                </div>
-                {% endif %}
+                <script>
+                    (function () {
+                        const select = document.getElementById('templateSelect');
+                        const desc = document.getElementById('templateDescription');
+                        function updateDescription() {
+                            const opt = select.options[select.selectedIndex];
+                            desc.textContent = opt ? (opt.dataset.description || '') : '';
+                        }
+                        select.addEventListener('change', updateDescription);
+                        updateDescription();
+                    })();
+                </script>
 
                 <button type="submit" class="btn btn-primary"><i class="bi bi-file-earmark-arrow-down me-2"></i>Створити документ</button>
                 <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Назад</a>

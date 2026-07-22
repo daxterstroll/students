@@ -11,7 +11,7 @@ routes/admin.py
 `def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
 """
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file
 from datetime import datetime
 import os
 import sqlite3
@@ -35,7 +35,7 @@ from openpyxl.utils.exceptions import InvalidFileException
 import time
 
 
-from routes.utils import get_available_templates
+from routes.utils import get_templates_with_metadata, TEMPLATE_FOLDER
 
 translator = GoogleTranslator(source="auto", target="en")
 translation_cache = {}
@@ -57,7 +57,8 @@ PERMISSIONS = [
     'manage_students',
     'manage_accreditations',
     'manage_diplomas',
-    'import_education_docs'
+    'import_education_docs',
+    'manage_templates'
 ]
 
 
@@ -1289,7 +1290,8 @@ def manage_users():
             'manage_students': 'Управління студентами (Видалення студента та його війс. док.)',
             'manage_accreditations': 'Управління акредетаціями',
             'manage_diplomas': 'Управління номерами диплому і додатку',
-            'import_education_docs': 'Управління імпортом документів'
+            'import_education_docs': 'Управління імпортом документів',
+            'manage_templates': 'Управління шаблонами документів'
         }
 
         if request.method == 'POST':
@@ -1502,6 +1504,181 @@ def delete_user(user_id):
     return redirect(url_for('admin.manage_users'))
 
 
+@admin_bp.route('/admin/templates', methods=['GET', 'POST'])
+@permission_required('manage_templates')
+def manage_templates():
+    """
+    Сторінка управління Word-шаблонами (папка template_word/): перегляд
+    списку, завантаження нового шаблону з необов'язковим описом і
+    позначкою "тільки для адміністратора".
+    """
+    conn = get_db()
+
+    if request.method == 'POST':
+        file = request.files.get('template_file')
+        display_name = (request.form.get('display_name') or '').strip()
+        description = (request.form.get('description') or '').strip()
+        admin_only = 1 if request.form.get('admin_only') == 'on' else 0
+        # Галочка "Показувати в списках" (за замовчуванням увімкнена у формі):
+        # знята галочка = шаблон прихований зі списків вибору при генерації.
+        hidden = 0 if request.form.get('visible') == 'on' else 1
+
+        if not file or file.filename == '':
+            flash('Оберіть файл шаблону', 'danger')
+            return redirect(url_for('admin.manage_templates'))
+
+        filename = secure_filename(file.filename)
+        if not filename.lower().endswith('.docx'):
+            flash('Шаблон повинен бути файлом .docx', 'danger')
+            return redirect(url_for('admin.manage_templates'))
+
+        # Якщо назву не вказано - у списках вибору показується ім'я файлу
+        if not display_name:
+            display_name = filename
+
+        os.makedirs(TEMPLATE_FOLDER, exist_ok=True)
+        dest_path = os.path.join(TEMPLATE_FOLDER, filename)
+        is_replace = os.path.exists(dest_path)
+
+        try:
+            file.save(dest_path)
+            conn.execute("""
+                INSERT INTO document_templates (filename, display_name, description, admin_only, hidden, uploaded_by, uploaded_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(filename) DO UPDATE SET
+                    display_name = excluded.display_name,
+                    description = excluded.description,
+                    admin_only = excluded.admin_only,
+                    hidden = excluded.hidden,
+                    uploaded_by = excluded.uploaded_by,
+                    uploaded_at = excluded.uploaded_at
+            """, (filename, display_name, description, admin_only, hidden, current_username()))
+            conn.commit()
+            log_action(
+                current_username(),
+                f"{'оновив' if is_replace else 'завантажив новий'} шаблон документа: {filename}",
+                details=f"тільки для адміністратора: {'так' if admin_only else 'ні'}"
+            )
+            flash(f"Шаблон «{filename}» успішно {'оновлено' if is_replace else 'завантажено'}", 'success')
+        except Exception as e:
+            logger.error(f"Помилка при завантаженні шаблону {filename}: {e}", exc_info=True)
+            flash(f'Помилка при завантаженні шаблону: {e}', 'danger')
+        finally:
+            conn.close()
+
+        return redirect(url_for('admin.manage_templates'))
+
+    # -------------------- GET --------------------
+    # Показуємо усі фізично наявні файли в template_word/, приєднуючи
+    # метадані з БД, якщо вони є (файл міг бути покладений вручну, без
+    # завантаження через цю сторінку - таким теж не повинно ламати список).
+    rows = conn.execute("SELECT * FROM document_templates").fetchall()
+    meta_by_filename = {row['filename']: dict(row) for row in rows}
+    conn.close()
+
+    templates = []
+    if os.path.isdir(TEMPLATE_FOLDER):
+        for f in sorted(os.listdir(TEMPLATE_FOLDER)):
+            if not f.lower().endswith('.docx'):
+                continue
+            full_path = os.path.join(TEMPLATE_FOLDER, f)
+            meta = meta_by_filename.get(f, {})
+            templates.append({
+                'filename': f,
+                'display_name': meta.get('display_name') or f,
+                'description': meta.get('description') or '',
+                'admin_only': bool(meta.get('admin_only', 0)),
+                'hidden': bool(meta.get('hidden', 0)),
+                'uploaded_by': meta.get('uploaded_by') or '',
+                'uploaded_at': meta.get('uploaded_at') or '',
+                'size_kb': round(os.path.getsize(full_path) / 1024, 1),
+            })
+
+    return render_template('manage_templates.html', templates=templates)
+
+
+@admin_bp.route('/admin/templates/<filename>/toggle_visibility', methods=['POST'])
+@permission_required('manage_templates')
+def toggle_template_visibility(filename):
+    """
+    Перемикає видимість шаблону в списках вибору при генерації
+    (прихований <-> видимий), без потреби перезавантажувати файл.
+    Для файлів, які лежать у template_word/ без запису в БД (додані
+    вручну), запис створюється автоматично.
+    """
+    filename = secure_filename(filename)
+    full_path = os.path.join(TEMPLATE_FOLDER, filename)
+
+    if not os.path.isfile(full_path):
+        flash(f"Файл шаблону «{filename}» не знайдено", 'danger')
+        return redirect(url_for('admin.manage_templates'))
+
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT hidden FROM document_templates WHERE filename = ?", (filename,)).fetchone()
+        if row is None:
+            # Файл без метаданих (покладений вручну) - створюємо запис одразу прихованим
+            conn.execute(
+                "INSERT INTO document_templates (filename, display_name, hidden, uploaded_by) VALUES (?, ?, 1, ?)",
+                (filename, filename, current_username())
+            )
+            new_hidden = 1
+        else:
+            new_hidden = 0 if row['hidden'] else 1
+            conn.execute("UPDATE document_templates SET hidden = ? WHERE filename = ?", (new_hidden, filename))
+        conn.commit()
+        log_action(
+            current_username(),
+            f"{'приховав' if new_hidden else 'зробив видимим'} шаблон документа: {filename}"
+        )
+        flash(f"Шаблон «{filename}» тепер {'прихований зі' if new_hidden else 'видимий у'} списках вибору", 'success')
+    except Exception as e:
+        logger.error(f"Помилка при зміні видимості шаблону {filename}: {e}", exc_info=True)
+        flash(f'Помилка при зміні видимості шаблону: {e}', 'danger')
+    finally:
+        conn.close()
+
+    return redirect(url_for('admin.manage_templates'))
+
+
+@admin_bp.route('/admin/templates/<filename>/download')
+@permission_required('manage_templates')
+def download_template(filename):
+    """Віддає файл шаблону з template_word/ на завантаження (напр., щоб відредагувати його у Word і завантажити оновлену версію назад)."""
+    filename = secure_filename(filename)
+    full_path = os.path.join(TEMPLATE_FOLDER, filename)
+
+    if not os.path.isfile(full_path):
+        flash(f"Файл шаблону «{filename}» не знайдено", 'danger')
+        return redirect(url_for('admin.manage_templates'))
+
+    return send_file(full_path, as_attachment=True, download_name=filename)
+
+
+@admin_bp.route('/admin/templates/<filename>/delete', methods=['POST'])
+@permission_required('manage_templates')
+def delete_template(filename):
+    """Видаляє шаблон - сам файл із template_word/ та його метадані з БД."""
+    filename = secure_filename(filename)
+    full_path = os.path.join(TEMPLATE_FOLDER, filename)
+
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM document_templates WHERE filename = ?", (filename,))
+        conn.commit()
+        if os.path.exists(full_path):
+            os.remove(full_path)
+        log_action(current_username(), f"видалив шаблон документа: {filename}")
+        flash(f"Шаблон «{filename}» видалено", 'success')
+    except Exception as e:
+        logger.error(f"Помилка при видаленні шаблону {filename}: {e}", exc_info=True)
+        flash(f'Помилка при видаленні шаблону: {e}', 'danger')
+    finally:
+        conn.close()
+
+    return redirect(url_for('admin.manage_templates'))
+
+
 @admin_bp.route('/admin/group_export', methods=['GET', 'POST'])
 @permission_required('group_export')
 def group_export():
@@ -1515,8 +1692,8 @@ def group_export():
         FROM groups WHERE archived = FALSE ORDER BY name, start_year
     """).fetchall()
 
-    available_templates = get_available_templates()
-    default_template = available_templates[0] if available_templates else ''
+    available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))
+    default_template = available_templates[0]['path'] if available_templates else ''
 
     current_year = datetime.now().year
     years = list(range(1980, current_year + 1))
@@ -1705,6 +1882,11 @@ def generate_group_docs():
     birth_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
     selected_template = request.args.get('template', '') if request.method == 'GET' else request.form.get('template', '')
     active_students = request.args.get('active_students', '').split(',') if request.args.get('active_students') else []
+
+    allowed_paths = {t['path'] for t in get_templates_with_metadata(is_admin=session.get('is_admin', False))}
+    if selected_template not in allowed_paths:
+        flash("У вас немає прав для генерації документів цим шаблоном", "danger")
+        return redirect(url_for('admin.group_export'))
 
     if not group_id and not birth_year:
         flash('Оберіть групу або рік народження для генерації документів.', 'error')

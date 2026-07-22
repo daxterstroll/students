@@ -544,6 +544,9 @@ main.container {
                 {% if is_admin or 'archive' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.archive') }}"><i class="bi bi-archive"></i> Архів груп</a></li>
                 {% endif %}
+                {% if is_admin or 'manage_templates' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
+                {% endif %}
             </ul>
         </li>
 		
@@ -583,7 +586,7 @@ main.container {
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
             {% if is_admin or 'manage_diplomas' in perms %}<a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a>{% endif %}
-            
+            {% if is_admin or 'manage_templates' in perms %}<a href="{{ url_for('admin.manage_templates') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a>{% endif %}
             </div>
         {% endif %}
 
