@@ -221,6 +221,17 @@ CREATE TABLE student_study_periods (
 );
 
 CREATE INDEX idx_study_periods_student ON student_study_periods(student_id);
+
+CREATE TABLE IF NOT EXISTS "document_templates" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL UNIQUE,      -- ім'я файлу в папці template_word/, напр. "template_tck.docx"
+    display_name TEXT,                  -- людська назва для випадаючого списку (необов'язково)
+    description TEXT,                   -- опис призначення шаблону (необов'язково)
+    admin_only INTEGER NOT NULL DEFAULT 0,  -- 1 = бачать і можуть обрати лише адміністратори
+    hidden INTEGER NOT NULL DEFAULT 0,      -- 1 = шаблон не показується в списках вибору при генерації (для всіх, включно з адмінами)
+    uploaded_by TEXT,
+    uploaded_at TEXT DEFAULT (datetime('now'))
+);
 """)
 
 # Додаємо користувачів.

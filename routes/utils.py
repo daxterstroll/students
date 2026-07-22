@@ -315,3 +315,55 @@ def get_available_templates():
     ]
     files.sort()
     return [f"template_word/{f}" for f in files]
+
+
+def get_templates_with_metadata(is_admin=False):
+    """
+    Повертає список шаблонів разом з їхніми метаданими (опис,
+    відображувана назва, чи "тільки для адміністратора") - для
+    сторінок генерації документа (students.generate,
+    admin.group_export) замість жорстко "зашитих" перевірок на кшталт
+    `if 'adddiplom' in tpl.lower()`.
+
+    Кожен елемент списку - словник:
+        {'path': 'template_word/файл.docx', 'filename': 'файл.docx',
+         'display_name': ..., 'description': ..., 'admin_only': bool}
+
+    Шаблони, для яких немає запису в таблиці document_templates
+    (наприклад, файли, покладені в папку вручну, без завантаження через
+    сторінку управління шаблонами), все одно показуються - просто без
+    опису і НЕ як адмінські (admin_only=False), із назвою за
+    замовчуванням (ім'я файлу).
+
+    :param is_admin: якщо False - шаблони з admin_only=True не включаються в результат.
+    """
+    from routes.db import get_db  # локальний імпорт, щоб уникнути циклічної залежності
+
+    paths = get_available_templates()
+    if not paths:
+        return []
+
+    conn = get_db()
+    rows = conn.execute("SELECT filename, display_name, description, admin_only, hidden FROM document_templates").fetchall()
+    meta_by_filename = {row['filename']: dict(row) for row in rows}
+
+    result = []
+    for path in paths:
+        filename = path.split('/')[-1]
+        meta = meta_by_filename.get(filename, {})
+        # Приховані шаблони не показуються в списках вибору взагалі
+        # (керується галочкою "Показувати в списках" на сторінці
+        # управління шаблонами; файли без запису в БД - видимі).
+        if meta.get('hidden', 0):
+            continue
+        admin_only = bool(meta.get('admin_only', 0))
+        if admin_only and not is_admin:
+            continue
+        result.append({
+            'path': path,
+            'filename': filename,
+            'display_name': meta.get('display_name') or filename,
+            'description': meta.get('description') or '',
+            'admin_only': admin_only,
+        })
+    return result
