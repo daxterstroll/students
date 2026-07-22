@@ -594,6 +594,9 @@ main.container {
             {% if session.get('user_id') %}
             <!-- Десктоп -->
             <div class="d-none d-lg-flex align-items-center">
+                <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm me-2" title="Довідка">
+                    <i class="bi bi-question-circle me-1"></i>Довідка
+                </a>
                 <span class="badge user-badge me-3">
                     <i class="bi bi-person-badge me-1"></i>{{ session.get('role') }}
                 </span>
@@ -608,9 +611,14 @@ main.container {
                     <span class="badge user-badge">
                         <i class="bi bi-person-badge me-1"></i>{{ session.get('role') }}
                     </span>
-                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm logout-btn">
-                        <i class="bi bi-box-arrow-right me-1"></i>Вийти
-                    </a>
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm">
+                            <i class="bi bi-question-circle me-1"></i>Довідка
+                        </a>
+                        <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm logout-btn">
+                            <i class="bi bi-box-arrow-right me-1"></i>Вийти
+                        </a>
+                    </div>
                 </div>
             </div>
             {% endif %}
