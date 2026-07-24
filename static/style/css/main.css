@@ -1,0 +1,689 @@
+:root {
+            --ink:        #0e1b2c;
+            --ink-2:      #16283f;
+            --paper:      #f4efe3;
+            --paper-2:    #e9e0cc;
+            --ink-text:   #1f2a3a;
+            --muted:      #8a8071;
+            --brass:      #c8a24a;
+            --brass-lt:   #e3c87a;
+            --brass-soft: rgba(200,162,74,.16);
+            --brass-semi: rgba(200,162,74,.32);
+            --stamp:      #a23b2e;
+            --stamp-soft: rgba(162,59,46,.12);
+            --stamp-semi: rgba(162,59,46,.35);
+            --line:       rgba(31,42,58,.16);
+        }
+
+        * { box-sizing: border-box; }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            background: var(--paper);
+            color: var(--ink-text);
+            font-family: 'Manrope', sans-serif;
+            padding-top: 64px;
+        }
+
+        h1, h2, h3, h4, h5 { font-family: 'Lora', serif; color: var(--ink-text); }
+        a { color: var(--ink-text); }
+        ::selection { background: var(--brass-semi); }
+
+        /* ===== NAVBAR ===== */
+        .navbar {
+            background: var(--ink);
+            box-shadow: 0 2px 14px rgba(0,0,0,.25);
+            border-bottom: 1px solid rgba(200,162,74,.18);
+            min-height: 64px;
+            transition: box-shadow .3s ease;
+        }
+        .navbar.is-scrolled {
+            box-shadow: 0 4px 22px rgba(0,0,0,.4);
+        }
+
+        .navbar-brand {
+            color: var(--brass-lt) !important;
+            font-family: 'Lora', serif;
+            font-weight: 700;
+            font-size: 1.15rem;
+            letter-spacing: .01em;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            transition: color .2s ease, transform .2s ease;
+        }
+        .navbar-brand .bi {
+            color: var(--brass);
+            font-size: 1.25rem;
+            transition: transform .35s cubic-bezier(.34,1.56,.64,1), color .2s ease;
+        }
+        .navbar-brand:hover .bi {
+            transform: rotate(-12deg) scale(1.12);
+            color: var(--brass-lt);
+        }
+        .navbar-brand:hover { color: var(--brass-lt) !important; }
+
+        .navbar-toggler {
+            color: var(--brass-lt);
+            border: 1px solid var(--brass-semi);
+            transition: background .2s ease, transform .15s ease;
+        }
+        .navbar-toggler:hover { background: var(--brass-soft); }
+        .navbar-toggler:active { transform: scale(.94); }
+        .navbar-toggler .bi { font-size: 1.2rem; }
+
+        /* nav links — underline grow */
+        .nav-link, .admin-link {
+            position: relative;
+            color: var(--brass-lt) !important;
+            font-weight: 500;
+            font-size: .92rem;
+            border-radius: 6px;
+            transition: background .2s ease, color .2s ease, transform .15s ease;
+        }
+        .nav-link::after {
+            content: "";
+            position: absolute;
+            left: .9rem; right: .9rem; bottom: 2px;
+            height: 2px;
+            background: var(--brass);
+            transform: scaleX(0);
+            transform-origin: left;
+            transition: transform .28s cubic-bezier(.4,0,.2,1);
+            border-radius: 2px;
+        }
+        .nav-link:hover::after,
+        .nav-link.active::after { transform: scaleX(1); }
+
+        .nav-link:hover, .nav-link.active,
+        #mainNavbar .dropdown-item:hover, .admin-link:hover {
+            background: var(--brass-semi);
+            color: var(--brass-lt) !important;
+        }
+        .nav-link:active { transform: translateY(1px); }
+
+        /* dropdown caret micro-rotation */
+        .dropdown-toggle::after { transition: transform .25s ease; }
+        .dropdown-toggle.show::after,
+        .nav-item.show .dropdown-toggle::after { transform: rotate(180deg); }
+
+        /* dropdown open/close animation */
+        #mainNavbar .dropdown-menu {
+            background: var(--ink-2);
+            border: 1px solid var(--brass-semi);
+            border-radius: 8px;
+            min-width: 270px;
+            padding: .4rem;
+            box-shadow: 0 18px 40px -16px rgba(0,0,0,.55);
+            opacity: 0;
+            transform: translateY(-6px) scale(.98);
+            transform-origin: top center;
+            transition: opacity .18s ease, transform .18s ease;
+            display: block;
+            visibility: hidden;
+            pointer-events: none;
+        }
+        #mainNavbar .dropdown-menu.show {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            visibility: visible;
+            pointer-events: auto;
+        }
+
+        #mainNavbar .dropdown-menu .dropdown-item {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            color: var(--brass-lt) !important;
+            border-radius: 6px;
+            transition: background .15s ease, padding-left .15s ease, color .15s ease;
+        }
+        #mainNavbar .dropdown-menu .dropdown-item:hover {
+            padding-left: .95rem;
+            background: var(--brass-soft);
+        }
+        #mainNavbar .dropdown-menu .dropdown-item .bi {
+            transition: transform .2s ease, color .2s ease;
+        }
+        #mainNavbar .dropdown-menu .dropdown-item:hover .bi {
+            transform: scale(1.15);
+            color: var(--brass-lt);
+        }
+
+        /* staggered fade-in for dropdown items */
+        #mainNavbar .dropdown-menu.show .dropdown-item {
+            animation: dropItemIn .28s cubic-bezier(.2,.7,.2,1) both;
+        }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(1)  { animation-delay: .02s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(2)  { animation-delay: .05s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(3)  { animation-delay: .08s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(4)  { animation-delay: .11s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(5)  { animation-delay: .14s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(6)  { animation-delay: .17s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(7)  { animation-delay: .20s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(8)  { animation-delay: .23s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(9)  { animation-delay: .26s; }
+        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(10) { animation-delay: .29s; }
+        @keyframes dropItemIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+
+        .user-badge {
+            background: var(--brass-soft);
+            color: var(--brass-lt) !important;
+            border: 1px solid var(--brass-semi);
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: .76rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            padding: .4rem .7rem;
+            animation: badgeIn .5s cubic-bezier(.2,.7,.2,1) both;
+        }
+        @keyframes badgeIn {
+            from { opacity: 0; transform: translateY(-6px) scale(.92); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .logout-btn {
+            color: var(--brass-lt) !important;
+            border-color: var(--brass-semi) !important;
+            font-weight: 600;
+            font-size: .85rem;
+            transition: background .2s ease, color .2s ease, transform .15s ease, box-shadow .25s ease;
+        }
+        .logout-btn:hover {
+            background: var(--brass) !important;
+            color: var(--ink) !important;
+            border-color: var(--brass) !important;
+            box-shadow: 0 6px 18px -8px rgba(200,162,74,.7);
+            transform: translateY(-1px);
+        }
+        .logout-btn:active { transform: translateY(0) scale(.97); }
+        .logout-btn .bi { transition: transform .25s ease; }
+        .logout-btn:hover .bi { transform: translateX(3px); }
+
+        /* ===== MOBILE COLLAPSE ===== */
+        .navbar-collapse {
+            transition: opacity .2s ease;
+        }
+        @media (max-width: 991.98px) {
+            .navbar-collapse {
+                position: fixed;
+                top: 64px; left: 0; right: 0;
+                background: var(--ink);
+                padding: 1rem;
+                max-height: calc(100vh - 64px);
+                overflow-y: auto;
+                border-top: 1px solid var(--brass-semi);
+                z-index: 1050;
+            }
+            .navbar-collapse.collapsing,
+            .navbar-collapse.show {
+                animation: navDown .28s cubic-bezier(.2,.7,.2,1) both;
+            }
+            @keyframes navDown {
+                from { opacity: 0; transform: translateY(-10px); }
+                to   { opacity: 1; transform: translateY(0); }
+            }
+
+            .admin-section-title {
+                color: var(--brass);
+                font-size: 0.72rem;
+                font-weight: 800;
+                text-transform: uppercase;
+                letter-spacing: 0.16em;
+                padding: 0.5rem 0.75rem 0.3rem;
+                margin: 1.2rem 0 0.4rem;
+                border-top: 1px dashed var(--brass-semi);
+                opacity: 0.9;
+            }
+
+            .admin-link {
+                padding: 0.55rem 1rem;
+                font-size: 0.95rem;
+                transform: translateX(0);
+            }
+            .admin-link:hover { transform: translateX(4px); }
+            .admin-link .bi { transition: transform .2s ease; }
+            .admin-link:hover .bi { transform: scale(1.15); }
+
+            .user-info-mobile {
+                background: var(--brass-soft);
+                border: 1px solid var(--brass-semi);
+                padding: 0.75rem;
+                border-radius: 8px;
+                margin-top: 1.2rem;
+                animation: badgeIn .5s cubic-bezier(.2,.7,.2,1) both;
+            }
+        }
+
+        @media (min-width: 992px) {
+            .d-lg-none { display: none !important; }
+        }
+
+        /* ===== ALERTS ===== */
+        .alert {
+            border: 1px solid var(--line);
+            border-left: 3px solid var(--brass);
+            background: var(--paper-2);
+            color: var(--ink-text);
+            box-shadow: 0 1px 5px rgba(0,0,0,0.06);
+            border-radius: 6px;
+            animation: alertIn .35s cubic-bezier(.2,.7,.2,1) both;
+        }
+        @keyframes alertIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .alert-success { border-left-color: #4f7a52; }
+        .alert-danger, .alert-error { border-left-color: var(--stamp); color: var(--stamp); }
+        .alert-warning { border-left-color: var(--brass); }
+        .btn-close { filter: none; transition: transform .2s ease; }
+        .btn-close:hover { transform: rotate(90deg); }
+
+        hr.divider {
+            border-color: var(--brass-semi);
+            margin: 0.4rem 0;
+            opacity: 0.5;
+        }
+
+			/* ===== PAGE ENTRANCE ===== */
+main.container {
+    animation: pageIn .45s ease-out both;
+}
+@keyframes pageIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+        /* ===== GENERAL CONTENT TOUCHES ===== */
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: 0 6px 25px -8px rgba(31,42,58,0.18);
+            transition: box-shadow .25s ease, transform .25s ease;
+        }
+        .card:hover {
+            box-shadow: 0 12px 28px -10px rgba(31,42,58,.28);
+        }
+        .btn-primary {
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            border: none;
+            color: var(--ink);
+            font-weight: 700;
+            transition: transform .15s ease, box-shadow .25s ease, background .3s ease;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(160deg, var(--brass), var(--brass-lt));
+            color: var(--ink);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px -10px rgba(200,162,74,.55);
+        }
+        .btn-primary:active { transform: translateY(0) scale(.98); }
+
+        .table thead {
+            background: var(--paper-2);
+        }
+        .table tbody tr {
+            transition: background .15s ease;
+        }
+        .table tbody tr:hover {
+            background: var(--brass-soft);
+        }
+
+        /* ======================================================================
+           СПІЛЬНІ КОМПОНЕНТИ СТОРІНОК (page-header / section-title / empty-state)
+           ----------------------------------------------------------------------
+           Раніше кожна сторінка (crud-розділ) заново описувала свій "хедер"
+           і заголовки секцій у власному <style> - і всюди трохи по-різному.
+           Тепер це визначено ОДИН РАЗ тут, а самі сторінки просто підключають
+           готові макроси з _macros.html (page_header/section_title/empty_state).
+           Це і робить сайт єдиним цілим за виглядом.
+           ====================================================================== */
+        .page-header {
+            background: linear-gradient(135deg, var(--ink), var(--ink-2));
+            color: var(--brass-lt);
+            padding: 2.1rem 1.75rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
+            border-bottom: 4px solid var(--brass);
+        }
+        .page-header h2 {
+            margin-bottom: 0.3rem;
+            color: var(--brass-lt);
+            font-size: 1.9rem;
+        }
+        .page-header .bi { color: var(--brass); }
+        .page-header-badge {
+            background: var(--brass-soft);
+            border: 1px solid var(--brass-semi);
+            color: var(--brass-lt);
+            font-weight: 600;
+            font-size: .78rem;
+            padding: .5rem .85rem;
+        }
+
+        .section-title {
+            font-family: 'Lora', serif;
+            color: var(--heading, var(--ink));
+            position: relative;
+            padding-bottom: 0.55rem;
+        }
+        .section-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0;
+            width: 56px; height: 3px;
+            background: var(--brass);
+            border-radius: 3px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3.5rem 1.5rem;
+            color: var(--muted);
+        }
+        .empty-state .bi {
+            font-size: 3rem;
+            opacity: .3;
+            display: block;
+            margin-bottom: .75rem;
+        }
+        .empty-state-hint {
+            font-size: .85rem;
+            margin-top: .35rem;
+            opacity: .8;
+        }
+
+        /* Уніфіковані форми на всіх сторінках (раніше рамки/фокус форм-полів
+           були описані окремо в manage_accreditations.html - тепер це для всіх) */
+        .form-label { font-weight: 600; color: var(--heading, var(--ink-2)); }
+        .form-control, .form-select {
+            border-radius: 10px;
+            border: 1.5px solid var(--line);
+            padding: 0.65rem 0.9rem;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--brass);
+            box-shadow: 0 0 0 4px var(--brass-soft);
+        }
+
+        .card-header {
+            background: var(--paper-2);
+            border-bottom: 1px solid var(--line);
+        }
+
+        /* Картка з "підйомом" при наведенні - для списків карток (акредитації тощо) */
+        .hover-lift {
+            transition: all .25s ease;
+            border: 1px solid var(--line);
+        }
+        .hover-lift:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px -10px rgba(31,42,58,.25);
+        }
+
+        /* Компактний бейдж лічильника (наприклад "12 студентів") у заголовках секцій */
+        .count-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: .35rem;
+            background: var(--brass-soft);
+            border: 1px solid var(--brass-semi);
+            color: var(--heading, var(--ink-2));
+            font-weight: 700;
+            font-size: .78rem;
+            padding: .3rem .7rem;
+            border-radius: 999px;
+        }
+
+        /* ===== ТЕМНА ТЕМА ===== */
+        html[data-theme="dark"] {
+            --paper:      #12181f;
+            --paper-2:    #1a222b;
+            --ink-text:   #e7e2d6;
+            --muted:      #9aa3ad;
+            --line:       rgba(231,226,214,.14);
+            --brass-soft: rgba(200,162,74,.10);
+            /* --ink/--ink-2 навмисно НЕ перевизначаємо тут - вони й далі
+               потрібні темними для навбару/шапки сторінки/кнопок на
+               золотому фоні. Для тексту, який раніше спирався на
+               --ink/--ink-2 і лежить прямо на фоні сторінки (заголовки
+               секцій, підписи полів форм) - окрема змінна --heading,
+               яка світлішає лише в темній темі. */
+            --heading:    var(--brass-lt);
+        }
+        html[data-theme="dark"] body { background: var(--paper); color: var(--ink-text); }
+        html[data-theme="dark"] a { color: var(--brass-lt); }
+        html[data-theme="dark"] .card,
+        html[data-theme="dark"] .dropdown-menu,
+        html[data-theme="dark"] .modal-content {
+            background-color: var(--paper-2);
+            color: var(--ink-text);
+            border-color: var(--line);
+        }
+        html[data-theme="dark"] .table {
+            color: var(--ink-text);
+            --bs-table-color: var(--ink-text);
+            --bs-table-striped-color: var(--ink-text);
+            --bs-table-hover-color: var(--ink-text);
+            --bs-table-bg: transparent;
+            --bs-table-striped-bg: rgba(231,226,214,.04);
+            --bs-table-hover-bg: rgba(231,226,214,.07);
+            border-color: var(--line);
+        }
+        html[data-theme="dark"] .table > :not(caption) > * > * { border-bottom-color: var(--line); color: var(--ink-text); }
+        html[data-theme="dark"] .form-control,
+        html[data-theme="dark"] .form-select {
+            background-color: var(--paper-2);
+            color: var(--ink-text);
+            border-color: var(--line);
+        }
+        html[data-theme="dark"] .form-control:focus,
+        html[data-theme="dark"] .form-select:focus {
+            background-color: var(--paper-2);
+            color: var(--ink-text);
+        }
+        html[data-theme="dark"] .form-control::placeholder { color: var(--muted); }
+
+        /* Ці класи (форми/картки/чіпи на сторінках "Студенти" і
+           "Користувачі") мають фон, жорстко прописаний як #fff у
+           власному <style> цих сторінок, а не через змінну --paper -
+           тому тут вони перевизначаються окремо. Специфічність
+           селектора з html[data-theme="dark"] вища за звичайний
+           клас, тому перекриває навіть попри те, що правило сторінки
+           йде в розмітці пізніше. */
+        html[data-theme="dark"] .input-group-text,
+        html[data-theme="dark"] .search-box input,
+        html[data-theme="dark"] .user-card,
+        html[data-theme="dark"] .table-wrap,
+        html[data-theme="dark"] .btn-chip,
+        html[data-theme="dark"] .btn-military,
+        html[data-theme="dark"] .student-card,
+        html[data-theme="dark"] .pagination .page-link {
+            background: var(--paper-2);
+            color: var(--ink-text);
+            border-color: var(--line);
+        }
+        html[data-theme="dark"] .pagination .page-item.disabled .page-link {
+            background: var(--paper-2);
+            color: var(--muted);
+        }
+        html[data-theme="dark"] .btn-primary,
+        html[data-theme="dark"] .btn-add {
+            color: var(--ink);
+            --bs-btn-color: var(--ink);
+            --bs-btn-hover-color: var(--ink);
+            --bs-btn-active-color: var(--ink);
+        }
+        html[data-theme="dark"] .btn-chip--edit,
+        html[data-theme="dark"] .btn-chip--activities {
+            color: var(--brass-lt);
+        }
+        html[data-theme="dark"] .text-ua {
+            background: rgba(200,162,74,.08);
+            color: var(--ink-text);
+        }
+        html[data-theme="dark"] .text-en {
+            background: rgba(74,110,168,.12);
+            color: var(--ink-text);
+        }
+        html[data-theme="dark"] .text-muted { color: var(--muted) !important; }
+        html[data-theme="dark"] .btn-outline-secondary {
+            color: var(--ink-text);
+            border-color: var(--line);
+            --bs-btn-color: var(--ink-text);
+            --bs-btn-border-color: var(--line);
+            --bs-btn-hover-color: var(--ink);
+        }
+        html[data-theme="dark"] .btn-outline-secondary:hover { background-color: var(--paper-2); }
+
+        /* Bootstrap-утиліта .text-dark ставить колір із !important -
+           щоб перебити її в темній темі, теж потрібен !important. */
+        html[data-theme="dark"] .text-dark { color: var(--ink-text) !important; }
+
+        /* Контекстні варіанти таблиць (table-light/secondary/dark/success/
+           warning/danger) - Bootstrap задає їм фон і колір через власні
+           --bs-table-* змінні окремо для кожного варіанту, тому кожен
+           перевизначається окремо. */
+        html[data-theme="dark"] .table-light {
+            --bs-table-bg: var(--paper-2);
+            --bs-table-color: var(--ink-text);
+            --bs-table-border-color: var(--line);
+        }
+        html[data-theme="dark"] .table-secondary {
+            --bs-table-bg: rgba(231,226,214,.10);
+            --bs-table-color: var(--ink-text);
+            --bs-table-border-color: var(--line);
+        }
+        html[data-theme="dark"] .table-dark {
+            --bs-table-bg: var(--ink);
+            --bs-table-color: #f4efe3;
+        }
+        html[data-theme="dark"] .table-success {
+            --bs-table-bg: rgba(79,122,82,.25);
+            --bs-table-color: #bfe3c2;
+            --bs-table-border-color: rgba(79,122,82,.4);
+        }
+        html[data-theme="dark"] .table-warning {
+            --bs-table-bg: rgba(200,162,74,.20);
+            --bs-table-color: var(--brass-lt);
+            --bs-table-border-color: var(--brass-semi);
+        }
+        html[data-theme="dark"] .table-danger {
+            --bs-table-bg: rgba(162,59,46,.22);
+            --bs-table-color: #f0b3ab;
+            --bs-table-border-color: rgba(162,59,46,.4);
+        }
+
+        /* Списки (list-group) - Bootstrap за замовчуванням дає їм білий
+           фон через --bs-list-group-bg. */
+        html[data-theme="dark"] .list-group-item {
+            background-color: var(--paper-2);
+            color: var(--ink-text);
+            border-color: var(--line);
+        }
+
+        /* ===== Кнопка вибору файлу (input[type=file]) - однаковий вигляд
+           в стилі сайту, в обох темах (не лише темній) ===== */
+        input[type="file"] { color: var(--ink-text); }
+        input[type="file"]::file-selector-button,
+        input[type="file"]::-webkit-file-upload-button {
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            color: var(--ink);
+            border: none;
+            border-radius: 8px;
+            padding: .45rem .9rem;
+            font-weight: 600;
+            font-size: .85rem;
+            margin-right: .75rem;
+            cursor: pointer;
+            transition: background .2s ease, transform .15s ease;
+        }
+        input[type="file"]::file-selector-button:hover,
+        input[type="file"]::-webkit-file-upload-button:hover {
+            background: linear-gradient(160deg, var(--brass), var(--brass-lt));
+        }
+        html[data-theme="dark"] input[type="file"] {
+            background-color: var(--paper-2);
+            border-color: var(--line);
+        }
+
+        /* Стандартні кольорові кнопки Bootstrap (warning/info/danger/
+           secondary) - у світлій темі яскраві жовтий/блакитний/червоний
+           кольори виглядають нормально на теплому кремовому фоні, але на
+           темному фоні ті самі насичені кольори надто "світяться"/
+           різонуть око. Тому в темній темі вони притишені, в стилі
+           золотисто-чорнильної палітри сайту, а не сирі кольори Bootstrap. */
+        html[data-theme="dark"] .btn-warning {
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            border-color: var(--brass);
+            color: var(--ink);
+            --bs-btn-bg: var(--brass);
+            --bs-btn-color: var(--ink);
+            --bs-btn-hover-color: var(--ink);
+            --bs-btn-active-color: var(--ink);
+        }
+        html[data-theme="dark"] .btn-info {
+            background: rgba(74,110,168,.28);
+            border-color: rgba(74,110,168,.5);
+            color: #a9c2e8;
+            --bs-btn-bg: rgba(74,110,168,.28);
+            --bs-btn-border-color: rgba(74,110,168,.5);
+            --bs-btn-color: #a9c2e8;
+            --bs-btn-hover-color: #12181f;
+            --bs-btn-hover-bg: #a9c2e8;
+        }
+        html[data-theme="dark"] .btn-danger {
+            background: var(--stamp-semi);
+            border-color: var(--stamp);
+            color: #f5c9c2;
+            --bs-btn-bg: var(--stamp-semi);
+            --bs-btn-border-color: var(--stamp);
+            --bs-btn-color: #f5c9c2;
+            --bs-btn-hover-bg: var(--stamp);
+            --bs-btn-hover-color: #fff;
+        }
+        html[data-theme="dark"] .btn-secondary {
+            background: var(--paper-2);
+            border-color: var(--line);
+            color: var(--ink-text);
+            --bs-btn-bg: var(--paper-2);
+            --bs-btn-border-color: var(--line);
+            --bs-btn-color: var(--ink-text);
+        }
+        html[data-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
+        html[data-theme="dark"] .alert-light { background-color: var(--paper-2); color: var(--ink-text); border-color: var(--line); }
+        html[data-theme="dark"] .bg-light { background-color: var(--paper-2) !important; color: var(--ink-text); }
+        html[data-theme="dark"] .border { border-color: var(--line) !important; }
+        html[data-theme="dark"] hr.divider,
+        html[data-theme="dark"] hr { border-color: var(--line); opacity: 1; }
+        html[data-theme="dark"] .accordion-item,
+        html[data-theme="dark"] .accordion-button {
+            background-color: var(--paper-2);
+            color: var(--ink-text);
+            border-color: var(--line);
+        }
+        html[data-theme="dark"] .accordion-button:not(.collapsed) {
+            background-color: var(--brass-soft);
+            color: var(--ink-text);
+        }
+        html[data-theme="dark"] .accordion-button::after { filter: invert(1) grayscale(100%) brightness(200%); }
+        html[data-theme="dark"] .theme-toggle-btn { color: var(--ink-text); border-color: rgba(244,239,227,.4); }
+
+        .theme-toggle-btn {
+            background: transparent;
+            border: 1px solid rgba(244,239,227,.4);
+            color: #f4efe3;
+            border-radius: 8px;
+            padding: .3rem .6rem;
+            line-height: 1;
+        }
+        .theme-toggle-btn:hover { background: rgba(244,239,227,.12); }
