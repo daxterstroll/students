@@ -1,0 +1,131 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Імпорт оцінок: зіставлення{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-card-checklist', 'Імпорт оцінок: зіставлення', state.filename ~ ' → ' ~ (group.name if group else '')) }}
+
+    <div class="alert alert-light border small">
+        <span class="badge bg-success-subtle text-success-emphasis me-1">зелений</span> - впевнений автоматичний збіг;
+        <span class="badge bg-warning-subtle text-warning-emphasis mx-1">жовтий</span> - найкраще припущення, перевірте;
+        <span class="badge bg-danger-subtle text-danger-emphasis mx-1">червоний</span> - збіг не знайдено, оберіть вручну або лишіть «пропустити».
+    </div>
+
+    <form method="POST">
+
+        <div class="card mb-4">
+            <div class="card-header py-3">
+                <h5 class="mb-0 section-title"><i class="bi bi-book me-2"></i>Предмети ({{ subj_rows|length }} колонок у файлі)</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th style="width:50%">Колонка з Excel</th><th>Предмет у базі</th></tr></thead>
+                        <tbody>
+                            {% for r in subj_rows %}
+                            <tr class="{% if r.status == 'auto' %}table-success{% elif r.status == 'suggest' %}table-warning{% else %}table-danger{% endif %}">
+                                <td class="small">{{ r.title }}</td>
+                                <td>
+                                    <select name="subject_{{ r.i }}" class="form-select form-select-sm js-unique-select js-subject-select">
+                                        <option value="">— пропустити цю колонку —</option>
+                                        {% for s in db_subjects %}
+                                        <option value="{{ s.id }}" {% if r.match_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header py-3">
+                <h5 class="mb-0 section-title"><i class="bi bi-people me-2"></i>Студенти ({{ stud_rows|length }} рядків у файлі)</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th style="width:50%">ПІБ з Excel</th><th>Студент у базі</th></tr></thead>
+                        <tbody>
+                            {% for r in stud_rows %}
+                            <tr class="{% if r.status == 'auto' %}table-success{% elif r.status == 'suggest' %}table-warning{% else %}table-danger{% endif %}">
+                                <td class="small">{{ r.name }}</td>
+                                <td>
+                                    <select name="student_{{ r.i }}" class="form-select form-select-sm js-unique-select js-student-select">
+                                        <option value="">— пропустити цей рядок —</option>
+                                        {% for s in db_students %}
+                                        <option value="{{ s.id }}" {% if r.match_id == s.id %}selected{% endif %}>{{ s.full_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Попередній перегляд</button>
+            <a href="{{ url_for('import_grades.upload') }}" class="btn btn-outline-secondary">Скасувати</a>
+        </div>
+    </form>
+
+    <div class="alert alert-light border small mt-3">
+        <i class="bi bi-lightbulb me-1"></i>Якщо якогось студента немає в базі (наприклад, у відомості є відрахований) - просто залиште для нього «пропустити». Якщо ПІБ у базі з помилкою - відкрийте картку студента в сусідній вкладці, виправте, і оновіть цю сторінку (F5): зіставлення перерахується.
+    </div>
+
+    <script>
+    (function () {
+        // Не дозволяє обрати один і той самий предмет/студента в базі
+        // для двох різних колонок/рядків Excel одночасно: щойно
+        // значення обрано в одному списку, воно ховається з усіх
+        // інших списків тієї ж групи (предмети окремо, студенти окремо).
+        function enforceUnique(selects) {
+            const chosen = new Set(
+                Array.from(selects).map(s => s.value).filter(v => v !== '')
+            );
+            selects.forEach(select => {
+                const myValue = select.value;
+                Array.from(select.options).forEach(opt => {
+                    if (opt.value === '') return; // "пропустити" завжди доступне
+                    const takenByOther = chosen.has(opt.value) && opt.value !== myValue;
+                    opt.hidden = takenByOther;
+                });
+            });
+        }
+
+        function setupGroup(selector) {
+            const selects = document.querySelectorAll(selector);
+            if (!selects.length) return;
+
+            // Якщо автозіставлення випадково обрало той самий елемент
+            // у двох списках одразу - лишаємо вибір у першому, решту
+            // скидаємо на "пропустити", щоб не було прихованого конфлікту.
+            const seen = new Set();
+            selects.forEach(select => {
+                if (select.value && seen.has(select.value)) {
+                    select.value = '';
+                } else if (select.value) {
+                    seen.add(select.value);
+                }
+            });
+
+            enforceUnique(selects);
+            selects.forEach(select => {
+                select.addEventListener('change', () => enforceUnique(selects));
+            });
+        }
+
+        setupGroup('.js-subject-select');
+        setupGroup('.js-student-select');
+    })();
+    </script>
+
+</div>
+{% endblock %}
