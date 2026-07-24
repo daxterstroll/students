@@ -28,6 +28,7 @@ import pandas as pd
 import json
 import uuid
 import re
+import threading
 from openpyxl import load_workbook
 from rapidfuzz import process, fuzz
 from deep_translator import GoogleTranslator
@@ -1878,10 +1879,73 @@ def import_subjects():
     return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
 
 
+# ============================================================
+# Масова генерація документів у фоні - щоб не тримати HTTP-запит
+# (і воркер waitress) заблокованим на весь час генерації, коли
+# студентів у групі багато. Прогрес зберігається в пам'яті процесу
+# (той самий підхід, що й _SESSIONS у office_editor.py) і опитується
+# сторінкою прогресу через AJAX, поки не завершиться.
+# ============================================================
+_JOBS = {}
+_JOBS_LOCK = threading.Lock()
+_JOB_TTL_SECONDS = 3 * 3600
+
+
+def _cleanup_old_jobs():
+    now = time.time()
+    with _JOBS_LOCK:
+        stale = [jid for jid, j in _JOBS.items() if now - j['started_at'] > _JOB_TTL_SECONDS]
+        for jid in stale:
+            del _JOBS[jid]
+
+
+def _run_generation_job(job_id, students_data, selected_template, batch_id, user_id, username, group_name, birth_year):
+    """Виконується в окремому потоці: генерує документи по одному,
+    оновлюючи прогрес у _JOBS[job_id] після кожного студента - навіть
+    якщо один документ впаде з помилкою, решта продовжують генеруватись."""
+    job = _JOBS[job_id]
+    for student_dict, military_dict in students_data:
+        with _JOBS_LOCK:
+            job['current_name'] = f"{student_dict.get('last_name_UA','')} {student_dict.get('first_name_UA','')}"
+        filename = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
+        full_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
+        try:
+            gen_doc(student_dict, military_dict, template=selected_template, out=full_path, user_name=username)
+            doc_id = office_editor.create_editing_session(full_path, filename, user_id, batch_id=batch_id)
+            with _JOBS_LOCK:
+                job['succeeded'].append({
+                    'doc_id': doc_id,
+                    'name': f"{student_dict['last_name_UA']} {student_dict['first_name_UA']}",
+                    'filename': filename,
+                })
+        except Exception as e:
+            logger.error(f"Помилка при генерації документа для {student_dict.get('last_name_UA', '')}: {e}", exc_info=True)
+            with _JOBS_LOCK:
+                job['failed'].append({
+                    'name': f"{student_dict.get('last_name_UA','')} {student_dict.get('first_name_UA','')}",
+                    'error': str(e),
+                })
+        finally:
+            with _JOBS_LOCK:
+                job['done'] += 1
+
+    with _JOBS_LOCK:
+        job['complete'] = True
+        job['current_name'] = ''
+
+    log_action(
+        username,
+        f"масова генерація документів: {group_name}",
+        details=f"шаблон: {selected_template}, рік нар.: {birth_year or 'всі'}, "
+                f"успішно: {len(job['succeeded'])}, з помилкою: {len(job['failed'])}"
+    )
+
+
 @admin_bp.route('/admin/generate_group_docs', methods=['GET', 'POST'])
 @permission_required('group_export')
 def generate_group_docs():
-    """Генерує .docx-документи (за обраним шаблоном) для всіх студентів, що підпадають під фільтр (група і/або рік народження), і відкриває сторінку перегляду/редагування кожного в ONLYOFFICE перед завантаженням підсумкового ZIP-архіву (routes/office_editor.py)."""
+    """Генерує .docx-документи (за обраним шаблоном) для всіх студентів, що підпадають під фільтр (група і/або рік народження) у фоновому потоці, показуючи прогрес-бар, а потім відкриває сторінку перегляду/редагування кожного в ONLYOFFICE перед завантаженням підсумкового ZIP-архіву (routes/office_editor.py)."""
+    _cleanup_old_jobs()
     group_id = request.args.get('group_id', type=int) if request.method == 'GET' else request.form.get('group_id', type=int)
     birth_year = request.args.get('birth_year', type=int) if request.method == 'GET' else request.form.get('birth_year', type=int)
     selected_template = request.args.get('template', '') if request.method == 'GET' else request.form.get('template', '')
@@ -1935,46 +1999,82 @@ def generate_group_docs():
         group_name = students[0]['group_name'] if students[0]['group_name'] else f"Група_{group_id}"
 
     batch_id = office_editor.new_batch_id()
-    items = []
 
-    try:
-        for student in students:
-            student_dict = dict(student)
-            military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
-            military_dict = dict(military) if military else {}
-            filename = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
-            full_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
-            try:
-                gen_doc(student_dict, military_dict, template=selected_template, out=full_path,
-                        user_name=current_username())
-                doc_id = office_editor.create_editing_session(
-                    full_path, filename, session['user_id'], batch_id=batch_id
-                )
-                items.append({
-                    'doc_id': doc_id,
-                    'name': f"{student_dict['last_name_UA']} {student_dict['first_name_UA']}",
-                    'filename': filename,
-                })
-            except Exception as e:
-                logger.error(f"Ошибка при генерации документа для {student_dict.get('last_name_UA', '')}: {e}")
-                continue
+    # Забираємо всі дані студентів (і військові дані) заздалегідь, поки
+    # з'єднання з базою відкрите в цьому запиті - фоновий потік більше
+    # не звертатиметься до conn з цього обробника (SQLite-з'єднання
+    # прив'язане до потоку, у якому було створене).
+    students_data = []
+    for student in students:
+        student_dict = dict(student)
+        military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
+        students_data.append((student_dict, dict(military) if military else {}))
+    conn.close()
 
-        log_action(
-            current_username(),
-            f"масова генерація документів: {group_name}",
-            details=f"шаблон: {selected_template}, рік нар.: {birth_year or 'всі'}, студентів: {len(students)}"
-        )
-    finally:
-        conn.close()
+    job_id = uuid.uuid4().hex
+    with _JOBS_LOCK:
+        _JOBS[job_id] = {
+            'total': len(students_data),
+            'done': 0,
+            'current_name': '',
+            'succeeded': [],
+            'failed': [],
+            'complete': False,
+            'batch_id': batch_id,
+            'group_name': group_name,
+            'started_at': time.time(),
+        }
 
-    if not items:
+    thread = threading.Thread(
+        target=_run_generation_job,
+        args=(job_id, students_data, selected_template, batch_id, session['user_id'],
+              current_username(), group_name, birth_year),
+        daemon=True,
+    )
+    thread.start()
+
+    return render_template('group_generate_progress.html', job_id=job_id, group_name=group_name, total=len(students_data))
+
+
+@admin_bp.route('/admin/generate_group_docs/status/<job_id>')
+@permission_required('group_export')
+def generate_group_docs_status(job_id):
+    """JSON-статус фонової генерації - опитується сторінкою прогресу через AJAX."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+        if not job:
+            return {'error': 'not_found'}, 404
+        return {
+            'total': job['total'],
+            'done': job['done'],
+            'current_name': job['current_name'],
+            'complete': job['complete'],
+            'succeeded_count': len(job['succeeded']),
+            'failed_count': len(job['failed']),
+        }
+
+
+@admin_bp.route('/admin/generate_group_docs/result/<job_id>')
+@permission_required('group_export')
+def generate_group_docs_result(job_id):
+    """Показує підсумок завершеної фонової генерації: перелік готових документів (з переходом у ONLYOFFICE) і, за наявності, список тих, що не вдалося згенерувати."""
+    with _JOBS_LOCK:
+        job = _JOBS.get(job_id)
+    if not job or not job['complete']:
+        flash('Завдання генерації не знайдено або ще не завершено', 'warning')
+        return redirect(url_for('admin.group_export'))
+
+    if not job['succeeded']:
         flash('Не вдалося згенерувати жодного документа', 'danger')
         return redirect(url_for('admin.group_export'))
 
-    # Перегляд/редагування кожного документа в ONLYOFFICE перед
-    # завантаженням фінального ZIP-архіву (замість негайного
-    # завантаження "наосліп").
-    return render_template('group_docs_preview.html', items=items, batch_id=batch_id, group_name=group_name)
+    return render_template(
+        'group_docs_preview.html',
+        items=job['succeeded'],
+        failed=job['failed'],
+        batch_id=job['batch_id'],
+        group_name=job['group_name'],
+    )
 
 
 @admin_bp.route('/admin/archive/<int:group_id>', methods=['POST'])

@@ -10,451 +10,17 @@
     <link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
 	<link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
 
-    <style>
-        :root {
-            --ink:        #0e1b2c;
-            --ink-2:      #16283f;
-            --paper:      #f4efe3;
-            --paper-2:    #e9e0cc;
-            --ink-text:   #1f2a3a;
-            --muted:      #8a8071;
-            --brass:      #c8a24a;
-            --brass-lt:   #e3c87a;
-            --brass-soft: rgba(200,162,74,.16);
-            --brass-semi: rgba(200,162,74,.32);
-            --stamp:      #a23b2e;
-            --line:       rgba(31,42,58,.16);
-        }
-
-        * { box-sizing: border-box; }
-
-        html { scroll-behavior: smooth; }
-
-        body {
-            background: var(--paper);
-            color: var(--ink-text);
-            font-family: 'Manrope', sans-serif;
-            padding-top: 64px;
-        }
-
-        h1, h2, h3, h4, h5 { font-family: 'Lora', serif; color: var(--ink-text); }
-        a { color: var(--ink-text); }
-        ::selection { background: var(--brass-semi); }
-
-        /* ===== NAVBAR ===== */
-        .navbar {
-            background: var(--ink);
-            box-shadow: 0 2px 14px rgba(0,0,0,.25);
-            border-bottom: 1px solid rgba(200,162,74,.18);
-            min-height: 64px;
-            transition: box-shadow .3s ease;
-        }
-        .navbar.is-scrolled {
-            box-shadow: 0 4px 22px rgba(0,0,0,.4);
-        }
-
-        .navbar-brand {
-            color: var(--brass-lt) !important;
-            font-family: 'Lora', serif;
-            font-weight: 700;
-            font-size: 1.15rem;
-            letter-spacing: .01em;
-            display: flex;
-            align-items: center;
-            gap: 0.55rem;
-            transition: color .2s ease, transform .2s ease;
-        }
-        .navbar-brand .bi {
-            color: var(--brass);
-            font-size: 1.25rem;
-            transition: transform .35s cubic-bezier(.34,1.56,.64,1), color .2s ease;
-        }
-        .navbar-brand:hover .bi {
-            transform: rotate(-12deg) scale(1.12);
-            color: var(--brass-lt);
-        }
-        .navbar-brand:hover { color: var(--brass-lt) !important; }
-
-        .navbar-toggler {
-            color: var(--brass-lt);
-            border: 1px solid var(--brass-semi);
-            transition: background .2s ease, transform .15s ease;
-        }
-        .navbar-toggler:hover { background: var(--brass-soft); }
-        .navbar-toggler:active { transform: scale(.94); }
-        .navbar-toggler .bi { font-size: 1.2rem; }
-
-        /* nav links — underline grow */
-        .nav-link, .admin-link {
-            position: relative;
-            color: var(--brass-lt) !important;
-            font-weight: 500;
-            font-size: .92rem;
-            border-radius: 6px;
-            transition: background .2s ease, color .2s ease, transform .15s ease;
-        }
-        .nav-link::after {
-            content: "";
-            position: absolute;
-            left: .9rem; right: .9rem; bottom: 2px;
-            height: 2px;
-            background: var(--brass);
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: transform .28s cubic-bezier(.4,0,.2,1);
-            border-radius: 2px;
-        }
-        .nav-link:hover::after,
-        .nav-link.active::after { transform: scaleX(1); }
-
-        .nav-link:hover, .nav-link.active,
-        #mainNavbar .dropdown-item:hover, .admin-link:hover {
-            background: var(--brass-semi);
-            color: var(--brass-lt) !important;
-        }
-        .nav-link:active { transform: translateY(1px); }
-
-        /* dropdown caret micro-rotation */
-        .dropdown-toggle::after { transition: transform .25s ease; }
-        .dropdown-toggle.show::after,
-        .nav-item.show .dropdown-toggle::after { transform: rotate(180deg); }
-
-        /* dropdown open/close animation */
-        #mainNavbar .dropdown-menu {
-            background: var(--ink-2);
-            border: 1px solid var(--brass-semi);
-            border-radius: 8px;
-            min-width: 270px;
-            padding: .4rem;
-            box-shadow: 0 18px 40px -16px rgba(0,0,0,.55);
-            opacity: 0;
-            transform: translateY(-6px) scale(.98);
-            transform-origin: top center;
-            transition: opacity .18s ease, transform .18s ease;
-            display: block;
-            visibility: hidden;
-            pointer-events: none;
-        }
-        #mainNavbar .dropdown-menu.show {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-            visibility: visible;
-            pointer-events: auto;
-        }
-
-        #mainNavbar .dropdown-menu .dropdown-item {
-            display: flex;
-            align-items: center;
-            gap: 0.6rem;
-            color: var(--brass-lt) !important;
-            border-radius: 6px;
-            transition: background .15s ease, padding-left .15s ease, color .15s ease;
-        }
-        #mainNavbar .dropdown-menu .dropdown-item:hover {
-            padding-left: .95rem;
-            background: var(--brass-soft);
-        }
-        #mainNavbar .dropdown-menu .dropdown-item .bi {
-            transition: transform .2s ease, color .2s ease;
-        }
-        #mainNavbar .dropdown-menu .dropdown-item:hover .bi {
-            transform: scale(1.15);
-            color: var(--brass-lt);
-        }
-
-        /* staggered fade-in for dropdown items */
-        #mainNavbar .dropdown-menu.show .dropdown-item {
-            animation: dropItemIn .28s cubic-bezier(.2,.7,.2,1) both;
-        }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(1)  { animation-delay: .02s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(2)  { animation-delay: .05s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(3)  { animation-delay: .08s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(4)  { animation-delay: .11s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(5)  { animation-delay: .14s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(6)  { animation-delay: .17s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(7)  { animation-delay: .20s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(8)  { animation-delay: .23s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(9)  { animation-delay: .26s; }
-        #mainNavbar .dropdown-menu.show .dropdown-item:nth-child(10) { animation-delay: .29s; }
-        @keyframes dropItemIn {
-            from { opacity: 0; transform: translateX(-6px); }
-            to   { opacity: 1; transform: translateX(0); }
-        }
-
-        .user-badge {
-            background: var(--brass-soft);
-            color: var(--brass-lt) !important;
-            border: 1px solid var(--brass-semi);
-            font-weight: 600;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: .76rem;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-            padding: .4rem .7rem;
-            animation: badgeIn .5s cubic-bezier(.2,.7,.2,1) both;
-        }
-        @keyframes badgeIn {
-            from { opacity: 0; transform: translateY(-6px) scale(.92); }
-            to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        .logout-btn {
-            color: var(--brass-lt) !important;
-            border-color: var(--brass-semi) !important;
-            font-weight: 600;
-            font-size: .85rem;
-            transition: background .2s ease, color .2s ease, transform .15s ease, box-shadow .25s ease;
-        }
-        .logout-btn:hover {
-            background: var(--brass) !important;
-            color: var(--ink) !important;
-            border-color: var(--brass) !important;
-            box-shadow: 0 6px 18px -8px rgba(200,162,74,.7);
-            transform: translateY(-1px);
-        }
-        .logout-btn:active { transform: translateY(0) scale(.97); }
-        .logout-btn .bi { transition: transform .25s ease; }
-        .logout-btn:hover .bi { transform: translateX(3px); }
-
-        /* ===== MOBILE COLLAPSE ===== */
-        .navbar-collapse {
-            transition: opacity .2s ease;
-        }
-        @media (max-width: 991.98px) {
-            .navbar-collapse {
-                position: fixed;
-                top: 64px; left: 0; right: 0;
-                background: var(--ink);
-                padding: 1rem;
-                max-height: calc(100vh - 64px);
-                overflow-y: auto;
-                border-top: 1px solid var(--brass-semi);
-                z-index: 1050;
-            }
-            .navbar-collapse.collapsing,
-            .navbar-collapse.show {
-                animation: navDown .28s cubic-bezier(.2,.7,.2,1) both;
-            }
-            @keyframes navDown {
-                from { opacity: 0; transform: translateY(-10px); }
-                to   { opacity: 1; transform: translateY(0); }
-            }
-
-            .admin-section-title {
-                color: var(--brass);
-                font-size: 0.72rem;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 0.16em;
-                padding: 0.5rem 0.75rem 0.3rem;
-                margin: 1.2rem 0 0.4rem;
-                border-top: 1px dashed var(--brass-semi);
-                opacity: 0.9;
-            }
-
-            .admin-link {
-                padding: 0.55rem 1rem;
-                font-size: 0.95rem;
-                transform: translateX(0);
-            }
-            .admin-link:hover { transform: translateX(4px); }
-            .admin-link .bi { transition: transform .2s ease; }
-            .admin-link:hover .bi { transform: scale(1.15); }
-
-            .user-info-mobile {
-                background: var(--brass-soft);
-                border: 1px solid var(--brass-semi);
-                padding: 0.75rem;
-                border-radius: 8px;
-                margin-top: 1.2rem;
-                animation: badgeIn .5s cubic-bezier(.2,.7,.2,1) both;
-            }
-        }
-
-        @media (min-width: 992px) {
-            .d-lg-none { display: none !important; }
-        }
-
-        /* ===== ALERTS ===== */
-        .alert {
-            border: 1px solid var(--line);
-            border-left: 3px solid var(--brass);
-            background: var(--paper-2);
-            color: var(--ink-text);
-            box-shadow: 0 1px 5px rgba(0,0,0,0.06);
-            border-radius: 6px;
-            animation: alertIn .35s cubic-bezier(.2,.7,.2,1) both;
-        }
-        @keyframes alertIn {
-            from { opacity: 0; transform: translateY(-8px); }
-            to   { opacity: 1; transform: translateY(0); }
-        }
-        .alert-success { border-left-color: #4f7a52; }
-        .alert-danger, .alert-error { border-left-color: var(--stamp); color: var(--stamp); }
-        .alert-warning { border-left-color: var(--brass); }
-        .btn-close { filter: none; transition: transform .2s ease; }
-        .btn-close:hover { transform: rotate(90deg); }
-
-        hr.divider {
-            border-color: var(--brass-semi);
-            margin: 0.4rem 0;
-            opacity: 0.5;
-        }
-
-			/* ===== PAGE ENTRANCE ===== */
-main.container {
-    animation: pageIn .45s ease-out both;
-}
-@keyframes pageIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
-}
-@media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; }
-}
-
-        /* ===== GENERAL CONTENT TOUCHES ===== */
-        .card {
-            border: none;
-            border-radius: 16px;
-            box-shadow: 0 6px 25px -8px rgba(31,42,58,0.18);
-            transition: box-shadow .25s ease, transform .25s ease;
-        }
-        .card:hover {
-            box-shadow: 0 12px 28px -10px rgba(31,42,58,.28);
-        }
-        .btn-primary {
-            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
-            border: none;
-            color: var(--ink);
-            font-weight: 700;
-            transition: transform .15s ease, box-shadow .25s ease, background .3s ease;
-        }
-        .btn-primary:hover {
-            background: linear-gradient(160deg, var(--brass), var(--brass-lt));
-            color: var(--ink);
-            transform: translateY(-1px);
-            box-shadow: 0 10px 22px -10px rgba(200,162,74,.55);
-        }
-        .btn-primary:active { transform: translateY(0) scale(.98); }
-
-        .table thead {
-            background: var(--paper-2);
-        }
-        .table tbody tr {
-            transition: background .15s ease;
-        }
-        .table tbody tr:hover {
-            background: var(--brass-soft);
-        }
-
-        /* ======================================================================
-           СПІЛЬНІ КОМПОНЕНТИ СТОРІНОК (page-header / section-title / empty-state)
-           ----------------------------------------------------------------------
-           Раніше кожна сторінка (crud-розділ) заново описувала свій "хедер"
-           і заголовки секцій у власному <style> - і всюди трохи по-різному.
-           Тепер це визначено ОДИН РАЗ тут, а самі сторінки просто підключають
-           готові макроси з _macros.html (page_header/section_title/empty_state).
-           Це і робить сайт єдиним цілим за виглядом.
-           ====================================================================== */
-        .page-header {
-            background: linear-gradient(135deg, var(--ink), var(--ink-2));
-            color: var(--brass-lt);
-            padding: 2.1rem 1.75rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            box-shadow: 0 10px 30px -10px rgba(0,0,0,0.4);
-            border-bottom: 4px solid var(--brass);
-        }
-        .page-header h2 {
-            margin-bottom: 0.3rem;
-            color: var(--brass-lt);
-            font-size: 1.9rem;
-        }
-        .page-header .bi { color: var(--brass); }
-        .page-header-badge {
-            background: var(--brass-soft);
-            border: 1px solid var(--brass-semi);
-            color: var(--brass-lt);
-            font-weight: 600;
-            font-size: .78rem;
-            padding: .5rem .85rem;
-        }
-
-        .section-title {
-            font-family: 'Lora', serif;
-            color: var(--ink);
-            position: relative;
-            padding-bottom: 0.55rem;
-        }
-        .section-title::after {
-            content: '';
-            position: absolute;
-            bottom: 0; left: 0;
-            width: 56px; height: 3px;
-            background: var(--brass);
-            border-radius: 3px;
-        }
-
-        .empty-state {
-            text-align: center;
-            padding: 3.5rem 1.5rem;
-            color: var(--muted);
-        }
-        .empty-state .bi {
-            font-size: 3rem;
-            opacity: .3;
-            display: block;
-            margin-bottom: .75rem;
-        }
-        .empty-state-hint {
-            font-size: .85rem;
-            margin-top: .35rem;
-            opacity: .8;
-        }
-
-        /* Уніфіковані форми на всіх сторінках (раніше рамки/фокус форм-полів
-           були описані окремо в manage_accreditations.html - тепер це для всіх) */
-        .form-label { font-weight: 600; color: var(--ink-2); }
-        .form-control, .form-select {
-            border-radius: 10px;
-            border: 1.5px solid var(--line);
-            padding: 0.65rem 0.9rem;
-        }
-        .form-control:focus, .form-select:focus {
-            border-color: var(--brass);
-            box-shadow: 0 0 0 4px var(--brass-soft);
-        }
-
-        .card-header {
-            background: var(--paper-2);
-            border-bottom: 1px solid var(--line);
-        }
-
-        /* Картка з "підйомом" при наведенні - для списків карток (акредитації тощо) */
-        .hover-lift {
-            transition: all .25s ease;
-            border: 1px solid var(--line);
-        }
-        .hover-lift:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 30px -10px rgba(31,42,58,.25);
-        }
-
-        /* Компактний бейдж лічильника (наприклад "12 студентів") у заголовках секцій */
-        .count-pill {
-            display: inline-flex;
-            align-items: center;
-            gap: .35rem;
-            background: var(--brass-soft);
-            border: 1px solid var(--brass-semi);
-            color: var(--ink-2);
-            font-weight: 700;
-            font-size: .78rem;
-            padding: .3rem .7rem;
-            border-radius: 999px;
-        }
-    </style>
+    <link href="{{ url_for('static', filename='style/css/main.css') }}" rel="stylesheet">
+    <script>
+        /* Застосовуємо збережену тему ДО відображення сторінки, щоб
+           уникнути "спалаху" світлої теми при перезавантаженні. */
+        (function () {
+            try {
+                var saved = localStorage.getItem('theme');
+                if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+            } catch (e) { /* localStorage може бути недоступний - тоді просто світла тема */ }
+        })();
+    </script>
 </head>
 <body>
 
@@ -606,6 +172,9 @@ main.container {
             {% if session.get('user_id') %}
             <!-- Десктоп -->
             <div class="d-none d-lg-flex align-items-center">
+                <button type="button" id="themeToggleDesktop" class="theme-toggle-btn btn btn-sm me-2" title="Перемкнути тему">
+                    <i class="bi bi-moon-stars"></i>
+                </button>
                 <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm me-2" title="Довідка">
                     <i class="bi bi-question-circle me-1"></i>Довідка
                 </a>
@@ -624,6 +193,9 @@ main.container {
                         <i class="bi bi-person-badge me-1"></i>{{ session.get('role') }}
                     </span>
                     <div class="d-flex gap-2">
+                        <button type="button" id="themeToggleMobile" class="theme-toggle-btn btn btn-sm" title="Перемкнути тему">
+                            <i class="bi bi-moon-stars"></i>
+                        </button>
                         <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm">
                             <i class="bi bi-question-circle me-1"></i>Довідка
                         </a>
@@ -691,6 +263,32 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modal.parentElement !== document.body) {
             document.body.appendChild(modal);
         }
+    });
+
+    // Перемикач темної теми - стан зберігається в localStorage,
+    // тому лишається однаковим між сторінками й після перезавантаження
+    // (застосовується ще до відображення сторінки - див. <script> у <head>).
+    function applyThemeIcon() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        document.querySelectorAll('.theme-toggle-btn i').forEach(icon => {
+            icon.className = isDark ? 'bi bi-sun' : 'bi bi-moon-stars';
+        });
+    }
+    function toggleTheme() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        if (isDark) {
+            document.documentElement.removeAttribute('data-theme');
+            try { localStorage.setItem('theme', 'light'); } catch (e) {}
+        } else {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            try { localStorage.setItem('theme', 'dark'); } catch (e) {}
+        }
+        applyThemeIcon();
+    }
+    applyThemeIcon();
+    ['themeToggleDesktop', 'themeToggleMobile'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.addEventListener('click', toggleTheme);
     });
 });
 </script>

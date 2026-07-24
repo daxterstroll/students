@@ -79,7 +79,15 @@ def log_action(username, action, group_ids=None, mode=None, details=None):
     conn = None
     try:
         conn = get_db()
-        role = session.get('role', 'невідомо')
+        # session.get() вимагає активного контексту HTTP-запиту - якщо
+        # log_action викликається з фонового потоку (напр. масова
+        # генерація документів у admin.py), контексту запиту вже немає.
+        # В такому разі просто вважаємо роль невідомою (не адмін) -
+        # це найбезпечніший варіант за замовчуванням.
+        try:
+            role = session.get('role', 'невідомо')
+        except RuntimeError:
+            role = 'невідомо'
 
         group_names_str = ''
         if group_ids is not None and role != 'admin':
