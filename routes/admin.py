@@ -58,7 +58,8 @@ PERMISSIONS = [
     'manage_accreditations',
     'manage_diplomas',
     'import_education_docs',
-    'manage_templates'
+    'manage_templates',
+    'import_grades'
 ]
 
 
@@ -1291,7 +1292,8 @@ def manage_users():
             'manage_accreditations': 'Управління акредетаціями',
             'manage_diplomas': 'Управління номерами диплому і додатку',
             'import_education_docs': 'Управління імпортом документів',
-            'manage_templates': 'Управління шаблонами документів'
+            'manage_templates': 'Управління шаблонами документів',
+            'import_grades': 'Імпорт оцінок з Excel'
         }
 
         if request.method == 'POST':

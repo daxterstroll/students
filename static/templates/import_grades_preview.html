@@ -1,0 +1,61 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Імпорт оцінок: підтвердження{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-card-checklist', 'Імпорт оцінок: підтвердження', state.filename ~ ', аркуш «' ~ state.sheet ~ '»') }}
+
+    <div class="alert {% if overwrites %}alert-warning{% else %}alert-success{% endif %}">
+        Буде записано <strong>{{ total }}</strong> оцінок для <strong>{{ rows|length }}</strong> студентів з <strong>{{ subjects|length }}</strong> предметів.
+        {% if overwrites %}<br><i class="bi bi-exclamation-triangle-fill me-1"></i><strong>{{ overwrites }}</strong> з них перезапишуть вже наявні оцінки (позначені жовтим у таблиці нижче).{% endif %}
+    </div>
+
+    {% if skipped_subjects or skipped_students %}
+    <div class="alert alert-light border small">
+        {% if skipped_subjects %}<div><strong>Пропущені колонки:</strong> {{ skipped_subjects|join('; ') }}</div>{% endif %}
+        {% if skipped_students %}<div><strong>Пропущені рядки:</strong> {{ skipped_students|join('; ') }}</div>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle mb-0" style="font-size:.82rem;">
+                    <thead>
+                        <tr>
+                            <th style="min-width:180px;">Студент</th>
+                            {% for s in subjects %}<th class="text-center" style="min-width:70px;">{{ s }}</th>{% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td>
+                                {{ r.db_name }}
+                                {% if r.excel_name != r.db_name %}<br><span class="text-muted" style="font-size:.75rem;">Excel: {{ r.excel_name }}</span>{% endif %}
+                            </td>
+                            {% for c in r.cells %}
+                            <td class="text-center {% if c.overwrite %}table-warning{% endif %}">
+                                {{ c.val if c.val is not none else '—' }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <form method="POST" class="d-flex gap-2 flex-wrap">
+        <button type="submit" class="btn btn-success"
+                onclick="return confirm('Записати {{ total }} оцінок у базу?{% if overwrites %} {{ overwrites }} наявних оцінок буде перезаписано.{% endif %}');">
+            <i class="bi bi-check-circle me-2"></i>Імпортувати
+        </button>
+        <a href="{{ url_for('import_grades.mapping', token=token) }}" class="btn btn-outline-secondary">← Назад до зіставлення</a>
+        <a href="{{ url_for('import_grades.upload') }}" class="btn btn-outline-danger">Скасувати</a>
+    </form>
+
+</div>
+{% endblock %}
