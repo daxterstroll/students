@@ -520,6 +520,9 @@ main.container {
                 {% if is_admin or 'view_logs' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.view_logs') }}"><i class="bi bi-file-earmark-binary"></i> Логування</a></li>
                 {% endif %}
+                {% if is_admin or 'analytics' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('analytics.dashboard') }}"><i class="bi bi-graph-up"></i> Аналітика</a></li>
+                {% endif %}
                 {% if is_admin or 'manage_templates' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
                 {% endif %}
@@ -584,6 +587,7 @@ main.container {
             <div class="admin-section-title">Адміністрування</div>
             {% if is_admin or 'manage_users' in perms %}<a href="{{ url_for('admin.manage_users') }}" class="admin-link d-block"><i class="bi bi-people"></i> Користувачі та права</a>{% endif %}
             {% if is_admin or 'view_logs' in perms %}<a href="{{ url_for('admin.view_logs') }}" class="admin-link d-block"><i class="bi bi-file-earmark-binary"></i> Логування</a>{% endif %}
+            {% if is_admin or 'analytics' in perms %}<a href="{{ url_for('analytics.dashboard') }}" class="admin-link d-block"><i class="bi bi-graph-up"></i> Аналітика</a>{% endif %}
             {% if is_admin or 'manage_templates' in perms %}<a href="{{ url_for('admin.manage_templates') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a>{% endif %}
 
             <div class="admin-section-title">Довідники</div>

@@ -14,6 +14,7 @@ from routes.students import students_bp
 from routes.admin import admin_bp
 from routes.office_editor import office_bp
 from routes.import_grades import import_grades_bp
+from routes.analytics import analytics_bp
 from routes.utils import logger
 from routes.gen_docx import format_grade
 
@@ -100,6 +101,7 @@ app.register_blueprint(admin_bp)
 app.register_blueprint(students_bp)
 app.register_blueprint(office_bp)
 app.register_blueprint(import_grades_bp)
+app.register_blueprint(analytics_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
 
