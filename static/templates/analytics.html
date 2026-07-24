@@ -1,0 +1,502 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Аналітика{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-graph-up', 'Аналітика', 'Загальна статистика по студентах, групах та заповненості даних') }}
+
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <form method="GET" class="d-flex align-items-center gap-2 flex-wrap">
+                {% if selected_student_id %}<input type="hidden" name="student_id" value="{{ selected_student_id }}">{% endif %}
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" name="include_archived" value="1" id="includeArchived"
+                           {% if include_archived %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label small" for="includeArchived">Враховувати архівні групи в статистиці</label>
+                </div>
+                {% if include_archived %}
+                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                    <i class="bi bi-archive me-1"></i>Разом з архівом{% if archived_groups %} (+{{ archived_groups }} груп){% endif %}
+                </span>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    {# ================= KPI-картки ================= #}
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="fs-3 fw-bold">{{ total_students }}</div>
+                    <div class="text-muted small">Активних студентів</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="fs-3 fw-bold">{{ active_groups }}</div>
+                    <div class="text-muted small">Активних груп{% if is_admin and archived_groups %} <span class="text-muted">({{ archived_groups }} в архіві)</span>{% endif %}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="fs-3 fw-bold">{{ avg_group_size }}</div>
+                    <div class="text-muted small">Студентів у групі в середньому</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center h-100">
+                <div class="card-body">
+                    <div class="fs-3 fw-bold">{{ total_users if total_users is not none else '—' }}</div>
+                    <div class="text-muted small">Користувачів системи</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ================= Заповненість даних ================= #}
+    {{ ui.section_title('Заповненість даних студентів') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            {% macro bar(label, pct, note='') %}
+            <div class="mb-3">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>{{ label }}</span>
+                    <span class="text-muted">{{ pct }}%{% if note %} <span class="ms-1">{{ note }}</span>{% endif %}</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar {% if pct >= 80 %}bg-success{% elif pct >= 50 %}bg-warning{% else %}bg-danger{% endif %}"
+                         style="width: {{ pct }}%;"></div>
+                </div>
+            </div>
+            {% endmacro %}
+
+            {{ bar('Особисті дані', completeness.personal_avg or 0) }}
+            {{ bar('Оцінки з предметів', completeness.grades_avg or 0) }}
+            {{ bar('Практика / курсові / атестація', completeness.activities_avg or 0) }}
+            {{ bar('Військовий облік (серед тих, у кого є запис)', completeness.military_avg or 0, '- запис є у ' ~ completeness.military_have_pct ~ '% студентів') }}
+            {{ bar('Документ про освіту додано', completeness.edu_doc_pct) }}
+            {{ bar('Номер диплома призначено', completeness.diploma_num_pct) }}
+            {{ bar('Номер додатка призначено', completeness.appendix_num_pct) }}
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header py-3"><h5 class="mb-0 section-title"><i class="bi bi-speedometer2 me-2"></i>Готовність до генерації документів</h5></div>
+        <div class="card-body">
+            <p class="text-muted small">Комбінована оцінка: особисті дані + оцінки з предметів + наявність документа про освіту + номер диплома.</p>
+            {% for label, cnt in readiness_buckets.items() %}
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>{{ label }}</span>
+                    <span class="text-muted">{{ cnt }} з {{ total_ready_students }}</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar {% if 'Повністю' in label %}bg-success{% elif 'Майже' in label %}bg-info{% elif 'Частково' in label %}bg-warning{% else %}bg-danger{% endif %}"
+                         style="width: {{ (cnt / total_ready_students * 100) if total_ready_students else 0 }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {# ================= Студенти по групах ================= #}
+    {{ ui.section_title('Студенти по групах') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            {% set max_cnt = (students_per_group | map(attribute='cnt') | list | max) if students_per_group else 1 %}
+            {% for g in students_per_group %}
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span>{{ g.name }} <span class="text-muted">({{ g.start_year }}, {{ g.study_form }})</span>{% if g.archived %} <span class="badge bg-secondary">архів</span>{% endif %}</span>
+                    <span class="text-muted">{{ g.cnt }}</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar {% if g.archived %}bg-secondary{% else %}bg-primary{% endif %}" style="width: {{ (g.cnt / max_cnt * 100) if max_cnt else 0 }}%;"></div>
+                </div>
+            </div>
+            {% else %}
+            {{ ui.empty_state('bi-people', 'Немає активних груп') }}
+            {% endfor %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title">За формою навчання</h6></div>
+                <div class="card-body">
+                    {% for row in students_by_form %}
+                    <div class="d-flex justify-content-between small mb-1"><span>{{ row.study_form }}</span><span class="text-muted">{{ row.cnt }}</span></div>
+                    {% else %}<span class="text-muted small">Немає даних</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title">За ступенем</h6></div>
+                <div class="card-body">
+                    {% for row in students_by_degree %}
+                    <div class="d-flex justify-content-between small mb-1"><span>{{ row.degree_level }}</span><span class="text-muted">{{ row.cnt }}</span></div>
+                    {% else %}<span class="text-muted small">Немає даних</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if is_admin %}
+    {{ ui.section_title('Групи по роках вступу') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            {% set max_year_cnt = (groups_by_year | map(attribute='cnt') | list | max) if groups_by_year else 1 %}
+            {% for row in groups_by_year %}
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1"><span>{{ row.start_year }}</span><span class="text-muted">{{ row.cnt }} груп</span></div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-secondary" style="width: {{ (row.cnt / max_year_cnt * 100) if max_year_cnt else 0 }}%;"></div>
+                </div>
+            </div>
+            {% else %}
+            {{ ui.empty_state('bi-calendar3', 'Немає даних') }}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {{ ui.section_title('Прогноз випуску по роках') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            <p class="text-muted small">Розраховано з року вступу, ступеня і кредитів програми (та сама формула, що й у документах).</p>
+            {% set max_grad_cnt = (graduation_forecast | map(attribute=1) | list | max) if graduation_forecast else 1 %}
+            {% for year, cnt in graduation_forecast %}
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1"><span>{{ year }}</span><span class="text-muted">{{ cnt }} студентів</span></div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-info" style="width: {{ (cnt / max_grad_cnt * 100) if max_grad_cnt else 0 }}%;"></div>
+                </div>
+            </div>
+            {% else %}
+            {{ ui.empty_state('bi-mortarboard', 'Немає даних для прогнозу') }}
+            {% endfor %}
+        </div>
+    </div>
+
+    {{ ui.section_title('Заповненість по кожній групі окремо') }}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Група</th><th class="text-center">Студентів</th><th class="text-center">Особисті дані</th><th class="text-center">Оцінки</th></tr></thead>
+                    <tbody>
+                        {% for row in per_group_completeness %}
+                        <tr>
+                            <td class="small">{{ row.group_name }}</td>
+                            <td class="text-center small">{{ row.students_count }}</td>
+                            <td class="text-center">
+                                <span class="badge {% if row.personal_avg >= 80 %}bg-success{% elif row.personal_avg >= 50 %}bg-warning{% else %}bg-danger{% endif %}">{{ row.personal_avg }}%</span>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge {% if row.grades_avg >= 80 %}bg-success{% elif row.grades_avg >= 50 %}bg-warning{% else %}bg-danger{% endif %}">{{ row.grades_avg }}%</span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="4">{{ ui.empty_state('bi-table', 'Немає даних') }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# ================= Якість оцінок ================= #}
+    {{ ui.section_title('Якість оцінок') }}
+    <div class="row g-3 mb-4">
+        <div class="col-md-7">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title">Розподіл оцінок за шкалою ECTS</h6></div>
+                <div class="card-body">
+                    {% for letter in ['A', 'B', 'C', 'D', 'E', 'Незадовільно'] %}
+                    {% set cnt = grade_distribution.get(letter, 0) %}
+                    {% set pct = (cnt / total_grades * 100) | round(1) %}
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1"><span>{{ letter }}</span><span class="text-muted">{{ cnt }} ({{ pct }}%)</span></div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar {% if letter in ['A','B'] %}bg-success{% elif letter == 'C' %}bg-info{% elif letter == 'D' %}bg-warning{% else %}bg-danger{% endif %}"
+                                 style="width: {{ pct }}%;"></div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card h-100 text-center">
+                <div class="card-body d-flex flex-column justify-content-center">
+                    <div class="fs-1 fw-bold text-warning"><i class="bi bi-award-fill"></i></div>
+                    <div class="fs-3 fw-bold">{{ honor_eligible }}</div>
+                    <div class="text-muted small">студентів мають право на диплом з відзнакою<br>(з {{ total_ready_students }} з наявними оцінками)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-arrow-down-circle text-danger me-2"></i>Найскладніші предмети (за середнім балом)</h6></div>
+                <div class="card-body">
+                    {% for s in worst_subjects %}
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>{{ s.name }} <span class="text-muted">({{ s.group }})</span></span>
+                        <span class="fw-bold">{{ s.avg }}</span>
+                    </div>
+                    {% else %}<span class="text-muted small">Немає даних</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-arrow-up-circle text-success me-2"></i>Найлегші предмети (за середнім балом)</h6></div>
+                <div class="card-body">
+                    {% for s in best_subjects %}
+                    <div class="d-flex justify-content-between small mb-1">
+                        <span>{{ s.name }} <span class="text-muted">({{ s.group }})</span></span>
+                        <span class="fw-bold">{{ s.avg }}</span>
+                    </div>
+                    {% else %}<span class="text-muted small">Немає даних</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {{ ui.section_title('Студенти "групи ризику"') }}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            {% if at_risk_students %}
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Студент</th><th>Група</th><th>Предмет/активність</th><th class="text-center">Оцінка</th></tr></thead>
+                    <tbody>
+                        {% for r in at_risk_students %}
+                            {% for item, grade in r.details %}
+                            <tr>
+                                <td class="small">{{ r.student }}</td>
+                                <td class="small text-muted">{{ r.group }}</td>
+                                <td class="small">{{ item }}</td>
+                                <td class="text-center"><span class="badge bg-danger">{{ grade }} - Незадовільно</span></td>
+                            </tr>
+                            {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-3">{{ ui.empty_state('bi-check-circle', 'Немає студентів з оцінкою «Незадовільно»') }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if is_admin %}
+    {{ ui.section_title('Перевірки цілісності даних') }}
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-exclamation-triangle me-2"></i>Розбіжність суми кредитів</h6></div>
+                <div class="card-body">
+                    {% for m in credit_mismatches %}
+                    <div class="small mb-1"><strong>{{ m.group }}</strong>: очікується {{ m.expected }}, фактично {{ m.actual }} кредитів</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Розбіжностей не знайдено</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-patch-exclamation me-2"></i>Групи без акредитації</h6></div>
+                <div class="card-body">
+                    {% for g in missing_accreditation %}
+                    <div class="small mb-1">{{ g }}</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Усі групи мають запис акредитації</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-copy me-2"></i>Дублікати номерів диплома</h6></div>
+                <div class="card-body">
+                    {% for d in duplicate_diploma_numbers %}
+                    <div class="small mb-1">№ {{ d.number }} - у {{ d.count }} студентів</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Дублікатів не знайдено</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-copy me-2"></i>Дублікати номерів додатка</h6></div>
+                <div class="card-body">
+                    {% for d in duplicate_appendix_numbers %}
+                    <div class="small mb-1">№ {{ d.number }} - у {{ d.count }} студентів</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Дублікатів не знайдено</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ================= Якість оцінок конкретного студента ================= #}
+    {{ ui.section_title('Якість оцінок конкретного студента') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end mb-3">
+                {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
+                <div class="col-sm-8 col-md-6">
+                    <label class="form-label small mb-1" for="studentSelect">Студент</label>
+                    <select name="student_id" id="studentSelect" class="form-select form-select-sm">
+                        <option value="">— оберіть студента —</option>
+                        {% for opt in student_options %}
+                        <option value="{{ opt.id }}" {% if opt.id == selected_student_id %}selected{% endif %}>{{ opt.full_name }} ({{ opt.group_name }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-sm-4 col-md-3">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-search me-1"></i>Показати</button>
+                </div>
+            </form>
+
+            {% if student_detail %}
+            <div id="studentDetailResult"></div>
+            <hr>
+            <h6>{{ student_detail.full_name }} <span class="text-muted small">({{ student_detail.group_name }})</span></h6>
+
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Оцінок заповнено</div>
+                    <div class="fw-bold">{{ student_detail.grades_filled }} з {{ student_detail.grades_total }}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Частка «A»</div>
+                    <div class="fw-bold">{{ student_detail.a_share }}%</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Без «D»/«E»</div>
+                    <div class="fw-bold">{% if student_detail.no_fail %}<i class="bi bi-check-circle-fill text-success"></i> так{% else %}<i class="bi bi-x-circle-fill text-danger"></i> ні{% endif %}</div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="text-muted small">Атестація на «A»</div>
+                    <div class="fw-bold">{% if student_detail.attestation_ok %}<i class="bi bi-check-circle-fill text-success"></i> так{% else %}<i class="bi bi-x-circle-fill text-danger"></i> ні{% endif %}</div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-4">
+                    <div class="text-muted small">Середній бал студента</div>
+                    <div class="fw-bold">
+                        {{ student_detail.student_avg if student_detail.student_avg is not none else '—' }}
+                        {% if student_detail.student_avg is not none and student_detail.group_avg is not none %}
+                            <span class="small {% if student_detail.student_avg >= student_detail.group_avg %}text-success{% else %}text-danger{% endif %}">
+                                ({{ 'вище' if student_detail.student_avg >= student_detail.group_avg else 'нижче' }} середнього по групі)
+                            </span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-6 col-md-4">
+                    <div class="text-muted small">Середній бал по групі</div>
+                    <div class="fw-bold">{{ student_detail.group_avg if student_detail.group_avg is not none else '—' }}</div>
+                </div>
+                <div class="col-6 col-md-4">
+                    <div class="text-muted small">Зароблено кредитів</div>
+                    <div class="fw-bold">{{ student_detail.earned_credits }} з {{ student_detail.required_credits or '—' }}</div>
+                </div>
+            </div>
+
+            {% if student_detail.missing_subjects %}
+            <div class="alert alert-light border py-2 small mb-3">
+                <i class="bi bi-list-check me-1"></i><strong>Немає оцінки з:</strong> {{ student_detail.missing_subjects|join('; ') }}
+            </div>
+            {% endif %}
+
+            <div class="alert {% if student_detail.is_honor_eligible %}alert-success{% else %}alert-light border{% endif %} py-2">
+                {% if student_detail.is_honor_eligible %}
+                    <i class="bi bi-award-fill me-1"></i><strong>Має право на диплом з відзнакою</strong>
+                {% else %}
+                    <i class="bi bi-dash-circle me-1"></i>Поки не має права на диплом з відзнакою (потрібно: ≥75% оцінок «A», без «D»/«E», атестація на «A»)
+                {% endif %}
+            </div>
+
+            {% if student_detail.subjects %}
+            <div class="table-responsive mb-3">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Предмет</th><th class="text-center">Бали</th><th class="text-center">Оцінка</th></tr></thead>
+                    <tbody>
+                        {% for code, name, grade, letter, credits in student_detail.subjects %}
+                        <tr>
+                            <td class="small">{{ code }} {{ name }}</td>
+                            <td class="text-center">{{ grade if grade is not none else '—' }}</td>
+                            <td class="text-center">
+                                {% if letter %}<span class="badge {% if letter in ['A','B'] %}bg-success{% elif letter == 'C' %}bg-info{% elif letter == 'D' %}bg-warning{% else %}bg-danger{% endif %}">{{ letter }}</span>{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if student_detail.activities %}
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead><tr><th>Активність</th><th class="text-center">Бали</th><th class="text-center">Оцінка</th></tr></thead>
+                    <tbody>
+                        {% for entity_type, name, grade, letter, thesis_title in student_detail.activities %}
+                        <tr>
+                            <td class="small">
+                                <span class="badge bg-light text-dark border me-1">{{ {'practice':'практика','coursework':'курсова','attestation':'атестація'}.get(entity_type, entity_type) }}</span>
+                                {{ name or '' }}
+                                {% if thesis_title %}<br><span class="text-muted">Тема: {{ thesis_title }}</span>{% endif %}
+                            </td>
+                            <td class="text-center">{{ grade if grade is not none else '—' }}</td>
+                            <td class="text-center">
+                                {% if letter %}<span class="badge {% if letter in ['A','B'] %}bg-success{% elif letter == 'C' %}bg-info{% elif letter == 'D' %}bg-warning{% else %}bg-danger{% endif %}">{{ letter }}</span>{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if not student_detail.subjects and not student_detail.activities %}
+            {{ ui.empty_state('bi-journal-x', 'У цього студента ще немає жодної оцінки') }}
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    {% if is_admin %}
+    {{ ui.section_title('Шаблони документів') }}
+    <div class="row g-3">
+        <div class="col-4">
+            <div class="card text-center"><div class="card-body"><div class="fs-4 fw-bold">{{ templates_total }}</div><div class="text-muted small">усього</div></div></div>
+        </div>
+        <div class="col-4">
+            <div class="card text-center"><div class="card-body"><div class="fs-4 fw-bold">{{ templates_admin_only }}</div><div class="text-muted small">тільки для адміна</div></div></div>
+        </div>
+        <div class="col-4">
+            <div class="card text-center"><div class="card-body"><div class="fs-4 fw-bold">{{ templates_hidden }}</div><div class="text-muted small">приховано</div></div></div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+{% if student_detail %}
+<script>
+    document.getElementById('studentDetailResult').scrollIntoView({behavior: 'smooth', block: 'start'});
+</script>
+{% endif %}
+{% endblock %}
