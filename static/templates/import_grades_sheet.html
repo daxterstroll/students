@@ -1,0 +1,29 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Імпорт оцінок: вибір аркуша{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-card-checklist', 'Імпорт оцінок: вибір аркуша', state.filename) }}
+
+    <div class="card">
+        <div class="card-body">
+            <p class="text-muted small">У файлі декілька аркушів - оберіть той, де знаходиться зведена відомість групи (окремі аркуші з прізвищами студентів - це зазвичай індивідуальні відомості, їх обирати не треба).</p>
+            <form method="POST">
+                <div class="d-flex flex-column gap-2 mb-3">
+                    {% for sheet in state.sheets %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="sheet" id="sheet{{ loop.index }}"
+                               value="{{ sheet }}" {% if loop.first %}checked{% endif %}>
+                        <label class="form-check-label" for="sheet{{ loop.index }}">{{ sheet }}</label>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Розібрати аркуш</button>
+                <a href="{{ url_for('import_grades.upload') }}" class="btn btn-outline-secondary">Скасувати</a>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

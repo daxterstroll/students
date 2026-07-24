@@ -493,6 +493,11 @@ main.container {
                     <i class="bi bi-journal-plus"></i> Предмети
                 </a></li>
                 {% endif %}
+                {% if is_admin or 'import_grades' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('import_grades.upload') }}">
+                    <i class="bi bi-card-checklist"></i> Оцінки (зведена відомість)
+                </a></li>
+                {% endif %}
                 {% if is_admin or 'import_education_docs' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.import_docs_preview') }}">
                     <i class="bi bi-file-earmark-arrow-up"></i> Документи студентів
@@ -514,6 +519,9 @@ main.container {
                 {% endif %}
                 {% if is_admin or 'view_logs' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.view_logs') }}"><i class="bi bi-file-earmark-binary"></i> Логування</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_templates' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
                 {% endif %}
                 <hr class="divider">
 
@@ -544,9 +552,6 @@ main.container {
                 {% if is_admin or 'archive' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.archive') }}"><i class="bi bi-archive"></i> Архів груп</a></li>
                 {% endif %}
-                {% if is_admin or 'manage_templates' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
-                {% endif %}
             </ul>
         </li>
 		
@@ -569,6 +574,9 @@ main.container {
             {% if is_admin or 'import_subjects' in perms %}
             <a href="{{ url_for('admin.import_subjects') }}" class="admin-link d-block"><i class="bi bi-journal-plus"></i> Предмети</a>
             {% endif %}
+            {% if is_admin or 'import_grades' in perms %}
+            <a href="{{ url_for('import_grades.upload') }}" class="admin-link d-block"><i class="bi bi-card-checklist"></i> Оцінки (зведена відомість)</a>
+            {% endif %}
             {% if is_admin or 'import_education_docs' in perms %}
             <a href="{{ url_for('admin.import_docs_preview') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Документи студентів</a>
             {% endif %}
@@ -576,6 +584,7 @@ main.container {
             <div class="admin-section-title">Адміністрування</div>
             {% if is_admin or 'manage_users' in perms %}<a href="{{ url_for('admin.manage_users') }}" class="admin-link d-block"><i class="bi bi-people"></i> Користувачі та права</a>{% endif %}
             {% if is_admin or 'view_logs' in perms %}<a href="{{ url_for('admin.view_logs') }}" class="admin-link d-block"><i class="bi bi-file-earmark-binary"></i> Логування</a>{% endif %}
+            {% if is_admin or 'manage_templates' in perms %}<a href="{{ url_for('admin.manage_templates') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a>{% endif %}
 
             <div class="admin-section-title">Довідники</div>
             {% if is_admin or 'manage_subjects' in perms %}<a href="{{ url_for('admin.manage_subjects') }}" class="admin-link d-block"><i class="bi bi-journal"></i> Предмети</a>{% endif %}
@@ -586,7 +595,6 @@ main.container {
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
             {% if is_admin or 'manage_diplomas' in perms %}<a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a>{% endif %}
-            {% if is_admin or 'manage_templates' in perms %}<a href="{{ url_for('admin.manage_templates') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a>{% endif %}
             </div>
         {% endif %}
 
