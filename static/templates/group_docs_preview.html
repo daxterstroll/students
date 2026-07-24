@@ -6,6 +6,18 @@
 
     {{ ui.page_header('bi-file-earmark-zip-fill', 'Згенеровані документи', group_name ~ ' · ' ~ items|length ~ ' документ(ів)') }}
 
+    {% if failed %}
+    <div class="alert alert-warning">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        Не вдалося згенерувати документи для {{ failed|length }} студент(ів):
+        <ul class="mb-0 mt-1">
+            {% for f in failed %}
+            <li>{{ f.name }} <span class="text-muted small">({{ f.error }})</span></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     <div class="alert alert-info">
         <i class="bi bi-info-circle-fill me-2"></i>
         Перегляньте кожен документ і за потреби відредагуйте його (кнопка «Переглянути / Редагувати»).
