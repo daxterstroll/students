@@ -1,0 +1,54 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Генерація документів...{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-hourglass-split', 'Генерація документів', group_name) }}
+
+    <div class="card">
+        <div class="card-body">
+            <p class="mb-2">
+                Готово: <strong id="doneCount">0</strong> з <strong>{{ total }}</strong>
+                <span id="currentName" class="text-muted"></span>
+            </p>
+            <div class="progress mb-3" style="height: 12px;">
+                <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%;"></div>
+            </div>
+            <p class="text-muted small mb-0">
+                Не закривайте цю вкладку - генерація триває у фоні, сторінка сама оновлюється і перейде до результату, коли все буде готово.
+                Якщо один документ не вдасться згенерувати (наприклад, через помилку в даних студента), решта продовжать генеруватись - список проблемних буде показано в підсумку.
+            </p>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function () {
+    const jobId = {{ job_id | tojson }};
+    const statusUrl = {{ url_for('admin.generate_group_docs_status', job_id=job_id) | tojson }};
+    const resultUrl = {{ url_for('admin.generate_group_docs_result', job_id=job_id) | tojson }};
+
+    function poll() {
+        fetch(statusUrl)
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) return;
+                const pct = data.total ? Math.round(data.done / data.total * 100) : 0;
+                document.getElementById('doneCount').textContent = data.done;
+                document.getElementById('progressBar').style.width = pct + '%';
+                document.getElementById('currentName').textContent = data.current_name ? ('- ' + data.current_name) : '';
+
+                if (data.complete) {
+                    window.location.href = resultUrl;
+                } else {
+                    setTimeout(poll, 800);
+                }
+            })
+            .catch(() => setTimeout(poll, 1500));
+    }
+    poll();
+})();
+</script>
+{% endblock %}
