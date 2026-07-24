@@ -1,0 +1,44 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Імпорт оцінок з Excel{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-card-checklist', 'Імпорт оцінок з Excel', 'Зведена відомість: система сама зіставить студентів і предмети, а ви перевірите й підтвердите') }}
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data" class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="excel_file">Файл зведеної відомості (.xlsx)</label>
+                    <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="group_id">Група</label>
+                    <select name="group_id" id="group_id" class="form-select" required>
+                        <option value="" disabled selected>— оберіть групу —</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.name }} ({{ g.start_year }}, {{ g.study_form }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="alert alert-light border mt-4 small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        <ol class="mb-0 mt-2">
+            <li>Завантажуєте файл і обираєте групу, оцінки якої імпортуються.</li>
+            <li>Обираєте аркуш (якщо у файлі їх декілька).</li>
+            <li>Система автоматично зіставляє колонки-предмети з предметами групи та рядки-студентів за ПІБ - навіть якщо назви трохи відрізняються, а студенти йдуть у іншому порядку. Сумнівні збіги можна поправити вручну, зайве - пропустити.</li>
+            <li>Попередній перегляд: що саме буде записано, які наявні оцінки будуть перезаписані - і лише після підтвердження дані потрапляють у базу.</li>
+        </ol>
+        <div class="mt-2 text-muted">Підтримуються обидва поширені формати: «зведена екзаменаційна відомість» (Бали / Оцінка / ECTS під кожним предметом) і простий лист (один стовпець на предмет). Імпортуються числові бали (0-100); текстова форма оцінки формується автоматично при генерації документів.</div>
+    </div>
+
+</div>
+{% endblock %}
