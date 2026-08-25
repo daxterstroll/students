@@ -2,42 +2,150 @@
 {% import '_macros.html' as ui %}
 {% block title %}Імпорт оцінок з Excel{% endblock %}
 {% block content %}
+<style>
+    /* Вкладки "Проста таблиця" / "Зведена відомість (ECTS)" - власний
+       стиль у тон сайту замість стандартного вигляду Bootstrap, який
+       у темній темі давав білий активний таб (засвічувався). */
+    .format-tabs .nav-link {
+        color: var(--ink-text, #444);
+        border: 1px solid var(--line, #dee2e6);
+        background: transparent;
+    }
+    .format-tabs .nav-link.active {
+        background: var(--brass-soft, #f7ecd3);
+        border-color: var(--brass-semi, #d8c48a);
+        color: var(--heading, var(--ink, #1f2a3a));
+        font-weight: 600;
+    }
+    html[data-theme="dark"] .format-tabs .nav-link {
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .format-tabs .nav-link.active {
+        background: rgba(200,162,74,.14);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    .format-tab-body {
+        border-color: var(--line, #dee2e6) !important;
+    }
+    html[data-theme="dark"] .format-tab-body {
+        background: var(--paper-2);
+        border-color: var(--line) !important;
+    }
+</style>
+
 <div class="container py-4">
 
     {{ ui.page_header('bi-card-checklist', 'Імпорт оцінок з Excel', 'Зведена відомість: система сама зіставить студентів і предмети, а ви перевірите й підтвердите') }}
 
-    <div class="card">
-        <div class="card-body">
-            <form method="POST" enctype="multipart/form-data" class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label" for="excel_file">Файл зведеної відомості (.xlsx)</label>
-                    <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+    <div class="row g-4">
+
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="section-title">Завантажити файл</h6>
+                    <form method="POST" enctype="multipart/form-data" class="row g-3 mt-1">
+                        <div class="col-12">
+                            <label class="form-label" for="excel_file">Файл зведеної відомості (.xlsx)</label>
+                            <input type="file" name="excel_file" id="excel_file" class="form-control" accept=".xlsx" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label" for="group_id">Група</label>
+                            <select name="group_id" id="group_id" class="form-select" required>
+                                <option value="" disabled selected>— оберіть групу —</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}">{{ g.name }} ({{ g.start_year }}, {{ g.study_form }})</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі</button>
+                        </div>
+                    </form>
                 </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="group_id">Група</label>
-                    <select name="group_id" id="group_id" class="form-select" required>
-                        <option value="" disabled selected>— оберіть групу —</option>
-                        {% for g in groups %}
-                        <option value="{{ g.id }}">{{ g.name }} ({{ g.start_year }}, {{ g.study_form }})</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі</button>
-                </div>
-            </form>
+            </div>
         </div>
+
+        <div class="col-lg-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="section-title">Як має виглядати файл</h6>
+                    <p class="text-muted small mb-3">Підтримуються 2 формати. Оберіть, який відповідає вашому файлу, і завантажте готовий приклад для орієнтиру.</p>
+
+                    <ul class="nav nav-tabs nav-fill small format-tabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#formatB" type="button">Проста таблиця</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#formatA" type="button">Зведена відомість (ECTS)</button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content border border-top-0 rounded-bottom p-3 format-tab-body">
+
+                        <div class="tab-pane fade show active" id="formatB">
+                            <p class="small mb-2">Один стовпець на предмет, бал одразу в клітинці:</p>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered text-center mb-2" style="font-size:.78rem;">
+                                    <tbody>
+                                        <tr class="text-muted"><td>№ з/п</td><td>Прізвище І.П.</td><td>Історія України</td><td>Інформатика</td></tr>
+                                        <tr><td>1</td><td class="text-start">Іваненко І. І.</td><td>88</td><td>92</td></tr>
+                                        <tr><td>2</td><td class="text-start">Петренко М. О.</td><td>95</td><td>74</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <ul class="small text-muted mb-3 ps-3">
+                                <li>Щонайменше 3 предмети в шапці (менше - парсер не довіряє, що це заголовок)</li>
+                                <li>Бали за шкалою 0-100</li>
+                                <li>Заголовок закладу/спеціальності над таблицею - необов'язково, можна лишити чи прибрати</li>
+                            </ul>
+                            <a href="{{ url_for('static', filename='example_excel/приклад_проста_таблиця.xlsx') }}" class="btn btn-outline-primary btn-sm w-100">
+                                <i class="bi bi-download me-1"></i>Завантажити приклад файлу
+                            </a>
+                        </div>
+
+                        <div class="tab-pane fade" id="formatA">
+                            <p class="small mb-2">Під кожним предметом - 3 колонки: Бали / Оцінка / ECTS:</p>
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered text-center mb-2" style="font-size:.76rem;">
+                                    <tbody>
+                                        <tr class="text-muted"><td rowspan="2">№</td><td rowspan="2" class="align-middle">Прізвище</td><td colspan="3">Історія України</td></tr>
+                                        <tr class="text-muted"><td>Бали</td><td>Оцінка</td><td>ECTS</td></tr>
+                                        <tr><td>1</td><td class="text-start">Іваненко І. І.</td><td>88</td><td>Добре</td><td>B</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <ul class="small text-muted mb-3 ps-3">
+                                <li>Щонайменше 2 предмети (потрібно ≥2 колонки "ECTS", щоб парсер розпізнав саме цей формат)</li>
+                                <li>Над рядком Бали/Оцінка/ECTS - рядок з кредитами, ще вище - назва предмета</li>
+                            </ul>
+                            <a href="{{ url_for('static', filename='example_excel/приклад_зведена_відомість_ECTS.xlsx') }}" class="btn btn-outline-primary btn-sm w-100">
+                                <i class="bi bi-download me-1"></i>Завантажити приклад файлу
+                            </a>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
-    <div class="alert alert-light border mt-4 small">
+    <div class="alert alert-light border mt-4 small mb-0">
         <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
-        <ol class="mb-0 mt-2">
-            <li>Завантажуєте файл і обираєте групу, оцінки якої імпортуються.</li>
-            <li>Обираєте аркуш (якщо у файлі їх декілька).</li>
-            <li>Система автоматично зіставляє колонки-предмети з предметами групи та рядки-студентів за ПІБ - навіть якщо назви трохи відрізняються, а студенти йдуть у іншому порядку. Сумнівні збіги можна поправити вручну, зайве - пропустити.</li>
-            <li>Попередній перегляд: що саме буде записано, які наявні оцінки будуть перезаписані - і лише після підтвердження дані потрапляють у базу.</li>
+        <ol class="mb-2 mt-2 ps-3">
+            <li>Завантажуєте файл і обираєте групу.</li>
+            <li>Обираєте аркуш (якщо їх декілька).</li>
+            <li>Система сама зіставляє предмети й студентів за схожістю - навіть якщо назви трохи відрізняються чи порядок інший. Сумнівне можна поправити вручну.</li>
+            <li>Попередній перегляд перед підтвердженням - видно, що саме запишеться і що буде перезаписано.</li>
         </ol>
-        <div class="mt-2 text-muted">Підтримуються обидва поширені формати: «зведена екзаменаційна відомість» (Бали / Оцінка / ECTS під кожним предметом) і простий лист (один стовпець на предмет). Імпортуються числові бали (0-100); текстова форма оцінки формується автоматично при генерації документів.</div>
+        <div class="text-muted">
+            <i class="bi bi-shield-check me-1"></i>Система також сама попереджає жовтим кольором, якщо щось виглядає підозріло - наприклад, заповнилось мало оцінок, або схоже, що шкала оцінювання не 100-бальна (5-бальна/12-бальна). Це не помилка, а підказка - варто уважніше перевірити крок попереднього перегляду.
+        </div>
+        <div class="text-muted mt-2">
+            <i class="bi bi-scissors me-1"></i><strong>Файл можна не "чистити" перед завантаженням.</strong> Назва закладу, факультету, спеціальності над таблицею, підписи декана/секретаря чи примітки під нею - все це можна лишити як є, видаляти нічого не потрібно. Система сама знаходить таблицю серед зайвого тексту навколо неї і зупиняється на її природних межах.
+        </div>
     </div>
 
 </div>
