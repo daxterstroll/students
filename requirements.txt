@@ -17,3 +17,4 @@ deep-translator
 PyJWT 
 requests 
 python-dotenv
+Pillow

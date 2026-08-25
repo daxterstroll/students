@@ -2,11 +2,12 @@ import os
 import re
 import sqlite3
 from datetime import datetime
-from docxtpl import DocxTemplate
+from docxtpl import DocxTemplate, InlineImage
 from routes.utils import log_action, logger as global_logger
 from routes.db import get_db
 from datetime import datetime
 from docxtpl import RichText
+from docx.shared import Mm
 
 def _to_richtext_multiline(text, separator=";", font_size_pt=8, font_name='Times New Roman'):
     """
@@ -462,9 +463,23 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             student_dict[field] = cleaned_lines
             # global_logger.debug(f"Обработан {field} как список: {student_dict[field]}")
 
-    # Объединяем словари
+    # Об'єднаем словари
     context = {**student_dict, **military_dict}
     # global_logger.debug(f"Контекст перед рендерингом: {context}")
+
+    # Фото студента (3х4, якщо завантажене на сторінці студента) - як
+    # InlineImage для шаблонів, у яких є картинка-плейсхолдер
+    # {{ student_photo }}. Якщо фото немає - ключ просто не додається в
+    # контекст, і плейсхолдер у шаблоні лишиться порожнім (не ламає
+    # рендеринг решти документа).
+    photo_rel = student_dict.get('photo')
+    if photo_rel:
+        photo_full_path = os.path.join(os.getcwd(), 'static', photo_rel)
+        if os.path.exists(photo_full_path):
+            try:
+                context['student_photo'] = InlineImage(doc, photo_full_path, width=Mm(30))
+            except Exception as e:
+                global_logger.error(f"Не вдалося вставити фото студента (ID {student_dict.get('id')}): {e}")
 
     # Дані для диплома (список оцінок з предметів, практик, курсових,
     # атестацій) - раніше збиралися лише для шаблонів з "adddiplom" у
