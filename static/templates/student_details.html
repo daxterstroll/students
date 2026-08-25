@@ -5,7 +5,44 @@
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-person-circle', student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or ''), student.group_name | default('Група не вказана')) }}
+    <!-- Шапка з фото ліворуч від ПІБ і групи -->
+    <div class="page-header student-header">
+        <div class="d-flex flex-column flex-md-row align-items-center gap-3">
+
+            <div class="flex-shrink-0 photo-frame-wrap">
+                <div class="photo-frame photo-frame--header">
+                    {% if student.photo %}
+                    <img src="{{ url_for('static', filename=student.photo) }}?v={{ range(1,99999) | random }}"
+                         alt="Фото студента" class="photo-frame__img">
+                    {% else %}
+                    <div class="photo-frame__placeholder">
+                        <i class="bi bi-person-fill"></i>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <button type="button" class="btn btn-sm btn-outline-primary rounded-circle photo-corner-btn"
+                        data-bs-toggle="modal" data-bs-target="#photoUploadModal"
+                        title="{{ 'Змінити фото' if student.photo else 'Додати фото' }}">
+                    <i class="bi bi-camera"></i>
+                </button>
+                {% if student.photo %}
+                <form method="POST" action="{{ url_for('students.delete_photo', student_id=student.id) }}"
+                      onsubmit="return confirm('Видалити фото студента?');" class="m-0 d-inline">
+                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle photo-corner-btn photo-corner-btn--delete" title="Видалити фото">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+
+            <div class="flex-grow-1 text-center text-md-start">
+                <h2 class="mb-1">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}</h2>
+                <p class="mb-0 opacity-90">{{ student.group_name | default('Група не вказана') }}</p>
+            </div>
+
+        </div>
+    </div>
 
     <div class="d-flex justify-content-end mb-4">
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
@@ -80,7 +117,7 @@
                 </div>
 
                 <!-- Макрос для інших секцій -->
-                {% macro data_section(icon, title, data, empty_text, edit_url) %}
+                {% macro data_section(icon, title, data, empty_text, edit_url, show_thesis=False) %}
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#{{ title|lower|replace(' ', '') }}Collapse">
@@ -115,7 +152,12 @@
                                             {% for item in data %}
                                             <tr>
                                                 <td class="font-monospace">{{ item.code | default('-') }}</td>
-                                                <td>{{ item.name | default('-') }}</td>
+                                                <td>
+                                                    {{ item.name | default('-') }}
+                                                    {% if show_thesis and item.student_name %}
+                                                    <br><span class="text-muted small">Тема: {{ item.student_name }}</span>
+                                                    {% endif %}
+                                                </td>
                                                 <td>{{ item.type | default('-') }}</td>
                                                 <td class="text-end fw-semibold">{{ item.grade | format_grade(item.type) | default('-') }}</td>
                                             </tr>
@@ -137,7 +179,7 @@
                 {{ data_section('bi-book', 'Оцінки', subject_grades, 'Оцінки відсутні', url_for('students.edit_grades', student_id=student.id)) }}
                 {{ data_section('bi-briefcase', 'Практики', practice_data, 'Практики відсутні', url_for('students.edit_activities_grades', student_id=student.id)) }}
                 {{ data_section('bi-file-earmark-text', 'Курсові роботи', coursework_data, 'Курсові роботи відсутні', url_for('students.edit_activities_grades', student_id=student.id)) }}
-                {{ data_section('bi-award', 'Атестації', attestation_data, 'Атестації відсутні', url_for('students.edit_activities_grades', student_id=student.id)) }}
+                {{ data_section('bi-award', 'Атестації', attestation_data, 'Атестації відсутні', url_for('students.edit_activities_grades', student_id=student.id), show_thesis=True) }}
 
                 <!-- Документи про освіту -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
@@ -267,5 +309,277 @@
         color: var(--brass) !important;
     }
     .accordion-button:focus { box-shadow: none; }
+
+    /* ===== Фото студента ===== */
+    .photo-frame {
+        width: 150px;
+        height: 200px;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 6px 18px rgba(14,27,44,.14);
+        border: 3px solid #fff;
+        background: var(--paper-2);
+    }
+    .photo-frame--header {
+        width: 96px;
+        height: 128px;
+        border-radius: 10px;
+        border: 3px solid var(--brass);
+        box-shadow: 0 8px 20px rgba(0,0,0,.35);
+        margin: 0 auto;
+    }
+    .student-header .page-header,
+    .student-header.page-header { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    .photo-frame__img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .photo-frame__placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 3rem;
+        background: linear-gradient(160deg, var(--paper-2), #fff);
+    }
+    .photo-frame--header .photo-frame__placeholder { font-size: 2rem; color: var(--brass-semi); }
+
+    /* Кнопки на фото - позиціоновані поверх нижнього краю рамки,
+       колір використовує стандартні класи Bootstrap (btn-outline-primary/
+       btn-outline-danger) - та сама поведінка кольору при наведенні,
+       що й у кнопки "Редагувати". */
+    .photo-frame-wrap { position: relative; width: 96px; }
+    .photo-corner-btn {
+        position: absolute;
+        bottom: -6px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .85rem;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    }
+    .photo-corner-btn { left: 6px; }
+    .photo-corner-btn--delete { left: auto; right: 6px; }
 </style>
+
+<!-- Модальне вікно завантаження/обрізки фото -->
+<div class="modal fade" id="photoUploadModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content" style="border-radius: 14px; overflow: hidden; border: none;">
+            <div class="modal-header" style="background: var(--ink); color: #fff; border: none;">
+                <h5 class="modal-title mb-0"><i class="bi bi-camera-fill me-2"></i>Фото студента</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="d-flex justify-content-center gap-4 py-3" style="background: var(--paper-2); font-size: .85rem;">
+                <span id="stepDot1" class="photo-step photo-step--active"><span class="photo-step__num">1</span>Файл</span>
+                <span id="stepDot2" class="photo-step"><span class="photo-step__num">2</span>Обрізка 3×4</span>
+            </div>
+
+            <div class="modal-body p-4">
+
+                <div id="photoStep1">
+                    <label for="photoFileInput" class="photo-dropzone">
+                        <i class="bi bi-cloud-arrow-up-fill"></i>
+                        <div class="fw-semibold mt-2">Натисніть, щоб обрати фото</div>
+                        <div class="text-muted small mt-1">JPEG, PNG або WEBP · до 8 МБ</div>
+                    </label>
+                    <input type="file" id="photoFileInput" class="visually-hidden" accept="image/jpeg,image/png,image/webp">
+                    <div id="photoFileName" class="text-center small text-muted mt-2"></div>
+                </div>
+
+                <div id="photoStep2" class="d-none">
+                    <div class="text-center mb-2 text-muted small">Перетягніть і змасштабуйте рамку так, щоб обличчя було по центру</div>
+                    <div class="photo-cropper-area">
+                        <img id="cropperImage" src="">
+                    </div>
+                </div>
+
+            </div>
+            <div class="modal-footer" style="border: none; background: var(--paper-2);">
+                <button type="button" id="photoBackBtn" class="btn btn-outline-secondary d-none">
+                    <i class="bi bi-arrow-left me-1"></i>Назад
+                </button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" id="photoNextBtn" class="btn btn-primary" disabled>Далі: обрізати</button>
+                <button type="button" id="photoSaveBtn" class="btn btn-primary d-none">
+                    <i class="bi bi-check-circle me-1"></i>Зберегти фото
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .photo-step {
+        display: flex; align-items: center; gap: .4rem;
+        color: var(--muted); font-weight: 600;
+    }
+    .photo-step--active { color: var(--ink-text); }
+    .photo-step__num {
+        width: 22px; height: 22px; border-radius: 50%;
+        background: var(--paper); color: var(--muted);
+        display: flex; align-items: center; justify-content: center;
+        font-size: .78rem; border: 1px solid var(--line);
+    }
+    .photo-step--active .photo-step__num { background: var(--brass); color: var(--ink); border-color: var(--brass); }
+
+    .photo-dropzone {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        padding: 2.5rem 1rem;
+        border: 2px dashed var(--line);
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: border-color .15s ease, background .15s ease;
+        color: var(--ink-text);
+    }
+    .photo-dropzone:hover { border-color: var(--brass); background: var(--brass-soft); }
+    .photo-dropzone i { font-size: 2.2rem; color: var(--brass); }
+
+    .photo-cropper-area {
+        max-height: 55vh;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #222;
+    }
+    .photo-cropper-area img { max-width: 100%; display: block; }
+</style>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+(function () {
+    const fileInput = document.getElementById('photoFileInput');
+    const fileNameEl = document.getElementById('photoFileName');
+    const step1 = document.getElementById('photoStep1');
+    const step2 = document.getElementById('photoStep2');
+    const stepDot1 = document.getElementById('stepDot1');
+    const stepDot2 = document.getElementById('stepDot2');
+    const nextBtn = document.getElementById('photoNextBtn');
+    const backBtn = document.getElementById('photoBackBtn');
+    const saveBtn = document.getElementById('photoSaveBtn');
+    const cropperImg = document.getElementById('cropperImage');
+    let cropper = null;
+
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8 МБ
+
+    function showStep1() {
+        step1.classList.remove('d-none');
+        step2.classList.add('d-none');
+        nextBtn.classList.remove('d-none');
+        backBtn.classList.add('d-none');
+        saveBtn.classList.add('d-none');
+        stepDot1.classList.add('photo-step--active');
+        stepDot2.classList.remove('photo-step--active');
+        if (cropper) { cropper.destroy(); cropper = null; }
+    }
+
+    function showStep2() {
+        step1.classList.add('d-none');
+        step2.classList.remove('d-none');
+        nextBtn.classList.add('d-none');
+        backBtn.classList.remove('d-none');
+        saveBtn.classList.remove('d-none');
+        stepDot1.classList.remove('photo-step--active');
+        stepDot2.classList.add('photo-step--active');
+    }
+
+    fileInput.addEventListener('change', function () {
+        const file = fileInput.files[0];
+        if (!file) {
+            nextBtn.disabled = true;
+            fileNameEl.textContent = '';
+            return;
+        }
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            alert('Непідтримуваний формат. Дозволені: JPEG, PNG, WEBP.');
+            fileInput.value = '';
+            nextBtn.disabled = true;
+            fileNameEl.textContent = '';
+            return;
+        }
+        if (file.size > MAX_SIZE_BYTES) {
+            alert('Файл завеликий (' + (file.size / 1024 / 1024).toFixed(1) + ' МБ). Максимум - 8 МБ.');
+            fileInput.value = '';
+            nextBtn.disabled = true;
+            fileNameEl.textContent = '';
+            return;
+        }
+        nextBtn.disabled = false;
+        fileNameEl.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>' + file.name;
+    });
+
+    nextBtn.addEventListener('click', function () {
+        const file = fileInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            cropperImg.src = e.target.result;
+            showStep2();
+            if (cropper) cropper.destroy();
+            cropper = new Cropper(cropperImg, {
+                aspectRatio: 3 / 4,
+                viewMode: 1,
+                autoCropArea: 0.9,
+                background: false,
+            });
+        };
+        reader.readAsDataURL(file);
+    });
+
+    backBtn.addEventListener('click', showStep1);
+
+    saveBtn.addEventListener('click', function () {
+        if (!cropper) return;
+        const data = cropper.getData(true); // true = округлені координати
+        const formData = new FormData();
+        formData.append('photo_file', fileInput.files[0]);
+        formData.append('crop_x', data.x);
+        formData.append('crop_y', data.y);
+        formData.append('crop_w', data.width);
+        formData.append('crop_h', data.height);
+
+        saveBtn.disabled = true;
+        backBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
+
+        fetch("{{ url_for('students.upload_photo', student_id=student.id) }}", {
+            method: 'POST',
+            body: formData,
+        }).then(function (resp) {
+            if (resp.redirected) {
+                window.location.href = resp.url;
+            } else {
+                window.location.reload();
+            }
+        }).catch(function () {
+            alert('Не вдалося зберегти фото. Спробуйте ще раз.');
+            saveBtn.disabled = false;
+            backBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Зберегти фото';
+        });
+    });
+
+    // Скидаємо модальне вікно до початкового стану при закритті
+    document.getElementById('photoUploadModal').addEventListener('hidden.bs.modal', function () {
+        showStep1();
+        nextBtn.disabled = true;
+        saveBtn.disabled = false;
+        backBtn.disabled = false;
+        saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Зберегти фото';
+        fileInput.value = '';
+        fileNameEl.textContent = '';
+    });
+})();
+</script>
 {% endblock %}
