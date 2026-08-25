@@ -54,6 +54,11 @@
                     <i class="bi bi-person-add"></i> Студенти + військові дані
                 </a></li>
                 {% endif %}
+                {% if is_admin or 'manage_students' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('photo_bulk.bulk_upload') }}">
+                    <i class="bi bi-images"></i> Фото студентів (масово)
+                </a></li>
+                {% endif %}
                 {% if is_admin or 'import_subjects' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.import_subjects') }}">
                     <i class="bi bi-journal-plus"></i> Предмети
@@ -139,6 +144,9 @@
             <div class="admin-section-title">Імпорт</div>
             {% if is_admin or 'import_from_excel' in perms %}
             <a href="{{ url_for('students.import_from_excel') }}" class="admin-link d-block"><i class="bi bi-person-add"></i> Студенти + військові</a>
+            {% endif %}
+            {% if is_admin or 'manage_students' in perms %}
+            <a href="{{ url_for('photo_bulk.bulk_upload') }}" class="admin-link d-block"><i class="bi bi-images"></i> Фото студентів (масово)</a>
             {% endif %}
             {% if is_admin or 'import_subjects' in perms %}
             <a href="{{ url_for('admin.import_subjects') }}" class="admin-link d-block"><i class="bi bi-journal-plus"></i> Предмети</a>

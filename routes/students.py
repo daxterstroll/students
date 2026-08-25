@@ -562,6 +562,121 @@ def add_student():
     conn.close()
     return render_template('add_student.html', groups=groups)
 
+
+@students_bp.route('/students/<int:student_id>/photo', methods=['GET', 'POST'])
+@login_required('')
+def upload_photo(student_id):
+    """
+    Завантаження/заміна фото студента (POST). GET на цей самий маршрут
+    (наприклад, випадковий перехід за старим посиланням чи кнопка
+    "Назад" у браузері після POST) не є помилкою користувача - замість
+    "голої" 405 просто повертаємо на картку студента.
+
+    POST приймає:
+      - photo_file: оригінальний файл зображення
+      - crop_x, crop_y, crop_w, crop_h: прямокутник обрізки в пікселях
+        оригінального зображення (координати від Cropper.js на клієнті)
+    Результат - завжди фото 3х4 (600x800 px), збережене як
+    static/uploads/photos/student_<id>.jpg, шлях записується в БД.
+    """
+    if request.method == 'GET':
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn = get_db()
+    role = session.get('role')
+    group_ids = session.get('group_ids', [])
+
+    student = conn.execute("SELECT group_id FROM students WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        flash('Студента не знайдено', 'error')
+        return redirect(url_for('students.student_list'))
+
+    if role != 'admin' and student['group_id'] not in group_ids:
+        conn.close()
+        flash('Ви не маєте доступу до цього студента', 'error')
+        return redirect(url_for('students.student_list'))
+
+    file = request.files.get('photo_file')
+    if not file or file.filename == '':
+        conn.close()
+        flash('Оберіть файл фотографії', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    try:
+        crop_box = (
+            float(request.form['crop_x']),
+            float(request.form['crop_y']),
+            float(request.form['crop_w']),
+            float(request.form['crop_h']),
+        )
+    except (KeyError, ValueError):
+        conn.close()
+        flash('Некоректні дані обрізки фото - спробуйте ще раз', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    from routes.photo import process_and_save_photo
+    try:
+        photo_rel_path = process_and_save_photo(file.read(), crop_box, student_id)
+    except ValueError as e:
+        conn.close()
+        flash(str(e), 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+    except Exception as e:
+        logger.error(f"Помилка обробки фото студента (ID {student_id}): {e}", exc_info=True)
+        conn.close()
+        flash('Не вдалося обробити фотографію. Спробуйте інший файл.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn.execute("UPDATE students SET photo = ? WHERE id = ?", (photo_rel_path, student_id))
+    conn.commit()
+    log_action(
+        current_username(),
+        f"завантажив фото студента (ID {student_id})",
+        group_ids=[student['group_id']]
+    )
+    conn.close()
+    flash('Фото збережено', 'success')
+    return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route('/students/<int:student_id>/photo/delete', methods=['POST'])
+@login_required('')
+def delete_photo(student_id):
+    """Видаляє фото студента (файл з диска + очищення поля в БД)."""
+    conn = get_db()
+    role = session.get('role')
+    group_ids = session.get('group_ids', [])
+
+    student = conn.execute("SELECT group_id FROM students WHERE id = ?", (student_id,)).fetchone()
+    if not student:
+        conn.close()
+        flash('Студента не знайдено', 'error')
+        return redirect(url_for('students.student_list'))
+
+    if role != 'admin' and student['group_id'] not in group_ids:
+        conn.close()
+        flash('Ви не маєте доступу до цього студента', 'error')
+        return redirect(url_for('students.student_list'))
+
+    from routes.photo import delete_photo as delete_photo_file
+    try:
+        delete_photo_file(student_id)
+    except Exception as e:
+        logger.error(f"Помилка видалення файлу фото студента (ID {student_id}): {e}", exc_info=True)
+
+    conn.execute("UPDATE students SET photo = NULL WHERE id = ?", (student_id,))
+    conn.commit()
+    log_action(
+        current_username(),
+        f"видалив фото студента (ID {student_id})",
+        group_ids=[student['group_id']]
+    )
+    conn.close()
+    flash('Фото видалено', 'success')
+    return redirect(url_for('students.student_details', student_id=student_id))
+
+
 @students_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
 @login_required('')
 def edit_student(student_id):
