@@ -2,6 +2,22 @@
 {% import '_macros.html' as ui %}
 {% block title %}Довідка{% endblock %}
 {% block content %}
+<style>
+    /* Той самий стиль, що й підзаголовки в реальному меню сайту
+       (.admin-section-title) - щоб довідник сторінок виглядав
+       структуровано, як меню, а не суцільним списком. */
+    .faq-category-title {
+        color: var(--brass);
+        font-size: .78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .12em;
+        padding: .3rem .1rem;
+        margin: 1.5rem 0 .5rem;
+        border-bottom: 2px solid var(--brass-semi);
+    }
+    .faq-category-title:first-child { margin-top: 0; }
+</style>
 <div class="container py-4">
 
     {{ ui.page_header('bi-question-circle-fill', 'Довідка', 'Опис усіх сторінок системи та покрокова інструкція заповнення додатка до диплома') }}
@@ -117,6 +133,8 @@
     <p class="text-muted small">Що робить кожна сторінка, які дані туди вносити і де вони з'являться у згенерованих документах.</p>
 
     <div class="accordion mb-4" id="faqAccordion">
+
+        <div class="faq-category-title">Студенти</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -257,6 +275,8 @@
             </div>
         </div>
 
+        <div class="faq-category-title">Адміністрування — освітня програма</div>
+
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-groups">
@@ -342,6 +362,8 @@
             </div>
         </div>
 
+        <div class="faq-category-title">Імпорт</div>
+
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-imports">
@@ -381,6 +403,8 @@
             </div>
         </div>
 
+        <div class="faq-category-title">Масова генерація</div>
+
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export">
@@ -393,6 +417,8 @@
                 </div>
             </div>
         </div>
+
+        <div class="faq-category-title">Адміністрування — система</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
