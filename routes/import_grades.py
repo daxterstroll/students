@@ -241,8 +241,14 @@ def parse_sheet(ws):
 
     else:
         # ---- Формат Б: рядок назв + одна колонка на предмет ----
+        # Межа пошуку шапки - навмисно велика (не 5-6 рядків): у реальних
+        # файлах перед таблицею часто йде багаторядковий титул/назва
+        # спеціальності/порожні рядки (зустрічався файл, де шапка
+        # предметів була аж на 7-му рядку - при межі "перші 6 рядків"
+        # вона просто не потрапляла в діапазон пошуку).
         subject_r = None
-        for r in range(0, min(6, max_row - 1)):
+        header_search_limit = min(40, max_row - 1)
+        for r in range(0, header_search_limit):
             row = grid[r]
             text_cells = [(c, str(v).strip()) for c, v in enumerate(row)
                           if isinstance(v, str) and len(str(v).strip()) >= 4 and not _is_service_title(v)]
@@ -276,9 +282,18 @@ def parse_sheet(ws):
                 subjects.append({'title': title, 'col': c, 'col_end': c + 1})
 
     # ---- Студенти і оцінки ----
+    # Зупиняємось на першому повністю порожньому рядку - це природна
+    # межа кінця таблиці. Без цього текст ПІСЛЯ таблиці (підсумки,
+    # підписи на кшталт "Декан факультету: Прізвище Ім'я" в тій самій
+    # колонці, що й ПІБ студентів) міг би сприйматися як додаткові
+    # фальшиві "студенти".
     students, grades = [], {}
     for r in range(data_start, max_row):
-        name_val = grid[r][name_col] if name_col < len(grid[r]) else None
+        row = grid[r]
+        if all(v is None or (isinstance(v, str) and not v.strip()) for v in row):
+            break
+
+        name_val = row[name_col] if name_col < len(row) else None
         if not _has_cyrillic_words(name_val):
             continue
         students.append({'name': str(name_val).strip(), 'row': r})
@@ -295,6 +310,67 @@ def parse_sheet(ws):
     return {'subjects': [{'title': s['title']} for s in subjects],
             'students': [{'name': s['name']} for s in students],
             'grades': grades}
+
+
+def validate_parsed(parsed):
+    """
+    Перевіряє результат parse_sheet() на ознаки того, що структура файлу
+    насправді не відповідає жодному з підтримуваних форматів як слід -
+    навіть якщо технічно щось знайшлося (предмети/студенти не порожні).
+    Повертає список текстових попереджень (не помилок - імпорт все одно
+    може тривати далі, це підказки для уважнішої перевірки на кроках
+    зіставлення й попереднього перегляду).
+    """
+    warnings = []
+    subjects = parsed['subjects']
+    students = parsed['students']
+    grades = parsed['grades']
+
+    if not subjects or not students:
+        return warnings  # порожній результат - окреме повідомлення в choose_sheet()
+
+    total_cells = len(subjects) * len(students)
+    fill_ratio = len(grades) / total_cells if total_cells else 0
+
+    # 1. Дуже мало реально заповнених оцінок відносно розміру таблиці -
+    #    ознака того, що предмети чи студенти визначені неправильно
+    #    (напр. невдало обрана колонка ПІБ, чи межі блоку предмета).
+    if fill_ratio < 0.3:
+        warnings.append(
+            f"Заповнено лише {round(fill_ratio*100)}% очікуваних оцінок "
+            f"({len(grades)} з {total_cells}) - можливо, предмети або студенти "
+            f"визначені неправильно. Уважно перевірте крок зіставлення."
+        )
+
+    # 2. Шкала оцінок - якщо майже всі знайдені значення дуже малі,
+    #    ймовірно це не 100-бальна шкала ECTS (наприклад, 5-бальна чи
+    #    12-бальна), а парсер підставить ці числа як є, спотворивши сенс
+    #    ("5" стане "Незадовільно" за шкалою 0-100).
+    values = list(grades.values())
+    if values:
+        max_val = max(values)
+        share_low = sum(1 for v in values if v <= 12) / len(values)
+        if max_val <= 12 and share_low > 0.8:
+            warnings.append(
+                f"Знайдені оцінки переважно дуже малі (максимум серед знайдених: {max_val}) - "
+                f"схоже, це не 100-бальна шкала ECTS, а інша система оцінювання. "
+                f"Система інтерпретує ці числа як бали зі шкали 0-100 - "
+                f"перевірте перед підтвердженням, інакше оцінки будуть спотворені."
+            )
+
+    # 3. Лише 1 предмет знайдено у файлі, схожому на формат А (є хоча б
+    #    одне слово ECTS у файлі, але недостатньо для впевненого
+    #    визначення 3-колонкового формату) - типова ознака помилкового
+    #    "провалювання" у формат Б.
+    if len(subjects) == 1:
+        warnings.append(
+            "Знайдено лише 1 предмет. Якщо у файлі їх насправді більше - "
+            "можливо, структуру розпізнано неправильно (наприклад, формат "
+            "із колонками Бали/Оцінка/ECTS визначається впевнено лише коли "
+            "предметів у файлі щонайменше 2). Перевірте результат уважно."
+        )
+
+    return warnings
 
 
 # ============================================================
@@ -369,6 +445,9 @@ def choose_sheet(token):
             flash('Не вдалося розпізнати структуру аркуша: не знайдено предметів або студентів. '
                   'Перевірте, що обрано правильний аркуш зведеної відомості.', 'danger')
             return redirect(url_for('import_grades.choose_sheet', token=token))
+
+        for warning_text in validate_parsed(parsed):
+            flash(warning_text, 'warning')
 
         state['sheet'] = sheet
         state['parsed'] = parsed
