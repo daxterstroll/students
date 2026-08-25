@@ -1,0 +1,91 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Масове завантаження фото: зіставлення{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-images', 'Зіставлення фото зі студентами', group.name if group else '') }}
+
+    <div class="alert alert-light border small">
+        <span class="badge bg-success-subtle text-success-emphasis me-1">зелений</span> - впевнений збіг за іменем файлу;
+        <span class="badge bg-warning-subtle text-warning-emphasis mx-1">жовтий</span> - найкраще припущення, перевірте;
+        <span class="badge bg-danger-subtle text-danger-emphasis mx-1">червоний</span> - не знайдено, оберіть вручну або пропустіть.
+    </div>
+
+    {% if manifest.skipped %}
+    <div class="alert alert-warning small">
+        <strong>Пропущено через помилку файлу:</strong>
+        <ul class="mb-0 mt-1">
+            {% for s in manifest.skipped %}<li>{{ s.filename }} - {{ s.error }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="POST">
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th style="width:70px;"></th><th>Файл</th><th>Студент</th></tr></thead>
+                        <tbody>
+                            {% for item in manifest.photos %}
+                            <tr class="{% if item.status == 'auto' %}table-success{% elif item.status == 'suggest' %}table-warning{% else %}table-danger{% endif %}">
+                                <td>
+                                    <img src="{{ url_for('photo_bulk.preview_image', token=token, file_key=item.file_key) }}"
+                                         style="width:48px; height:64px; object-fit:cover; border-radius:4px;" alt="">
+                                </td>
+                                <td class="small">{{ item.filename }}</td>
+                                <td>
+                                    <select name="student_{{ item.file_key }}" class="form-select form-select-sm js-photo-student-select">
+                                        <option value="">— пропустити цей файл —</option>
+                                        {% for s in db_students %}
+                                        <option value="{{ s.id }}" {% if item.student_id == s.id %}selected{% endif %}>{{ s.full_name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі: попередній перегляд</button>
+            <a href="{{ url_for('photo_bulk.bulk_upload') }}" class="btn btn-outline-secondary">Скасувати</a>
+        </div>
+    </form>
+
+</div>
+
+<script>
+(function () {
+    // Той самий підхід, що й на сторінці зіставлення при імпорті
+    // оцінок: щойно студента обрано в одному списку, він зникає з
+    // решти списків - обрати одного студента для двох різних фото
+    // неможливо.
+    function enforceUnique(selects) {
+        const chosen = new Set(Array.from(selects).map(s => s.value).filter(v => v !== ''));
+        selects.forEach(select => {
+            const myValue = select.value;
+            Array.from(select.options).forEach(opt => {
+                if (opt.value === '') return;
+                opt.hidden = chosen.has(opt.value) && opt.value !== myValue;
+            });
+        });
+    }
+    const selects = document.querySelectorAll('.js-photo-student-select');
+    const seen = new Set();
+    selects.forEach(select => {
+        if (select.value && seen.has(select.value)) {
+            select.value = '';
+        } else if (select.value) {
+            seen.add(select.value);
+        }
+    });
+    enforceUnique(selects);
+    selects.forEach(select => select.addEventListener('change', () => enforceUnique(selects)));
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Масове завантаження фото{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-images', 'Масове завантаження фото', 'Одразу декілька файлів - система сама зіставить кожен зі студентом за іменем у назві файлу') }}
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data" class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="group_id">Група</label>
+                    <select name="group_id" id="group_id" class="form-select" required>
+                        <option value="" disabled selected>— оберіть групу —</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label" for="photo_files">Файли фото</label>
+                    <input type="file" name="photo_files" id="photo_files" class="form-control"
+                           accept="image/jpeg,image/png,image/webp" multiple required>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="alert alert-light border mt-4 small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        <ol class="mb-2 mt-2 ps-3">
+            <li>Назвіть файли «Прізвище Ім'я.jpg» (наприклад, «Іваненко Іван.jpg») і оберіть їх усі одразу.</li>
+            <li>Система сама зіставить кожен файл зі студентом обраної групи за іменем - сумнівні збіги можна поправити вручну.</li>
+            <li>Кожне фото автоматично обрізається по центру до розміру 3×4 - на попередньому перегляді можна відредагувати обрізку окремого фото, якщо людина вийшла не по центру.</li>
+            <li>Після підтвердження всі фото зберігаються одразу.</li>
+        </ol>
+        <div class="text-muted">Формати: JPEG, PNG, WEBP · до 8 МБ кожен файл.</div>
+    </div>
+
+</div>
+{% endblock %}

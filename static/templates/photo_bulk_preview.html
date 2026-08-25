@@ -1,0 +1,142 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Масове завантаження фото: перегляд{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-images', 'Попередній перегляд', matched|length ~ ' фото готові до збереження') }}
+
+    {% if unmatched %}
+    <div class="alert alert-warning small">
+        <strong>{{ unmatched|length }} файл(ів) пропущено</strong> (не зіставлено зі студентом) - вони не будуть збережені:
+        <ul class="mb-0 mt-1">{% for u in unmatched %}<li>{{ u.filename }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    {% if skipped %}
+    <div class="alert alert-warning small">
+        <strong>Пропущено через помилку файлу:</strong>
+        <ul class="mb-0 mt-1">{% for s in skipped %}<li>{{ s.filename }} - {{ s.error }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <p class="text-muted small">Фото обрізані автоматично по центру. Якщо людина на фото вийшла не по центру - натисніть «Змінити обрізку» під конкретним фото.</p>
+
+    <div class="row g-3 mb-4">
+        {% for item in matched %}
+        <div class="col-6 col-sm-4 col-md-3 col-lg-2 text-center">
+            <img id="thumb_{{ item.file_key }}"
+                 src="{{ url_for('photo_bulk.preview_image', token=token, file_key=item.file_key) }}"
+                 class="img-fluid rounded shadow-sm mb-1" style="aspect-ratio: 3/4; object-fit: cover; width:100%;" alt="">
+            <div class="small fw-semibold text-truncate">{{ item.student_name }}</div>
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-1 w-100 js-recrop-btn"
+                    data-file-key="{{ item.file_key }}" data-token="{{ token }}">
+                <i class="bi bi-crop me-1"></i>Змінити обрізку
+            </button>
+        </div>
+        {% endfor %}
+    </div>
+
+    <form method="POST" action="{{ url_for('photo_bulk.confirm', token=token) }}"
+          onsubmit="return confirm('Зберегти {{ matched|length }} фото? Наявні фото цих студентів будуть замінені.');">
+        <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-2"></i>Зберегти всі {{ matched|length }} фото</button>
+            <a href="{{ url_for('photo_bulk.match', token=token) }}" class="btn btn-outline-secondary">← Назад до зіставлення</a>
+            <a href="{{ url_for('photo_bulk.bulk_upload') }}" class="btn btn-outline-danger">Скасувати все</a>
+        </div>
+    </form>
+
+</div>
+
+<!-- Модальне вікно ручної обрізки конкретного фото -->
+<div class="modal fade" id="recropModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-crop me-2"></i>Обрізка 3×4</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div style="max-height: 60vh; overflow: hidden; background:#222;">
+                    <img id="recropImage" src="" style="max-width: 100%; display:block;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" id="recropSaveBtn" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Застосувати
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+window.addEventListener('load', function () {
+    let cropper = null;
+    let currentFileKey = null;
+    let currentToken = null;
+    const modalEl = document.getElementById('recropModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const recropImg = document.getElementById('recropImage');
+    const saveBtn = document.getElementById('recropSaveBtn');
+
+    document.querySelectorAll('.js-recrop-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            currentFileKey = btn.dataset.fileKey;
+            currentToken = btn.dataset.token;
+            recropImg.src = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}".replace('__KEY__', currentFileKey) + '?v=' + Date.now();
+            modal.show();
+        });
+    });
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(recropImg, {
+            aspectRatio: 3 / 4,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+        });
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        if (cropper) { cropper.destroy(); cropper = null; }
+    });
+
+    saveBtn.addEventListener('click', function () {
+        if (!cropper || !currentFileKey) return;
+        const data = cropper.getData(true);
+        const formData = new FormData();
+        formData.append('crop_x', data.x);
+        formData.append('crop_y', data.y);
+        formData.append('crop_w', data.width);
+        formData.append('crop_h', data.height);
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
+
+        const url = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}".replace('__KEY__', currentFileKey);
+        fetch(url, { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(function (resp) {
+                if (resp.ok) {
+                    document.getElementById('thumb_' + currentFileKey).src = resp.preview_url;
+                    modal.hide();
+                } else {
+                    alert('Не вдалося зберегти обрізку. Спробуйте ще раз.');
+                }
+            })
+            .catch(function () {
+                alert('Не вдалося зберегти обрізку. Спробуйте ще раз.');
+            })
+            .finally(function () {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Застосувати';
+            });
+    });
+});
+</script>
+{% endblock %}

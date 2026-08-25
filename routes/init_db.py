@@ -163,6 +163,7 @@ CREATE TABLE IF NOT EXISTS "students" (
 	"birth_date"	TEXT,
 	"group_id"	INTEGER,
 	"edebo_code"	VARCHAR(50),
+	"photo"	TEXT,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")

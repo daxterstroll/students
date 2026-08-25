@@ -661,6 +661,32 @@ main.container {
         }
         html[data-theme="dark"] .btn-close { filter: invert(1) grayscale(100%) brightness(200%); }
         html[data-theme="dark"] .alert-light { background-color: var(--paper-2); color: var(--ink-text); border-color: var(--line); }
+
+        /* Bootstrap 5.3 "subtle" фони і "emphasis" кольори тексту
+           (bg-primary-subtle, text-success-emphasis тощо) - за
+           замовчуванням світлі пастельні відтінки, ніяк не пов'язані
+           зі змінними сайту, тому в темній темі лишались світлими, а
+           текст на них (успадкований світлий колір сторінки) зливався. */
+        html[data-theme="dark"] .bg-primary-subtle   { background-color: rgba(74,110,168,.20) !important; }
+        html[data-theme="dark"] .bg-secondary-subtle { background-color: rgba(231,226,214,.10) !important; }
+        html[data-theme="dark"] .bg-success-subtle   { background-color: rgba(79,122,82,.22) !important; }
+        html[data-theme="dark"] .bg-danger-subtle    { background-color: rgba(162,59,46,.22) !important; }
+        html[data-theme="dark"] .bg-warning-subtle   { background-color: rgba(200,162,74,.20) !important; }
+        html[data-theme="dark"] .bg-info-subtle      { background-color: rgba(74,110,168,.20) !important; }
+        html[data-theme="dark"] .bg-light-subtle     { background-color: var(--paper-2) !important; }
+        html[data-theme="dark"] .bg-dark-subtle      { background-color: rgba(0,0,0,.35) !important; }
+
+        html[data-theme="dark"] .text-primary-emphasis   { color: #a9c2e8 !important; }
+        html[data-theme="dark"] .text-secondary-emphasis { color: var(--ink-text) !important; }
+        html[data-theme="dark"] .text-success-emphasis   { color: #bfe3c2 !important; }
+        html[data-theme="dark"] .text-danger-emphasis    { color: #f0b3ab !important; }
+        html[data-theme="dark"] .text-warning-emphasis   { color: var(--brass-lt) !important; }
+        html[data-theme="dark"] .text-info-emphasis      { color: #a9c2e8 !important; }
+
+        /* Картки з рамкою border-primary (як блок "Як заповнити
+           додаток до диплома") - Bootstrap-синя рамка замінюється на
+           золотисту, у тон іншим акцентним елементам сайту. */
+        html[data-theme="dark"] .border-primary { border-color: var(--brass) !important; }
         html[data-theme="dark"] .bg-light { background-color: var(--paper-2) !important; color: var(--ink-text); }
         html[data-theme="dark"] .border { border-color: var(--line) !important; }
         html[data-theme="dark"] hr.divider,
