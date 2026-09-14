@@ -8,7 +8,7 @@ import io
 import os
 import uuid
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 # Фінальний розмір файлу - співвідношення сторін точно 3:4 (як
 # стандартне фото на документи), у роздільності, достатній для чіткого
@@ -64,6 +64,11 @@ def load_and_validate_image(file_bytes):
     try:
         img = Image.open(io.BytesIO(file_bytes))
         img_format = img.format
+        # Телефони часто зберігають вертикальне фото як "лежаче" в самих
+        # пікселях + позначку в EXIF "поверни на 90°" для показу. Pillow
+        # цю позначку сам не застосовує - без цього кроку обрізка й
+        # результат виходять повернутими не так, як бачив користувач.
+        img = ImageOps.exif_transpose(img)
     except Exception as e:
         raise ValueError(f"Не вдалося розпізнати зображення: {e}")
 
