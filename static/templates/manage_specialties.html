@@ -1,0 +1,240 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Спеціальності{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-diagram-3', 'Спеціальності', 'Каталог за Постановою КМУ №1021 від 30.08.2024 (чинна з 01.11.2024)') }}
+
+    <div class="alert alert-light border small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        Вимикайте перемикачем ті спеціальності, яких немає у вашому закладі - вони зникнуть з випадаючого списку на сторінці «Групи», але наявні групи, які вже на них посилаються, продовжать працювати без змін.
+        Якщо потрібної спеціальності немає в офіційному переліку - додайте власну нижче (позначається окремо як «власна»).
+        Англійський відповідник спеціальності - код і назва деталізованої галузі ISCED-F 2013 з тієї ж постанови; для галузей знань (A-K) офіційного англійського перекладу постанова не містить, тому назви можна редагувати за потреби.
+    </div>
+
+    {{ ui.section_title('Галузі знань') }}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th style="width:60px;">Код</th><th>Назва (укр.)</th><th>Назва (англ.)</th><th class="text-end" style="width:60px;"></th></tr></thead>
+                    <tbody>
+                        {% for f in fields %}
+                        <tr>
+                            <td class="font-monospace">{{ f.code }}</td>
+                            <td>{{ f.name_ua }}</td>
+                            <td class="text-muted">{{ f.name_en or '—' }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-field-btn"
+                                        data-code="{{ f.code }}" data-name-ua="{{ f.name_ua }}" data-name-en="{{ f.name_en or '' }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {{ ui.section_title('Спеціальності') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="section-title">Додати власну спеціальність</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Код</label>
+                    <input type="text" name="code" class="form-control form-control-sm" placeholder="напр. D10" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Назва (укр.)</label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Назва (англ.)</label>
+                    <input type="text" name="name_en" class="form-control form-control-sm" placeholder="напр. 0413 Management and administration">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Галузь знань</label>
+                    <select name="knowledge_field_code" class="form-select form-select-sm" required>
+                        {% for f in fields %}
+                        <option value="{{ f.code }}">{{ f.code }} {{ f.name_ua }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">Код</th>
+                            <th>Назва (укр.)</th>
+                            <th>Назва (англ. / ISCED-F)</th>
+                            <th>Галузь знань</th>
+                            <th class="text-center" style="width:110px;">Актуальна</th>
+                            <th class="text-end" style="width:160px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sp in specialties %}
+                        <tr class="{% if not sp.is_active %}text-muted{% endif %}">
+                            <td class="font-monospace">{{ sp.code }}</td>
+                            <td>
+                                {{ sp.name_ua }}
+                                {% if sp.is_custom %}<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">власна</span>{% endif %}
+                            </td>
+                            <td class="small text-muted">{{ sp.name_en or '—' }}</td>
+                            <td class="small">{{ sp.field_code }} {{ sp.field_name }}</td>
+                            <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="code" value="{{ sp.code }}">
+                                    <button type="submit" class="btn btn-sm {% if sp.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                        {{ 'так' if sp.is_active else 'ні' }}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                                        data-code="{{ sp.code }}" data-name="{{ sp.name_ua }}"
+                                        data-name-en="{{ sp.name_en or '' }}" data-field="{{ sp.field_code }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if sp.groups_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити «{{ sp.code }} {{ sp.name_ua }}»?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="code" value="{{ sp.code }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small" title="Використовується у {{ sp.groups_count }} груп(ах) - видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ sp.groups_count }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Модальне вікно редагування спеціальності -->
+<div class="modal fade" id="editSpecialtyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="code" id="editCode">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати спеціальність</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Код</label>
+                        <input type="text" class="form-control" id="editCodeDisplay" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (укр.)</label>
+                        <input type="text" name="name_ua" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (англ. / ISCED-F)</label>
+                        <input type="text" name="name_en" id="editNameEn" class="form-control" placeholder="напр. 0413 Management and administration">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Галузь знань</label>
+                        <select name="knowledge_field_code" id="editField" class="form-select" required>
+                            {% for f in fields %}
+                            <option value="{{ f.code }}">{{ f.code }} {{ f.name_ua }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Модальне вікно редагування галузі знань -->
+<div class="modal fade" id="editFieldModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit_field">
+                <input type="hidden" name="field_code" id="editFieldCode">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати галузь знань</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Код</label>
+                        <input type="text" class="form-control" id="editFieldCodeDisplay" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (укр.)</label>
+                        <input type="text" name="field_name_ua" id="editFieldNameUa" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (англ.)</label>
+                        <input type="text" name="field_name_en" id="editFieldNameEn" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const specModalEl = document.getElementById('editSpecialtyModal');
+    const specModal = new bootstrap.Modal(specModalEl);
+    document.querySelectorAll('.js-edit-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editCode').value = btn.dataset.code;
+            document.getElementById('editCodeDisplay').value = btn.dataset.code;
+            document.getElementById('editName').value = btn.dataset.name;
+            document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            document.getElementById('editField').value = btn.dataset.field;
+            specModal.show();
+        });
+    });
+
+    const fieldModalEl = document.getElementById('editFieldModal');
+    const fieldModal = new bootstrap.Modal(fieldModalEl);
+    document.querySelectorAll('.js-edit-field-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editFieldCode').value = btn.dataset.code;
+            document.getElementById('editFieldCodeDisplay').value = btn.dataset.code;
+            document.getElementById('editFieldNameUa').value = btn.dataset.nameUa;
+            document.getElementById('editFieldNameEn').value = btn.dataset.nameEn;
+            fieldModal.show();
+        });
+    });
+});
+</script>
+{% endblock %}
