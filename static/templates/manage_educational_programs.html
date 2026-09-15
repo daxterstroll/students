@@ -2,6 +2,70 @@
 {% import '_macros.html' as ui %}
 {% block title %}Освітня програма{% endblock %}
 {% block content %}
+<style>
+    .ep-row {
+        display: flex;
+        align-items: center;
+        gap: .9rem;
+        padding: .7rem 1rem;
+        border-bottom: 1px solid var(--line, #eee);
+        transition: background .15s ease;
+    }
+    .ep-row:last-child { border-bottom: none; }
+    .ep-row:hover { background: var(--paper-2); }
+    .ep-year-badge {
+        flex-shrink: 0;
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        background: linear-gradient(160deg, var(--brass-soft, #f7ecd3), var(--paper-2));
+        border: 1px solid var(--brass-semi, #d8c48a);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: .95rem;
+        color: var(--ink);
+        text-align: center;
+        line-height: 1.1;
+    }
+    html[data-theme="dark"] .ep-year-badge {
+        background: linear-gradient(160deg, rgba(200,162,74,.22), var(--paper-2));
+        color: var(--brass-lt);
+    }
+    .ep-degree-badge {
+        flex-shrink: 0;
+        font-size: .72rem;
+        font-weight: 600;
+        padding: .25rem .55rem;
+        border-radius: 999px;
+        background: var(--paper-2);
+        border: 1px solid var(--line, #ddd);
+        color: var(--ink-text);
+        white-space: nowrap;
+    }
+    .ep-names {
+        flex-grow: 1;
+        min-width: 0;
+    }
+    .ep-name-ua {
+        font-weight: 600;
+        overflow-wrap: break-word;
+    }
+    .ep-name-en {
+        font-size: .82rem;
+        color: var(--muted);
+        font-style: italic;
+        overflow-wrap: break-word;
+    }
+    .ep-actions {
+        flex-shrink: 0;
+        display: flex;
+        gap: .35rem;
+        align-items: center;
+    }
+</style>
+
 <div class="container py-4">
 
     {{ ui.page_header('bi-journal-bookmark', 'Освітня програма', 'Назва освітньої програми для кожної трійки «спеціальність + ступінь + рік вступу»') }}
@@ -20,7 +84,7 @@
                 <div class="col-md-3">
                     <label class="form-label small mb-1">Спеціальність</label>
                     <select name="specialty_code" class="form-select form-select-sm" required>
-                        <option value="" disabled selected>— оберіть —</option>
+                        <option value="" disabled selected>— оберіть зі списку —</option>
                         {% for s in specialties %}
                         <option value="{{ s.code }}">{{ s.code }} {{ s.name_ua }}</option>
                         {% endfor %}
@@ -29,7 +93,7 @@
                 <div class="col-md-2">
                     <label class="form-label small mb-1">Ступінь</label>
                     <select name="degree_level" class="form-select form-select-sm" required>
-                        <option value="" disabled selected>— оберіть —</option>
+                        <option value="" disabled selected>— оберіть зі списку —</option>
                         {% for d in degree_levels %}
                         <option value="{{ d.name_ua }}">{{ d.name_ua }}</option>
                         {% endfor %}
@@ -59,43 +123,39 @@
     {% endif %}
 
     {% for code, programs in programs_by_specialty.items() %}
-    <div class="card mb-3">
-        <div class="card-header py-2">
-            <strong>{{ code }} {{ programs[0].specialty_name }}</strong>
+    <div class="card mb-3" style="border-radius: 12px; overflow: hidden;">
+        <div class="card-header py-2 d-flex align-items-center gap-2" style="background: var(--ink); color: var(--brass-lt); border: none;">
+            <span class="font-monospace">{{ code }}</span>
+            <strong>{{ programs[0].specialty_name }}</strong>
         </div>
         <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead><tr><th style="width:100px;">Рік вступу</th><th style="width:120px;">Ступінь</th><th>Назва (укр.)</th><th>Назва (англ.)</th><th class="text-end" style="width:120px;"></th></tr></thead>
-                    <tbody>
-                        {% for p in programs %}
-                        <tr>
-                            <td class="font-monospace">{{ p.start_year }}</td>
-                            <td>{{ p.degree_level }}</td>
-                            <td>{{ p.name_ua }}</td>
-                            <td class="text-muted small">{{ p.name_en or '—' }}</td>
-                            <td class="text-end">
-                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
-                                        data-id="{{ p.id }}" data-name-ua="{{ p.name_ua }}" data-name-en="{{ p.name_en or '' }}">
-                                    <i class="bi bi-pencil"></i>
-                                </button>
-                                {% if p.groups_count == 0 %}
-                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити програму «{{ p.name_ua }}» ({{ p.start_year }})?');">
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="id" value="{{ p.id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                                </form>
-                                {% else %}
-                                <span class="text-muted small" title="Використовується у {{ p.groups_count }} груп(ах) - видалення заборонено">
-                                    <i class="bi bi-lock"></i> {{ p.groups_count }}
-                                </span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+            {% for p in programs %}
+            <div class="ep-row">
+                <div class="ep-year-badge">{{ p.start_year }}</div>
+                <div class="ep-degree-badge">{{ p.degree_level }}</div>
+                <div class="ep-names">
+                    <div class="ep-name-ua">{{ p.name_ua }}</div>
+                    {% if p.name_en %}<div class="ep-name-en">{{ p.name_en }}</div>{% endif %}
+                </div>
+                <div class="ep-actions">
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                            data-id="{{ p.id }}" data-name-ua="{{ p.name_ua }}" data-name-en="{{ p.name_en or '' }}">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    {% if p.groups_count == 0 %}
+                    <form method="POST" class="d-inline" onsubmit="return confirm('Видалити програму «{{ p.name_ua }}» ({{ p.start_year }})?');">
+                        <input type="hidden" name="action" value="delete">
+                        <input type="hidden" name="id" value="{{ p.id }}">
+                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                    </form>
+                    {% else %}
+                    <span class="text-muted small" title="Використовується у {{ p.groups_count }} груп(ах) - видалення заборонено">
+                        <i class="bi bi-lock"></i> {{ p.groups_count }}
+                    </span>
+                    {% endif %}
+                </div>
             </div>
+            {% endfor %}
         </div>
     </div>
     {% endfor %}
