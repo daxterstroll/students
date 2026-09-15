@@ -1,0 +1,48 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевести на наступний курс{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-arrow-up-circle', 'Перевести на наступний курс', 'Оберіть групи, які переходять на наступний курс за цим наказом') }}
+
+    {% if not groups %}
+    {{ ui.empty_state('bi-arrow-up-circle', 'Немає активних груп, які можуть перейти на наступний курс - усі або на випускному курсі, або вже заархівовані') }}
+    {% else %}
+    <form method="POST">
+        <div class="card mb-3">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width:40px;"></th>
+                                <th>Група</th>
+                                <th>Курс зараз -> стане</th>
+                                <th>Форма</th>
+                                <th>Рік вступу</th>
+                                <th class="text-end">Студентів</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for g in groups %}
+                            <tr>
+                                <td><input type="checkbox" name="group_ids" value="{{ g.id }}" class="form-check-input"></td>
+                                <td class="fw-semibold">{{ g.name }}</td>
+                                <td>{{ g.course }} <i class="bi bi-arrow-right mx-1"></i> {{ g.course + 1 }}</td>
+                                <td>{{ g.study_form }}</td>
+                                <td>{{ g.start_year }}</td>
+                                <td class="text-end">{{ g.student_count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі: перевірити студентів</button>
+    </form>
+    {% endif %}
+
+</div>
+{% endblock %}

@@ -135,6 +135,15 @@
                 {% if is_admin or 'manage_qualification_names' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_qualification_names') }}"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a></li>
                 {% endif %}
+                {% if is_admin or 'manage_courses' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.courses') }}"><i class="bi bi-kanban"></i> Курси</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_frozen_students' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.frozen_students') }}"><i class="bi bi-snow"></i> Заморожені студенти</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_expulsion' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.expulsion') }}"><i class="bi bi-person-x"></i> Наказ про відрахування</a></li>
+                {% endif %}
                 {% if is_admin or 'archive' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.archive') }}"><i class="bi bi-archive"></i> Архів груп</a></li>
                 {% endif %}
@@ -187,6 +196,9 @@
             {% if is_admin or 'manage_degree_levels' in perms %}<a href="{{ url_for('admin.manage_degree_levels') }}" class="admin-link d-block"><i class="bi bi-mortarboard"></i> Ступені</a>{% endif %}
             {% if is_admin or 'manage_educational_programs' in perms %}<a href="{{ url_for('admin.manage_educational_programs') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Освітня програма</a>{% endif %}
             {% if is_admin or 'manage_qualification_names' in perms %}<a href="{{ url_for('admin.manage_qualification_names') }}" class="admin-link d-block"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a>{% endif %}
+            {% if is_admin or 'manage_courses' in perms %}<a href="{{ url_for('admin.courses') }}" class="admin-link d-block"><i class="bi bi-kanban"></i> Курси</a>{% endif %}
+            {% if is_admin or 'manage_frozen_students' in perms %}<a href="{{ url_for('admin.frozen_students') }}" class="admin-link d-block"><i class="bi bi-snow"></i> Заморожені студенти</a>{% endif %}
+            {% if is_admin or 'manage_expulsion' in perms %}<a href="{{ url_for('admin.expulsion') }}" class="admin-link d-block"><i class="bi bi-person-x"></i> Наказ про відрахування</a>{% endif %}
             {% if is_admin or 'archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
             {% if is_admin or 'manage_diplomas' in perms %}<a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a>{% endif %}
             </div>

@@ -1,0 +1,135 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Заморожені студенти{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-snow', 'Заморожені студенти', 'Тимчасово виключені з переведення на курс - до ручного вирішення') }}
+
+    {{ ui.section_title('Активні (не вирішено)') }}
+    {% if not active %}
+    {{ ui.empty_state('bi-check-circle', 'Немає активних заморожувань') }}
+    {% else %}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Студент</th>
+                            <th>Попередня група</th>
+                            <th>Причина</th>
+                            <th>Наказ</th>
+                            <th>Заморожено</th>
+                            <th class="text-end" style="width:140px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in active %}
+                        <tr>
+                            <td class="fw-semibold">{{ f.student_name }}</td>
+                            <td>{{ f.previous_group_name or '—' }}</td>
+                            <td class="small">{{ f.reason }}</td>
+                            <td class="small text-muted">
+                                {% if f.order_number %}№{{ f.order_number }} від {{ f.order_date }}{% else %}—{% endif %}
+                            </td>
+                            <td class="small text-muted">{{ f.frozen_at }}<br>{{ f.frozen_by }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-primary js-resolve-btn"
+                                        data-frozen-id="{{ f.id }}" data-student-name="{{ f.student_name }}">
+                                    Вирішити
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {{ ui.section_title('Історія (вирішено)') }}
+    {% if not history %}
+    {{ ui.empty_state('bi-clock-history', 'Історія порожня') }}
+    {% else %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Студент</th>
+                            <th>Причина заморожування</th>
+                            <th>Рішення</th>
+                            <th>Вирішено</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in history %}
+                        <tr>
+                            <td>{{ f.student_name }}</td>
+                            <td class="small text-muted">{{ f.reason }}</td>
+                            <td class="small">{{ f.resolution }}</td>
+                            <td class="small text-muted">{{ f.resolved_at }}<br>{{ f.resolved_by }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+
+<div class="modal fade" id="resolveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="resolveForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">Вирішити: <span id="resolveStudentName"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Повернути до групи</label>
+                        <select name="target_group_id" class="form-select" required>
+                            <option value="" disabled selected>— оберіть зі списку —</option>
+                            {% for g in active_groups %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Коментар (необов'язково)</label>
+                        <input type="text" name="comment" class="form-control" placeholder="напр. заборгованість закрито">
+                    </div>
+                    <div class="text-muted small">
+                        Якщо студента потрібно відрахувати - зробіть це через «Наказ про відрахування», він сам підхопить цей запис.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const modalEl = document.getElementById('resolveModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const form = document.getElementById('resolveForm');
+    document.querySelectorAll('.js-resolve-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.getElementById('resolveStudentName').textContent = btn.dataset.studentName;
+            form.action = "/admin/frozen_students/" + btn.dataset.frozenId + "/resolve";
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Наказ про відрахування: перевірка{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-person-x', 'Перевірка перед відрахуванням', 'Позначте студентів з активних груп, яких дійсно відраховуємо - для кожного потрібна причина') }}
+
+    <form method="POST" action="{{ url_for('admin.expulsion_confirm') }}" enctype="multipart/form-data"
+          onsubmit="return confirm('Оформити наказ про відрахування?');">
+
+        {% if groups_with_students %}
+        {{ ui.section_title('З активних груп') }}
+        {% for g in groups_with_students %}
+        <input type="hidden" name="group_ids" value="{{ g.id }}">
+        <div class="card mb-3">
+            <div class="card-header"><strong>{{ g.name }}</strong></div>
+            <div class="card-body p-0">
+                {% if not g.students %}
+                <div class="p-3 text-muted small">У групі немає активних студентів.</div>
+                {% else %}
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        {% for s in g.students %}
+                        <tr>
+                            <td style="width:40px;">
+                                <input type="checkbox" name="include_{{ s.id }}" value="1"
+                                       class="form-check-input js-student-toggle" data-student-id="{{ s.id }}">
+                            </td>
+                            <td>{{ s.full_name }}</td>
+                            <td>
+                                <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
+                                       class="form-control form-control-sm d-none" placeholder="Причина відрахування (обов'язково)">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+        {% endif %}
+
+        {% if frozen_students_list %}
+        {{ ui.section_title('Із заморожених студентів') }}
+        {% for f in frozen_students_list %}
+        <input type="hidden" name="frozen_ids" value="{{ f.frozen_id }}">
+        {% endfor %}
+        <div class="card mb-3">
+            <div class="card-body p-0">
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        {% for f in frozen_students_list %}
+                        <tr>
+                            <td class="fw-semibold" style="width:220px;">{{ f.full_name }}</td>
+                            <td>
+                                <input type="text" name="frozen_reason_{{ f.frozen_id }}" class="form-control form-control-sm"
+                                       value="{{ f.reason }}" required>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="section-title">Наказ про відрахування</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Номер наказу</label>
+                        <input type="text" name="order_number" class="form-control" placeholder="напр. 200с" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Дата наказу</label>
+                        <input type="date" name="order_date" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Скан-копія наказу</label>
+                        <input type="file" name="scan_file" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-danger"><i class="bi bi-person-x me-2"></i>Оформити відрахування</button>
+        <a href="{{ url_for('admin.expulsion') }}" class="btn btn-outline-secondary">Скасувати</a>
+    </form>
+
+</div>
+
+<script>
+document.querySelectorAll('.js-student-toggle').forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+        const reasonField = document.getElementById('reason_' + checkbox.dataset.studentId);
+        if (checkbox.checked) {
+            reasonField.classList.remove('d-none');
+            reasonField.setAttribute('required', 'required');
+        } else {
+            reasonField.classList.add('d-none');
+            reasonField.removeAttribute('required');
+            reasonField.value = '';
+        }
+    });
+});
+</script>
+{% endblock %}
