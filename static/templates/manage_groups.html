@@ -72,13 +72,12 @@
                 <label for="specialty_code" class="form-label">Спеціальність</label>
                 <select name="specialty_code" id="specialty_code" class="form-select" required onchange="fillSpecialtyDerived(this, ''); fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
                     <option value="" disabled selected>— оберіть зі списку —</option>
-                    {% set ns = namespace(current_field='', current_active=None) %}
-                    {% for sp in specialty_catalog %}
-                        {% if sp.field_code != ns.current_field or sp.is_active != ns.current_active %}
+                    {% set ns = namespace(current_field='') %}
+                    {% for sp in specialty_catalog if sp.is_active %}
+                        {% if sp.field_code != ns.current_field %}
                             {% if ns.current_field != '' %}</optgroup>{% endif %}
-                            <optgroup label="{{ sp.field_code }} {{ sp.field_name }}{% if not sp.is_active %} (неактивні){% endif %}">
+                            <optgroup label="{{ sp.field_code }} {{ sp.field_name }}">
                             {% set ns.current_field = sp.field_code %}
-                            {% set ns.current_active = sp.is_active %}
                         {% endif %}
                         <option value="{{ sp.code }}"
                                 data-name-en="{{ sp.name_en or '' }}"
@@ -97,7 +96,7 @@
             <div class="col-md-6">
                 <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
             	<select name="institution_name_and_status" id="institution_name_and_status" class="form-select" required onchange="fillPairedDerived(this, 'institution_name_and_status_en', '')">
-					<option value="" disabled selected>— оберіть зі списку —</option>
+                    <option value="" disabled selected>— оберіть зі списку —</option>
                     <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
                             data-en="Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
 					<option value="Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."

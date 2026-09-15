@@ -1006,7 +1006,7 @@ def manage_groups():
         SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active,
                k.code AS field_code, k.name_ua AS field_name, k.name_en AS field_name_en
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
-        ORDER BY s.is_active DESC, k.code, s.code
+        ORDER BY s.is_active DESC, k.code, substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
 
     conn.close()
@@ -1111,12 +1111,49 @@ def manage_specialties():
                 flash("Спеціальність видалено.", "success")
                 log_action(current_username(), f"видалив спеціальність: {code} {row['name_ua'] if row else ''}")
 
-    fields = conn.execute("SELECT code, name_ua, name_en FROM knowledge_fields ORDER BY code").fetchall()
+        elif action == 'add_field':
+            field_code = (request.form.get('field_code') or '').strip()
+            field_name_ua = (request.form.get('field_name_ua') or '').strip()
+            field_name_en = (request.form.get('field_name_en') or '').strip() or None
+            if not field_code or not field_name_ua:
+                flash("Заповніть код і назву галузі знань.", "error")
+            else:
+                try:
+                    conn.execute(
+                        "INSERT INTO knowledge_fields (code, name_ua, name_en) VALUES (?, ?, ?)",
+                        (field_code, field_name_ua, field_name_en)
+                    )
+                    conn.commit()
+                    flash(f"Галузь знань «{field_code} {field_name_ua}» додано.", "success")
+                    log_action(current_username(), f"додав галузь знань: {field_code} {field_name_ua}")
+                except sqlite3.IntegrityError:
+                    flash(f"Галузь знань з кодом «{field_code}» вже існує.", "error")
+
+        elif action == 'delete_field':
+            field_code = request.form.get('field_code')
+            in_use = conn.execute(
+                "SELECT COUNT(*) AS c FROM specialties WHERE knowledge_field_code = ?", (field_code,)
+            ).fetchone()['c']
+            if in_use > 0:
+                flash(f"Неможливо видалити - на цю галузь знань посилається {in_use} спеціальність(і). "
+                      f"Спершу перенесіть або видаліть їх.", "error")
+            else:
+                row = conn.execute("SELECT name_ua FROM knowledge_fields WHERE code = ?", (field_code,)).fetchone()
+                conn.execute("DELETE FROM knowledge_fields WHERE code = ?", (field_code,))
+                conn.commit()
+                flash("Галузь знань видалено.", "success")
+                log_action(current_username(), f"видалив галузь знань: {field_code} {row['name_ua'] if row else ''}")
+
+    fields = conn.execute("""
+        SELECT k.code, k.name_ua, k.name_en,
+               (SELECT COUNT(*) FROM specialties s WHERE s.knowledge_field_code = k.code) AS specialties_count
+        FROM knowledge_fields k ORDER BY k.code
+    """).fetchall()
     specialties = conn.execute("""
         SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active, s.is_custom, k.code AS field_code, k.name_ua AS field_name,
                (SELECT COUNT(*) FROM groups g WHERE g.specialty_code = s.code) AS groups_count
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
-        ORDER BY k.code, s.code
+        ORDER BY k.code, substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
     conn.close()
 
@@ -1286,7 +1323,7 @@ def manage_educational_programs():
         SELECT s.code, s.name_ua, k.name_ua AS field_name
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         WHERE s.is_active = 1
-        ORDER BY s.code
+        ORDER BY substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
 
     degree_levels = conn.execute(
@@ -1393,7 +1430,7 @@ def manage_qualification_names():
         SELECT s.code, s.name_ua, k.name_ua AS field_name
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         WHERE s.is_active = 1
-        ORDER BY s.code
+        ORDER BY substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
 
     degree_levels = conn.execute(
