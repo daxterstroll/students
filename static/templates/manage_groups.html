@@ -26,13 +26,19 @@
         <div class="row g-3">
             <div class="col-md-4">
                 <label for="name" class="form-label">Назва групи</label>
-                <input type="text" name="name" id="name" class="form-control" placeholder="Напр., ІПЗ-21" required>
+                <input type="text" id="name" class="form-control" readonly
+                       placeholder="Складеться автоматично">
+            </div>
+            <div class="col-md-1">
+                <label for="course" class="form-label">Курс</label>
+                <input type="text" id="course" class="form-control" readonly
+                       placeholder="Авто">
             </div>
             <div class="col-md-3">
                 <label for="start_year" class="form-label">Рік початку</label>
-                <input type="number" name="start_year" id="start_year" class="form-control" placeholder="Напр., 2023" required>
+                <input type="number" name="start_year" id="start_year" class="form-control" placeholder="Напр., 2023" required oninput="fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="study_form" class="form-label">Форма навчання</label>
                 <select name="study_form" id="study_form" class="form-select" required>
                     <option value="Денна">Денна</option>
@@ -41,7 +47,7 @@
             </div>
             <div class="col-md-2">
                 <label for="program_credits" class="form-label">Кредити</label>
-                <select name="program_credits" id="program_credits" class="form-select" required>
+                <select name="program_credits" id="program_credits" class="form-select" required onchange="fillGroupName('')">
                     <option value="90">90</option>
                     <option value="120">120</option>
                     <option value="180">180</option>
@@ -49,28 +55,22 @@
                 </select>
             </div>
             <div class="col-md-6">
-                <label for="qualification_name" class="form-label">Назва кваліфікації</label>
-                <input type="text" name="qualification_name" id="qualification_name" class="form-control" placeholder="Напр., Бакалавр комп'ютерних наук" >
-            </div>
-            <div class="col-md-6">
-                <label for="qualification_name_en" class="form-label">Qualification (EN)</label>
-                <input type="text" name="qualification_name_en" id="qualification_name_en" class="form-control" placeholder="Напр., Bachelor of Computer Science" >
-            </div>
-            <div class="col-md-6">
                 <label for="degree_level" class="form-label">Ступінь</label>
-                <select name="degree_level" id="degree_level" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', '')">
-                    <option value="Молодший бакалавр" data-en="Junior Bachelor">Молодший бакалавр</option>
-                    <option value="Бакалавр" data-en="Bachelor">Бакалавр</option>
-                    <option value="Магістр" data-en="Master Degree">Магістр</option>
+                <select name="degree_level" id="degree_level" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', ''); fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
+                    <option value="" disabled selected>— оберіть зі списку —</option>
+                    {% for d in degree_levels if d.is_active %}
+                    <option value="{{ d.name_ua }}" data-en="{{ d.name_en or '' }}">{{ d.name_ua }}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="col-md-6">
                 <label for="degree_level_en" class="form-label">Degree Level (EN)</label>
-                <input type="text" id="degree_level_en" class="form-control" readonly placeholder="Підставиться автоматично після вибору ступеню">
+                <input type="text" id="degree_level_en" class="form-control" readonly
+                       placeholder="Підставиться автоматично після вибору ступеня">
             </div>
             <div class="col-md-6">
                 <label for="specialty_code" class="form-label">Спеціальність</label>
-                <select name="specialty_code" id="specialty_code" class="form-select" required onchange="fillSpecialtyDerived(this, '')">
+                <select name="specialty_code" id="specialty_code" class="form-select" required onchange="fillSpecialtyDerived(this, ''); fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
                     <option value="" disabled selected>— оберіть зі списку —</option>
                     {% set ns = namespace(current_field='', current_active=None) %}
                     {% for sp in specialty_catalog %}
@@ -83,7 +83,8 @@
                         <option value="{{ sp.code }}"
                                 data-name-en="{{ sp.name_en or '' }}"
                                 data-field-name="{{ sp.field_name }}"
-                                data-field-name-en="{{ sp.field_name_en or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
+                                data-field-name-en="{{ sp.field_name_en or '' }}"
+                                data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                     {% endfor %}
                     {% if specialty_catalog %}</optgroup>{% endif %}
                 </select>
@@ -94,12 +95,40 @@
                        placeholder="Підставиться автоматично після вибору спеціальності">
             </div>
             <div class="col-md-6">
+                <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
+            	<select name="institution_name_and_status" id="institution_name_and_status" class="form-select" required onchange="fillPairedDerived(this, 'institution_name_and_status_en', '')">
+					<option value="" disabled selected>— оберіть зі списку —</option>
+                    <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
+                            data-en="Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
+					<option value="Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
+                            data-en="Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.">Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
+                </select>
+			
+			</div>
+            <div class="col-md-6">
+                <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
+                <textarea id="institution_name_and_status_en" class="form-control" rows="4" readonly
+                          placeholder="Підставиться автоматично після вибору найменування закладу"></textarea>
+			</div>
+            <div class="col-md-6">
+                <label for="qualification_name" class="form-label">Назва кваліфікації</label>
+                <input type="text" id="qualification_name" class="form-control" readonly
+                       placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
+            </div>
+            <div class="col-md-6">
+                <label for="qualification_name_en" class="form-label">Qualification (EN)</label>
+                <input type="text" id="qualification_name_en" class="form-control" readonly
+                       placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
+            </div>
+            <div class="col-md-6">
                 <label for="educational_program" class="form-label">Освітня програма</label>
-                <input type="text" name="educational_program" id="educational_program" class="form-control" placeholder="Напр., Програмна інженерія" >
+                <input type="text" id="educational_program" class="form-control" readonly
+                       placeholder="Підставиться автоматично за спеціальністю й роком вступу">
             </div>
             <div class="col-md-6">
                 <label for="educational_program_en" class="form-label">Educational Program (EN)</label>
-                <input type="text" name="educational_program_en" id="educational_program_en" class="form-control" placeholder="Напр., Software Engineering" >
+                <input type="text" id="educational_program_en" class="form-control" readonly
+                       placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
             </div>
             <div class="col-md-6">
                 <label for="knowledge_area" class="form-label">Галузь знань</label>
@@ -111,20 +140,6 @@
                 <input type="text" id="knowledge_area_en" class="form-control" readonly
                        placeholder="Підставиться автоматично після вибору спеціальності">
             </div>
-            <div class="col-md-6">
-                <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
-            	<select name="institution_name_and_status" id="institution_name_and_status" class="form-select" required onchange="fillPairedDerived(this, 'institution_name_and_status_en', '')">
-                    <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
-                            data-en="Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
-					<option value="Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
-                            data-en="Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.">Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
-                </select>
-			
-			</div>
-            <div class="col-md-6">
-                <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                <textarea id="institution_name_and_status_en" class="form-control" rows="3" readonly placeholder="Підставиться автоматично після вибору найменування та статусу закладу"></textarea>
-			</div>
             <div class="col-md-6">
                 <label for="entry_requirements" class="form-label">Вимоги для вступу</label>
                 <textarea name="entry_requirements" id="entry_requirements" class="form-control" rows="4" placeholder="Напр., Сертифікат ЗНО з математики (мін. 150 балів). Сертифікат ЗНО з української мови (мін. 140 балів). Мотиваційний лист." ></textarea>
@@ -409,13 +424,17 @@
                                 <input type="hidden" name="action" value="edit">
                                 <input type="hidden" name="group_id" value="{{ group.id }}">
                                 <div class="row g-3">
-                                    <div class="col-md-6">
+                                    <div class="col-md-4">
                                         <label for="name{{ group.id }}" class="form-label">Назва групи</label>
-                                        <input type="text" name="name" id="name{{ group.id }}" class="form-control" value="{{ group.name }}" required>
+                                        <input type="text" id="name{{ group.id }}" class="form-control" readonly value="{{ group.name }}">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label for="course{{ group.id }}" class="form-label">Курс</label>
+                                        <input type="number" name="course" id="course{{ group.id }}" class="form-control" min="1" max="6" value="{{ group.course }}" required oninput="fillGroupName('{{ group.id }}')">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="start_year{{ group.id }}" class="form-label">Рік початку</label>
-                                        <input type="number" name="start_year" id="start_year{{ group.id }}" class="form-control" value="{{ group.start_year }}" min="2000" max="2025" required>
+                                        <input type="number" name="start_year" id="start_year{{ group.id }}" class="form-control" value="{{ group.start_year }}" min="2000" max="2025" required oninput="fillEducationalProgram('{{ group.id }}'); fillQualificationName('{{ group.id }}')">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="study_form{{ group.id }}" class="form-label">Форма навчання</label>
@@ -434,27 +453,22 @@
                                         </select>
                                     </div>
                                     <div class="col-md-6">
-                                        <label for="qualification_name{{ group.id }}" class="form-label">Назва кваліфікації</label>
-                                        <input type="text" name="qualification_name" id="qualification_name{{ group.id }}" class="form-control" value="{{ group.qualification_name or '' }}" >
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="qualification_name_en{{ group.id }}" class="form-label">Qualification (EN)</label>
-                                        <input type="text" name="qualification_name_en" id="qualification_name_en{{ group.id }}" class="form-control" value="{{ group.qualification_name_en or '' }}" >
-                                    </div>
-                                    <div class="col-md-6">
                                         <label for="degree_level{{ group.id }}" class="form-label">Ступінь</label>
-                                        <select name="degree_level" id="degree_level{{ group.id }}" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', '{{ group.id }}')">
-                                            <option value="Бакалавр" data-en="Bachelor" {% if group.degree_level == "Бакалавр" %}selected{% endif %}>Бакалавр</option>
-                                            <option value="Магістр" data-en="Master Degree" {% if group.degree_level == "Магістр" %}selected{% endif %}>Магістр</option>
+                                        <select name="degree_level" id="degree_level{{ group.id }}" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', '{{ group.id }}'); fillEducationalProgram('{{ group.id }}'); fillQualificationName('{{ group.id }}')">
+                                            <option value="" disabled {% if not group.degree_level %}selected{% endif %}>— оберіть зі списку —</option>
+                                            {% for d in degree_levels if d.is_active or group.degree_level == d.name_ua %}
+                                            <option value="{{ d.name_ua }}" data-en="{{ d.name_en or '' }}" {% if group.degree_level == d.name_ua %}selected{% endif %}>{{ d.name_ua }}{% if not d.is_active %} (неактивний){% endif %}</option>
+                                            {% endfor %}
                                         </select>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="degree_level_en{{ group.id }}" class="form-label">Degree Level (EN)</label>
-                                        <input type="text" id="degree_level_en{{ group.id }}" class="form-control" readonly value="{{ group.degree_level_en or '' }}">
+                                        <input type="text" id="degree_level_en{{ group.id }}" class="form-control" readonly value="{{ group.degree_level_en or '' }}"
+                                               placeholder="Підставиться автоматично після вибору ступеня">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="specialty_code{{ group.id }}" class="form-label">Спеціальність</label>
-                                        <select name="specialty_code" id="specialty_code{{ group.id }}" class="form-select" required onchange="fillSpecialtyDerived(this, '{{ group.id }}')">
+                                        <select name="specialty_code" id="specialty_code{{ group.id }}" class="form-select" required onchange="fillSpecialtyDerived(this, '{{ group.id }}'); fillGroupName('{{ group.id }}'); fillEducationalProgram('{{ group.id }}'); fillQualificationName('{{ group.id }}')">
                                             <option value="" disabled {% if not group.specialty_code %}selected{% endif %}>— оберіть зі списку —</option>
                                             {% set ns = namespace(current_field='', current_active=None) %}
                                             {% for sp in specialty_catalog %}
@@ -467,7 +481,8 @@
                                                 <option value="{{ sp.code }}" {% if group.specialty_code == sp.code %}selected{% endif %}
                                                         data-name-en="{{ sp.name_en or '' }}"
                                                         data-field-name="{{ sp.field_name }}"
-                                                        data-field-name-en="{{ sp.field_name_en or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
+                                                        data-field-name-en="{{ sp.field_name_en or '' }}"
+                                                        data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                                             {% endfor %}
                                             {% if specialty_catalog %}</optgroup>{% endif %}
                                         </select>
@@ -478,22 +493,6 @@
                                     <div class="col-md-6">
                                         <label for="specialty_en{{ group.id }}" class="form-label">Specialty (EN)</label>
                                         <input type="text" id="specialty_en{{ group.id }}" class="form-control" readonly value="{{ group.specialty_en or '' }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="educational_program{{ group.id }}" class="form-label">Освітня програма</label>
-                                        <input type="text" name="educational_program" id="educational_program{{ group.id }}" class="form-control" value="{{ group.educational_program or '' }}" >
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="educational_program_en{{ group.id }}" class="form-label">Educational Program (EN)</label>
-                                        <input type="text" name="educational_program_en" id="educational_program_en{{ group.id }}" class="form-control" value="{{ group.educational_program_en or '' }}" >
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="knowledge_area{{ group.id }}" class="form-label">Галузь знань</label>
-                                        <input type="text" id="knowledge_area{{ group.id }}" class="form-control" readonly value="{{ group.knowledge_area or '' }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="knowledge_area_en{{ group.id }}" class="form-label">Knowledge Area (EN)</label>
-                                        <input type="text" id="knowledge_area_en{{ group.id }}" class="form-control" readonly value="{{ group.knowledge_area_en or '' }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="institution_name_and_status{{ group.id }}" class="form-label">Найменування та статус закладу</label>
@@ -518,7 +517,35 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label for="institution_name_and_status_en{{ group.id }}" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                                        <textarea id="institution_name_and_status_en{{ group.id }}" class="form-control" rows="4" readonly>{{ group.institution_name_and_status_en or '' }}</textarea>
+                                        <textarea id="institution_name_and_status_en{{ group.id }}" class="form-control" rows="4" readonly
+                                                  placeholder="Підставиться автоматично після вибору найменування закладу">{{ group.institution_name_and_status_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="qualification_name{{ group.id }}" class="form-label">Назва кваліфікації</label>
+                                        <input type="text" id="qualification_name{{ group.id }}" class="form-control" readonly value="{{ group.qualification_name or '' }}"
+                                               placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="qualification_name_en{{ group.id }}" class="form-label">Qualification (EN)</label>
+                                        <input type="text" id="qualification_name_en{{ group.id }}" class="form-control" readonly value="{{ group.qualification_name_en or '' }}"
+                                               placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="educational_program{{ group.id }}" class="form-label">Освітня програма</label>
+                                        <input type="text" id="educational_program{{ group.id }}" class="form-control" readonly value="{{ group.educational_program or '' }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="educational_program_en{{ group.id }}" class="form-label">Educational Program (EN)</label>
+                                        <input type="text" id="educational_program_en{{ group.id }}" class="form-control" readonly value="{{ group.educational_program_en or '' }}"
+                                               placeholder="Підставиться автоматично за спеціальністю, ступенем і роком вступу">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="knowledge_area{{ group.id }}" class="form-label">Галузь знань</label>
+                                        <input type="text" id="knowledge_area{{ group.id }}" class="form-control" readonly value="{{ group.knowledge_area or '' }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="knowledge_area_en{{ group.id }}" class="form-label">Knowledge Area (EN)</label>
+                                        <input type="text" id="knowledge_area_en{{ group.id }}" class="form-control" readonly value="{{ group.knowledge_area_en or '' }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="entry_requirements{{ group.id }}" class="form-label">Вимоги для вступу</label>
@@ -585,6 +612,106 @@ function fillSpecialtyDerived(selectEl, suffix) {
 function fillPairedDerived(selectEl, targetId, suffix) {
     const opt = selectEl.options[selectEl.selectedIndex];
     document.getElementById(targetId + suffix).value = opt.dataset.en || '';
+}
+
+// Назва групи більше не вводиться вручну - вона завжди складається зі
+// скороченої назви обраної спеціальності й курсу (напр. "КН-4").
+// Оновлюється при зміні або спеціальності, або курсу. Сервер все одно
+// перераховує назву заново при збереженні - тут лише для миттєвого
+// показу без перезавантаження сторінки.
+function computeCurrentCourse(startYear, degreeLevel, credits) {
+    startYear = parseInt(startYear, 10);
+    credits = parseInt(credits, 10);
+    if (!startYear || !credits) return null;
+
+    let totalYears;
+    if (degreeLevel === 'Бакалавр') {
+        totalYears = credits === 240 ? 4 : (credits === 180 ? 3 : Math.max(1, Math.floor(credits / 60)));
+    } else if (degreeLevel === 'Магістр') {
+        totalYears = (credits === 90 || credits === 120) ? 2 : Math.max(1, Math.floor(credits / 60));
+    } else {
+        totalYears = Math.max(1, Math.floor(credits / 60));
+    }
+
+    const now = new Date();
+    let currentYear = now.getFullYear();
+    if (now.getMonth() < 8) currentYear -= 1; // місяці в JS з 0 - серпень=7, тобто до вересня
+
+    const course = currentYear - startYear + 1;
+    return Math.max(1, Math.min(course, totalYears));
+}
+
+// Назва групи більше не вводиться вручну - вона завжди складається зі
+// скороченої назви обраної спеціальності й курсу (напр. "КН-4").
+// Курс на формі ДОДАВАННЯ теж обчислюється автоматично (readonly) -
+// на формі РЕДАГУВАННЯ курс лишається редагованим вручну (для
+// винятків на кшталт академічної відпустки), тому там це поле не
+// перераховується, лише читається поточне значення.
+function fillGroupName(suffix) {
+    const specSelect = document.getElementById('specialty_code' + suffix);
+    const courseInput = document.getElementById('course' + suffix);
+    const nameField = document.getElementById('name' + suffix);
+    if (!specSelect || !courseInput || !nameField) return;
+
+    if (courseInput.readOnly) {
+        const startYearInput = document.getElementById('start_year' + suffix);
+        const degreeLevelSelect = document.getElementById('degree_level' + suffix);
+        const creditsSelect = document.getElementById('program_credits' + suffix);
+        const computed = computeCurrentCourse(
+            startYearInput ? startYearInput.value : null,
+            degreeLevelSelect ? degreeLevelSelect.value : null,
+            creditsSelect ? creditsSelect.value : null
+        );
+        courseInput.value = computed !== null ? computed : '';
+    }
+
+    const opt = specSelect.options[specSelect.selectedIndex];
+    const shortName = (opt && opt.dataset.shortName) || '';
+    const course = courseInput.value;
+
+    if (shortName && course) {
+        nameField.value = shortName + '-' + course;
+    } else {
+        nameField.value = '';
+    }
+}
+
+// Освітня програма - своя для кожної пари "спеціальність + рік
+// вступу" (каталог редагується на сторінці "Освітня програма").
+// Ключ - "код_спеціальності|рік". Сервер все одно перераховує
+// заново при збереженні - тут лише для миттєвого показу.
+const EDUCATIONAL_PROGRAMS = {{ educational_programs_map | tojson }};
+
+function fillEducationalProgram(suffix) {
+    const specSelect = document.getElementById('specialty_code' + suffix);
+    const startYearInput = document.getElementById('start_year' + suffix);
+    const degreeLevelSelect = document.getElementById('degree_level' + suffix);
+    const epField = document.getElementById('educational_program' + suffix);
+    const epEnField = document.getElementById('educational_program_en' + suffix);
+    if (!specSelect || !startYearInput || !degreeLevelSelect || !epField || !epEnField) return;
+
+    const key = specSelect.value + '|' + startYearInput.value + '|' + degreeLevelSelect.value;
+    const found = EDUCATIONAL_PROGRAMS[key];
+    epField.value = found ? found.name_ua : '';
+    epEnField.value = found ? found.name_en : '';
+}
+
+// Назва кваліфікації - той самий принцип, що й освітня програма:
+// своя для кожної трійки "спеціальність + рік вступу + ступінь".
+const QUALIFICATION_NAMES = {{ qualification_names_map | tojson }};
+
+function fillQualificationName(suffix) {
+    const specSelect = document.getElementById('specialty_code' + suffix);
+    const startYearInput = document.getElementById('start_year' + suffix);
+    const degreeLevelSelect = document.getElementById('degree_level' + suffix);
+    const qField = document.getElementById('qualification_name' + suffix);
+    const qEnField = document.getElementById('qualification_name_en' + suffix);
+    if (!specSelect || !startYearInput || !degreeLevelSelect || !qField || !qEnField) return;
+
+    const key = specSelect.value + '|' + startYearInput.value + '|' + degreeLevelSelect.value;
+    const found = QUALIFICATION_NAMES[key];
+    qField.value = found ? found.name_ua : '';
+    qEnField.value = found ? found.name_en : '';
 }
 </script>
 {% endblock %}

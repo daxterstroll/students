@@ -235,6 +235,13 @@ CREATE TABLE IF NOT EXISTS "document_templates" (
     uploaded_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS "degree_levels" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name_ua TEXT NOT NULL UNIQUE,   -- 'Бакалавр', 'Магістр' ... - те, що зберігається в groups.degree_level
+    name_en TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
 CREATE TABLE IF NOT EXISTS "knowledge_fields" (
     code TEXT PRIMARY KEY,      -- 'A', 'B', 'C' ... (літерні коди, чинні з 01.11.2024)
     name_ua TEXT NOT NULL,
@@ -244,12 +251,45 @@ CREATE TABLE IF NOT EXISTS "knowledge_fields" (
 CREATE TABLE IF NOT EXISTS "specialties" (
     code TEXT PRIMARY KEY,      -- 'A1', 'D2', 'D3', 'F3' ... (літера галузі + номер)
     name_ua TEXT NOT NULL,
+    short_name TEXT,            -- скорочена назва (укр.), напр. "КН" для "Комп'ютерні науки" - використовується для автоматичної назви групи
     name_en TEXT,               -- код і назва відповідної деталізованої галузі ISCED-F 2013 з постанови, напр. "0413 Management and administration"
     knowledge_field_code TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,   -- чи актуальна для цього закладу (керується на сторінці "Спеціальності")
     is_custom INTEGER NOT NULL DEFAULT 0,   -- 1 = додано вручну адміністратором, не з офіційного переліку
     FOREIGN KEY (knowledge_field_code) REFERENCES knowledge_fields(code)
 );
+
+CREATE TABLE IF NOT EXISTS "educational_programs" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    specialty_code TEXT NOT NULL,
+    start_year INTEGER NOT NULL,   -- рік вступу, для якого діє саме таке формулювання назви програми
+    degree_level TEXT NOT NULL,    -- 'Бакалавр'/'Магістр' тощо - та сама спеціальність+рік може мати різну назву програми на різних ступенях
+    name_ua TEXT NOT NULL,
+    name_en TEXT,
+    UNIQUE (specialty_code, start_year, degree_level),
+    FOREIGN KEY (specialty_code) REFERENCES specialties(code)
+);
+
+CREATE TABLE IF NOT EXISTS "qualification_names" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    specialty_code TEXT NOT NULL,
+    start_year INTEGER NOT NULL,
+    degree_level TEXT NOT NULL,
+    name_ua TEXT NOT NULL,
+    name_en TEXT,
+    UNIQUE (specialty_code, start_year, degree_level),
+    FOREIGN KEY (specialty_code) REFERENCES specialties(code)
+);
+""")
+
+# Ступені - ті самі значення, що раніше були жорстко прописані в коді
+# (тому наявні групи не потребують звірки/міграції), плюс поширені
+# додаткові ступені для розширюваності на майбутнє.
+cur.executescript("""
+INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Молодший бакалавр', 'Junior Bachelor', 0);
+INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Бакалавр', 'Bachelor', 1);
+INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Магістр', 'Master Degree', 1);
+INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Доктор філософії', 'Doctor of Philosophy', 0);
 """)
 
 # Офіційний перелік галузей знань і спеціальностей (Постанова КМУ №1021

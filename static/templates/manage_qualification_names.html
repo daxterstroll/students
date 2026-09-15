@@ -1,0 +1,148 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Назва кваліфікації{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-mortarboard-fill', 'Назва кваліфікації', 'Назва кваліфікації для кожної трійки «спеціальність + ступінь + рік вступу»') }}
+
+    <div class="alert alert-light border small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        Формулювання назви кваліфікації може відрізнятись і рік від року, і від ступеня - та сама спеціальність на рівні Бакалавра й Магістра (чи Молодшого спеціаліста) часто має зовсім іншу назву кваліфікації, тому тут вона задається окремо для кожної комбінації.
+        На сторінці «Групи» назва підставляється автоматично за обраними спеціальністю, ступенем і роком - якщо для потрібної комбінації назви кваліфікації ще немає, спершу додайте її тут.
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="section-title">Додати назву кваліфікації</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Спеціальність</label>
+                    <select name="specialty_code" class="form-select form-select-sm" required>
+                        <option value="" disabled selected>— оберіть зі списку —</option>
+                        {% for s in specialties %}
+                        <option value="{{ s.code }}">{{ s.code }} {{ s.name_ua }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Ступінь</label>
+                    <select name="degree_level" class="form-select form-select-sm" required>
+                        <option value="" disabled selected>— оберіть зі списку —</option>
+                        {% for d in degree_levels %}
+                        <option value="{{ d.name_ua }}">{{ d.name_ua }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-1">Рік</label>
+                    <input type="number" name="start_year" class="form-control form-control-sm" placeholder="2025" min="2000" max="2100" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Назва (укр.)</label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Назва (англ.)</label>
+                    <input type="text" name="name_en" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if not qualifications_by_specialty %}
+    {{ ui.empty_state('bi-journal-x', 'Назв кваліфікації ще не додано') }}
+    {% endif %}
+
+    {% for code, programs in qualifications_by_specialty.items() %}
+    <div class="card mb-3">
+        <div class="card-header py-2">
+            <strong>{{ code }} {{ programs[0].specialty_name }}</strong>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th style="width:100px;">Рік вступу</th><th style="width:120px;">Ступінь</th><th>Назва (укр.)</th><th>Назва (англ.)</th><th class="text-end" style="width:120px;"></th></tr></thead>
+                    <tbody>
+                        {% for p in programs %}
+                        <tr>
+                            <td class="font-monospace">{{ p.start_year }}</td>
+                            <td>{{ p.degree_level }}</td>
+                            <td>{{ p.name_ua }}</td>
+                            <td class="text-muted small">{{ p.name_en or '—' }}</td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                                        data-id="{{ p.id }}" data-name-ua="{{ p.name_ua }}" data-name-en="{{ p.name_en or '' }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if p.groups_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити назву кваліфікації «{{ p.name_ua }}» ({{ p.start_year }})?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ p.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small" title="Використовується у {{ p.groups_count }} груп(ах) - видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ p.groups_count }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+
+</div>
+
+<div class="modal fade" id="editQualificationModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати назву кваліфікації</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Назва (укр.)</label>
+                        <input type="text" name="name_ua" id="editNameUa" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (англ.)</label>
+                        <input type="text" name="name_en" id="editNameEn" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const modalEl = document.getElementById('editQualificationModal');
+    const modal = new bootstrap.Modal(modalEl);
+    document.querySelectorAll('.js-edit-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editId').value = btn.dataset.id;
+            document.getElementById('editNameUa').value = btn.dataset.nameUa;
+            document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}

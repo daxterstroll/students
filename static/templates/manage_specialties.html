@@ -53,11 +53,15 @@
                     <label class="form-label small mb-1">Назва (укр.)</label>
                     <input type="text" name="name_ua" class="form-control form-control-sm" required>
                 </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-1">Скор.</label>
+                    <input type="text" name="short_name" class="form-control form-control-sm" placeholder="напр. КН">
+                </div>
                 <div class="col-md-3">
                     <label class="form-label small mb-1">Назва (англ.)</label>
                     <input type="text" name="name_en" class="form-control form-control-sm" placeholder="напр. 0413 Management and administration">
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <label class="form-label small mb-1">Галузь знань</label>
                     <select name="knowledge_field_code" class="form-select form-select-sm" required>
                         {% for f in fields %}
@@ -80,6 +84,7 @@
                         <tr>
                             <th style="width:70px;">Код</th>
                             <th>Назва (укр.)</th>
+                            <th style="width:80px;">Скор.</th>
                             <th>Назва (англ. / ISCED-F)</th>
                             <th>Галузь знань</th>
                             <th class="text-center" style="width:110px;">Актуальна</th>
@@ -94,6 +99,7 @@
                                 {{ sp.name_ua }}
                                 {% if sp.is_custom %}<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">власна</span>{% endif %}
                             </td>
+                            <td class="font-monospace">{{ sp.short_name or '—' }}</td>
                             <td class="small text-muted">{{ sp.name_en or '—' }}</td>
                             <td class="small">{{ sp.field_code }} {{ sp.field_name }}</td>
                             <td class="text-center">
@@ -108,6 +114,7 @@
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
                                         data-code="{{ sp.code }}" data-name="{{ sp.name_ua }}"
+                                        data-short-name="{{ sp.short_name or '' }}"
                                         data-name-en="{{ sp.name_en or '' }}" data-field="{{ sp.field_code }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -152,6 +159,10 @@
                     <div class="mb-3">
                         <label class="form-label">Назва (укр.)</label>
                         <input type="text" name="name_ua" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Скорочена назва (для назви групи, напр. «КН»)</label>
+                        <input type="text" name="short_name" id="editShortName" class="form-control">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Назва (англ. / ISCED-F)</label>
@@ -218,6 +229,7 @@ window.addEventListener('load', function () {
             document.getElementById('editCode').value = btn.dataset.code;
             document.getElementById('editCodeDisplay').value = btn.dataset.code;
             document.getElementById('editName').value = btn.dataset.name;
+            document.getElementById('editShortName').value = btn.dataset.shortName;
             document.getElementById('editNameEn').value = btn.dataset.nameEn;
             document.getElementById('editField').value = btn.dataset.field;
             specModal.show();

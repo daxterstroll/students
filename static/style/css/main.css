@@ -491,7 +491,23 @@ main.container {
             background-color: var(--paper-2);
             color: var(--ink-text);
         }
+        .form-control::placeholder { color: var(--muted); opacity: 1; }
         html[data-theme="dark"] .form-control::placeholder { color: var(--muted); }
+
+        /* Поля, які заповнюються автоматично (readonly) - напр. на
+           сторінці "Групи": "Обчислиться автоматично", "Підставиться
+           автоматично...". Виділяємо фірмовим золотистим кольором і
+           курсивом, щоб такі підказки не губились серед звичайного
+           сірого тексту - однаково помітно в обох темах. */
+        .form-control[readonly]::placeholder {
+            color: var(--brass);
+            opacity: 0.9;
+            font-style: italic;
+        }
+        html[data-theme="dark"] .form-control[readonly]::placeholder {
+            color: var(--brass-lt);
+            opacity: 0.9;
+        }
 
         /* Ці класи (форми/картки/чіпи на сторінках "Студенти" і
            "Користувачі") мають фон, жорстко прописаний як #fff у
