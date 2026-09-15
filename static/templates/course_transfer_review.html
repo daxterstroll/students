@@ -1,0 +1,85 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевести на наступний курс: перевірка{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-arrow-up-circle', 'Перевірка студентів', 'Усі студенти позначені за замовчуванням - зніміть позначку, щоб виключити студента з переведення (вимагає причини)') }}
+
+    <form method="POST" action="{{ url_for('admin.course_transfer_confirm') }}" enctype="multipart/form-data"
+          onsubmit="return confirm('Оформити переведення для {{ groups_with_students|length }} груп(и)?');">
+        {% for g in groups_with_students %}
+        <input type="hidden" name="group_ids" value="{{ g.id }}">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{{ g.name }}</strong>
+                <span class="text-muted small">{{ g.course }} <i class="bi bi-arrow-right mx-1"></i> {{ g.course_to }} курс</span>
+            </div>
+            <div class="card-body p-0">
+                {% if not g.students %}
+                <div class="p-3 text-muted small">У групі немає активних студентів.</div>
+                {% else %}
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        {% for s in g.students %}
+                        <tr>
+                            <td style="width:40px;">
+                                <input type="checkbox" name="include_{{ s.id }}" value="1" checked
+                                       class="form-check-input js-student-toggle" data-student-id="{{ s.id }}">
+                            </td>
+                            <td>{{ s.full_name }}</td>
+                            <td>
+                                <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
+                                       class="form-control form-control-sm d-none" placeholder="Причина виключення (обов'язково)">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="section-title">Наказ про переведення</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Номер наказу</label>
+                        <input type="text" name="order_number" class="form-control" placeholder="напр. 145с" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Дата наказу</label>
+                        <input type="date" name="order_date" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Скан-копія наказу</label>
+                        <input type="file" name="scan_file" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити переведення</button>
+        <a href="{{ url_for('admin.course_transfer') }}" class="btn btn-outline-secondary">Скасувати</a>
+    </form>
+
+</div>
+
+<script>
+document.querySelectorAll('.js-student-toggle').forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+        const reasonField = document.getElementById('reason_' + checkbox.dataset.studentId);
+        if (checkbox.checked) {
+            reasonField.classList.add('d-none');
+            reasonField.removeAttribute('required');
+            reasonField.value = '';
+        } else {
+            reasonField.classList.remove('d-none');
+            reasonField.setAttribute('required', 'required');
+        }
+    });
+});
+</script>
+{% endblock %}

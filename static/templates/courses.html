@@ -1,0 +1,111 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Курси{% endblock %}
+{% block content %}
+<style>
+    .course-board {
+        display: flex;
+        gap: 1rem;
+        overflow-x: auto;
+        padding-bottom: .5rem;
+    }
+    .course-column {
+        flex: 0 0 280px;
+        background: var(--paper-2);
+        border-radius: 12px;
+        border: 1px solid var(--line, #e5e5e5);
+        display: flex;
+        flex-direction: column;
+        max-height: 78vh;
+    }
+    .course-column__header {
+        padding: .9rem 1rem;
+        font-weight: 700;
+        font-size: 1.05rem;
+        border-bottom: 2px solid var(--brass-semi, #d8c48a);
+        color: var(--ink-text);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .course-column__count {
+        font-size: .75rem;
+        font-weight: 600;
+        color: var(--muted);
+    }
+    .course-column__body {
+        padding: .6rem;
+        overflow-y: auto;
+        flex-grow: 1;
+    }
+    .course-group-card {
+        background: var(--paper, #fff);
+        border: 1px solid var(--line, #e5e5e5);
+        border-left: 4px solid var(--brass, #c8a24a);
+        border-radius: 8px;
+        padding: .6rem .8rem;
+        margin-bottom: .5rem;
+    }
+    .course-group-card:last-child { margin-bottom: 0; }
+    .course-group-card__name {
+        font-weight: 700;
+        font-size: 1rem;
+        color: var(--ink-text);
+    }
+    .course-group-card__meta {
+        font-size: .78rem;
+        color: var(--muted);
+        margin-top: .15rem;
+    }
+    .course-group-card__students {
+        font-size: .78rem;
+        margin-top: .3rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        color: var(--ink-text);
+    }
+</style>
+
+<div class="container-fluid py-4">
+
+    {{ ui.page_header('bi-kanban', 'Курси', 'Активні групи, згруповані по поточному курсу') }}
+
+    <div class="mb-3 d-flex gap-2">
+        <a href="{{ url_for('admin.course_transfer') }}" class="btn btn-primary">
+            <i class="bi bi-arrow-up-circle me-2"></i>Перевести на наступний курс
+        </a>
+        <a href="{{ url_for('admin.graduation') }}" class="btn btn-outline-primary">
+            <i class="bi bi-mortarboard me-2"></i>Оформити випуск
+        </a>
+    </div>
+
+    {% if not courses_sorted %}
+    {{ ui.empty_state('bi-kanban', 'Активних груп ще немає') }}
+    {% else %}
+    <div class="course-board">
+        {% for course in courses_sorted %}
+        <div class="course-column">
+            <div class="course-column__header">
+                <span>{{ course }} курс</span>
+                <span class="course-column__count">{{ groups_by_course[course]|length }} груп</span>
+            </div>
+            <div class="course-column__body">
+                {% for g in groups_by_course[course] %}
+                <div class="course-group-card">
+                    <div class="course-group-card__name">{{ g.name }}</div>
+                    <div class="course-group-card__meta">{{ g.specialty }}</div>
+                    <div class="course-group-card__meta">{{ g.study_form }} · вступ {{ g.start_year }}</div>
+                    <div class="course-group-card__students">
+                        <i class="bi bi-people"></i> {{ g.student_count }} студент(ів)
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

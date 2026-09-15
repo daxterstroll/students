@@ -280,6 +280,69 @@ CREATE TABLE IF NOT EXISTS "qualification_names" (
     UNIQUE (specialty_code, start_year, degree_level),
     FOREIGN KEY (specialty_code) REFERENCES specialties(code)
 );
+
+-- Накази про переведення на курс. Один наказ зазвичай охоплює
+-- одразу декілька груп (окремо в course_transfer_order_groups).
+CREATE TABLE IF NOT EXISTS "course_transfer_orders" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT NOT NULL,
+    order_date TEXT NOT NULL,
+    scan_file TEXT,                 -- шлях до скан-копії наказу (будь-який тип файлу)
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS "course_transfer_order_groups" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    group_id INTEGER NOT NULL,
+    course_from INTEGER NOT NULL,
+    course_to INTEGER NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id)
+);
+
+-- Студенти, тимчасово виключені з переведення на курс (заборгованість,
+-- несплата тощо) - "заморожені" до ручного вирішення. Не для
+-- відрахованих - ті йдуть напряму через expulsion_order_students.
+CREATE TABLE IF NOT EXISTS "frozen_students" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    previous_group_id INTEGER,      -- знімок групи, з якої студент випав
+    order_id INTEGER,               -- наказ переведення, у межах якого сталось заморожування
+    reason TEXT NOT NULL,
+    frozen_at TEXT DEFAULT (datetime('now')),
+    frozen_by TEXT,
+    resolved_at TEXT,                -- NULL, поки не вирішено
+    resolution TEXT,                 -- вільний текст: як саме вирішено
+    resolved_by TEXT,
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (previous_group_id) REFERENCES groups(id),
+    FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id)
+);
+
+-- Накази про відрахування. Самостійна дія - студенти можуть
+-- потрапити сюди як з активних груп напряму, так і зі списку
+-- "заморожені" (тоді відповідний запис у frozen_students закривається).
+CREATE TABLE IF NOT EXISTS "expulsion_orders" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT NOT NULL,
+    order_date TEXT NOT NULL,
+    scan_file TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS "expulsion_order_students" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    previous_group_id INTEGER,      -- знімок групи, з якої студента забрали (може бути NULL, якщо йшов із заморожених)
+    reason TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES expulsion_orders(id),
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (previous_group_id) REFERENCES groups(id)
+);
 """)
 
 # Ступені - ті самі значення, що раніше були жорстко прописані в коді
