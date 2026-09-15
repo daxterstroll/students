@@ -47,11 +47,38 @@ admin_bp = Blueprint('admin', __name__)
 # базі не потрібно, на відміну від спеціальностей) - джерело істини
 # для полів "Ступінь"/"Найменування та статус закладу", щоб форма не
 # могла надіслати неузгоджений англійський варіант.
-DEGREE_LEVEL_EN = {
-    'Молодший бакалавр': 'Junior Bachelor',
-    'Бакалавр': 'Bachelor',
-    'Магістр': 'Master Degree',
-}
+def compute_current_course(start_year, degree_level, program_credits):
+    """
+    Обчислює поточний курс групи з року вступу, ступеня і кредитів
+    програми - та сама логіка тривалості навчання, що й
+    analytics._compute_end_year (щоб не розходились). Використовується
+    при створенні групи, щоб курс не доводилось вводити вручну.
+    Повертає ціле число від 1 до тривалості програми (не більше).
+    """
+    try:
+        start_year = int(start_year)
+        credits = int(program_credits)
+    except (TypeError, ValueError):
+        return 1
+
+    if degree_level == 'Бакалавр':
+        total_years = 4 if credits == 240 else (3 if credits == 180 else max(1, credits // 60))
+    elif degree_level == 'Магістр':
+        total_years = 2 if credits in (90, 120) else max(1, credits // 60)
+    else:
+        total_years = max(1, credits // 60)
+
+    current_year = datetime.now().year
+    # Академічний рік починається у вересні - до вересня студенти
+    # вступу поточного року року ще на 1 курсі, тобто рахуємо роки, що
+    # минули з 1 вересня року вступу.
+    if datetime.now().month < 9:
+        current_year -= 1
+
+    course = current_year - start_year + 1
+    return max(1, min(course, total_years))
+
+
 INSTITUTION_NAME_STATUS_EN = {
     'Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.':
         "Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.",
@@ -78,7 +105,10 @@ PERMISSIONS = [
     'manage_templates',
     'import_grades',
     'analytics',
-    'manage_specialties'
+    'manage_specialties',
+    'manage_degree_levels',
+    'manage_educational_programs',
+    'manage_qualification_names'
 ]
 
 
@@ -645,18 +675,16 @@ def manage_groups():
         action = request.form.get('action')
 
         if action == 'add':
-            name = request.form.get('name')
             start_year = request.form.get('start_year')
             study_form = request.form.get('study_form')
             program_credits = request.form.get('program_credits')
-            qualification_name = request.form.get('qualification_name')
             degree_level = request.form.get('degree_level')
             specialty_code = request.form.get('specialty_code') or None
-            educational_program = request.form.get('educational_program')
-            qualification_name_en = request.form.get('qualification_name_en')
-            educational_program_en = request.form.get('educational_program_en')
             institution_name_and_status = request.form.get('institution_name_and_status')
-            degree_level_en = DEGREE_LEVEL_EN.get(degree_level)
+            degree_level_row = conn.execute(
+                "SELECT name_en FROM degree_levels WHERE name_ua = ?", (degree_level,)
+            ).fetchone()
+            degree_level_en = degree_level_row['name_en'] if degree_level_row else None
             institution_name_and_status_en = INSTITUTION_NAME_STATUS_EN.get(institution_name_and_status)
             entry_requirements = request.form.get('entry_requirements')
             entry_requirements_en = request.form.get('entry_requirements_en')
@@ -664,6 +692,13 @@ def manage_groups():
             learning_outcomes_en = request.form.get('learning_outcomes_en')
             program_includes = request.form.get('program_includes')
             program_includes_en = request.form.get('program_includes_en')
+
+            # Курс більше не вводиться вручну при створенні - обчислюється
+            # з року вступу, ступеня і кредитів програми (скільки часу
+            # вже минуло від 1 вересня року вступу). Якщо реальність
+            # відрізняється від обчисленого (академічна відпустка тощо) -
+            # можна поправити вручну пізніше через "Редагувати".
+            course = compute_current_course(start_year, degree_level, program_credits)
 
             # Українська Й англійська назви спеціальності та галузі
             # знань більше не вводяться вручну на цій сторінці - усі 4
@@ -675,9 +710,10 @@ def manage_groups():
             specialty_en = None
             knowledge_area = None
             knowledge_area_en = None
+            specialty_short_name = None
             if specialty_code:
                 cat_row = conn.execute("""
-                    SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en,
+                    SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en, s.short_name AS specialty_short_name,
                            k.name_ua AS field_name, k.name_en AS field_name_en
                     FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
                     WHERE s.code = ?
@@ -687,18 +723,64 @@ def manage_groups():
                     specialty_en = cat_row['specialty_name_en']
                     knowledge_area = cat_row['field_name']
                     knowledge_area_en = cat_row['field_name_en']
+                    specialty_short_name = cat_row['specialty_short_name']
 
-            required_fields = [name, start_year, study_form, program_credits]
+            # Освітня програма теж більше не вводиться вручну - вона
+            # своя для кожної трійки "спеціальність + рік вступу +
+            # ступінь" (та сама спеціальність і рік вступу можуть мати
+            # зовсім іншу програму на іншому ступені), тому шукаємо в
+            # окремому каталозі.
+            educational_program = None
+            educational_program_en = None
+            if specialty_code and start_year and start_year.isdigit() and degree_level:
+                ep_row = conn.execute(
+                    "SELECT name_ua, name_en FROM educational_programs WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (specialty_code, int(start_year), degree_level)
+                ).fetchone()
+                if ep_row:
+                    educational_program = ep_row['name_ua']
+                    educational_program_en = ep_row['name_en']
+
+            # Назва кваліфікації - той самий принцип, що й освітня
+            # програма: своя для кожної трійки "спеціальність + рік
+            # вступу + ступінь".
+            qualification_name = None
+            qualification_name_en = None
+            if specialty_code and start_year and start_year.isdigit() and degree_level:
+                q_row = conn.execute(
+                    "SELECT name_ua, name_en FROM qualification_names WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (specialty_code, int(start_year), degree_level)
+                ).fetchone()
+                if q_row:
+                    qualification_name = q_row['name_ua']
+                    qualification_name_en = q_row['name_en']
+
+            # Назва групи більше не вводиться вручну - вона завжди
+            # складається зі скороченої назви спеціальності й курсу
+            # (напр. "КН-4"), щоб назва групи автоматично відображала
+            # її поточний курс.
+            name = f"{specialty_short_name}-{course}" if specialty_short_name else None
+
+            required_fields = [start_year, study_form, program_credits]
             if not all(required_fields):
                 flash("Усі поля мають бути заповнені.", "error")
             elif not specialty_code:
                 flash("Оберіть спеціальність зі списку.", "error")
+            elif not specialty_short_name:
+                flash("У обраної спеціальності не задано скорочену назву - додайте її на сторінці «Спеціальності», щоб можна було сформувати назву групи.", "error")
+            elif not specialty_en:
+                flash("У обраної спеціальності не задано англійську назву - додайте її на сторінці «Спеціальності» перед створенням групи.", "error")
+            elif not educational_program:
+                flash("Для цієї спеціальності й року вступу ще не додано освітню програму - додайте її на сторінці «Освітня програма».", "error")
+            elif not qualification_name:
+                flash("Для цієї спеціальності, ступеня і року вступу ще не додано назву кваліфікації - додайте її на сторінці «Назва кваліфікації».", "error")
             elif study_form not in ['Денна', 'Заочна']:
                 flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
             elif program_credits not in ['90', '120', '180', '240']:
                 flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:
                 try:
+                    course = int(course)
                     start_year = int(start_year)
                     program_credits = int(program_credits)
                     current_year = datetime.now().year
@@ -707,14 +789,14 @@ def manage_groups():
                     else:
                         conn.execute("""
                             INSERT INTO groups (
-                                name, start_year, study_form, program_credits,
+                                name, course, start_year, study_form, program_credits,
                                 qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                                 qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                                 institution_name_and_status, institution_name_and_status_en,
                                 entry_requirements, entry_requirements_en,
                                 learning_outcomes, learning_outcomes_en, program_includes, program_includes_en
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (name, start_year, study_form, program_credits,
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                               institution_name_and_status, institution_name_and_status_en,
@@ -729,23 +811,26 @@ def manage_groups():
                         )
                 except ValueError:
                     flash("Рік початку навчання або кредити мають бути числами.", "error")
-                except sqlite3.IntegrityError:
-                    flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint" in str(e):
+                        flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                    else:
+                        logger.error(f"Помилка збереження групи: {e}", exc_info=True)
+                        flash(f"Не вдалося зберегти групу через помилку даних: {e}", "error")
 
         elif action == 'edit':
             group_id = request.form.get('group_id')
-            name = request.form.get('name')
+            course = request.form.get('course')
             start_year = request.form.get('start_year')
             study_form = request.form.get('study_form')
             program_credits = request.form.get('program_credits')
-            qualification_name = request.form.get('qualification_name')
             degree_level = request.form.get('degree_level')
             specialty_code = request.form.get('specialty_code') or None
-            educational_program = request.form.get('educational_program')
-            qualification_name_en = request.form.get('qualification_name_en')
-            educational_program_en = request.form.get('educational_program_en')
             institution_name_and_status = request.form.get('institution_name_and_status')
-            degree_level_en = DEGREE_LEVEL_EN.get(degree_level)
+            degree_level_row = conn.execute(
+                "SELECT name_en FROM degree_levels WHERE name_ua = ?", (degree_level,)
+            ).fetchone()
+            degree_level_en = degree_level_row['name_en'] if degree_level_row else None
             institution_name_and_status_en = INSTITUTION_NAME_STATUS_EN.get(institution_name_and_status)
             entry_requirements = request.form.get('entry_requirements')
             entry_requirements_en = request.form.get('entry_requirements_en')
@@ -758,9 +843,10 @@ def manage_groups():
             specialty_en = None
             knowledge_area = None
             knowledge_area_en = None
+            specialty_short_name = None
             if specialty_code:
                 cat_row = conn.execute("""
-                    SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en,
+                    SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en, s.short_name AS specialty_short_name,
                            k.name_ua AS field_name, k.name_en AS field_name_en
                     FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
                     WHERE s.code = ?
@@ -770,18 +856,57 @@ def manage_groups():
                     specialty_en = cat_row['specialty_name_en']
                     knowledge_area = cat_row['field_name']
                     knowledge_area_en = cat_row['field_name_en']
+                    specialty_short_name = cat_row['specialty_short_name']
 
-            required_fields = [group_id, name, start_year, study_form, program_credits]
+            educational_program = None
+            educational_program_en = None
+            if specialty_code and start_year and start_year.isdigit() and degree_level:
+                ep_row = conn.execute(
+                    "SELECT name_ua, name_en FROM educational_programs WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (specialty_code, int(start_year), degree_level)
+                ).fetchone()
+                if ep_row:
+                    educational_program = ep_row['name_ua']
+                    educational_program_en = ep_row['name_en']
+
+            # Назва кваліфікації - той самий принцип, що й освітня
+            # програма: своя для кожної трійки "спеціальність + рік
+            # вступу + ступінь".
+            qualification_name = None
+            qualification_name_en = None
+            if specialty_code and start_year and start_year.isdigit() and degree_level:
+                q_row = conn.execute(
+                    "SELECT name_ua, name_en FROM qualification_names WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (specialty_code, int(start_year), degree_level)
+                ).fetchone()
+                if q_row:
+                    qualification_name = q_row['name_ua']
+                    qualification_name_en = q_row['name_en']
+
+            name = f"{specialty_short_name}-{course}" if specialty_short_name and course else None
+
+            required_fields = [group_id, start_year, study_form, program_credits, course]
             if not all(required_fields):
                 flash("Усі поля мають бути заповнені.", "error")
             elif not specialty_code:
                 flash("Оберіть спеціальність зі списку.", "error")
+            elif not specialty_short_name:
+                flash("У обраної спеціальності не задано скорочену назву - додайте її на сторінці «Спеціальності», щоб можна було сформувати назву групи.", "error")
+            elif not specialty_en:
+                flash("У обраної спеціальності не задано англійську назву - додайте її на сторінці «Спеціальності» перед створенням групи.", "error")
+            elif not educational_program:
+                flash("Для цієї спеціальності й року вступу ще не додано освітню програму - додайте її на сторінці «Освітня програма».", "error")
+            elif not qualification_name:
+                flash("Для цієї спеціальності, ступеня і року вступу ще не додано назву кваліфікації - додайте її на сторінці «Назва кваліфікації».", "error")
+            elif not course.isdigit() or int(course) < 1 or int(course) > 6:
+                flash("Курс має бути числом від 1 до 6.", "error")
             elif study_form not in ['Денна', 'Заочна']:
                 flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
             elif program_credits not in ['90', '120', '180', '240']:
                 flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:
                 try:
+                    course = int(course)
                     start_year = int(start_year)
                     program_credits = int(program_credits)
                     current_year = datetime.now().year
@@ -790,7 +915,7 @@ def manage_groups():
                     else:
                         conn.execute("""
                             UPDATE groups SET
-                                name=?, start_year=?, study_form=?, program_credits=?,
+                                name=?, course=?, start_year=?, study_form=?, program_credits=?,
                                 qualification_name=?, degree_level=?, specialty=?, specialty_code=?,
                                 educational_program=?, knowledge_area=?,
                                 qualification_name_en=?, degree_level_en=?, specialty_en=?,
@@ -800,7 +925,7 @@ def manage_groups():
                                 learning_outcomes=?, learning_outcomes_en=?,
                                 program_includes=?, program_includes_en=?
                             WHERE id=?
-                        """, (name, start_year, study_form, program_credits,
+                        """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                               institution_name_and_status, institution_name_and_status_en,
@@ -816,8 +941,12 @@ def manage_groups():
                         )
                 except ValueError:
                     flash("Рік початку навчання або кредити мають бути числами.", "error")
-                except sqlite3.IntegrityError:
-                    flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                except sqlite3.IntegrityError as e:
+                    if "UNIQUE constraint" in str(e):
+                        flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                    else:
+                        logger.error(f"Помилка збереження групи: {e}", exc_info=True)
+                        flash(f"Не вдалося зберегти групу через помилку даних: {e}", "error")
 
         elif action == 'delete':
             group_id = request.form.get('group_id')
@@ -842,7 +971,7 @@ def manage_groups():
                 )
 
     groups = conn.execute("""
-        SELECT g.id, g.name, g.start_year, g.study_form, g.program_credits,
+        SELECT g.id, g.name, g.course, g.start_year, g.study_form, g.program_credits,
                g.qualification_name, g.degree_level, g.specialty, g.specialty_code, g.educational_program, g.knowledge_area,
                g.qualification_name_en, g.degree_level_en, g.specialty_en, g.educational_program_en, g.knowledge_area_en,
                g.institution_name_and_status, g.institution_name_and_status_en,
@@ -853,17 +982,35 @@ def manage_groups():
         FROM groups g WHERE g.archived = FALSE ORDER BY g.id, g.start_year
     """).fetchall()
 
+    # Каталог ступенів для випадаючого списку "Ступінь" - та сама
+    # логіка "активний/неактивний", що й у спеціальностей.
+    degree_levels = conn.execute("""
+        SELECT id, name_ua, name_en, is_active FROM degree_levels ORDER BY is_active DESC, id
+    """).fetchall()
+
+    # Освітні програми (спеціальність + рік вступу -> назва) - для
+    # автопідстановки на JS-стороні за парою вже обраних полів.
+    educational_programs_map = {}
+    for row in conn.execute("SELECT specialty_code, start_year, degree_level, name_ua, name_en FROM educational_programs"):
+        key = f"{row['specialty_code']}|{row['start_year']}|{row['degree_level']}"
+        educational_programs_map[key] = {'name_ua': row['name_ua'], 'name_en': row['name_en'] or ''}
+
+    qualification_names_map = {}
+    for row in conn.execute("SELECT specialty_code, start_year, degree_level, name_ua, name_en FROM qualification_names"):
+        key = f"{row['specialty_code']}|{row['start_year']}|{row['degree_level']}"
+        qualification_names_map[key] = {'name_ua': row['name_ua'], 'name_en': row['name_en'] or ''}
+
     # Каталог спеціальностей (Постанова КМУ №266) для випадаючого
     # списку - згруповано по галузях знань, щоб було зручно шукати.
     specialty_catalog = conn.execute("""
-        SELECT s.code, s.name_ua, s.name_en, s.is_active,
+        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active,
                k.code AS field_code, k.name_ua AS field_name, k.name_en AS field_name_en
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         ORDER BY s.is_active DESC, k.code, s.code
     """).fetchall()
 
     conn.close()
-    return render_template("manage_groups.html", groups=groups, specialty_catalog=specialty_catalog)
+    return render_template("manage_groups.html", groups=groups, specialty_catalog=specialty_catalog, degree_levels=degree_levels, educational_programs_map=educational_programs_map, qualification_names_map=qualification_names_map)
 
 
 @admin_bp.route('/admin/manage_specialties', methods=['GET', 'POST'])
@@ -901,6 +1048,7 @@ def manage_specialties():
         elif action == 'add':
             code = (request.form.get('code') or '').strip()
             name_ua = (request.form.get('name_ua') or '').strip()
+            short_name = (request.form.get('short_name') or '').strip() or None
             name_en = (request.form.get('name_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
 
@@ -909,8 +1057,8 @@ def manage_specialties():
             else:
                 try:
                     conn.execute(
-                        "INSERT INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active, is_custom) VALUES (?, ?, ?, ?, 1, 1)",
-                        (code, name_ua, name_en, field_code)
+                        "INSERT INTO specialties (code, name_ua, short_name, name_en, knowledge_field_code, is_active, is_custom) VALUES (?, ?, ?, ?, ?, 1, 1)",
+                        (code, name_ua, short_name, name_en, field_code)
                     )
                     conn.commit()
                     flash(f"Спеціальність «{code} {name_ua}» додано.", "success")
@@ -921,14 +1069,15 @@ def manage_specialties():
         elif action == 'edit':
             code = request.form.get('code')
             name_ua = (request.form.get('name_ua') or '').strip()
+            short_name = (request.form.get('short_name') or '').strip() or None
             name_en = (request.form.get('name_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
             if not name_ua or not field_code:
                 flash("Заповніть назву і галузь знань.", "error")
             else:
                 conn.execute(
-                    "UPDATE specialties SET name_ua = ?, name_en = ?, knowledge_field_code = ? WHERE code = ?",
-                    (name_ua, name_en, field_code, code)
+                    "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, knowledge_field_code = ? WHERE code = ?",
+                    (name_ua, short_name, name_en, field_code, code)
                 )
                 conn.commit()
                 flash("Спеціальність оновлено.", "success")
@@ -964,7 +1113,7 @@ def manage_specialties():
 
     fields = conn.execute("SELECT code, name_ua, name_en FROM knowledge_fields ORDER BY code").fetchall()
     specialties = conn.execute("""
-        SELECT s.code, s.name_ua, s.name_en, s.is_active, s.is_custom, k.code AS field_code, k.name_ua AS field_name,
+        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active, s.is_custom, k.code AS field_code, k.name_ua AS field_name,
                (SELECT COUNT(*) FROM groups g WHERE g.specialty_code = s.code) AS groups_count
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         ORDER BY k.code, s.code
@@ -972,6 +1121,306 @@ def manage_specialties():
     conn.close()
 
     return render_template("manage_specialties.html", fields=fields, specialties=specialties)
+
+
+@admin_bp.route('/admin/manage_degree_levels', methods=['GET', 'POST'])
+@permission_required('manage_degree_levels')
+def manage_degree_levels():
+    """
+    Каталог ступенів (Бакалавр/Магістр тощо) - раніше жорстко прописані
+    в коді двома варіантами, тепер редагований список: вмикання/
+    вимикання актуальності, додавання нових ступенів, редагування
+    назв. Той самий принцип, що й у "Спеціальностях".
+    """
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'toggle_active':
+            level_id = request.form.get('id')
+            conn.execute("UPDATE degree_levels SET is_active = 1 - is_active WHERE id = ?", (level_id,))
+            conn.commit()
+            row = conn.execute("SELECT name_ua, is_active FROM degree_levels WHERE id = ?", (level_id,)).fetchone()
+            if row:
+                log_action(
+                    current_username(),
+                    f"{'увімкнув' if row['is_active'] else 'вимкнув'} ступінь: {row['name_ua']}"
+                )
+
+        elif action == 'add':
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+            if not name_ua:
+                flash("Заповніть назву ступеня.", "error")
+            else:
+                try:
+                    conn.execute(
+                        "INSERT INTO degree_levels (name_ua, name_en, is_active) VALUES (?, ?, 1)",
+                        (name_ua, name_en)
+                    )
+                    conn.commit()
+                    flash(f"Ступінь «{name_ua}» додано.", "success")
+                    log_action(current_username(), f"додав ступінь: {name_ua}")
+                except sqlite3.IntegrityError:
+                    flash(f"Ступінь «{name_ua}» вже існує.", "error")
+
+        elif action == 'edit':
+            level_id = request.form.get('id')
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+            if not name_ua:
+                flash("Заповніть назву ступеня.", "error")
+            else:
+                try:
+                    conn.execute(
+                        "UPDATE degree_levels SET name_ua = ?, name_en = ? WHERE id = ?",
+                        (name_ua, name_en, level_id)
+                    )
+                    conn.commit()
+                    flash("Ступінь оновлено.", "success")
+                    log_action(current_username(), f"редагував ступінь: {name_ua}")
+                except sqlite3.IntegrityError:
+                    flash(f"Ступінь «{name_ua}» вже існує.", "error")
+
+        elif action == 'delete':
+            level_id = request.form.get('id')
+            row = conn.execute("SELECT name_ua FROM degree_levels WHERE id = ?", (level_id,)).fetchone()
+            in_use = conn.execute(
+                "SELECT COUNT(*) AS c FROM groups WHERE degree_level = ?", (row['name_ua'] if row else '',)
+            ).fetchone()['c']
+            if in_use > 0:
+                flash(f"Неможливо видалити - є {in_use} груп(и) з цим ступенем. Вимкніть актуальність замість видалення.", "error")
+            else:
+                conn.execute("DELETE FROM degree_levels WHERE id = ?", (level_id,))
+                conn.commit()
+                flash("Ступінь видалено.", "success")
+                log_action(current_username(), f"видалив ступінь: {row['name_ua'] if row else ''}")
+
+    degree_levels = conn.execute("""
+        SELECT d.id, d.name_ua, d.name_en, d.is_active,
+               (SELECT COUNT(*) FROM groups g WHERE g.degree_level = d.name_ua) AS groups_count
+        FROM degree_levels d ORDER BY d.id
+    """).fetchall()
+    conn.close()
+
+    return render_template("manage_degree_levels.html", degree_levels=degree_levels)
+
+
+@admin_bp.route('/admin/manage_educational_programs', methods=['GET', 'POST'])
+@permission_required('manage_educational_programs')
+def manage_educational_programs():
+    """
+    Каталог освітніх програм: для кожної трійки "спеціальність + рік
+    вступу + ступінь" - своя назва програми (укр./англ.). Ступінь
+    важливий окремо від року: та сама спеціальність і рік вступу
+    можуть мати зовсім різну програму на рівні Молодшого спеціаліста/
+    Бакалавра/Магістра. Використовується на сторінці "Групи" для
+    автопідстановки замість вільного вводу.
+    """
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            specialty_code = request.form.get('specialty_code')
+            start_year = request.form.get('start_year')
+            degree_level = request.form.get('degree_level')
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+
+            if not specialty_code or not start_year or not degree_level or not name_ua:
+                flash("Оберіть спеціальність, ступінь, вкажіть рік і назву програми.", "error")
+            elif not start_year.isdigit():
+                flash("Рік має бути числом.", "error")
+            else:
+                try:
+                    conn.execute(
+                        "INSERT INTO educational_programs (specialty_code, start_year, degree_level, name_ua, name_en) VALUES (?, ?, ?, ?, ?)",
+                        (specialty_code, int(start_year), degree_level, name_ua, name_en)
+                    )
+                    conn.commit()
+                    flash(f"Освітню програму для {specialty_code} ({degree_level}, {start_year}) додано.", "success")
+                    log_action(current_username(), f"додав освітню програму: {specialty_code} {degree_level} {start_year} - {name_ua}")
+                except sqlite3.IntegrityError:
+                    flash(f"Для спеціальності {specialty_code}, ступеня «{degree_level}» і року {start_year} програма вже існує - відредагуйте наявну.", "error")
+
+        elif action == 'edit':
+            program_id = request.form.get('id')
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+            if not name_ua:
+                flash("Заповніть назву програми.", "error")
+            else:
+                conn.execute(
+                    "UPDATE educational_programs SET name_ua = ?, name_en = ? WHERE id = ?",
+                    (name_ua, name_en, program_id)
+                )
+                conn.commit()
+                flash("Освітню програму оновлено.", "success")
+                log_action(current_username(), f"редагував освітню програму ID {program_id}: {name_ua}")
+
+        elif action == 'delete':
+            program_id = request.form.get('id')
+            row = conn.execute(
+                "SELECT specialty_code, start_year, degree_level, name_ua FROM educational_programs WHERE id = ?", (program_id,)
+            ).fetchone()
+            in_use = 0
+            if row:
+                in_use = conn.execute(
+                    "SELECT COUNT(*) AS c FROM groups WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (row['specialty_code'], row['start_year'], row['degree_level'])
+                ).fetchone()['c']
+            if in_use > 0:
+                flash(f"Неможливо видалити - є {in_use} груп(и), що використовують цю програму.", "error")
+            else:
+                conn.execute("DELETE FROM educational_programs WHERE id = ?", (program_id,))
+                conn.commit()
+                flash("Освітню програму видалено.", "success")
+                log_action(current_username(), f"видалив освітню програму: {row['name_ua'] if row else ''}")
+
+    specialties = conn.execute("""
+        SELECT s.code, s.name_ua, k.name_ua AS field_name
+        FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
+        WHERE s.is_active = 1
+        ORDER BY s.code
+    """).fetchall()
+
+    degree_levels = conn.execute(
+        "SELECT name_ua FROM degree_levels WHERE is_active = 1 ORDER BY id"
+    ).fetchall()
+
+    programs = conn.execute("""
+        SELECT p.id, p.specialty_code, p.start_year, p.degree_level, p.name_ua, p.name_en,
+               s.name_ua AS specialty_name,
+               (SELECT COUNT(*) FROM groups g
+                WHERE g.specialty_code = p.specialty_code AND g.start_year = p.start_year AND g.degree_level = p.degree_level) AS groups_count
+        FROM educational_programs p JOIN specialties s ON s.code = p.specialty_code
+        ORDER BY p.specialty_code, p.start_year DESC, p.degree_level
+    """).fetchall()
+
+    # Групуємо програми по спеціальності для зручного відображення
+    programs_by_specialty = {}
+    for p in programs:
+        programs_by_specialty.setdefault(p['specialty_code'], []).append(p)
+
+    conn.close()
+
+    return render_template(
+        "manage_educational_programs.html",
+        specialties=specialties,
+        degree_levels=degree_levels,
+        programs_by_specialty=programs_by_specialty,
+    )
+
+
+@admin_bp.route('/admin/manage_qualification_names', methods=['GET', 'POST'])
+@permission_required('manage_qualification_names')
+def manage_qualification_names():
+    """
+    Каталог назв кваліфікації: для кожної трійки "спеціальність + рік
+    вступу + ступінь" - своя назва кваліфікації (укр./англ.). Той самий
+    принцип, що й "Освітня програма" - формулювання може відрізнятись і
+    рік від року, і від ступеня.
+    """
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            specialty_code = request.form.get('specialty_code')
+            start_year = request.form.get('start_year')
+            degree_level = request.form.get('degree_level')
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+
+            if not specialty_code or not start_year or not degree_level or not name_ua:
+                flash("Оберіть спеціальність, ступінь, вкажіть рік і назву кваліфікації.", "error")
+            elif not start_year.isdigit():
+                flash("Рік має бути числом.", "error")
+            else:
+                try:
+                    conn.execute(
+                        "INSERT INTO qualification_names (specialty_code, start_year, degree_level, name_ua, name_en) VALUES (?, ?, ?, ?, ?)",
+                        (specialty_code, int(start_year), degree_level, name_ua, name_en)
+                    )
+                    conn.commit()
+                    flash(f"Назву кваліфікації для {specialty_code} ({degree_level}, {start_year}) додано.", "success")
+                    log_action(current_username(), f"додав назву кваліфікації: {specialty_code} {degree_level} {start_year} - {name_ua}")
+                except sqlite3.IntegrityError:
+                    flash(f"Для спеціальності {specialty_code}, ступеня «{degree_level}» і року {start_year} назва кваліфікації вже існує - відредагуйте наявну.", "error")
+
+        elif action == 'edit':
+            qual_id = request.form.get('id')
+            name_ua = (request.form.get('name_ua') or '').strip()
+            name_en = (request.form.get('name_en') or '').strip() or None
+            if not name_ua:
+                flash("Заповніть назву кваліфікації.", "error")
+            else:
+                conn.execute(
+                    "UPDATE qualification_names SET name_ua = ?, name_en = ? WHERE id = ?",
+                    (name_ua, name_en, qual_id)
+                )
+                conn.commit()
+                flash("Назву кваліфікації оновлено.", "success")
+                log_action(current_username(), f"редагував назву кваліфікації ID {qual_id}: {name_ua}")
+
+        elif action == 'delete':
+            qual_id = request.form.get('id')
+            row = conn.execute(
+                "SELECT specialty_code, start_year, degree_level, name_ua FROM qualification_names WHERE id = ?", (qual_id,)
+            ).fetchone()
+            in_use = 0
+            if row:
+                in_use = conn.execute(
+                    "SELECT COUNT(*) AS c FROM groups WHERE specialty_code = ? AND start_year = ? AND degree_level = ?",
+                    (row['specialty_code'], row['start_year'], row['degree_level'])
+                ).fetchone()['c']
+            if in_use > 0:
+                flash(f"Неможливо видалити - є {in_use} груп(и), що використовують цю назву кваліфікації.", "error")
+            else:
+                conn.execute("DELETE FROM qualification_names WHERE id = ?", (qual_id,))
+                conn.commit()
+                flash("Назву кваліфікації видалено.", "success")
+                log_action(current_username(), f"видалив назву кваліфікації: {row['name_ua'] if row else ''}")
+
+    specialties = conn.execute("""
+        SELECT s.code, s.name_ua, k.name_ua AS field_name
+        FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
+        WHERE s.is_active = 1
+        ORDER BY s.code
+    """).fetchall()
+
+    degree_levels = conn.execute(
+        "SELECT name_ua FROM degree_levels WHERE is_active = 1 ORDER BY id"
+    ).fetchall()
+
+    qualifications = conn.execute("""
+        SELECT q.id, q.specialty_code, q.start_year, q.degree_level, q.name_ua, q.name_en,
+               s.name_ua AS specialty_name,
+               (SELECT COUNT(*) FROM groups g
+                WHERE g.specialty_code = q.specialty_code AND g.start_year = q.start_year AND g.degree_level = q.degree_level) AS groups_count
+        FROM qualification_names q JOIN specialties s ON s.code = q.specialty_code
+        ORDER BY q.specialty_code, q.start_year DESC, q.degree_level
+    """).fetchall()
+
+    qualifications_by_specialty = {}
+    for q in qualifications:
+        qualifications_by_specialty.setdefault(q['specialty_code'], []).append(q)
+
+    conn.close()
+
+    return render_template(
+        "manage_qualification_names.html",
+        specialties=specialties,
+        degree_levels=degree_levels,
+        qualifications_by_specialty=qualifications_by_specialty,
+    )
 
 
 @admin_bp.route('/admin/manage_subjects', methods=['GET', 'POST'])

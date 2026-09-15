@@ -1,0 +1,131 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Ступені{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-mortarboard', 'Ступені', 'Список ступенів, доступних для вибору на сторінці «Групи»') }}
+
+    <div class="alert alert-light border small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        Вимикайте перемикачем ступені, яких немає у вашому закладі - вони зникнуть з випадаючого списку на сторінці «Групи», але наявні групи з цим ступенем продовжать працювати без змін.
+        Додайте новий ступінь нижче, якщо потрібного немає в списку.
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="section-title">Додати ступінь</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Назва (укр.)</label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm" placeholder="напр. Доктор філософії" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Назва (англ.)</label>
+                    <input type="text" name="name_en" class="form-control form-control-sm" placeholder="напр. Doctor of Philosophy">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle me-1"></i>Додати</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Назва (укр.)</th>
+                            <th>Назва (англ.)</th>
+                            <th class="text-center" style="width:110px;">Актуальний</th>
+                            <th class="text-end" style="width:160px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in degree_levels %}
+                        <tr class="{% if not d.is_active %}text-muted{% endif %}">
+                            <td>{{ d.name_ua }}</td>
+                            <td class="text-muted">{{ d.name_en or '—' }}</td>
+                            <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="id" value="{{ d.id }}">
+                                    <button type="submit" class="btn btn-sm {% if d.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                        {{ 'так' if d.is_active else 'ні' }}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                                        data-id="{{ d.id }}" data-name-ua="{{ d.name_ua }}" data-name-en="{{ d.name_en or '' }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if d.groups_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити «{{ d.name_ua }}»?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ d.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small" title="Використовується у {{ d.groups_count }} груп(ах) - видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ d.groups_count }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="editDegreeLevelModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати ступінь</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Назва (укр.)</label>
+                        <input type="text" name="name_ua" id="editNameUa" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Назва (англ.)</label>
+                        <input type="text" name="name_en" id="editNameEn" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const modalEl = document.getElementById('editDegreeLevelModal');
+    const modal = new bootstrap.Modal(modalEl);
+    document.querySelectorAll('.js-edit-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editId').value = btn.dataset.id;
+            document.getElementById('editNameUa').value = btn.dataset.nameUa;
+            document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}
