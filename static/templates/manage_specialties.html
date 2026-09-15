@@ -15,10 +15,31 @@
 
     {{ ui.section_title('Галузі знань') }}
     <div class="card mb-4">
-        <div class="card-body p-0">
+        <div class="card-body">
+            <h6 class="section-title">Додати галузь знань</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add_field">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Код</label>
+                    <input type="text" name="field_code" class="form-control form-control-sm" placeholder="напр. L" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Назва (укр.)</label>
+                    <input type="text" name="field_name_ua" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">Назва (англ.)</label>
+                    <input type="text" name="field_name_en" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
+                </div>
+            </form>
+        </div>
+        <div class="card-body p-0 border-top">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
-                    <thead><tr><th style="width:60px;">Код</th><th>Назва (укр.)</th><th>Назва (англ.)</th><th class="text-end" style="width:60px;"></th></tr></thead>
+                    <thead><tr><th style="width:60px;">Код</th><th>Назва (укр.)</th><th>Назва (англ.)</th><th class="text-end" style="width:110px;"></th></tr></thead>
                     <tbody>
                         {% for f in fields %}
                         <tr>
@@ -30,6 +51,17 @@
                                         data-code="{{ f.code }}" data-name-ua="{{ f.name_ua }}" data-name-en="{{ f.name_en or '' }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
+                                {% if f.specialties_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити галузь знань «{{ f.code }} {{ f.name_ua }}»?');">
+                                    <input type="hidden" name="action" value="delete_field">
+                                    <input type="hidden" name="field_code" value="{{ f.code }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small" title="На цю галузь посилається {{ f.specialties_count }} спеціальність(і) - видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ f.specialties_count }}
+                                </span>
+                                {% endif %}
                             </td>
                         </tr>
                         {% endfor %}
