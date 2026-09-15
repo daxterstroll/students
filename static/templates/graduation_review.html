@@ -1,0 +1,69 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Оформити випуск: перевірка{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-mortarboard', 'Перевірка перед випуском', 'Усі студенти позначені за замовчуванням - зніміть позначку, щоб виключити студента з випуску (вимагає причини)') }}
+
+    <div class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Групи й невиключені студенти будуть <strong>заархівовані</strong>. Виключені студенти потраплять у «Заморожені студенти» до подальшого вирішення.
+    </div>
+
+    <form method="POST" action="{{ url_for('admin.graduation_confirm') }}"
+          onsubmit="return confirm('Оформити випуск для {{ groups_with_students|length }} груп(и)? Групи будуть заархівовані.');">
+        {% for g in groups_with_students %}
+        <input type="hidden" name="group_ids" value="{{ g.id }}">
+        <div class="card mb-3">
+            <div class="card-header">
+                <strong>{{ g.name }}</strong>
+            </div>
+            <div class="card-body p-0">
+                {% if not g.students %}
+                <div class="p-3 text-muted small">У групі немає активних студентів.</div>
+                {% else %}
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                        {% for s in g.students %}
+                        <tr>
+                            <td style="width:40px;">
+                                <input type="checkbox" name="include_{{ s.id }}" value="1" checked
+                                       class="form-check-input js-student-toggle" data-student-id="{{ s.id }}">
+                            </td>
+                            <td>{{ s.full_name }}</td>
+                            <td>
+                                <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
+                                       class="form-control form-control-sm d-none" placeholder="Причина виключення (обов'язково)">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити випуск</button>
+        <a href="{{ url_for('admin.graduation') }}" class="btn btn-outline-secondary">Скасувати</a>
+    </form>
+
+</div>
+
+<script>
+document.querySelectorAll('.js-student-toggle').forEach(function (checkbox) {
+    checkbox.addEventListener('change', function () {
+        const reasonField = document.getElementById('reason_' + checkbox.dataset.studentId);
+        if (checkbox.checked) {
+            reasonField.classList.add('d-none');
+            reasonField.removeAttribute('required');
+            reasonField.value = '';
+        } else {
+            reasonField.classList.remove('d-none');
+            reasonField.setAttribute('required', 'required');
+        }
+    });
+});
+</script>
+{% endblock %}
