@@ -1,0 +1,63 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Наказ про відрахування{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-person-x', 'Наказ про відрахування', 'Оберіть студентів з активних груп і/або зі списку заморожених - усі потраплять в один наказ') }}
+
+    <form method="POST">
+        {{ ui.section_title('З активних груп') }}
+        {% if not groups %}
+        <p class="text-muted small">Активних груп немає.</p>
+        {% else %}
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th style="width:40px;"></th><th>Група</th><th class="text-end">Студентів</th></tr></thead>
+                        <tbody>
+                            {% for g in groups %}
+                            <tr>
+                                <td><input type="checkbox" name="group_ids" value="{{ g.id }}" class="form-check-input"></td>
+                                <td class="fw-semibold">{{ g.name }}</td>
+                                <td class="text-end">{{ g.student_count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {{ ui.section_title('Із заморожених студентів') }}
+        {% if not frozen %}
+        <p class="text-muted small">Активних заморожувань немає.</p>
+        {% else %}
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th style="width:40px;"></th><th>Студент</th><th>Попередня група</th><th>Причина заморожування</th></tr></thead>
+                        <tbody>
+                            {% for f in frozen %}
+                            <tr>
+                                <td><input type="checkbox" name="frozen_ids" value="{{ f.id }}" class="form-check-input"></td>
+                                <td class="fw-semibold">{{ f.student_name }}</td>
+                                <td>{{ f.previous_group_name or '—' }}</td>
+                                <td class="small text-muted">{{ f.reason }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі: перевірити список</button>
+    </form>
+
+</div>
+{% endblock %}
