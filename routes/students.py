@@ -95,7 +95,10 @@ def student_list():
         LEFT JOIN groups g ON s.group_id = g.id
     """
     count_query = "SELECT COUNT(*) FROM students s"
-    where_clauses = ["s.archived = FALSE"]
+    where_clauses = [
+        "s.archived = FALSE",
+        "s.id NOT IN (SELECT student_id FROM frozen_students WHERE resolved_at IS NULL)"
+    ]
     params = []
 
     if group_id:
@@ -674,6 +677,69 @@ def delete_photo(student_id):
     )
     conn.close()
     flash('Фото видалено', 'success')
+    return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route('/students/<int:student_id>/freeze', methods=['POST'])
+@permission_required('manage_students')
+def freeze_student(student_id):
+    """
+    Самостійне заморожування одного студента будь-коли посеред
+    навчального року (академічна відпустка, тимчасова заборгованість
+    тощо) - не прив'язане до масового переведення на курс чи випуску.
+    Студент переходить у "Заморожені студенти", group_id очищається,
+    order_id лишається NULL (немає масового наказу, лише сама причина).
+    """
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    reason = (request.form.get('reason') or '').strip()
+
+    student = conn.execute(
+        "SELECT group_id, COALESCE(archived, 0) AS archived FROM students WHERE id = ?", (student_id,)
+    ).fetchone()
+    if not student:
+        conn.close()
+        flash('Студента не знайдено', 'error')
+        return redirect(url_for('students.student_list'))
+
+    if not reason:
+        conn.close()
+        flash('Вкажіть причину заморожування.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    if student['archived']:
+        conn.close()
+        flash('Студент архівний - заморожування недоступне.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    if not student['group_id']:
+        conn.close()
+        flash('Студент і так не прикріплений до жодної групи.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    document_rel_path = None
+    document_file = request.files.get('document_file')
+    if document_file and document_file.filename:
+        os.makedirs(os.path.join('static', 'uploads', 'frozen_students'), exist_ok=True)
+        ext = os.path.splitext(document_file.filename)[1]
+        safe_name = f"{uuid.uuid4().hex}{ext}"
+        document_file.save(os.path.join('static', 'uploads', 'frozen_students', safe_name))
+        document_rel_path = f"uploads/frozen_students/{safe_name}"
+
+    conn.execute(
+        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) VALUES (?, ?, NULL, ?, ?, ?)",
+        (student_id, student['group_id'], reason, document_rel_path, current_username())
+    )
+    conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
+    conn.commit()
+    conn.close()
+
+    log_action(
+        current_username(),
+        f"заморозив студента (ID {student_id}) поза межами масового переведення",
+        details=f"причина: {reason}"
+    )
+    flash('Студента заморожено. Керувати вирішенням - на сторінці «Заморожені студенти».', 'success')
     return redirect(url_for('students.student_details', student_id=student_id))
 
 

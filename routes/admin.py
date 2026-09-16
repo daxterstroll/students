@@ -1674,7 +1674,7 @@ def frozen_students():
     conn.row_factory = sqlite3.Row
 
     active = conn.execute("""
-        SELECT f.id, f.student_id, f.reason, f.frozen_at, f.frozen_by,
+        SELECT f.id, f.student_id, f.reason, f.document_file, f.frozen_at, f.frozen_by,
                TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS student_name,
                g.name AS previous_group_name,
                o.order_number, o.order_date
@@ -1687,7 +1687,7 @@ def frozen_students():
     """).fetchall()
 
     history = conn.execute("""
-        SELECT f.id, f.student_id, f.reason, f.frozen_at, f.frozen_by,
+        SELECT f.id, f.student_id, f.reason, f.document_file, f.frozen_at, f.frozen_by,
                f.resolved_at, f.resolution, f.resolved_by,
                TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS student_name,
                g.name AS previous_group_name,
@@ -1738,7 +1738,7 @@ def resolve_frozen_student(frozen_id):
 
     conn.execute("UPDATE students SET group_id = ? WHERE id = ?", (target_group_id, frozen['student_id']))
     conn.execute(
-        "UPDATE frozen_students SET resolved_at = datetime('now'), resolution = ?, resolved_by = ? WHERE id = ?",
+        "UPDATE frozen_students SET resolved_at = datetime('now', 'localtime'), resolution = ?, resolved_by = ? WHERE id = ?",
         (resolution_text, current_username(), frozen_id)
     )
     conn.commit()
@@ -2016,7 +2016,7 @@ def expulsion_confirm():
         conn.execute("UPDATE students SET archived = TRUE WHERE id = ?", (student_id,))
         if frozen_id:
             conn.execute(
-                "UPDATE frozen_students SET resolved_at = datetime('now'), resolution = ?, resolved_by = ? WHERE id = ?",
+                "UPDATE frozen_students SET resolved_at = datetime('now', 'localtime'), resolution = ?, resolved_by = ? WHERE id = ?",
                 (f"Відраховано наказом №{order_number} від {order_date}", current_username(), frozen_id)
             )
 
@@ -3367,11 +3367,21 @@ def archive():
     conn.row_factory = sqlite3.Row
 
     groups = conn.execute("""
-        SELECT g.id, g.name, g.start_year, g.study_form, g.program_credits,
+        SELECT g.id, g.name, g.start_year, g.study_form, g.program_credits, g.degree_level,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS display_name,
                (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id AND s.archived = TRUE) AS student_count
-        FROM groups g WHERE g.archived = TRUE ORDER BY g.start_year DESC, g.name
+        FROM groups g WHERE g.archived = TRUE ORDER BY g.start_year DESC, g.degree_level, g.name
     """).fetchall()
+    groups = [dict(g) for g in groups]
+    for g in groups:
+        g['end_year'] = g['start_year'] + compute_program_total_years(g['degree_level'], g['program_credits'])
+
+    # Групуємо для компактнішого відображення: рік вступу -> ступінь -> список груп
+    groups_by_year = {}
+    for g in groups:
+        groups_by_year.setdefault(g['start_year'], {}).setdefault(g['degree_level'], []).append(g)
+    # Сортуємо роки за спаданням (найновіші зверху)
+    groups_by_year = dict(sorted(groups_by_year.items(), key=lambda x: x[0], reverse=True))
 
     students_by_group = {}
     for group in groups:
@@ -3381,9 +3391,25 @@ def archive():
         """, (group['id'],)).fetchall()
         students_by_group[group['id']] = students
 
+    # Відраховані студенти - окремо від архівних груп, бо наказ про
+    # відрахування може стосуватись студента з ГРУПИ, яка сама
+    # лишається активною (лише сам студент стає архівним) - такий
+    # студент інакше був би не видно ніде: ні в активному списку групи
+    # (бо archived=TRUE), ні тут вище (бо його група не архівна).
+    expelled_students = conn.execute("""
+        SELECT eos.student_id, eos.reason, eo.order_number, eo.order_date,
+               TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS student_name,
+               g.name AS previous_group_name
+        FROM expulsion_order_students eos
+        JOIN expulsion_orders eo ON eo.id = eos.order_id
+        JOIN students s ON s.id = eos.student_id
+        LEFT JOIN groups g ON g.id = eos.previous_group_id
+        ORDER BY eo.order_date DESC
+    """).fetchall()
+
     conn.close()
     log_action(current_username(), "переглянув список архівних груп")
-    return render_template('archive.html', groups=groups, students_by_group=students_by_group)
+    return render_template('archive.html', groups=groups, groups_by_year=groups_by_year, students_by_group=students_by_group, expelled_students=expelled_students)
 
 
 TEMP_PREVIEW_FOLDER = "temp_preview"

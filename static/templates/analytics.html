@@ -25,40 +25,63 @@
     </div>
 
     {# ================= KPI-картки ================= #}
+    <style>
+        .kpi-card {
+            background: var(--paper, #fff);
+            border: 1px solid var(--line, #e5e5e5);
+            border-top: 3px solid var(--brass, #c8a24a);
+            border-radius: 10px;
+            height: 100%;
+            text-align: center;
+            padding: 1rem .5rem;
+        }
+        .kpi-card__value { font-size: 1.9rem; font-weight: 800; color: var(--ink-text); line-height: 1.1; }
+        .kpi-card__label { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+        .kpi-card--warning { border-top-color: var(--stamp, #a23b2e); }
+        .kpi-card--warning .kpi-card__value { color: var(--stamp, #a23b2e); }
+    </style>
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
-            <div class="card text-center h-100">
-                <div class="card-body">
-                    <div class="fs-3 fw-bold">{{ total_students }}</div>
-                    <div class="text-muted small">Активних студентів</div>
-                </div>
+            <div class="kpi-card">
+                <div class="kpi-card__value">{{ total_students }}</div>
+                <div class="kpi-card__label">Активних студентів</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card text-center h-100">
-                <div class="card-body">
-                    <div class="fs-3 fw-bold">{{ active_groups }}</div>
-                    <div class="text-muted small">Активних груп{% if is_admin and archived_groups %} <span class="text-muted">({{ archived_groups }} в архіві)</span>{% endif %}</div>
-                </div>
+            <div class="kpi-card">
+                <div class="kpi-card__value">{{ active_groups }}</div>
+                <div class="kpi-card__label">Активних груп{% if is_admin and archived_groups %} <span>({{ archived_groups }} в архіві)</span>{% endif %}</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card text-center h-100">
-                <div class="card-body">
-                    <div class="fs-3 fw-bold">{{ avg_group_size }}</div>
-                    <div class="text-muted small">Студентів у групі в середньому</div>
-                </div>
+            <div class="kpi-card">
+                <div class="kpi-card__value">{{ avg_group_size }}</div>
+                <div class="kpi-card__label">Студентів у групі в середньому</div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="card text-center h-100">
-                <div class="card-body">
-                    <div class="fs-3 fw-bold">{{ total_users if total_users is not none else '—' }}</div>
-                    <div class="text-muted small">Користувачів системи</div>
-                </div>
+            <div class="kpi-card">
+                <div class="kpi-card__value">{{ total_users if total_users is not none else '—' }}</div>
+                <div class="kpi-card__label">Користувачів системи</div>
             </div>
         </div>
+        {% if is_admin %}
+        <div class="col-6 col-md-3">
+            <div class="kpi-card {% if frozen_students_count %}kpi-card--warning{% endif %}">
+                <div class="kpi-card__value">{{ frozen_students_count }}</div>
+                <div class="kpi-card__label">Заморожених студентів (не вирішено)</div>
+            </div>
+        </div>
+        {% endif %}
     </div>
+
+    {% if is_admin and orders_summary %}
+    <div class="alert alert-light border small mb-4">
+        <strong><i class="bi bi-journal-text me-1"></i>Рух студентів за {{ orders_summary.academic_year }} н.р.:</strong>
+        {{ orders_summary.transfer_orders }} наказ(и) переведення на курс,
+        {{ orders_summary.expulsion_orders }} наказ(и) відрахування ({{ orders_summary.expelled_students }} студент(ів)).
+    </div>
+    {% endif %}
 
     {# ================= Заповненість даних ================= #}
     {{ ui.section_title('Заповненість даних студентів') }}
@@ -170,6 +193,10 @@
     {% endif %}
 
     {{ ui.section_title('Прогноз випуску по роках') }}
+    <style>
+        .forecast-bar-track { height: 10px; border-radius: 6px; background: var(--paper-2); overflow: hidden; }
+        .forecast-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, var(--brass-semi, #d8c48a), var(--brass, #c8a24a)); }
+    </style>
     <div class="card mb-4">
         <div class="card-body">
             <p class="text-muted small">Розраховано з року вступу, ступеня і кредитів програми (та сама формула, що й у документах).</p>
@@ -177,8 +204,8 @@
             {% for year, cnt in graduation_forecast %}
             <div class="mb-2">
                 <div class="d-flex justify-content-between small mb-1"><span>{{ year }}</span><span class="text-muted">{{ cnt }} студентів</span></div>
-                <div class="progress" style="height: 8px;">
-                    <div class="progress-bar bg-info" style="width: {{ (cnt / max_grad_cnt * 100) if max_grad_cnt else 0 }}%;"></div>
+                <div class="forecast-bar-track">
+                    <div class="forecast-bar-fill" style="width: {{ (cnt / max_grad_cnt * 100) if max_grad_cnt else 0 }}%;"></div>
                 </div>
             </div>
             {% else %}
@@ -186,6 +213,24 @@
             {% endfor %}
         </div>
     </div>
+
+    {% if is_admin and course_distribution %}
+    {{ ui.section_title('Розподіл активних студентів по курсах') }}
+    <div class="card mb-4">
+        <div class="card-body">
+            {% set max_course_cnt = (course_distribution | map(attribute='student_count') | list | max) if course_distribution else 1 %}
+            {% for row in course_distribution %}
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1"><span>{{ row.course }} курс</span><span class="text-muted">{{ row.student_count }} студентів</span></div>
+                <div class="forecast-bar-track">
+                    <div class="forecast-bar-fill" style="width: {{ (row.student_count / max_course_cnt * 100) if max_course_cnt else 0 }}%;"></div>
+                </div>
+            </div>
+            {% endfor %}
+            <a href="{{ url_for('admin.courses') }}" class="small">Детальніше на дошці «Курси» →</a>
+        </div>
+    </div>
+    {% endif %}
 
     {{ ui.section_title('Заповненість по кожній групі окремо') }}
     <div class="card mb-4">
@@ -304,9 +349,14 @@
 
     {% if is_admin %}
     {{ ui.section_title('Перевірки цілісності даних') }}
+    <style>
+        .integrity-card { border-top: 3px solid var(--line, #ddd); }
+        .integrity-card--issue { border-top-color: var(--stamp, #a23b2e); }
+        .integrity-card--clean { border-top-color: var(--brass, #c8a24a); }
+    </style>
     <div class="row g-3 mb-4">
         <div class="col-md-6">
-            <div class="card h-100">
+            <div class="card h-100 integrity-card {% if credit_mismatches %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
                 <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-exclamation-triangle me-2"></i>Розбіжність суми кредитів</h6></div>
                 <div class="card-body">
                     {% for m in credit_mismatches %}
@@ -316,7 +366,7 @@
             </div>
         </div>
         <div class="col-md-6">
-            <div class="card h-100">
+            <div class="card h-100 integrity-card {% if missing_accreditation %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
                 <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-patch-exclamation me-2"></i>Групи без акредитації</h6></div>
                 <div class="card-body">
                     {% for g in missing_accreditation %}
@@ -326,7 +376,7 @@
             </div>
         </div>
         <div class="col-md-6">
-            <div class="card h-100">
+            <div class="card h-100 integrity-card {% if duplicate_diploma_numbers %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
                 <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-copy me-2"></i>Дублікати номерів диплома</h6></div>
                 <div class="card-body">
                     {% for d in duplicate_diploma_numbers %}
@@ -336,12 +386,34 @@
             </div>
         </div>
         <div class="col-md-6">
-            <div class="card h-100">
+            <div class="card h-100 integrity-card {% if duplicate_appendix_numbers %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
                 <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-copy me-2"></i>Дублікати номерів додатка</h6></div>
                 <div class="card-body">
                     {% for d in duplicate_appendix_numbers %}
                     <div class="small mb-1">№ {{ d.number }} - у {{ d.count }} студентів</div>
                     {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Дублікатів не знайдено</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100 integrity-card {% if specialties_missing_short_name %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-diagram-3 me-2"></i>Спеціальності без скороченої назви</h6></div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">Заблокує створення групи з цією спеціальністю - потрібна для назви групи.</p>
+                    {% for s in specialties_missing_short_name %}
+                    <div class="small mb-1">{{ s }}</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Усі активні спеціальності мають скорочену назву</span>{% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100 integrity-card {% if specialties_missing_name_en %}integrity-card--issue{% else %}integrity-card--clean{% endif %}">
+                <div class="card-header py-3"><h6 class="mb-0 section-title"><i class="bi bi-diagram-3 me-2"></i>Спеціальності без англійської назви</h6></div>
+                <div class="card-body">
+                    <p class="text-muted small mb-2">Заблокує створення групи з цією спеціальністю.</p>
+                    {% for s in specialties_missing_name_en %}
+                    <div class="small mb-1">{{ s }}</div>
+                    {% else %}<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Усі активні спеціальності мають англійську назву</span>{% endfor %}
                 </div>
             </div>
         </div>
