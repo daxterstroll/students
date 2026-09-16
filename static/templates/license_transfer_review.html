@@ -1,0 +1,61 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевести між ліцензіями: перевірка{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-award', 'Перевірка перед переведенням', 'Ліцензія призначення: ' ~ (target_license.short_name_ua or target_license.name_ua)) }}
+
+    <form method="POST" action="{{ url_for('admin.license_transfer_confirm') }}" enctype="multipart/form-data"
+          onsubmit="return confirm('Перевести {{ students|length }} студент(ів) на ліцензію «{{ target_license.short_name_ua or target_license.name_ua }}»?');">
+        <input type="hidden" name="target_license_id" value="{{ target_license.id }}">
+        {% for s in students %}
+        <input type="hidden" name="student_ids" value="{{ s.id }}">
+        {% endfor %}
+
+        <div class="card mb-3">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th>Студент</th><th>Група</th><th>Поточна ліцензія</th><th>Нова ліцензія</th></tr></thead>
+                        <tbody>
+                            {% for s in students %}
+                            <tr>
+                                <td class="fw-semibold">{{ s.full_name }}</td>
+                                <td>{{ s.group_name or '—' }}</td>
+                                <td class="text-muted small">{{ s.current_license_name or '—' }}</td>
+                                <td><i class="bi bi-arrow-right me-1"></i>{{ target_license.short_name_ua or target_license.name_ua }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="section-title">Наказ про переведення між ліцензіями</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Номер наказу</label>
+                        <input type="text" name="order_number" class="form-control" placeholder="напр. 50л" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Дата наказу</label>
+                        <input type="date" name="order_date" class="form-control" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Скан-копія наказу</label>
+                        <input type="file" name="scan_file" class="form-control">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити переведення</button>
+        <a href="{{ url_for('admin.license_transfer') }}" class="btn btn-outline-secondary">Скасувати</a>
+    </form>
+
+</div>
+{% endblock %}

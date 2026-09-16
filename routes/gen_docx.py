@@ -640,14 +640,14 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             dates_ua = f"01/09/{start_year}–25/06/{end_year}"
             dates_en = f"01/09/{start_year}–25/06/{end_year}"
 
-        institution_name_and_status = student_dict.get('institution_name_and_status', '')
-
-        if institution_name_and_status == "Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.":
-            names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»."
-            names_en = "Lviv Branch of Private Higher Education Establishment «European University»."
-        elif institution_name_and_status == "Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.":
-            names_ua = "Приватний вищий навчальний заклад «Європейський університет»."
-            names_en = "Private Higher Educational Institution 'European University'."
+        # Раніше тут було жорстке порівняння з двома захардкодженими
+        # рядками (Львівська філія / основний заклад) - ламалось би для
+        # будь-якої третьої ліцензії (напр. Польської). Тепер
+        # institution_name_and_status/_en беруться напряму з ліцензії
+        # студента (routes/students.py, routes/admin.py) - тому просто
+        # використовуємо їх як є, без порівняння.
+        names_ua = student_dict.get('institution_name_and_status', '') or names_ua
+        names_en = student_dict.get('institution_name_and_status_en', '') or names_en
 
     context['study_period_names'] = _to_richtext_multiline(names_ua, font_size_pt=8, font_name='Times New Roman')
     context['study_period_dates'] = _to_richtext_multiline(dates_ua, font_size_pt=8, font_name='Times New Roman')
