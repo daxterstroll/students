@@ -29,7 +29,10 @@
                         <tr>
                             <td class="fw-semibold">{{ f.student_name }}</td>
                             <td>{{ f.previous_group_name or '—' }}</td>
-                            <td class="small">{{ f.reason }}</td>
+                            <td class="small">
+                                {{ f.reason }}
+                                {% if f.document_file %}<a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>{% endif %}
+                            </td>
                             <td class="small text-muted">
                                 {% if f.order_number %}№{{ f.order_number }} від {{ f.order_date }}{% else %}—{% endif %}
                             </td>
@@ -69,7 +72,10 @@
                         {% for f in history %}
                         <tr>
                             <td>{{ f.student_name }}</td>
-                            <td class="small text-muted">{{ f.reason }}</td>
+                            <td class="small text-muted">
+                                {{ f.reason }}
+                                {% if f.document_file %}<a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>{% endif %}
+                            </td>
                             <td class="small">{{ f.resolution }}</td>
                             <td class="small text-muted">{{ f.resolved_at }}<br>{{ f.resolved_by }}</td>
                         </tr>
