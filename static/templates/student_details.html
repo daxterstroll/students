@@ -44,10 +44,15 @@
         </div>
     </div>
 
-    <div class="d-flex justify-content-end mb-4">
+    <div class="d-flex justify-content-between mb-4">
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-2"></i>До списку
         </a>
+        {% if student.group_id and not student.archived %}
+        <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
+            <i class="bi bi-snow me-2"></i>Заморозити студента
+        </button>
+        {% endif %}
     </div>
 
     <div class="row g-4">
@@ -582,4 +587,36 @@
     });
 })();
 </script>
+
+<!-- Модальне вікно заморожування студента -->
+<div class="modal fade" id="freezeStudentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('students.freeze_student', student_id=student.id) }}"
+                  enctype="multipart/form-data"
+                  onsubmit="return confirm('Заморозити студента? Він буде відкріплений від групи до вирішення.');">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-snow me-2"></i>Заморозити студента</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">Для тимчасового виключення посеред навчального року - академічна відпустка, заборгованість тощо. Студент з'явиться на сторінці «Заморожені студенти», де його можна буде повернути в групу пізніше.</p>
+                    <div class="mb-3">
+                        <label class="form-label">Причина</label>
+                        <input type="text" name="reason" class="form-control" placeholder="напр. академічна відпустка за медичними показаннями" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Документ-підстава (необов'язково)</label>
+                        <input type="file" name="document_file" class="form-control">
+                        <div class="form-text">Довідка, заява тощо - файл будь-якого типу.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-warning">Заморозити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}

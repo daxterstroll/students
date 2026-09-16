@@ -26,6 +26,7 @@ student_list()) - щоб цифри тут і там завжди узгоджу
 from flask import Blueprint, render_template, session, request
 from routes.db import get_db
 from routes.utils import permission_required
+from datetime import datetime
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -468,6 +469,61 @@ def dashboard():
         """):
             duplicate_appendix_numbers.append({'number': row['appendix_number'], 'count': row['cnt']})
 
+    # ================= Заморожені студенти (активні, не вирішено) =================
+    frozen_students_count = 0
+    if is_admin:
+        frozen_students_count = conn.execute(
+            "SELECT COUNT(*) FROM frozen_students WHERE resolved_at IS NULL"
+        ).fetchone()[0]
+
+    # ================= Прогалини в каталогах (можуть заблокувати створення групи) =================
+    specialties_missing_short_name, specialties_missing_name_en = [], []
+    if is_admin:
+        for row in conn.execute("""
+            SELECT code, name_ua FROM specialties
+            WHERE is_active = 1 AND (short_name IS NULL OR short_name = '')
+        """):
+            specialties_missing_short_name.append(f"{row['code']} {row['name_ua']}")
+        for row in conn.execute("""
+            SELECT code, name_ua FROM specialties
+            WHERE is_active = 1 AND (name_en IS NULL OR name_en = '')
+        """):
+            specialties_missing_name_en.append(f"{row['code']} {row['name_ua']}")
+
+    # ================= Розподіл активних груп по курсах =================
+    course_distribution = []
+    if is_admin:
+        course_distribution = conn.execute("""
+            SELECT g.course AS course, COUNT(s.id) AS student_count
+            FROM groups g LEFT JOIN students s ON s.group_id = g.id AND COALESCE(s.archived, 0) = 0
+            WHERE COALESCE(g.archived, 0) = 0
+            GROUP BY g.course ORDER BY g.course
+        """).fetchall()
+
+    # ================= Підсумок наказів руху студентів за поточний навчальний рік =================
+    orders_summary = None
+    if is_admin:
+        current_year = datetime.now().year
+        academic_year_start = current_year if datetime.now().month >= 9 else current_year - 1
+        cutoff = f"{academic_year_start}-09-01"
+        transfer_orders_count = conn.execute(
+            "SELECT COUNT(*) FROM course_transfer_orders WHERE order_date >= ?", (cutoff,)
+        ).fetchone()[0]
+        expulsion_orders_count = conn.execute(
+            "SELECT COUNT(*) FROM expulsion_orders WHERE order_date >= ?", (cutoff,)
+        ).fetchone()[0]
+        expelled_students_count = conn.execute("""
+            SELECT COUNT(*) FROM expulsion_order_students eos
+            JOIN expulsion_orders eo ON eo.id = eos.order_id
+            WHERE eo.order_date >= ?
+        """, (cutoff,)).fetchone()[0]
+        orders_summary = {
+            'academic_year': f"{academic_year_start}/{academic_year_start + 1}",
+            'transfer_orders': transfer_orders_count,
+            'expulsion_orders': expulsion_orders_count,
+            'expelled_students': expelled_students_count,
+        }
+
     # ================= Якість оцінок конкретного студента =================
     student_detail = None
     accessible_ids = {row['id'] for row in student_options}
@@ -563,6 +619,11 @@ def dashboard():
         missing_accreditation=missing_accreditation,
         duplicate_diploma_numbers=duplicate_diploma_numbers,
         duplicate_appendix_numbers=duplicate_appendix_numbers,
+        frozen_students_count=frozen_students_count,
+        specialties_missing_short_name=specialties_missing_short_name,
+        specialties_missing_name_en=specialties_missing_name_en,
+        course_distribution=course_distribution,
+        orders_summary=orders_summary,
         templates_total=templates_total,
         templates_hidden=templates_hidden,
         templates_admin_only=templates_admin_only,
