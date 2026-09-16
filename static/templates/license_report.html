@@ -1,0 +1,184 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Звіт по ліцензіях{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-award', 'Звіт по ліцензіях', 'Розподіл студентів по ліцензіях у кожній групі') }}
+
+    <div class="card mb-4">
+        <div class="card-body py-2">
+            <form method="GET" class="d-flex align-items-center gap-3 flex-wrap">
+                <input type="hidden" name="view" value="{{ view }}">
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="{{ url_for('admin.license_report', view='list', include_archived=1 if include_archived else 0) }}"
+                       class="btn btn-outline-primary {% if view == 'list' %}active{% endif %}">Список</a>
+                    <a href="{{ url_for('admin.license_report', view='summary', include_archived=1 if include_archived else 0) }}"
+                       class="btn btn-outline-primary {% if view == 'summary' %}active{% endif %}">Підсумки</a>
+                </div>
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" name="include_archived" value="1" id="includeArchived"
+                           {% if include_archived %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label small" for="includeArchived">Враховувати архівні групи</label>
+                </div>
+                <div class="ms-auto d-flex gap-2">
+                    <a href="{{ url_for('admin.license_report_export_word', include_archived=1 if include_archived else 0, study_form='Денна') }}"
+                       class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Денна)
+                    </a>
+                    <a href="{{ url_for('admin.license_report_export_word', include_archived=1 if include_archived else 0, study_form='Заочна') }}"
+                       class="btn btn-outline-success btn-sm">
+                        <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Заочна)
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if view == 'list' %}
+    {# ================= РЕЖИМ "СПИСОК" ================= #}
+    {% if not groups_with_students %}
+        {{ ui.empty_state('bi-people', 'Груп немає') }}
+    {% endif %}
+    {% for item in groups_with_students %}
+    <div class="card mb-3 {% if item.group.archived %}border-secondary{% endif %}">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong>{{ item.group.name }}</strong>
+                <span class="text-muted small">{{ item.group.course }} курс · {{ item.group.specialty }} · {{ item.group.degree_level }} · {{ item.group.study_form }}</span>
+                {% if item.group.archived %}<span class="badge bg-secondary ms-1">архівна</span>{% endif %}
+            </div>
+            <span class="count-pill"><i class="bi bi-people"></i>{{ item.students|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if not item.students %}
+            <div class="p-3 text-muted small">Немає студентів.</div>
+            {% else %}
+            <table class="table table-sm align-middle mb-0">
+                <tbody>
+                    {% for s in item.students %}
+                    <tr>
+                        <td>{{ s.full_name }}{% if s.archived %} <span class="text-muted small">(архівний)</span>{% endif %}</td>
+                        <td class="text-end" style="width:140px;">
+                            {% if s.license_short_name %}
+                            <span class="badge bg-primary-subtle text-primary-emphasis">{{ s.license_short_name }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis">без ліцензії</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+
+    {% else %}
+    {# ================= РЕЖИМ "ПІДСУМКИ" ================= #}
+    {{ ui.section_title('По групах') }}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Група</th>
+                            <th>Курс</th>
+                            <th>Спеціальність</th>
+                            <th>Ступінь</th>
+                            <th>Форма</th>
+                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            <th class="text-end">без ліц.</th>
+                            <th class="text-end fw-bold">Разом</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in summary_rows %}
+                        <tr class="{% if row.group.archived %}text-muted{% endif %}">
+                            <td class="fw-semibold">{{ row.group.name }}</td>
+                            <td>{{ row.group.course }}</td>
+                            <td class="small">{{ row.group.specialty }}</td>
+                            <td class="small">{{ row.group.degree_level }}</td>
+                            <td class="small">{{ row.group.study_form }}</td>
+                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
+                            <td class="text-end fw-bold">{{ row.total }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-light fw-bold">
+                            <td colspan="5">Загальна кількість</td>
+                            {% for name in license_names %}<td class="text-end">{{ grand_totals.get(name, 0) }}</td>{% endfor %}
+                            <td class="text-end">{{ grand_totals.get('—', 0) }}</td>
+                            <td class="text-end">{{ grand_total_all }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {{ ui.section_title('По курсах') }}
+    <div class="card mb-4">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Курс</th>
+                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            <th class="text-end">без ліц.</th>
+                            <th class="text-end fw-bold">Разом</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in course_breakdown_rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.course }} курс</td>
+                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
+                            <td class="text-end fw-bold">{{ row.total }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {{ ui.section_title('По ступенях і формах навчання') }}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Ступінь</th>
+                            <th>Форма навчання</th>
+                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            <th class="text-end">без ліц.</th>
+                            <th class="text-end fw-bold">Разом</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in breakdown_rows %}
+                        <tr>
+                            <td class="fw-semibold">{{ row.degree_level }}</td>
+                            <td>{{ row.study_form }}</td>
+                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
+                            <td class="text-end fw-bold">{{ row.total }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

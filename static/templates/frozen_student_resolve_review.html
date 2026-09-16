@@ -1,0 +1,51 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перенесення оцінок{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-arrow-left-right', 'Перенесення оцінок', 'Знайдено предмети/практики/курсові/атестації з такою самою назвою в новій групі «' ~ target_group_name ~ '» - оберіть, які оцінки перенести') }}
+
+    <div class="alert alert-light border small">
+        <i class="bi bi-info-circle me-1"></i>
+        Предмети належать конкретній групі, тому оцінка студента "прив'язана" до старого предмета навіть якщо новий має таку саму назву - за замовчуванням позначені всі знайдені збіги, зніміть позначку з тих, що переносити не варто (напр. якщо в новій групі інший обсяг курсу).
+    </div>
+
+    <form method="POST" action="{{ url_for('admin.resolve_frozen_student_confirm', frozen_id=frozen_id) }}">
+        <input type="hidden" name="target_group_id" value="{{ target_group_id }}">
+        <input type="hidden" name="target_group_name" value="{{ target_group_name }}">
+        <input type="hidden" name="comment" value="{{ comment }}">
+
+        <div class="card mb-3">
+            <div class="card-body p-0">
+                <table class="table align-middle mb-0">
+                    <thead><tr><th style="width:40px;"></th><th>Тип</th><th>Стара назва</th><th>Нова назва</th><th>Оцінка</th></tr></thead>
+                    <tbody>
+                        {% set kind_labels = {'subject': 'Предмет', 'practice': 'Практика', 'coursework': 'Курсова', 'attestation': 'Атестація'} %}
+                        {% for m in matches %}
+                        {% set key = m.kind ~ '|' ~ m.old_id ~ '|' ~ m.new_id %}
+                        <tr>
+                            <td><input type="checkbox" name="transfer" value="{{ key }}" class="form-check-input" checked></td>
+                            <td>{{ kind_labels.get(m.kind, m.kind) }}</td>
+                            <td class="small">{{ m.name }}</td>
+                            <td class="small">
+                                {{ m.new_name }}
+                                <input type="hidden" name="new_name_{{ key }}" value="{{ m.new_name }}">
+                            </td>
+                            <td>
+                                {{ m.grade }}
+                                <input type="hidden" name="grade_{{ key }}" value="{{ m.grade }}">
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Підтвердити переведення</button>
+        <a href="{{ url_for('admin.frozen_students') }}" class="btn btn-outline-secondary">Скасувати</a>
+    </form>
+
+</div>
+{% endblock %}

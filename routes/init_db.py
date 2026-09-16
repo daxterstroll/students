@@ -165,9 +165,11 @@ CREATE TABLE IF NOT EXISTS "students" (
 	"group_id"	INTEGER,
 	"edebo_code"	VARCHAR(50),
 	"photo"	TEXT,
+	"license_id"	INTEGER,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
-	FOREIGN KEY("group_id") REFERENCES "groups"("id")
+	FOREIGN KEY("group_id") REFERENCES "groups"("id"),
+	FOREIGN KEY("license_id") REFERENCES "institution_licenses"("id")
 );
 CREATE TABLE IF NOT EXISTS "subjects" (
 	"id"	INTEGER,
@@ -343,6 +345,62 @@ CREATE TABLE IF NOT EXISTS "expulsion_order_students" (
     FOREIGN KEY (order_id) REFERENCES expulsion_orders(id),
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id)
+);
+
+-- Ліцензія, під якою студент вступив до закладу (Львівська, Київська,
+-- Польська тощо) - властивість СТУДЕНТА, а не групи, оскільки в одній
+-- групі можуть бути студенти з різних ліцензій.
+CREATE TABLE IF NOT EXISTS "institution_licenses" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name_ua TEXT NOT NULL,
+    short_name_ua TEXT,          -- коротка назва для періоду навчання, напр. "Львівська філія"
+    name_en TEXT,
+    short_name_en TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+
+-- Накази про переведення студентів між ліцензіями.
+CREATE TABLE IF NOT EXISTS "license_transfer_orders" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_number TEXT NOT NULL,
+    order_date TEXT NOT NULL,
+    scan_file TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS "license_transfer_order_students" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    previous_license_id INTEGER,
+    new_license_id INTEGER NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES license_transfer_orders(id),
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (previous_license_id) REFERENCES institution_licenses(id),
+    FOREIGN KEY (new_license_id) REFERENCES institution_licenses(id)
+);
+""")
+
+# Дві ліцензії, які раніше були жорстко прописані на рівні групи -
+# переносимо в каталог як стартові записи (наявні групи/студенти не
+# потребують звірки, оскільки текст ідентичний).
+cur.executescript("""
+INSERT OR IGNORE INTO institution_licenses (id, name_ua, short_name_ua, name_en, short_name_en, is_active) VALUES (
+    1,
+    'Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.',
+    'Київська',
+    'Private Higher Educational Institution ''European University''. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.',
+    'Kyiv',
+    1
+);
+INSERT OR IGNORE INTO institution_licenses (id, name_ua, short_name_ua, name_en, short_name_en, is_active) VALUES (
+    2,
+    'Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.',
+    'Львівська',
+    'Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.',
+    'Lviv',
+    1
 );
 """)
 

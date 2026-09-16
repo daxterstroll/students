@@ -82,9 +82,23 @@ def get_db():
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DB_PATH = os.path.join(BASE_DIR, 'students.db')
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.create_collation("UKRAINIAN", ukrainian_collation)
     conn.execute("PRAGMA foreign_keys = ON")
+    # SQLite має власну LOWER(), але вона розуміє лише ASCII - кирилицю
+    # не переводить у нижній регістр узагалі. LOWER_UA() - те саме,
+    # тільки через Python str.lower(), який кирилицю обробляє коректно.
+    # Потрібно для регістронезалежного пошуку (LIKE сам собою теж не
+    # регістронезалежний для кирилиці).
+    conn.create_function("LOWER_UA", 1, lambda s: s.lower() if s else s)
+    # WAL замість типового rollback journal - дозволяє читачам не
+    # блокуватись, поки триває запис (і навпаки), що критично важливо
+    # під час одночасних запитів на багатопотоковому сервері (waitress).
+    # busy_timeout - скільки чекати на звільнення блокування замість
+    # негайного "database is locked" (типово лише 5с - замало для
+    # довгих транзакцій на кшталт каскадного видалення групи).
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 30000")
 
     return conn
