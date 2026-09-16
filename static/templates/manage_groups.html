@@ -40,7 +40,7 @@
             </div>
             <div class="col-md-2">
                 <label for="study_form" class="form-label">Форма навчання</label>
-                <select name="study_form" id="study_form" class="form-select" required>
+                <select name="study_form" id="study_form" class="form-select" required onchange="fillGroupName('')">
                     <option value="Денна">Денна</option>
                     <option value="Заочна">Заочна</option>
                 </select>
@@ -81,7 +81,7 @@
                         {% endif %}
                         <option value="{{ sp.code }}"
                                 data-name-en="{{ sp.name_en or '' }}"
-                                data-field-name="{{ sp.field_name }}"
+                                data-field-name="{{ sp.field_code }} {{ sp.field_name }}"
                                 data-field-name-en="{{ sp.field_name_en or '' }}"
                                 data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                     {% endfor %}
@@ -93,22 +93,6 @@
                 <input type="text" id="specialty_en" class="form-control" readonly
                        placeholder="Підставиться автоматично після вибору спеціальності">
             </div>
-            <div class="col-md-6">
-                <label for="institution_name_and_status" class="form-label">Найменування та статус закладу</label>
-            	<select name="institution_name_and_status" id="institution_name_and_status" class="form-select" required onchange="fillPairedDerived(this, 'institution_name_and_status_en', '')">
-                    <option value="" disabled selected>— оберіть зі списку —</option>
-                    <option value="Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
-                            data-en="Private Higher Educational Institution 'European University'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.">Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
-					<option value="Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017."
-                            data-en="Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.">Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.</option>
-                </select>
-			
-			</div>
-            <div class="col-md-6">
-                <label for="institution_name_and_status_en" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                <textarea id="institution_name_and_status_en" class="form-control" rows="4" readonly
-                          placeholder="Підставиться автоматично після вибору найменування закладу"></textarea>
-			</div>
             <div class="col-md-6">
                 <label for="qualification_name" class="form-label">Назва кваліфікації</label>
                 <input type="text" id="qualification_name" class="form-control" readonly
@@ -172,32 +156,76 @@
     </div>
 
     <!-- Список групп -->
-    {{ ui.section_title('Список груп') }}
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        {{ ui.section_title('Список груп') }}
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside">
+                <i class="bi bi-layout-three-columns me-1"></i>Стовпці
+            </button>
+            <div class="dropdown-menu p-2" style="min-width: 260px;">
+                {% for key, label in [
+                    ('id', 'ID'), ('name', 'Назва'), ('course', 'Курс'), ('start_year', 'Рік вступу'),
+                    ('study_form', 'Форма навчання'), ('program_credits', 'Кредити'),
+                    ('specialty', 'Спеціальність'), ('degree_level', 'Ступінь'),
+                    ('educational_program', 'Освітня програма'), ('knowledge_area', 'Галузь знань'),
+                    ('qualification_name', 'Назва кваліфікації'), ('student_count', 'Кількість студентів'),
+                ] %}
+                <div class="form-check">
+                    <input class="form-check-input js-col-toggle" type="checkbox" value="{{ key }}" id="col-{{ key }}">
+                    <label class="form-check-label small" for="col-{{ key }}">{{ label }}</label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
     {% if groups %}
     <div class="card">
         <div class="card-body p-0">
         <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover align-middle mb-0" id="groupsTable">
+            {% macro sort_link(column, label) -%}
+                {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
+                <a href="{{ url_for('admin.manage_groups', sort_by=column, sort_order=new_order) }}" class="text-decoration-none text-reset">
+                    {{ label }}
+                    {%- if sort_by == column %}
+                        {% if sort_order == 'asc' %} ▲
+                        {% else %} ▼
+                        {% endif %}
+                    {% endif %}
+                </a>
+            {%- endmacro %}
             <thead class="table-light">
                 <tr>
-                    <th>ID</th>
-                    <th>Назва</th>
-                    <th>Рік початку</th>
-                    <th>Форма навчання</th>
-                    <th>Кредити</th>
-                    <th>Кількість студентів</th>
+                    <th data-col="id">{{ sort_link('id', 'ID') }}</th>
+                    <th data-col="name">{{ sort_link('name', 'Назва') }}</th>
+                    <th data-col="course">{{ sort_link('course', 'Курс') }}</th>
+                    <th data-col="start_year">{{ sort_link('start_year', 'Рік вступу') }}</th>
+                    <th data-col="study_form">{{ sort_link('study_form', 'Форма навчання') }}</th>
+                    <th data-col="program_credits">{{ sort_link('program_credits', 'Кредити') }}</th>
+                    <th data-col="specialty">{{ sort_link('specialty', 'Спеціальність') }}</th>
+                    <th data-col="degree_level">{{ sort_link('degree_level', 'Ступінь') }}</th>
+                    <th data-col="educational_program">{{ sort_link('educational_program', 'Освітня програма') }}</th>
+                    <th data-col="knowledge_area">{{ sort_link('knowledge_area', 'Галузь знань') }}</th>
+                    <th data-col="qualification_name">{{ sort_link('qualification_name', 'Назва кваліфікації') }}</th>
+                    <th data-col="student_count">{{ sort_link('student_count', 'Кількість студентів') }}</th>
                     <th>Дії</th>
                 </tr>
             </thead>
             <tbody>
                 {% for group in groups %}
                     <tr>
-                        <td>{{ group.id }}</td>
-                        <td>{{ group.name }}</td>
-                        <td>{{ group.start_year }}</td>
-                        <td>{{ group.study_form }}</td>
-                        <td>{{ group.program_credits }}</td>
-                        <td>{{ group.student_count }}</td>
+                        <td data-col="id">{{ group.id }}</td>
+                        <td data-col="name">{{ group.name }}</td>
+                        <td data-col="course">{{ group.course }}</td>
+                        <td data-col="start_year">{{ group.start_year }}</td>
+                        <td data-col="study_form">{{ group.study_form }}</td>
+                        <td data-col="program_credits">{{ group.program_credits }}</td>
+                        <td data-col="specialty" class="small">{{ group.specialty }}</td>
+                        <td data-col="degree_level" class="small">{{ group.degree_level }}</td>
+                        <td data-col="educational_program" class="small">{{ group.educational_program }}</td>
+                        <td data-col="knowledge_area" class="small">{{ group.knowledge_area }}</td>
+                        <td data-col="qualification_name" class="small">{{ group.qualification_name }}</td>
+                        <td data-col="student_count">{{ group.student_count }}</td>
                         <td>
 							
 								<a href="{{ url_for('students.student_list', group_id=group.id) }}" class="btn btn-sm btn-primary me-1" title="Переглянути список студентів">
@@ -219,6 +247,14 @@
 									<input type="hidden" name="group_id" value="{{ group.id }}">
 									<button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Ви впевнені, що хочете видалити групу {{ group.display_name }}?');" title="Видалити групу">
 										<i class="bi bi-trash"></i>
+									</button>
+								</form>
+								<form method="POST" action="{{ url_for('admin.manage_groups') }}" class="d-inline">
+									<input type="hidden" name="action" value="force_delete">
+									<input type="hidden" name="group_id" value="{{ group.id }}">
+									<button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити групу разом з усіма пов'язаними даними (предмети, практики, курсові, атестації)"
+										onclick="return confirm('УВАГА: це видалить групу {{ group.display_name }} РАЗОМ З усіма її предметами, практиками, курсовими роботами й атестаціями. Дію неможливо скасувати. Продовжити?');">
+										<i class="bi bi-trash3-fill"></i>
 									</button>
 								</form>
                         </td>
@@ -301,18 +337,6 @@
                     {% if group.knowledge_area_en and group.knowledge_area_en != '' %}
                         <div class="col-md-6">
                             <strong>Knowledge Area (EN):</strong> {{ group.knowledge_area_en or '' }}
-                        </div>
-                    {% endif %}
-
-                    <!-- Найменування та статус закладу -->
-                    <div class="{% if not group.institution_name_and_status_en or group.institution_name_and_status_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
-                        <strong>Найменування та статус закладу:</strong>
-                        <div class="multiline">{{ group.institution_name_and_status or '' }}</div>
-                    </div>
-                    {% if group.institution_name_and_status_en and group.institution_name_and_status_en != '' %}
-                        <div class="col-md-6">
-                            <strong>Name and Status of Awarding Institution (EN):</strong>
-                            <div class="multiline">{{ group.institution_name_and_status_en or '' }}</div>
                         </div>
                     {% endif %}
 
@@ -437,7 +461,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label for="study_form{{ group.id }}" class="form-label">Форма навчання</label>
-                                        <select name="study_form" id="study_form{{ group.id }}" class="form-select" required>
+                                        <select name="study_form" id="study_form{{ group.id }}" class="form-select" required onchange="fillGroupName('{{ group.id }}')">
                                             <option value="Денна" {% if group.study_form == 'Денна' %}selected{% endif %}>Денна</option>
                                             <option value="Заочна" {% if group.study_form == 'Заочна' %}selected{% endif %}>Заочна</option>
                                         </select>
@@ -453,7 +477,7 @@
                                     </div>
                                     <div class="col-md-6">
                                         <label for="degree_level{{ group.id }}" class="form-label">Ступінь</label>
-                                        <select name="degree_level" id="degree_level{{ group.id }}" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', '{{ group.id }}'); fillEducationalProgram('{{ group.id }}'); fillQualificationName('{{ group.id }}')">
+                                        <select name="degree_level" id="degree_level{{ group.id }}" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', '{{ group.id }}'); fillGroupName('{{ group.id }}'); fillEducationalProgram('{{ group.id }}'); fillQualificationName('{{ group.id }}')">
                                             <option value="" disabled {% if not group.degree_level %}selected{% endif %}>— оберіть зі списку —</option>
                                             {% for d in degree_levels if d.is_active or group.degree_level == d.name_ua %}
                                             <option value="{{ d.name_ua }}" data-en="{{ d.name_en or '' }}" {% if group.degree_level == d.name_ua %}selected{% endif %}>{{ d.name_ua }}{% if not d.is_active %} (неактивний){% endif %}</option>
@@ -479,7 +503,7 @@
                                                 {% endif %}
                                                 <option value="{{ sp.code }}" {% if group.specialty_code == sp.code %}selected{% endif %}
                                                         data-name-en="{{ sp.name_en or '' }}"
-                                                        data-field-name="{{ sp.field_name }}"
+                                                        data-field-name="{{ sp.field_code }} {{ sp.field_name }}"
                                                         data-field-name-en="{{ sp.field_name_en or '' }}"
                                                         data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                                             {% endfor %}
@@ -492,32 +516,6 @@
                                     <div class="col-md-6">
                                         <label for="specialty_en{{ group.id }}" class="form-label">Specialty (EN)</label>
                                         <input type="text" id="specialty_en{{ group.id }}" class="form-control" readonly value="{{ group.specialty_en or '' }}">
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="institution_name_and_status{{ group.id }}" class="form-label">Найменування та статус закладу</label>
-                                        {% set institution_options = [
-                                            'Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.',
-                                            'Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.'
-                                        ] %}
-                                        {% set institution_options_en = [
-                                            'Private Higher Educational Institution \'European University\'. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.',
-                                            'Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.'
-                                        ] %}
-                                        <select name="institution_name_and_status" id="institution_name_and_status{{ group.id }}" class="form-select" required onchange="fillPairedDerived(this, 'institution_name_and_status_en', '{{ group.id }}')">
-                                            <option value="" disabled {% if group.institution_name_and_status not in institution_options %}selected{% endif %}>— оберіть зі списку —</option>
-                                            {% for i in range(institution_options|length) %}
-                                            <option value="{{ institution_options[i] }}" data-en="{{ institution_options_en[i] }}"
-                                                    {% if group.institution_name_and_status == institution_options[i] %}selected{% endif %}>{{ institution_options[i] }}</option>
-                                            {% endfor %}
-                                        </select>
-                                        {% if group.institution_name_and_status and group.institution_name_and_status not in institution_options %}
-                                        <div class="form-text text-warning">Раніше введено вручну: «{{ group.institution_name_and_status }}» - оберіть відповідник зі списку.</div>
-                                        {% endif %}
-                                    </div>
-                                    <div class="col-md-6">
-                                        <label for="institution_name_and_status_en{{ group.id }}" class="form-label">Name and Status of Awarding Institution (EN)</label>
-                                        <textarea id="institution_name_and_status_en{{ group.id }}" class="form-control" rows="4" readonly
-                                                  placeholder="Підставиться автоматично після вибору найменування закладу">{{ group.institution_name_and_status_en or '' }}</textarea>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="qualification_name{{ group.id }}" class="form-label">Назва кваліфікації</label>
@@ -668,8 +666,20 @@ function fillGroupName(suffix) {
     const shortName = (opt && opt.dataset.shortName) || '';
     const course = courseInput.value;
 
-    if (shortName && course) {
-        nameField.value = shortName + '-' + course;
+    // "м" для магістратури, "з" для заочної форми (та сама логіка й
+    // порядок, що й на сервері) - інакше групи різних ступенів/форм
+    // того самого курсу мали б однакову назву.
+    const studyFormSelect = document.getElementById('study_form' + suffix);
+    const studyForm = studyFormSelect ? studyFormSelect.value : '';
+    const degreeLevelSelectForName = document.getElementById('degree_level' + suffix);
+    const degreeLevelForName = degreeLevelSelectForName ? degreeLevelSelectForName.value : '';
+
+    let effectiveShortName = shortName;
+    if (effectiveShortName && degreeLevelForName === 'Магістр') effectiveShortName += 'м';
+    if (effectiveShortName && studyForm === 'Заочна') effectiveShortName += 'з';
+
+    if (effectiveShortName && course) {
+        nameField.value = effectiveShortName + '-' + course;
     } else {
         nameField.value = '';
     }
@@ -712,5 +722,44 @@ function fillQualificationName(suffix) {
     qField.value = found ? found.name_ua : '';
     qEnField.value = found ? found.name_en : '';
 }
+
+// Вибір видимих стовпців таблиці "Список груп" - зберігається в
+// localStorage браузера, тому вибір лишається й після перезавантаження
+// сторінки чи повторного заходу (лише на цьому пристрої).
+(function () {
+    const STORAGE_KEY = 'manageGroupsVisibleColumns';
+    const DEFAULT_COLUMNS = ['id', 'name', 'course', 'start_year', 'study_form', 'program_credits', 'specialty', 'student_count'];
+
+    function getVisibleColumns() {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            return saved ? JSON.parse(saved) : DEFAULT_COLUMNS;
+        } catch (e) {
+            return DEFAULT_COLUMNS;
+        }
+    }
+
+    function applyColumns(visible) {
+        document.querySelectorAll('#groupsTable [data-col]').forEach(function (el) {
+            el.style.display = visible.includes(el.dataset.col) ? '' : 'none';
+        });
+        document.querySelectorAll('.js-col-toggle').forEach(function (cb) {
+            cb.checked = visible.includes(cb.value);
+        });
+    }
+
+    function saveAndApply() {
+        const visible = Array.from(document.querySelectorAll('.js-col-toggle:checked')).map(cb => cb.value);
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(visible)); } catch (e) { /* ігноруємо, якщо сховище недоступне */ }
+        applyColumns(visible);
+    }
+
+    window.addEventListener('load', function () {
+        applyColumns(getVisibleColumns());
+        document.querySelectorAll('.js-col-toggle').forEach(function (cb) {
+            cb.addEventListener('change', saveAndApply);
+        });
+    });
+})();
 </script>
 {% endblock %}

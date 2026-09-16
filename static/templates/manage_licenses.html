@@ -1,0 +1,159 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Ліцензії{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-award', 'Ліцензії', 'Ліцензія, під якою студент вступив до закладу - Львівська, Київська, Польська тощо') }}
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.license_transfer') }}" class="btn btn-primary">
+            <i class="bi bi-arrow-left-right me-2"></i>Перевести між ліцензіями
+        </a>
+    </div>
+
+    <div class="alert alert-light border small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        Ліцензія - властивість конкретного студента, а не групи: в одній групі можуть навчатись студенти, які вступили за різними ліцензіями.
+        Вимикайте перемикачем ті, що вже не актуальні - вони зникнуть зі списку вибору при додаванні студента, але наявні студенти з цією ліцензією продовжать працювати без змін.
+        Переведення студентів між ліцензіями - на окремій сторінці «Перевести між ліцензіями» (з наказом).
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="section-title">Додати ліцензію</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Коротка назва (укр.)</label>
+                    <input type="text" name="short_name_ua" class="form-control form-control-sm" placeholder="напр. Польська" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Повна назва (укр.)</label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm" required>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Коротка назва (англ.)</label>
+                    <input type="text" name="short_name_en" class="form-control form-control-sm" placeholder="напр. Poland">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Повна назва (англ.)</label>
+                    <input type="text" name="name_en" class="form-control form-control-sm">
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Коротка назва</th>
+                            <th>Повна назва (укр.)</th>
+                            <th>Повна назва (англ.)</th>
+                            <th class="text-center" style="width:110px;">Актуальна</th>
+                            <th class="text-end" style="width:160px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for l in licenses %}
+                        <tr class="{% if not l.is_active %}text-muted{% endif %}">
+                            <td class="fw-semibold">{{ l.short_name_ua or '—' }}</td>
+                            <td class="small">{{ l.name_ua }}</td>
+                            <td class="small text-muted">{{ l.name_en or '—' }}</td>
+                            <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="id" value="{{ l.id }}">
+                                    <button type="submit" class="btn btn-sm {% if l.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                        {{ 'так' if l.is_active else 'ні' }}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                                        data-id="{{ l.id }}" data-name-ua="{{ l.name_ua }}" data-short-name-ua="{{ l.short_name_ua or '' }}"
+                                        data-name-en="{{ l.name_en or '' }}" data-short-name-en="{{ l.short_name_en or '' }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if l.students_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити ліцензію «{{ l.short_name_ua or l.name_ua }}»?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ l.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small" title="{{ l.students_count }} студент(ів) з цією ліцензією - видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ l.students_count }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="editLicenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати ліцензію</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Коротка назва (укр.)</label>
+                        <input type="text" name="short_name_ua" id="editShortNameUa" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Повна назва (укр.)</label>
+                        <textarea name="name_ua" id="editNameUa" class="form-control" rows="2" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Коротка назва (англ.)</label>
+                        <input type="text" name="short_name_en" id="editShortNameEn" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Повна назва (англ.)</label>
+                        <textarea name="name_en" id="editNameEn" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const modalEl = document.getElementById('editLicenseModal');
+    const modal = new bootstrap.Modal(modalEl);
+    document.querySelectorAll('.js-edit-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editId').value = btn.dataset.id;
+            document.getElementById('editNameUa').value = btn.dataset.nameUa;
+            document.getElementById('editShortNameUa').value = btn.dataset.shortNameUa;
+            document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            document.getElementById('editShortNameEn').value = btn.dataset.shortNameEn;
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}
