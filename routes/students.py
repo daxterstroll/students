@@ -130,8 +130,16 @@ def student_list():
         return redirect(url_for('students.student_list'))
 
     if search:
-        where_clauses.append("(s.last_name_UA LIKE ? OR s.first_name_UA LIKE ? OR s.middle_name_UA LIKE ?)")
-        params.extend([f'%{search}%', f'%{search}%', f'%{search}%'])
+        # Розбиваємо на окремі слова, щоб пошук працював незалежно від
+        # порядку (напр. "Іван Петренко" і "Петренко Іван" - обидва
+        # знаходять того самого студента) - кожне слово має збігтися
+        # хоч з одним із трьох полів ПІБ. LOWER_UA() замість звичайного
+        # LOWER(), бо стандартна LOWER() в SQLite не розуміє кирилицю.
+        for word in search.split():
+            where_clauses.append(
+                "(LOWER_UA(s.last_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.first_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.middle_name_UA) LIKE LOWER_UA(?))"
+            )
+            params.extend([f'%{word}%', f'%{word}%', f'%{word}%'])
 
     if sort_by == 'birth_date':
         where_clauses.append("LENGTH(s.birth_date) = 10 AND INSTR(s.birth_date, '.') = 3 AND INSTR(SUBSTR(s.birth_date, 4), '.') = 3")
@@ -468,6 +476,10 @@ def add_student():
             FROM groups WHERE id IN ({placeholders}) AND archived = FALSE ORDER BY name, start_year
         """, group_ids).fetchall()
 
+    licenses = conn.execute(
+        "SELECT id, name_ua, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
+    ).fetchall()
+
     if request.method == 'POST':
         group = request.form.get('group_id')
         try:
@@ -475,12 +487,12 @@ def add_student():
         except (ValueError, TypeError):
             flash("Некоректна група", "error")
             conn.close()
-            return render_template('add_student.html', groups=groups)
+            return render_template('add_student.html', groups=groups, licenses=licenses)
 
         if role != 'admin' and group_int not in group_ids:
             flash("Доступ заборонено: група не належить до ваших груп", "error")
             conn.close()
-            return render_template('add_student.html', groups=groups)
+            return render_template('add_student.html', groups=groups, licenses=licenses)
 
         birth_date_raw = request.form['birth_date'].strip()
         birth_date_clean = birth_date_raw.replace("-", ".")
@@ -490,7 +502,7 @@ def add_student():
         except ValueError:
             flash("Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
             conn.close()
-            return render_template('add_student.html', groups=groups)
+            return render_template('add_student.html', groups=groups, licenses=licenses)
 
         last_name_ua = request.form['last_name_UA']
         first_name_ua = request.form['first_name_UA']
@@ -513,15 +525,17 @@ def add_student():
             except ValueError:
                 flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
                 conn.close()
-                return render_template('add_student.html', groups=groups)
+                return render_template('add_student.html', groups=groups, licenses=licenses)
+
+        license_id = request.form.get('license_id') or None
 
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
-                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, license_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
-              birth_date, group_int, request.form.get('edebo_code')))
+              birth_date, group_int, request.form.get('edebo_code'), license_id))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -563,7 +577,7 @@ def add_student():
         return redirect(url_for('students.student_list'))
 
     conn.close()
-    return render_template('add_student.html', groups=groups)
+    return render_template('add_student.html', groups=groups, licenses=licenses)
 
 
 @students_bp.route('/students/<int:student_id>/photo', methods=['GET', 'POST'])
@@ -776,6 +790,11 @@ def edit_student(student_id):
             FROM groups WHERE id IN ({placeholders}) ORDER BY name, start_year
         """, group_ids).fetchall()
 
+    licenses = conn.execute(
+        "SELECT id, name_ua, short_name_ua FROM institution_licenses WHERE is_active = 1 OR id = ? ORDER BY id",
+        (student['license_id'],)
+    ).fetchall()
+
     if request.method == 'POST':
         group = request.form.get('group_id')
         try:
@@ -783,12 +802,12 @@ def edit_student(student_id):
         except (ValueError, TypeError):
             flash("Некоректна група", "error")
             conn.close()
-            return render_template('edit_student.html', student=student, groups=groups)
+            return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
         if role != 'admin' and group_int not in group_ids:
             flash("Доступ заборонено: група не належить до ваших груп", "error")
             conn.close()
-            return render_template('edit_student.html', student=student, groups=groups)
+            return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
         if 'update_english_names' in request.form:
             last_name_ua = request.form['last_name_UA']
@@ -816,20 +835,21 @@ def edit_student(student_id):
             except ValueError:
                 flash("Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
                 conn.close()
-                return render_template('edit_student.html', student=student, groups=groups)
+                return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
             old_group = student['group_id']
+            license_id = request.form.get('license_id') or None
             conn.execute("""
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, edebo_code=?
+                    group_id=?, edebo_code=?, license_id=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
-                group_int, request.form.get('edebo_code'), student_id
+                group_int, request.form.get('edebo_code'), license_id, student_id
             ))
             conn.commit()
 
@@ -844,7 +864,7 @@ def edit_student(student_id):
         return redirect(url_for('students.student_list'))
 
     conn.close()
-    return render_template('edit_student.html', student=student, groups=groups)
+    return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
 @students_bp.route('/students/<int:student_id>/delete')
 @permission_required('manage_students')
@@ -1056,13 +1076,15 @@ def generate(student_id):
                    g.learning_outcomes, g.learning_outcomes_en,
                    g.program_includes, g.program_includes_en,
                    g.specialty_en, g.educational_program_en, g.knowledge_area_en,
-                   g.institution_name_and_status, g.institution_name_and_status_en,
+                   il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
+                   il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
                    m.registration_number_of_the_DRPVR, m.military_registration_document,
                    m.issued_VOD, m.military_accounting_specialty_number, m.military_rank,
                    m.change_credentials, m.reason_for_changing_credentials,
                    m.being_on_military_registration, m.address_of_residence
             FROM students s
             LEFT JOIN groups g ON s.group_id = g.id
+            LEFT JOIN institution_licenses il ON s.license_id = il.id
             LEFT JOIN military m ON s.id = m.student_id
             WHERE s.id = ?
         """, (student_id,)).fetchone()

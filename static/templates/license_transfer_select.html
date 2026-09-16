@@ -1,0 +1,79 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевести між ліцензіями{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-award', 'Перевести між ліцензіями', 'Оберіть ліцензію призначення, потім групи і/або окремих студентів для переведення') }}
+
+    <form method="POST">
+        <div class="card mb-4">
+            <div class="card-body">
+                <label class="form-label">Ліцензія призначення</label>
+                <select name="target_license_id" class="form-select" style="max-width:420px;" required>
+                    <option value="" disabled selected>— оберіть зі списку —</option>
+                    {% for l in licenses %}
+                    <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        {{ ui.section_title('З активних груп (усі студенти групи)') }}
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead><tr><th style="width:40px;"></th><th>Група</th><th class="text-end">Студентів</th></tr></thead>
+                        <tbody>
+                            {% for g in groups %}
+                            <tr>
+                                <td><input type="checkbox" name="group_ids" value="{{ g.id }}" class="form-check-input"></td>
+                                <td class="fw-semibold">{{ g.name }}</td>
+                                <td class="text-end">{{ g.student_count }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {{ ui.section_title('Окремі студенти (з будь-яких груп)') }}
+        <div class="mb-2">
+            <input type="text" id="studentFilter" class="form-control" placeholder="Пошук за прізвищем чи групою..." style="max-width:420px;">
+        </div>
+        <div class="card mb-4">
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
+                    <table class="table align-middle mb-0" id="studentsTable">
+                        <thead><tr><th style="width:40px;"></th><th>Студент</th><th>Група</th><th>Поточна ліцензія</th></tr></thead>
+                        <tbody>
+                            {% for s in all_students %}
+                            <tr class="student-row" data-search="{{ (s.full_name ~ ' ' ~ (s.group_name or '')) | lower }}">
+                                <td><input type="checkbox" name="student_ids" value="{{ s.id }}" class="form-check-input"></td>
+                                <td>{{ s.full_name }}</td>
+                                <td>{{ s.group_name or '—' }}</td>
+                                <td class="text-muted small">{{ s.current_license_name or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary"><i class="bi bi-arrow-right-circle me-2"></i>Далі: перевірити список</button>
+    </form>
+
+</div>
+
+<script>
+document.getElementById('studentFilter').addEventListener('input', function () {
+    const query = this.value.toLowerCase();
+    document.querySelectorAll('.student-row').forEach(function (row) {
+        row.style.display = row.dataset.search.includes(query) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

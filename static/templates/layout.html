@@ -129,6 +129,12 @@
                 {% if is_admin or 'manage_degree_levels' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_degree_levels') }}"><i class="bi bi-mortarboard"></i> Ступені</a></li>
                 {% endif %}
+                {% if is_admin or 'manage_licenses' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_licenses') }}"><i class="bi bi-award"></i> Ліцензії</a></li>
+                {% endif %}
+                {% if is_admin or 'license_report' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.license_report') }}"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a></li>
+                {% endif %}
                 {% if is_admin or 'manage_educational_programs' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_educational_programs') }}"><i class="bi bi-journal-bookmark"></i> Освітня програма</a></li>
                 {% endif %}
@@ -194,6 +200,8 @@
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'manage_specialties' in perms %}<a href="{{ url_for('admin.manage_specialties') }}" class="admin-link d-block"><i class="bi bi-diagram-3"></i> Спеціальності</a>{% endif %}
             {% if is_admin or 'manage_degree_levels' in perms %}<a href="{{ url_for('admin.manage_degree_levels') }}" class="admin-link d-block"><i class="bi bi-mortarboard"></i> Ступені</a>{% endif %}
+            {% if is_admin or 'manage_licenses' in perms %}<a href="{{ url_for('admin.manage_licenses') }}" class="admin-link d-block"><i class="bi bi-award"></i> Ліцензії</a>{% endif %}
+            {% if is_admin or 'license_report' in perms %}<a href="{{ url_for('admin.license_report') }}" class="admin-link d-block"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a>{% endif %}
             {% if is_admin or 'manage_educational_programs' in perms %}<a href="{{ url_for('admin.manage_educational_programs') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Освітня програма</a>{% endif %}
             {% if is_admin or 'manage_qualification_names' in perms %}<a href="{{ url_for('admin.manage_qualification_names') }}" class="admin-link d-block"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a>{% endif %}
             {% if is_admin or 'manage_courses' in perms %}<a href="{{ url_for('admin.courses') }}" class="admin-link d-block"><i class="bi bi-kanban"></i> Курси</a>{% endif %}

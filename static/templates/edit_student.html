@@ -49,6 +49,17 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Ліцензія вступу</label>
+                        <select name="license_id" class="form-select">
+                            <option value="" {% if not student.license_id %}selected{% endif %}>— не вказано —</option>
+                            {% for l in licenses|default([]) %}
+                                <option value="{{ l.id }}" {% if l.id == student.license_id %}selected{% endif %}>
+                                    {{ l.short_name_ua or l.name_ua }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div class="col-12 d-flex flex-wrap gap-2 pt-2">
                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти зміни</button>
                         <button type="submit" name="update_english_names" value="1" class="btn btn-outline-secondary"><i class="bi bi-translate me-2"></i>Оновити англійські імена</button>
