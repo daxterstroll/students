@@ -17,7 +17,7 @@ import os
 import sqlite3
 from werkzeug.security import generate_password_hash
 from routes.db import get_db
-from routes.utils import log_action, permission_required
+from routes.utils import log_action, permission_required, is_student_on_reduced_program, save_multiple_attachments, get_attachments
 from routes.gen_docx import gen_doc
 from routes import office_editor
 from routes.utils import logger
@@ -707,6 +707,12 @@ def manage_groups():
             learning_outcomes_en = request.form.get('learning_outcomes_en')
             program_includes = request.form.get('program_includes')
             program_includes_en = request.form.get('program_includes_en')
+            entry_requirements_reduced = request.form.get('entry_requirements_reduced')
+            entry_requirements_reduced_en = request.form.get('entry_requirements_reduced_en')
+            learning_outcomes_reduced = request.form.get('learning_outcomes_reduced')
+            learning_outcomes_reduced_en = request.form.get('learning_outcomes_reduced_en')
+            program_includes_reduced = request.form.get('program_includes_reduced')
+            program_includes_reduced_en = request.form.get('program_includes_reduced_en')
 
             # Курс більше не вводиться вручну при створенні - обчислюється
             # з року вступу, ступеня і кредитів програми (скільки часу
@@ -820,13 +826,19 @@ def manage_groups():
                                 qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                                 qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                                 entry_requirements, entry_requirements_en,
-                                learning_outcomes, learning_outcomes_en, program_includes, program_includes_en
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
+                                entry_requirements_reduced, entry_requirements_reduced_en,
+                                learning_outcomes_reduced, learning_outcomes_reduced_en,
+                                program_includes_reduced, program_includes_reduced_en
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
-                              learning_outcomes, learning_outcomes_en, program_includes, program_includes_en))
+                              learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
+                              entry_requirements_reduced, entry_requirements_reduced_en,
+                              learning_outcomes_reduced, learning_outcomes_reduced_en,
+                              program_includes_reduced, program_includes_reduced_en))
                         conn.commit()
                         flash("Групу додано успішно.", "success")
                         log_action(
@@ -861,6 +873,12 @@ def manage_groups():
             learning_outcomes_en = request.form.get('learning_outcomes_en')
             program_includes = request.form.get('program_includes')
             program_includes_en = request.form.get('program_includes_en')
+            entry_requirements_reduced = request.form.get('entry_requirements_reduced')
+            entry_requirements_reduced_en = request.form.get('entry_requirements_reduced_en')
+            learning_outcomes_reduced = request.form.get('learning_outcomes_reduced')
+            learning_outcomes_reduced_en = request.form.get('learning_outcomes_reduced_en')
+            program_includes_reduced = request.form.get('program_includes_reduced')
+            program_includes_reduced_en = request.form.get('program_includes_reduced_en')
 
             specialty = None
             specialty_en = None
@@ -954,13 +972,19 @@ def manage_groups():
                                 educational_program_en=?, knowledge_area_en=?,
                                 entry_requirements=?, entry_requirements_en=?,
                                 learning_outcomes=?, learning_outcomes_en=?,
-                                program_includes=?, program_includes_en=?
+                                program_includes=?, program_includes_en=?,
+                                entry_requirements_reduced=?, entry_requirements_reduced_en=?,
+                                learning_outcomes_reduced=?, learning_outcomes_reduced_en=?,
+                                program_includes_reduced=?, program_includes_reduced_en=?
                             WHERE id=?
                         """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
                               learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
+                              entry_requirements_reduced, entry_requirements_reduced_en,
+                              learning_outcomes_reduced, learning_outcomes_reduced_en,
+                              program_includes_reduced, program_includes_reduced_en,
                               group_id))
                         conn.commit()
                         flash("Групу відредаговано успішно.", "success")
@@ -1108,6 +1132,9 @@ def manage_groups():
                g.qualification_name_en, g.degree_level_en, g.specialty_en, g.educational_program_en, g.knowledge_area_en,
                g.entry_requirements, g.entry_requirements_en,
                g.learning_outcomes, g.learning_outcomes_en, g.program_includes, g.program_includes_en,
+               g.entry_requirements_reduced, g.entry_requirements_reduced_en,
+               g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
+               g.program_includes_reduced, g.program_includes_reduced_en,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS display_name,
                (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id) AS student_count
         FROM groups g WHERE g.archived = FALSE ORDER BY {sortable_columns[sort_by]} {sort_order.upper()}
@@ -1608,7 +1635,7 @@ def license_report():
 
     group_cond = "" if include_archived else "WHERE COALESCE(g.archived,0)=0"
     groups = conn.execute(f"""
-        SELECT g.id, g.name, g.course, g.specialty, g.degree_level, g.study_form, g.archived
+        SELECT g.id, g.name, g.course, g.specialty, g.degree_level, g.study_form, g.archived, g.program_credits
         FROM groups g {group_cond}
         ORDER BY g.course, g.specialty COLLATE UKRAINIAN, g.name COLLATE UKRAINIAN
     """).fetchall()
@@ -1617,6 +1644,13 @@ def license_report():
         "SELECT id, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
     ).fetchall()
     license_names = [l['short_name_ua'] for l in licenses]
+
+    # Порядок ступенів - за їхнім id в каталозі degree_levels, той
+    # самий принцип, що й на дошці "Курси" й в "Архіві груп".
+    degree_order = {
+        row['name_ua']: row['id']
+        for row in conn.execute("SELECT id, name_ua FROM degree_levels").fetchall()
+    }
 
     groups_with_students = []
     summary_rows = []
@@ -1633,13 +1667,11 @@ def license_report():
     for g in groups:
         students = conn.execute("""
             SELECT s.id, TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name,
-                   l.short_name_ua AS license_short_name, s.archived
+                   l.short_name_ua AS license_short_name, s.archived, s.program_credits_override
             FROM students s LEFT JOIN institution_licenses l ON l.id = s.license_id
             WHERE s.group_id = ? {archived_cond}
             ORDER BY s.last_name_UA COLLATE UKRAINIAN
         """.format(archived_cond="" if include_archived else "AND COALESCE(s.archived,0)=0"), (g['id'],)).fetchall()
-
-        groups_with_students.append({'group': g, 'students': students})
 
         counts = {name: 0 for name in license_names}
         counts['—'] = 0
@@ -1648,6 +1680,8 @@ def license_report():
             counts[key] = counts.get(key, 0) + 1
             grand_totals[key] = grand_totals.get(key, 0) + 1
             grand_total_all += 1
+
+        groups_with_students.append({'group': g, 'students': students, 'counts': {k: v for k, v in counts.items() if v}})
 
         group_total = sum(counts.values())
         summary_rows.append({'group': g, 'counts': counts, 'total': group_total})
@@ -1668,6 +1702,15 @@ def license_report():
 
     conn.close()
 
+    # Групуємо для компактного вигляду в режимі "Список": ступінь -> список груп
+    groups_by_degree_raw = {}
+    for item in groups_with_students:
+        groups_by_degree_raw.setdefault(item['group']['degree_level'] or 'Без ступеня', []).append(item)
+    groups_by_degree = {
+        degree_level: groups_by_degree_raw[degree_level]
+        for degree_level in sorted(groups_by_degree_raw.keys(), key=lambda d: (degree_order.get(d, 999), d))
+    }
+
     breakdown_rows = [
         {'degree_level': k[0], 'study_form': k[1], 'counts': v, 'total': sum(v.values())}
         for k, v in sorted(breakdown.items())
@@ -1683,6 +1726,7 @@ def license_report():
         include_archived=include_archived,
         license_names=license_names,
         groups_with_students=groups_with_students,
+        groups_by_degree=groups_by_degree,
         summary_rows=summary_rows,
         course_breakdown_rows=course_breakdown_rows,
         breakdown_rows=breakdown_rows,
@@ -2050,9 +2094,12 @@ def manage_qualification_names():
 @permission_required('manage_courses')
 def courses():
     """
-    Дошка "Курси": активні групи, згруповані по поточному курсу.
-    Наочний перегляд перед сезоном переведення на курс - поки що лише
-    перегляд, без дій (додаються на наступних кроках).
+    Дошка "Курси": активні групи, згруповані по ступеню навчання і в
+    межах ступеня - по поточному курсу (окремий рядок дошки на кожен
+    ступінь, щоб 1 курс бакалаврів і 1 курс магістрів не змішувались в
+    одній колонці). Наочний перегляд перед сезоном переведення на
+    курс - поки що лише перегляд, без дій (додаються на наступних
+    кроках).
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -2069,16 +2116,36 @@ def courses():
     for g in groups:
         g['is_final_course'] = g['course'] >= compute_program_total_years(g['degree_level'], g['program_credits'])
 
-    groups_by_course = {}
+    # Порядок ступенів - за їхнім id в каталозі degree_levels (природна
+    # ієрархія: молодший бакалавр -> бакалавр -> магістр -> доктор
+    # філософії). Ступені, яких немає в каталозі (напр. видалені чи
+    # перейменовані вручну), йдуть в кінець, за абеткою.
+    degree_order = {
+        row['name_ua']: row['id']
+        for row in conn.execute("SELECT id, name_ua FROM degree_levels").fetchall()
+    }
+
+    groups_by_degree = {}
     for g in groups:
-        groups_by_course.setdefault(g['course'], []).append(g)
+        groups_by_degree.setdefault(g['degree_level'] or '—', []).append(g)
+
+    degree_sections = []
+    for degree_level in sorted(groups_by_degree.keys(), key=lambda d: (degree_order.get(d, 999), d)):
+        degree_groups = groups_by_degree[degree_level]
+        groups_by_course = {}
+        for g in degree_groups:
+            groups_by_course.setdefault(g['course'], []).append(g)
+        degree_sections.append({
+            'degree_level': degree_level,
+            'groups_by_course': groups_by_course,
+            'courses_sorted': sorted(groups_by_course.keys()),
+        })
 
     conn.close()
 
     return render_template(
         "courses.html",
-        groups_by_course=groups_by_course,
-        courses_sorted=sorted(groups_by_course.keys()),
+        degree_sections=degree_sections,
     )
 
 
@@ -2175,22 +2242,17 @@ def course_transfer_confirm():
                     return redirect(url_for('admin.course_transfer'))
                 excluded_students.append((s['id'], group_id, reason))
 
-    # Скан наказу - файл будь-якого типу
-    scan_rel_path = None
-    scan_file = request.files.get('scan_file')
-    if scan_file and scan_file.filename:
-        os.makedirs(os.path.join('static', 'uploads', 'course_transfer_orders'), exist_ok=True)
-        ext = os.path.splitext(scan_file.filename)[1]
-        safe_name = f"{uuid.uuid4().hex}{ext}"
-        scan_full_path = os.path.join('static', 'uploads', 'course_transfer_orders', safe_name)
-        scan_file.save(scan_full_path)
-        scan_rel_path = f"uploads/course_transfer_orders/{safe_name}"
+    # Скан наказу - можна прикріпити кілька файлів будь-якого типу
+    scan_files = request.files.getlist('scan_files')
 
     cur = conn.execute(
-        "INSERT INTO course_transfer_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, ?, ?)",
-        (order_number, order_date, scan_rel_path, current_username())
+        "INSERT INTO course_transfer_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, NULL, ?)",
+        (order_number, order_date, current_username())
     )
     order_id = cur.lastrowid
+    saved_paths = save_multiple_attachments(conn, 'course_transfer_order', order_id, scan_files, 'course_transfer_orders', current_username())
+    if saved_paths:
+        conn.execute("UPDATE course_transfer_orders SET scan_file = ? WHERE id = ?", (saved_paths[0], order_id))
 
     transferred_groups_summary = []
     for group_id in group_ids:
@@ -2276,8 +2338,18 @@ def frozen_students():
         "SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name"
     ).fetchall()
 
+    # Вкладення (кілька файлів) для кожного запису - для старих записів
+    # (до появи attachments) список буде порожній, і шаблон тоді сам
+    # показує старе одиничне поле document_file як запасний варіант.
+    attachments_by_frozen_id = {}
+    for row in list(active) + list(history):
+        attachments_by_frozen_id[row['id']] = get_attachments(conn, 'frozen_student', row['id'])
+
     conn.close()
-    return render_template("frozen_students.html", active=active, history=history, active_groups=active_groups)
+    return render_template(
+        "frozen_students.html", active=active, history=history, active_groups=active_groups,
+        attachments_by_frozen_id=attachments_by_frozen_id,
+    )
 
 
 @admin_bp.route('/admin/frozen_students/<int:frozen_id>/resolve', methods=['POST'])
@@ -2676,20 +2748,16 @@ def expulsion_confirm():
         conn.close()
         return redirect(url_for('admin.expulsion'))
 
-    scan_rel_path = None
-    scan_file = request.files.get('scan_file')
-    if scan_file and scan_file.filename:
-        os.makedirs(os.path.join('static', 'uploads', 'expulsion_orders'), exist_ok=True)
-        ext = os.path.splitext(scan_file.filename)[1]
-        safe_name = f"{uuid.uuid4().hex}{ext}"
-        scan_file.save(os.path.join('static', 'uploads', 'expulsion_orders', safe_name))
-        scan_rel_path = f"uploads/expulsion_orders/{safe_name}"
+    scan_files = request.files.getlist('scan_files')
 
     cur = conn.execute(
-        "INSERT INTO expulsion_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, ?, ?)",
-        (order_number, order_date, scan_rel_path, current_username())
+        "INSERT INTO expulsion_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, NULL, ?)",
+        (order_number, order_date, current_username())
     )
     order_id = cur.lastrowid
+    saved_paths = save_multiple_attachments(conn, 'expulsion_order', order_id, scan_files, 'expulsion_orders', current_username())
+    if saved_paths:
+        conn.execute("UPDATE expulsion_orders SET scan_file = ? WHERE id = ?", (saved_paths[0], order_id))
 
     for student_id, previous_group_id, reason, frozen_id in to_expel:
         conn.execute(
@@ -2741,6 +2809,15 @@ def manage_subjects():
         if selected_subject_id:
             cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
             students = cursor.fetchall()
+            selected_subject = cursor.execute('SELECT full_program_only FROM subjects WHERE id = ?', (selected_subject_id,)).fetchone()
+            if selected_subject and selected_subject['full_program_only']:
+                # Предмет лише для повної програми - студентів на
+                # скороченій програмі (визнання частини кредитів) з
+                # цього списку прибираємо, їм цей предмет не читають.
+                students = [
+                    s for s in students
+                    if not is_student_on_reduced_program(conn, s['id'], selected_group_id)
+                ]
             students = sort_ukrainian(
                 students,
                 key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
@@ -2759,6 +2836,7 @@ def manage_subjects():
                 credits = int(request.form['credits'])
                 type_ = request.form['type']
                 position = int(request.form['position'])
+                full_program_only = 1 if request.form.get('full_program_only') else 0
                 if not code or not name or credits < 1 or position < 1 or type_ not in ['Залік', 'Екзамен']:
                     flash('Некорректные данные предмета', 'error')
                 else:
@@ -2766,12 +2844,12 @@ def manage_subjects():
                     max_position = cursor.fetchone()[0] or 0
                     if position <= max_position:
                         cursor.execute('UPDATE subjects SET position = position + 1 WHERE position >= ? AND group_id = ?', (position, group_id))
-                    cursor.execute('INSERT INTO subjects (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)',
-                                   (code, name, credits, type_, position, group_id))
+                    cursor.execute('INSERT INTO subjects (code, name, credits, type, position, group_id, full_program_only) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                                   (code, name, credits, type_, position, group_id, full_program_only))
                     conn.commit()
                     log_action(current_username(),
                                f"додав предмет: {code} — {name} (група ID {group_id})",
-                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}")
+                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, лише повна програма: {bool(full_program_only)}")
                     flash(f'Добавлен предмет {code}', 'success')
             except (KeyError, ValueError):
                 flash('Некорректные данные предмета', 'error')
@@ -2784,14 +2862,15 @@ def manage_subjects():
                 credits = int(request.form['credits'])
                 type_ = request.form['type']
                 position = int(request.form['position'])
+                full_program_only = 1 if request.form.get('full_program_only') else 0
                 if not code or not name or credits < 1 or position < 1 or type_ not in ['Залік', 'Екзамен']:
                     flash('Некорректные данные предмета', 'error')
                 else:
                     cursor.execute('SELECT position FROM subjects WHERE id = ? AND group_id = ?', (subject_id, group_id))
                     cursor.execute('UPDATE subjects SET position = 0 WHERE id = ? AND group_id = ?', (subject_id, group_id))
                     cursor.execute('UPDATE subjects SET position = position + 1 WHERE position >= ? AND group_id = ? AND id != ?', (position, group_id, subject_id))
-                    cursor.execute('UPDATE subjects SET code=?, name=?, credits=?, type=?, position=? WHERE id=? AND group_id=?',
-                                   (code, name, credits, type_, position, subject_id, group_id))
+                    cursor.execute('UPDATE subjects SET code=?, name=?, credits=?, type=?, position=?, full_program_only=? WHERE id=? AND group_id=?',
+                                   (code, name, credits, type_, position, full_program_only, subject_id, group_id))
                     cursor.execute('SELECT id, position FROM subjects WHERE group_id=? ORDER BY position, id', (group_id,))
                     for i, subj in enumerate(cursor.fetchall(), 1):
                         if subj['position'] != i:
@@ -2799,7 +2878,7 @@ def manage_subjects():
                     conn.commit()
                     log_action(current_username(),
                                f"редагував предмет: {code} — {name} (група ID {group_id})",
-                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}")
+                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, лише повна програма: {bool(full_program_only)}")
                     flash(f'Обновлен предмет {code}', 'success')
             except (KeyError, ValueError):
                 flash('Некорректные данные предмета', 'error')
@@ -3894,7 +3973,10 @@ def generate_group_docs():
                il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
                il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
                g.entry_requirements, g.entry_requirements_en,
-               g.learning_outcomes, g.learning_outcomes_en, g.program_includes, g.program_includes_en
+               g.learning_outcomes, g.learning_outcomes_en, g.program_includes, g.program_includes_en,
+               g.entry_requirements_reduced, g.entry_requirements_reduced_en,
+               g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
+               g.program_includes_reduced, g.program_includes_reduced_en
         FROM students s LEFT JOIN groups g ON s.group_id = g.id
                          LEFT JOIN institution_licenses il ON s.license_id = il.id
         WHERE s.archived = FALSE
@@ -4058,7 +4140,7 @@ def unarchive_group(group_id):
 @admin_bp.route('/admin/archive')
 @permission_required('archive')
 def archive():
-    """Показує список заархівованих груп та їхніх студентів."""
+    """Показує список заархівованих груп та їхніх студентів, згрупованих за роком випуску і ступенем навчання."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -4072,18 +4154,36 @@ def archive():
     for g in groups:
         g['end_year'] = g['start_year'] + compute_program_total_years(g['degree_level'], g['program_credits'])
 
-    # Групуємо для компактнішого відображення: рік вступу -> ступінь -> список груп
-    groups_by_year = {}
+    # Порядок ступенів - за їхнім id в каталозі degree_levels (природна
+    # ієрархія: молодший бакалавр -> бакалавр -> магістр -> доктор
+    # філософії), той самий принцип, що й на дошці "Курси". Ступені,
+    # яких немає в каталозі, йдуть в кінець, за абеткою.
+    degree_order = {
+        row['name_ua']: row['id']
+        for row in conn.execute("SELECT id, name_ua FROM degree_levels").fetchall()
+    }
+
+    # Групуємо для компактнішого відображення: РІК ВИПУСКУ -> ступінь
+    # -> список груп. Рік випуску - а не рік вступу, бо саме він
+    # відповідає на природне питання "хто випустився у 2026-му" (а не
+    # "хто вступив у 2022-му, і хай кожен сам порахує, коли випустився").
+    groups_by_year_raw = {}
     for g in groups:
-        groups_by_year.setdefault(g['start_year'], {}).setdefault(g['degree_level'], []).append(g)
-    # Сортуємо роки за спаданням (найновіші зверху)
-    groups_by_year = dict(sorted(groups_by_year.items(), key=lambda x: x[0], reverse=True))
+        groups_by_year_raw.setdefault(g['end_year'], {}).setdefault(g['degree_level'], []).append(g)
+
+    groups_by_year = {}
+    for year in sorted(groups_by_year_raw.keys(), reverse=True):
+        degree_dict = groups_by_year_raw[year]
+        groups_by_year[year] = {
+            degree_level: degree_dict[degree_level]
+            for degree_level in sorted(degree_dict.keys(), key=lambda d: (degree_order.get(d, 999), d or ''))
+        }
 
     students_by_group = {}
     for group in groups:
         students = conn.execute("""
-            SELECT id, last_name_UA, first_name_UA, birth_date FROM students
-            WHERE group_id=? AND archived=TRUE ORDER BY last_name_UA
+            SELECT id, last_name_UA, first_name_UA, birth_date, program_credits_override
+            FROM students WHERE group_id=? AND archived=TRUE ORDER BY last_name_UA
         """, (group['id'],)).fetchall()
         students_by_group[group['id']] = students
 

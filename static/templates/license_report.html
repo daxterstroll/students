@@ -39,57 +39,115 @@
     {# ================= РЕЖИМ "СПИСОК" ================= #}
     {% if not groups_with_students %}
         {{ ui.empty_state('bi-people', 'Груп немає') }}
-    {% endif %}
-    {% for item in groups_with_students %}
-    <div class="card mb-3 {% if item.group.archived %}border-secondary{% endif %}">
-        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-                <strong>{{ item.group.name }}</strong>
-                <span class="text-muted small">{{ item.group.course }} курс · {{ item.group.specialty }} · {{ item.group.degree_level }} · {{ item.group.study_form }}</span>
-                {% if item.group.archived %}<span class="badge bg-secondary ms-1">архівна</span>{% endif %}
+    {% else %}
+
+    <div class="card mb-3">
+        <div class="card-body py-2 d-flex align-items-center gap-2 flex-wrap">
+            <div class="input-group input-group-sm" style="max-width:320px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text" id="groupSearch" class="form-control" placeholder="Пошук: група, спеціальність, студент…">
             </div>
-            <span class="count-pill"><i class="bi bi-people"></i>{{ item.students|length }}</span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="expandAllBtn">
+                <i class="bi bi-arrows-expand me-1"></i>Розгорнути все
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="collapseAllBtn">
+                <i class="bi bi-arrows-collapse me-1"></i>Згорнути все
+            </button>
+            <span class="text-muted small ms-auto" id="groupSearchStatus"></span>
         </div>
-        <div class="card-body p-0">
-            {% if not item.students %}
-            <div class="p-3 text-muted small">Немає студентів.</div>
-            {% else %}
-            <table class="table table-sm align-middle mb-0">
-                <tbody>
-                    {% for s in item.students %}
-                    <tr>
-                        <td>{{ s.full_name }}{% if s.archived %} <span class="text-muted small">(архівний)</span>{% endif %}</td>
-                        <td class="text-end" style="width:140px;">
-                            {% if s.license_short_name %}
-                            <span class="badge bg-primary-subtle text-primary-emphasis">{{ s.license_short_name }}</span>
-                            {% else %}
-                            <span class="badge bg-secondary-subtle text-secondary-emphasis">без ліцензії</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% endif %}
+    </div>
+
+    {% for degree_level, group_list in groups_by_degree.items() %}
+    {% set degree_key = (degree_level or 'none') | replace(' ', '') %}
+    <div class="mb-3 license-degree-section">
+        <button class="btn btn-sm btn-outline-secondary toggle-degree d-flex align-items-center gap-2 mb-2" data-degree-key="{{ degree_key }}" type="button">
+            <i class="bi bi-chevron-down"></i>
+            <span class="fw-semibold">{{ degree_level }}</span>
+            <span class="count-pill"><i class="bi bi-collection"></i>{{ group_list|length }} груп</span>
+        </button>
+        <div class="degree-groups collapse show" id="degree-{{ degree_key }}">
+            {% for item in group_list %}
+            <div class="card mb-2 license-group-card {% if item.group.archived %}border-secondary{% endif %}"
+                 data-search="{{ (item.group.name ~ ' ' ~ item.group.specialty ~ ' ' ~ (item.students|map(attribute='full_name')|join(' ')))|lower }}">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2 license-group-toggle" role="button" data-bs-toggle="collapse" data-bs-target="#group-students-{{ item.group.id }}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <i class="bi bi-chevron-right toggle-icon"></i>
+                        <strong>{{ item.group.name }}</strong>
+                        <span class="text-muted small">{{ item.group.course }} курс · {{ item.group.specialty }} · {{ item.group.study_form }}</span>
+                        {% if item.group.archived %}<span class="badge bg-secondary">архівна</span>{% endif %}
+                    </div>
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                        {% for name, cnt in item.counts.items() %}
+                        <span class="badge {% if name == '—' %}bg-secondary-subtle text-secondary-emphasis{% else %}bg-primary-subtle text-primary-emphasis{% endif %}">{{ name }}: {{ cnt }}</span>
+                        {% endfor %}
+                        <span class="count-pill ms-1"><i class="bi bi-people"></i>{{ item.students|length }}</span>
+                    </div>
+                </div>
+                <div class="collapse" id="group-students-{{ item.group.id }}">
+                    <div class="card-body p-0">
+                        {% if not item.students %}
+                        <div class="p-3 text-muted small">Немає студентів.</div>
+                        {% else %}
+                        <table class="table table-sm align-middle mb-0">
+                            <tbody>
+                                {% for s in item.students %}
+                                <tr>
+                                    <td>{{ s.full_name }} {{ ui.reduced_program_badge_for(s.program_credits_override, item.group.program_credits) }}{% if s.archived %} <span class="text-muted small">(архівний)</span>{% endif %}</td>
+                                    <td class="text-end" style="width:140px;">
+                                        {% if s.license_short_name %}
+                                        <span class="badge bg-primary-subtle text-primary-emphasis">{{ s.license_short_name }}</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary-emphasis">без ліцензії</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
         </div>
     </div>
     {% endfor %}
+    {% endif %}
 
     {% else %}
     {# ================= РЕЖИМ "ПІДСУМКИ" ================= #}
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                <span class="text-muted small fw-semibold"><i class="bi bi-columns-gap me-1"></i>Колонки ліцензій:</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="showAllLicCols">Показати всі</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="hideEmptyLicCols">Приховати порожні</button>
+            </div>
+            <div class="d-flex align-items-center gap-3 flex-wrap" id="licColToggles">
+                {% for name in license_names %}
+                <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input lic-col-toggle" type="checkbox" value="{{ name }}" id="licCol{{ loop.index }}" checked>
+                    <label class="form-check-label small" for="licCol{{ loop.index }}">{{ name }}{% if not grand_totals.get(name) %} <span class="text-muted">(0)</span>{% endif %}</label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
     {{ ui.section_title('По групах') }}
     <div class="card mb-4">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 summary-table">
                     <thead>
                         <tr>
-                            <th>Група</th>
+                            <th class="sticky-col">Група</th>
                             <th>Курс</th>
                             <th>Спеціальність</th>
                             <th>Ступінь</th>
                             <th>Форма</th>
-                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            {% for name in license_names %}<th class="text-end lic-col lic-col-head" data-lic="{{ name }}"><span class="lic-col-label">{{ name }}</span></th>{% endfor %}
                             <th class="text-end">без ліц.</th>
                             <th class="text-end fw-bold">Разом</th>
                         </tr>
@@ -97,12 +155,12 @@
                     <tbody>
                         {% for row in summary_rows %}
                         <tr class="{% if row.group.archived %}text-muted{% endif %}">
-                            <td class="fw-semibold">{{ row.group.name }}</td>
+                            <td class="fw-semibold sticky-col">{{ row.group.name }}</td>
                             <td>{{ row.group.course }}</td>
                             <td class="small">{{ row.group.specialty }}</td>
                             <td class="small">{{ row.group.degree_level }}</td>
                             <td class="small">{{ row.group.study_form }}</td>
-                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            {% for name in license_names %}<td class="text-end lic-col" data-lic="{{ name }}">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
                             <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
                             <td class="text-end fw-bold">{{ row.total }}</td>
                         </tr>
@@ -110,8 +168,8 @@
                     </tbody>
                     <tfoot>
                         <tr class="table-light fw-bold">
-                            <td colspan="5">Загальна кількість</td>
-                            {% for name in license_names %}<td class="text-end">{{ grand_totals.get(name, 0) }}</td>{% endfor %}
+                            <td colspan="5" class="sticky-col">Загальна кількість</td>
+                            {% for name in license_names %}<td class="text-end lic-col" data-lic="{{ name }}">{{ grand_totals.get(name, 0) }}</td>{% endfor %}
                             <td class="text-end">{{ grand_totals.get('—', 0) }}</td>
                             <td class="text-end">{{ grand_total_all }}</td>
                         </tr>
@@ -125,11 +183,11 @@
     <div class="card mb-4">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 summary-table">
                     <thead>
                         <tr>
-                            <th>Курс</th>
-                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            <th class="sticky-col">Курс</th>
+                            {% for name in license_names %}<th class="text-end lic-col lic-col-head" data-lic="{{ name }}"><span class="lic-col-label">{{ name }}</span></th>{% endfor %}
                             <th class="text-end">без ліц.</th>
                             <th class="text-end fw-bold">Разом</th>
                         </tr>
@@ -137,8 +195,8 @@
                     <tbody>
                         {% for row in course_breakdown_rows %}
                         <tr>
-                            <td class="fw-semibold">{{ row.course }} курс</td>
-                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            <td class="fw-semibold sticky-col">{{ row.course }} курс</td>
+                            {% for name in license_names %}<td class="text-end lic-col" data-lic="{{ name }}">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
                             <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
                             <td class="text-end fw-bold">{{ row.total }}</td>
                         </tr>
@@ -153,12 +211,12 @@
     <div class="card">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 summary-table">
                     <thead>
                         <tr>
-                            <th>Ступінь</th>
+                            <th class="sticky-col">Ступінь</th>
                             <th>Форма навчання</th>
-                            {% for name in license_names %}<th class="text-end">{{ name }}</th>{% endfor %}
+                            {% for name in license_names %}<th class="text-end lic-col lic-col-head" data-lic="{{ name }}"><span class="lic-col-label">{{ name }}</span></th>{% endfor %}
                             <th class="text-end">без ліц.</th>
                             <th class="text-end fw-bold">Разом</th>
                         </tr>
@@ -166,9 +224,9 @@
                     <tbody>
                         {% for row in breakdown_rows %}
                         <tr>
-                            <td class="fw-semibold">{{ row.degree_level }}</td>
+                            <td class="fw-semibold sticky-col">{{ row.degree_level }}</td>
                             <td>{{ row.study_form }}</td>
-                            {% for name in license_names %}<td class="text-end">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
+                            {% for name in license_names %}<td class="text-end lic-col" data-lic="{{ name }}">{{ row.counts.get(name, 0) or '' }}</td>{% endfor %}
                             <td class="text-end">{{ row.counts.get('—', 0) or '' }}</td>
                             <td class="text-end fw-bold">{{ row.total }}</td>
                         </tr>
@@ -181,4 +239,133 @@
     {% endif %}
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Розгорнути/згорнути ступінь
+    document.querySelectorAll('.toggle-degree').forEach(button => {
+        button.addEventListener('click', function () {
+            const key = this.getAttribute('data-degree-key');
+            const block = document.getElementById(`degree-${key}`);
+            block.classList.toggle('show');
+            const icon = this.querySelector('i');
+            icon.classList.toggle('bi-chevron-down');
+            icon.classList.toggle('bi-chevron-right');
+        });
+    });
+
+    // Стрілка групи повертається при розгортанні/згортанні (Bootstrap collapse)
+    document.querySelectorAll('.license-group-card .collapse').forEach(el => {
+        const card = el.closest('.license-group-card');
+        const icon = card.querySelector('.toggle-icon');
+        el.addEventListener('show.bs.collapse', () => icon.classList.replace('bi-chevron-right', 'bi-chevron-down'));
+        el.addEventListener('hide.bs.collapse', () => icon.classList.replace('bi-chevron-down', 'bi-chevron-right'));
+    });
+
+    const expandAllBtn = document.getElementById('expandAllBtn');
+    const collapseAllBtn = document.getElementById('collapseAllBtn');
+    if (expandAllBtn) {
+        expandAllBtn.addEventListener('click', function () {
+            document.querySelectorAll('.license-group-card .collapse').forEach(el => bootstrap.Collapse.getOrCreateInstance(el).show());
+        });
+    }
+    if (collapseAllBtn) {
+        collapseAllBtn.addEventListener('click', function () {
+            document.querySelectorAll('.license-group-card .collapse').forEach(el => bootstrap.Collapse.getOrCreateInstance(el).hide());
+        });
+    }
+
+    // Живий пошук: фільтрує картки груп за назвою/спеціальністю/ПІБ студента,
+    // при збігу автоматично розгортає знайдену групу і показує ступінь.
+    const searchInput = document.getElementById('groupSearch');
+    const statusEl = document.getElementById('groupSearchStatus');
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            const q = this.value.trim().toLowerCase();
+            let visibleCount = 0;
+            document.querySelectorAll('.license-degree-section').forEach(section => {
+                let sectionHasMatch = false;
+                section.querySelectorAll('.license-group-card').forEach(card => {
+                    const matches = !q || card.getAttribute('data-search').includes(q);
+                    card.style.display = matches ? '' : 'none';
+                    if (matches) {
+                        visibleCount++;
+                        sectionHasMatch = true;
+                        const collapseEl = card.querySelector('.collapse');
+                        if (q && collapseEl) bootstrap.Collapse.getOrCreateInstance(collapseEl).show();
+                    }
+                });
+                section.style.display = sectionHasMatch ? '' : 'none';
+                if (q && sectionHasMatch) {
+                    document.getElementById(`degree-${section.querySelector('.toggle-degree').getAttribute('data-degree-key')}`).classList.add('show');
+                }
+            });
+            statusEl.textContent = q ? `Знайдено груп: ${visibleCount}` : '';
+        });
+    }
+
+    // Підсумки: керування видимістю колонок ліцензій (окремо для
+    // кожної назви, застосовується одразу до всіх трьох таблиць,
+    // бо назви ліцензій там ті самі).
+    function setLicColVisible(name, visible) {
+        document.querySelectorAll(`[data-lic="${CSS.escape(name)}"]`).forEach(el => {
+            el.style.display = visible ? '' : 'none';
+        });
+    }
+    document.querySelectorAll('.lic-col-toggle').forEach(cb => {
+        cb.addEventListener('change', function () {
+            setLicColVisible(this.value, this.checked);
+        });
+    });
+    const showAllBtn = document.getElementById('showAllLicCols');
+    if (showAllBtn) {
+        showAllBtn.addEventListener('click', function () {
+            document.querySelectorAll('.lic-col-toggle').forEach(cb => {
+                cb.checked = true;
+                setLicColVisible(cb.value, true);
+            });
+        });
+    }
+    const hideEmptyBtn = document.getElementById('hideEmptyLicCols');
+    if (hideEmptyBtn) {
+        hideEmptyBtn.addEventListener('click', function () {
+            document.querySelectorAll('.lic-col-toggle').forEach(cb => {
+                const isEmpty = cb.nextElementSibling && cb.nextElementSibling.querySelector('.text-muted');
+                if (isEmpty) {
+                    cb.checked = false;
+                    setLicColVisible(cb.value, false);
+                }
+            });
+        });
+    }
+});
+</script>
+
+<style>
+.license-group-toggle { cursor: pointer; }
+.license-group-toggle:hover { background: var(--paper-2, rgba(0,0,0,.02)); }
+.degree-groups { display: none; }
+.degree-groups.show { display: block; }
+.summary-table .sticky-col {
+    position: sticky;
+    left: 0;
+    background: var(--paper, #fff);
+    z-index: 1;
+    box-shadow: 2px 0 3px -2px rgba(0,0,0,.15);
+}
+.summary-table thead .sticky-col { z-index: 2; }
+.summary-table th.lic-col-head {
+    height: 110px;
+    white-space: nowrap;
+    vertical-align: bottom;
+    padding-bottom: .5rem;
+}
+.summary-table .lic-col-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    display: inline-block;
+    white-space: nowrap;
+    font-weight: 600;
+}
+</style>
 {% endblock %}

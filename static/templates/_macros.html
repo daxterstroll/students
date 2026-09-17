@@ -29,6 +29,18 @@
 <h4 class="section-title mb-4">{% if icon %}<i class="bi {{ icon }} me-2"></i>{% endif %}{{ text }}</h4>
 {% endmacro %}
 
+{% macro reduced_program_badge_for(override, base) %}
+{% if override and base and override|int < base|int %}
+<span class="badge text-bg-warning" title="Вступив з визнанням частини кредитів попереднього диплома">
+    <i class="bi bi-signpost-split"></i> скорочена, {{ override }} кр.
+</span>
+{% endif %}
+{% endmacro %}
+
+{% macro reduced_program_badge(student) %}
+{{ reduced_program_badge_for(student.program_credits_override, student.program_credits) }}
+{% endmacro %}
+
 {% macro empty_state(icon, text, hint=None) %}
 <div class="card">
     <div class="card-body empty-state">
