@@ -11,7 +11,7 @@
     {% else %}
     {% for year, degree_levels in groups_by_year.items() %}
     <div class="mb-4">
-        <h5 class="section-title">{{ year }} рік вступу</h5>
+        <h5 class="section-title">{{ year }} рік випуску</h5>
         {% for degree_level, group_list in degree_levels.items() %}
         {% set degree_key = (year ~ '-' ~ (degree_level or 'none')) | replace(' ', '') %}
         <div class="mb-3">
@@ -48,7 +48,7 @@
                             <ul class="list-group mt-2">
                                 {% for student in students_by_group[group.id] %}
                                 <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                    <span>{{ student.last_name_UA }} {{ student.first_name_UA }} <span class="text-muted">({{ student.birth_date }})</span></span>
+                                    <span>{{ student.last_name_UA }} {{ student.first_name_UA }} <span class="text-muted">({{ student.birth_date }})</span> {{ ui.reduced_program_badge_for(student.program_credits_override, group.program_credits) }}</span>
                                     <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-primary" title="Деталі студента">Деталі</a>
                                 </li>
                                 {% endfor %}

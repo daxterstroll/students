@@ -147,6 +147,39 @@
                 <label for="learning_outcomes_en" class="form-label">Programme Learning Outcomes (EN)</label>
                 <textarea name="learning_outcomes_en" id="learning_outcomes_en" class="form-control" rows="4" placeholder="Напр., Software development. Data analysis. Project management." ></textarea>
             </div>
+            <div class="col-md-12">
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#reduced_texts_add">
+                    <i class="bi bi-chevron-down"></i> Скорочена програма (для студентів із визнанням частини кредитів) — якщо відрізняється
+                </button>
+                <div class="collapse mt-2" id="reduced_texts_add">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="entry_requirements_reduced" class="form-label">Вимоги для вступу (скорочена)</label>
+                            <textarea name="entry_requirements_reduced" id="entry_requirements_reduced" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="entry_requirements_reduced_en" class="form-label">Access Requirements (EN, reduced)</label>
+                            <textarea name="entry_requirements_reduced_en" id="entry_requirements_reduced_en" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="program_includes_reduced" class="form-label">Програма підготовки включає (скорочена)</label>
+                            <textarea name="program_includes_reduced" id="program_includes_reduced" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="program_includes_reduced_en" class="form-label">The Program Includes (EN, reduced)</label>
+                            <textarea name="program_includes_reduced_en" id="program_includes_reduced_en" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="learning_outcomes_reduced" class="form-label">Програмні результати навчання (скорочена)</label>
+                            <textarea name="learning_outcomes_reduced" id="learning_outcomes_reduced" class="form-control" rows="4"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="learning_outcomes_reduced_en" class="form-label">Programme Learning Outcomes (EN, reduced)</label>
+                            <textarea name="learning_outcomes_reduced_en" id="learning_outcomes_reduced_en" class="form-control" rows="4"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
             </div>
@@ -567,6 +600,39 @@
                                     <div class="col-md-6">
                                         <label for="learning_outcomes_en{{ group.id }}" class="form-label">Programme Learning Outcomes (EN)</label>
                                         <textarea name="learning_outcomes_en" id="learning_outcomes_en{{ group.id }}" class="form-control" rows="4" >{{ group.learning_outcomes_en or '' }}</textarea>
+                                    </div>
+                                    <div class="col-md-12">
+                                        <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#reduced_texts_edit{{ group.id }}">
+                                            <i class="bi bi-chevron-down"></i> Скорочена програма (для студентів із визнанням частини кредитів) — якщо відрізняється
+                                        </button>
+                                        <div class="collapse mt-2" id="reduced_texts_edit{{ group.id }}">
+                                            <div class="row g-3">
+                                                <div class="col-md-6">
+                                                    <label for="entry_requirements_reduced{{ group.id }}" class="form-label">Вимоги для вступу (скорочена)</label>
+                                                    <textarea name="entry_requirements_reduced" id="entry_requirements_reduced{{ group.id }}" class="form-control" rows="4">{{ group.entry_requirements_reduced or '' }}</textarea>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="entry_requirements_reduced_en{{ group.id }}" class="form-label">Access Requirements (EN, reduced)</label>
+                                                    <textarea name="entry_requirements_reduced_en" id="entry_requirements_reduced_en{{ group.id }}" class="form-control" rows="4">{{ group.entry_requirements_reduced_en or '' }}</textarea>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="program_includes_reduced{{ group.id }}" class="form-label">Програма підготовки включає (скорочена)</label>
+                                                    <textarea name="program_includes_reduced" id="program_includes_reduced{{ group.id }}" class="form-control" rows="4">{{ group.program_includes_reduced or '' }}</textarea>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="program_includes_reduced_en{{ group.id }}" class="form-label">The Program Includes (EN, reduced)</label>
+                                                    <textarea name="program_includes_reduced_en" id="program_includes_reduced_en{{ group.id }}" class="form-control" rows="4">{{ group.program_includes_reduced_en or '' }}</textarea>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="learning_outcomes_reduced{{ group.id }}" class="form-label">Програмні результати навчання (скорочена)</label>
+                                                    <textarea name="learning_outcomes_reduced" id="learning_outcomes_reduced{{ group.id }}" class="form-control" rows="4">{{ group.learning_outcomes_reduced or '' }}</textarea>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="learning_outcomes_reduced_en{{ group.id }}" class="form-label">Programme Learning Outcomes (EN, reduced)</label>
+                                                    <textarea name="learning_outcomes_reduced_en" id="learning_outcomes_reduced_en{{ group.id }}" class="form-control" rows="4">{{ group.learning_outcomes_reduced_en or '' }}</textarea>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                     <div class="col-12">
                                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>

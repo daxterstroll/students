@@ -11,6 +11,13 @@
         {% if overwrites %}<br><i class="bi bi-exclamation-triangle-fill me-1"></i><strong>{{ overwrites }}</strong> з них перезапишуть вже наявні оцінки (позначені жовтим у таблиці нижче).{% endif %}
     </div>
 
+    {% if skipped_reduced_count %}
+    <div class="alert alert-secondary small">
+        <i class="bi bi-signpost-split me-1"></i>
+        <strong>{{ skipped_reduced_count }}</strong> клітинок пропущено (позначені сірим у таблиці) - предмет позначено "лише повна програма", а студент навчається за скороченою.
+    </div>
+    {% endif %}
+
     {% if skipped_subjects or skipped_students %}
     <div class="alert alert-light border small">
         {% if skipped_subjects %}<div><strong>Пропущені колонки:</strong> {{ skipped_subjects|join('; ') }}</div>{% endif %}
@@ -36,8 +43,8 @@
                                 {% if r.excel_name != r.db_name %}<br><span class="text-muted" style="font-size:.75rem;">Excel: {{ r.excel_name }}</span>{% endif %}
                             </td>
                             {% for c in r.cells %}
-                            <td class="text-center {% if c.overwrite %}table-warning{% endif %}">
-                                {{ c.val if c.val is not none else '—' }}
+                            <td class="text-center {% if c.skip_reduced %}table-secondary text-muted{% elif c.overwrite %}table-warning{% endif %}" {% if c.skip_reduced %}title="Не буде записано: предмет лише для повної програми"{% endif %}>
+                                {% if c.skip_reduced %}<s>{{ c.val if c.val is not none else '—' }}</s>{% else %}{{ c.val if c.val is not none else '—' }}{% endif %}
                             </td>
                             {% endfor %}
                         </tr>

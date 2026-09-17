@@ -375,3 +375,65 @@ def get_templates_with_metadata(is_admin=False):
             'admin_only': admin_only,
         })
     return result
+
+
+def save_multiple_attachments(conn, entity_type, entity_id, files, upload_subdir, uploaded_by=None):
+    """Зберігає список файлів (з request.files.getlist(...)) на диск і
+    реєструє кожен у спільній таблиці "attachments" - для місць, де
+    раніше можна було прикріпити лише один файл (наказ про переведення
+    на курс, наказ про відрахування, підстава заморозки студента).
+
+    files: список werkzeug FileStorage (порожні/без імені - пропускаються).
+    upload_subdir: підпапка в static/uploads/, напр. 'course_transfer_orders'.
+    Повертає список відносних шляхів (для static/) щойно збережених файлів,
+    у тому ж порядку, в якому їх завантажили - перший елемент можна
+    використати як значення "старого" одиничного поля (scan_file/document_file)
+    для сумісності з рештою коду, яка ще на нього спирається.
+    """
+    import uuid as _uuid
+    saved_paths = []
+    upload_dir = os.path.join('static', 'uploads', upload_subdir)
+    os.makedirs(upload_dir, exist_ok=True)
+    for f in (files or []):
+        if not f or not f.filename:
+            continue
+        ext = os.path.splitext(f.filename)[1]
+        safe_name = f"{_uuid.uuid4().hex}{ext}"
+        f.save(os.path.join(upload_dir, safe_name))
+        rel_path = f"uploads/{upload_subdir}/{safe_name}"
+        conn.execute(
+            "INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_by) VALUES (?, ?, ?, ?, ?)",
+            (entity_type, entity_id, rel_path, f.filename, uploaded_by)
+        )
+        saved_paths.append(rel_path)
+    return saved_paths
+
+
+def get_attachments(conn, entity_type, entity_id):
+    """Повертає всі вкладення для entity_type+entity_id, найновіші
+    останніми (в порядку завантаження)."""
+    return conn.execute(
+        "SELECT id, file_path, original_name, uploaded_at, uploaded_by FROM attachments "
+        "WHERE entity_type = ? AND entity_id = ? ORDER BY id",
+        (entity_type, entity_id)
+    ).fetchall()
+def is_student_on_reduced_program(conn, student_id, group_id):
+    """Чи навчається студент за скороченою програмою відносно своєї
+    групи (program_credits_override менше за program_credits групи -
+    напр. вступив одразу на 2 курс з визнанням частини кредитів
+    попереднього диплома). Єдине місце з цією перевіркою - решта коду
+    (список студентів, картка студента, форма оцінок, генерація
+    додатку) викликає саме цю функцію, а не дублює порівняння, щоб не
+    розходилось по різних місцях, як уже одного разу сталось.
+    """
+    row = conn.execute("""
+        SELECT s.program_credits_override AS student_override, g.program_credits AS group_credits
+        FROM students s JOIN groups g ON g.id = ?
+        WHERE s.id = ?
+    """, (group_id, student_id)).fetchone()
+    if not row or not row['student_override'] or not row['group_credits']:
+        return False
+    try:
+        return int(row['student_override']) < int(row['group_credits'])
+    except (TypeError, ValueError):
+        return False

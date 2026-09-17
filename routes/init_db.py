@@ -124,6 +124,12 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	"learning_outcomes_en"	TEXT,
 	"program_includes"	TEXT,
 	"program_includes_en"	TEXT,
+	"entry_requirements_reduced"	TEXT,
+	"entry_requirements_reduced_en"	TEXT,
+	"program_includes_reduced"	TEXT,
+	"program_includes_reduced_en"	TEXT,
+	"learning_outcomes_reduced"	TEXT,
+	"learning_outcomes_reduced_en"	TEXT,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	UNIQUE("name","start_year")
@@ -167,6 +173,10 @@ CREATE TABLE IF NOT EXISTS "students" (
 	"photo"	TEXT,
 	"license_id"	INTEGER,
 	"archived"	BOOLEAN DEFAULT FALSE,
+	"program_credits_override"	INTEGER,
+	"phone"	TEXT,
+	"phone_backup"	TEXT,
+	"email"	TEXT,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id"),
 	FOREIGN KEY("license_id") REFERENCES "institution_licenses"("id")
@@ -179,6 +189,7 @@ CREATE TABLE IF NOT EXISTS "subjects" (
 	"group_id"	INTEGER,
 	"position"	INTEGER DEFAULT 0,
 	"type"	TEXT DEFAULT 'Залік' CHECK("type" IN ('Залік', 'Екзамен')),
+	"full_program_only"	INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
@@ -285,11 +296,22 @@ CREATE TABLE IF NOT EXISTS "qualification_names" (
 
 -- Накази про переведення на курс. Один наказ зазвичай охоплює
 -- одразу декілька груп (окремо в course_transfer_order_groups).
+CREATE TABLE IF NOT EXISTS "attachments" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,   -- 'course_transfer_order' | 'expulsion_order' | 'frozen_student'
+    entity_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    original_name TEXT,
+    uploaded_at TEXT DEFAULT (datetime('now','localtime')),
+    uploaded_by TEXT
+);
+CREATE INDEX IF NOT EXISTS "idx_attachments_entity" ON "attachments" ("entity_type", "entity_id");
+
 CREATE TABLE IF NOT EXISTS "course_transfer_orders" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT NOT NULL,
     order_date TEXT NOT NULL,
-    scan_file TEXT,                 -- шлях до скан-копії наказу (будь-який тип файлу)
+    scan_file TEXT,                 -- шлях до скан-копії наказу (будь-який тип файлу) - лишається для сумісності; повний список файлів тепер в attachments
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
 );

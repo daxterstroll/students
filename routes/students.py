@@ -19,7 +19,7 @@ from routes.utils import logger
 from routes.helpers import current_username
 from werkzeug.utils import secure_filename
 from routes.db import get_db
-from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name
+from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments
 from routes.gen_docx import gen_doc
 from routes import office_editor
 import sqlite3
@@ -41,6 +41,11 @@ def student_list():
     """Головна сторінка списку студентів: пошук, фільтр по групі, пагінація, сортування (в т.ч. українська колація для ПІБ), а також обмеження видимості для не-адмінів лише їхніми групами. Для кожного студента одразу рахує заповненість особистих даних, військового обліку, оцінок та активностей (для індикаторів прогресу в UI)."""
     search = request.args.get('search', '')
     group_id = request.args.get('group_id', type=int)
+    degree_level = request.args.get('degree_level', '')
+    study_form = request.args.get('study_form', '')
+    course = request.args.get('course', type=int)
+    license_id = request.args.get('license_id', type=int)
+    reduced = request.args.get('reduced', '')  # '' = всі, '1' = лише скорочена, '0' = лише повна
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 10, type=int)
     sort_by = request.args.get('sort_by', 'id')
@@ -94,7 +99,7 @@ def student_list():
         LEFT JOIN military m ON m.student_id = s.id
         LEFT JOIN groups g ON s.group_id = g.id
     """
-    count_query = "SELECT COUNT(*) FROM students s"
+    count_query = "SELECT COUNT(*) FROM students s LEFT JOIN groups g ON s.group_id = g.id"
     where_clauses = [
         "s.archived = FALSE",
         "s.id NOT IN (SELECT student_id FROM frozen_students WHERE resolved_at IS NULL)"
@@ -104,6 +109,29 @@ def student_list():
     if group_id:
         where_clauses.append("s.group_id = ?")
         params.append(group_id)
+
+    if degree_level:
+        where_clauses.append("g.degree_level = ?")
+        params.append(degree_level)
+
+    if study_form:
+        where_clauses.append("g.study_form = ?")
+        params.append(study_form)
+
+    if course:
+        where_clauses.append("g.course = ?")
+        params.append(course)
+
+    if license_id:
+        where_clauses.append("s.license_id = ?")
+        params.append(license_id)
+
+    if reduced == '1':
+        # Та сама умова, що й у is_student_on_reduced_program(): вступ
+        # з визнанням частини кредитів (менше за кредити групи).
+        where_clauses.append("s.program_credits_override IS NOT NULL AND s.program_credits_override < g.program_credits")
+    elif reduced == '0':
+        where_clauses.append("(s.program_credits_override IS NULL OR s.program_credits_override >= g.program_credits)")
 
     if role != 'admin' and not group_id:
         if group_ids:
@@ -117,6 +145,17 @@ def student_list():
                 students=[],
                 search=search,
                 group_id=group_id,
+                groups=[],
+                groups_by_degree={},
+                degree_level=degree_level,
+                degree_levels_available=[],
+                study_form=study_form,
+                study_forms_available=[],
+                course=course,
+                courses_available=[],
+                license_id=license_id,
+                licenses_available=[],
+                reduced=reduced,
                 page=page,
                 per_page=per_page,
                 total_pages=0,
@@ -187,9 +226,20 @@ def student_list():
             student_dict['military_filled_fields'] = 0
             student_dict['military_total_fields'] = military_total_fields
 
-        subjects = conn.execute("SELECT id FROM subjects WHERE group_id = ?", (student_dict['group_id'],)).fetchall()
+        subjects_query = "SELECT id FROM subjects WHERE group_id = ?"
+        if student_dict['group_id'] and is_student_on_reduced_program(conn, student_dict['id'], student_dict['group_id']):
+            subjects_query += " AND full_program_only = 0"
+        subjects = conn.execute(subjects_query, (student_dict['group_id'],)).fetchall()
+        subject_ids = [s['id'] for s in subjects]
         student_dict['has_grades'] = len(subjects) > 0
-        grades = conn.execute("SELECT grade FROM grades WHERE student_id = ?", (student_dict['id'],)).fetchall()
+        if subject_ids:
+            placeholders = ','.join('?' for _ in subject_ids)
+            grades = conn.execute(
+                f"SELECT grade FROM grades WHERE student_id = ? AND subject_id IN ({placeholders})",
+                (student_dict['id'], *subject_ids)
+            ).fetchall()
+        else:
+            grades = []
         grades_filled = sum(1 for grade in grades if grade['grade'] is not None and str(grade['grade']).strip())
         grades_total = len(subjects)
         student_dict['grades_filled'] = grades_filled
@@ -213,11 +263,39 @@ def student_list():
         students_with_filled_fields.append(student_dict)
 
     groups = conn.execute("""
-        SELECT id, name, start_year, study_form
+        SELECT id, name, start_year, study_form, degree_level, course, program_credits, specialty
         FROM groups
         WHERE archived = FALSE
-        ORDER BY start_year DESC, name
+        ORDER BY start_year DESC, name COLLATE UKRAINIAN
     """).fetchall()
+
+    # Порядок ступенів для угруповання в пошуковому списку груп - той
+    # самий принцип, що й скрізь по системі (за id в каталозі
+    # degree_levels: молодший бакалавр -> бакалавр -> магістр -> ...).
+    degree_order = {
+        row['id_name']: row['ord']
+        for row in conn.execute("SELECT name_ua AS id_name, id AS ord FROM degree_levels").fetchall()
+    }
+    groups_by_degree_raw = {}
+    for g in groups:
+        groups_by_degree_raw.setdefault(g['degree_level'] or 'Без ступеня', []).append(g)
+    groups_by_degree = {
+        d: groups_by_degree_raw[d]
+        for d in sorted(groups_by_degree_raw.keys(), key=lambda d: (degree_order.get(d, 999), d))
+    }
+
+    # Списки значень для випадних фільтрів - лише ті, що реально
+    # трапляються серед активних груп/студентів, а не весь можливий
+    # каталог (немає сенсу пропонувати фільтр, який нічого не поверне).
+    degree_levels_available = sorted(
+        {g['degree_level'] for g in groups if g['degree_level']},
+        key=lambda d: (degree_order.get(d, 999), d)
+    )
+    study_forms_available = sorted({g['study_form'] for g in groups if g['study_form']})
+    courses_available = sorted({g['course'] for g in groups if g['course']})
+    licenses_available = conn.execute(
+        "SELECT id, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
+    ).fetchall()
 
     conn.close()
 
@@ -229,6 +307,16 @@ def student_list():
         search=search,
         group_id=group_id,
         groups=groups,
+        groups_by_degree=groups_by_degree,
+        degree_level=degree_level,
+        degree_levels_available=degree_levels_available,
+        study_form=study_form,
+        study_forms_available=study_forms_available,
+        course=course,
+        courses_available=courses_available,
+        license_id=license_id,
+        licenses_available=licenses_available,
+        reduced=reduced,
         page=page,
         per_page=per_page,
         total_pages=total_pages,
@@ -242,7 +330,7 @@ def student_details(student_id):
     """Картка студента: особисті дані, військовий облік, оцінки з предметів/практик/курсових/атестацій, документи про освіту та періоди навчання."""
     conn = get_db()
     student = conn.execute("""
-        SELECT s.*, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name
+        SELECT s.*, g.program_credits, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name
         FROM students s
         LEFT JOIN groups g ON s.group_id = g.id
         WHERE s.id = ?
@@ -271,9 +359,11 @@ def student_details(student_id):
         ORDER BY s.position
     """, (student_id,)).fetchall()
 
-    subjects = conn.execute("""
-        SELECT id, code, name, type FROM subjects WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
+    subjects_query = "SELECT id, code, name, type FROM subjects WHERE group_id = ?"
+    if student['group_id'] and is_student_on_reduced_program(conn, student_id, student['group_id']):
+        subjects_query += " AND full_program_only = 0"
+    subjects_query += " ORDER BY position"
+    subjects = conn.execute(subjects_query, (student['group_id'],)).fetchall()
 
     grades_dict = {grade['code']: dict(grade) for grade in grades}
     subject_grades = [
@@ -528,14 +618,18 @@ def add_student():
                 return render_template('add_student.html', groups=groups, licenses=licenses)
 
         license_id = request.form.get('license_id') or None
+        phone = (request.form.get('phone') or '').strip() or None
+        phone_backup = (request.form.get('phone_backup') or '').strip() or None
+        email = (request.form.get('email') or '').strip() or None
 
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
-                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, license_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, license_id,
+                phone, phone_backup, email
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
-              birth_date, group_int, request.form.get('edebo_code'), license_id))
+              birth_date, group_int, request.form.get('edebo_code'), license_id, phone, phone_backup, email))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -731,19 +825,16 @@ def freeze_student(student_id):
         flash('Студент і так не прикріплений до жодної групи.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
-    document_rel_path = None
-    document_file = request.files.get('document_file')
-    if document_file and document_file.filename:
-        os.makedirs(os.path.join('static', 'uploads', 'frozen_students'), exist_ok=True)
-        ext = os.path.splitext(document_file.filename)[1]
-        safe_name = f"{uuid.uuid4().hex}{ext}"
-        document_file.save(os.path.join('static', 'uploads', 'frozen_students', safe_name))
-        document_rel_path = f"uploads/frozen_students/{safe_name}"
+    document_files = request.files.getlist('document_files')
 
-    conn.execute(
-        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) VALUES (?, ?, NULL, ?, ?, ?)",
-        (student_id, student['group_id'], reason, document_rel_path, current_username())
+    cur = conn.execute(
+        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) VALUES (?, ?, NULL, ?, NULL, ?)",
+        (student_id, student['group_id'], reason, current_username())
     )
+    frozen_id = cur.lastrowid
+    saved_paths = save_multiple_attachments(conn, 'frozen_student', frozen_id, document_files, 'frozen_students', current_username())
+    if saved_paths:
+        conn.execute("UPDATE frozen_students SET document_file = ? WHERE id = ?", (saved_paths[0], frozen_id))
     conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
     conn.commit()
     conn.close()
@@ -839,17 +930,32 @@ def edit_student(student_id):
 
             old_group = student['group_id']
             license_id = request.form.get('license_id') or None
+            phone = (request.form.get('phone') or '').strip() or None
+            phone_backup = (request.form.get('phone_backup') or '').strip() or None
+            email = (request.form.get('email') or '').strip() or None
+            program_credits_override_raw = request.form.get('program_credits_override', '').strip()
+            if program_credits_override_raw:
+                try:
+                    program_credits_override = int(program_credits_override_raw)
+                except ValueError:
+                    flash("Кредити (скорочена програма) мають бути числом", "error")
+                    conn.close()
+                    return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
+            else:
+                program_credits_override = None
             conn.execute("""
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, edebo_code=?, license_id=?
+                    group_id=?, edebo_code=?, license_id=?, program_credits_override=?,
+                    phone=?, phone_backup=?, email=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
-                group_int, request.form.get('edebo_code'), license_id, student_id
+                group_int, request.form.get('edebo_code'), license_id, program_credits_override,
+                phone, phone_backup, email, student_id
             ))
             conn.commit()
 
@@ -1075,6 +1181,9 @@ def generate(student_id):
                    g.entry_requirements, g.entry_requirements_en,
                    g.learning_outcomes, g.learning_outcomes_en,
                    g.program_includes, g.program_includes_en,
+                   g.entry_requirements_reduced, g.entry_requirements_reduced_en,
+                   g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
+                   g.program_includes_reduced, g.program_includes_reduced_en,
                    g.specialty_en, g.educational_program_en, g.knowledge_area_en,
                    il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
                    il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
@@ -1258,7 +1367,10 @@ def edit_grades(student_id):
         flash("Студент не знайдений")
         return redirect(url_for('students.student_list'))
 
-    subjects = conn.execute("SELECT * FROM subjects WHERE group_id = ?", (student['group_id'],)).fetchall()
+    subjects_query = "SELECT * FROM subjects WHERE group_id = ?"
+    if student['group_id'] and is_student_on_reduced_program(conn, student_id, student['group_id']):
+        subjects_query += " AND full_program_only = 0"
+    subjects = conn.execute(subjects_query, (student['group_id'],)).fetchall()
     existing_grades = conn.execute("SELECT subject_id, grade FROM grades WHERE student_id = ?", (student_id,)).fetchall()
     grade_map = {g['subject_id']: g['grade'] for g in existing_grades}
 
@@ -1327,6 +1439,13 @@ def import_from_excel():
                     ).fetchall()
                 }
 
+        # Каталог ліцензій - для зіставлення тексту з колонки E з
+        # institution_licenses (за short_name_ua, без регістру).
+        license_lookup = {}
+        for row in conn.execute("SELECT id, short_name_ua FROM institution_licenses").fetchall():
+            if row['short_name_ua']:
+                license_lookup[row['short_name_ua'].strip().lower()] = row['id']
+
         try:
             wb = openpyxl.load_workbook(filepath)
             sheet = wb.active
@@ -1342,8 +1461,47 @@ def import_from_excel():
                     birth_date_raw = row[2]
                     edebo_code = row[3] if len(row) > 3 and row[3] else ''
 
-                    raw_military = list(row[4:13]) if len(row) > 4 else []
+                    # Ліцензія вступу (колонка E, необов'язкова) - за
+                    # короткою назвою з каталогу ("Київська", "Львівська"
+                    # тощо, без регістру). Не знайдено - лишаємо
+                    # порожнім і попереджаємо, рядок все одно імпортується.
+                    license_id = None
+                    if len(row) > 4 and row[4] not in (None, ''):
+                        license_key = str(row[4]).strip().lower()
+                        license_id = license_lookup.get(license_key)
+                        if license_id is None:
+                            flash(f"⚠️ Рядок {i}: ліцензію '{row[4]}' не знайдено в каталозі - поле пропущено, студент імпортований без неї")
+
+                    # Кредити скороченої програми (колонка F, необов'язкова) -
+                    # вступ з визнанням частини кредитів попереднього
+                    # диплома. Порожнє/некоректне значення = звичайний
+                    # студент за програмою групи, рядок все одно імпортується.
+                    program_credits_override = None
+                    if len(row) > 5 and row[5] not in (None, ''):
+                        try:
+                            program_credits_override = int(row[5])
+                        except (ValueError, TypeError):
+                            flash(f"⚠️ Рядок {i}: некоректне значення кредитів скороченої програми '{row[5]}' - поле пропущено, студент імпортований без нього")
+
+                    raw_military = list(row[6:15]) if len(row) > 6 else []
                     military_data = raw_military + [None] * max(0, 9 - len(raw_military))
+
+                    # Телефон (колонка P, необов'язкова) - основний і
+                    # резервний номер через кому, напр.
+                    # "+380991234567, +380991234568". Другий номер
+                    # необов'язковий; якщо коми немає - записується
+                    # лише основний.
+                    phone = None
+                    phone_backup = None
+                    if len(row) > 15 and row[15] not in (None, ''):
+                        phone_parts = [p.strip() for p in str(row[15]).split(',') if p.strip()]
+                        if phone_parts:
+                            phone = phone_parts[0]
+                        if len(phone_parts) > 1:
+                            phone_backup = phone_parts[1]
+
+                    # Email (колонка Q, необов'язкова).
+                    email = str(row[16]).strip() if len(row) > 16 and row[16] not in (None, '') else None
 
                     if not full_name:
                         continue
@@ -1385,10 +1543,12 @@ def import_from_excel():
                     conn.execute("""
                         INSERT INTO students (
                             last_name_UA, first_name_UA, middle_name_UA,
-                            last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code,
+                            license_id, program_credits_override, phone, phone_backup, email
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (last_name, first_name, middle_name, last_name_eng, first_name_eng,
-                          birth_date, group_id, edebo_code))
+                          birth_date, group_id, edebo_code, license_id, program_credits_override,
+                          phone, phone_backup, email))
                     student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
                     if any(military_data):
