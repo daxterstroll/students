@@ -3,7 +3,7 @@ import re
 import sqlite3
 from datetime import datetime
 from docxtpl import DocxTemplate, InlineImage
-from routes.utils import log_action, logger as global_logger
+from routes.utils import log_action, logger as global_logger, is_student_on_reduced_program
 from routes.db import get_db
 from datetime import datetime
 from docxtpl import RichText
@@ -179,18 +179,32 @@ def format_grade(grade, subject_type):
         return "Ошибка: введите число от 0 до 100" if subject_type == "Залік" else ""
 
 def get_subjects_grades(student_id, group_id):
-    """Получение данных о предметах и их оценках."""
+    """Получение данных о предметах и их оценках.
+
+    Якщо студент навчається за скороченою програмою відносно своєї
+    групи (program_credits_override менше за program_credits групи -
+    напр. вступив одразу на 2 курс з визнанням частини кредитів
+    диплома бакалавра), предмети з subjects.full_program_only=1
+    виключаються зі списку - вони стосуються лише повної програми.
+    """
     # global_logger.debug(f"Запуск get_subjects_grades для student_id={student_id}, group_id={group_id}")
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
-        results = conn.execute("""
+        is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
+
+        query = """
             SELECT s.id, s.code, s.name, s.credits, s.type, s.position, IFNULL(g.grade, '') AS grade
             FROM subjects s
             LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
             WHERE s.group_id = ?
-            ORDER BY s.position
-        """, (student_id, group_id)).fetchall()
+        """
+        params = [student_id, group_id]
+        if is_reduced_program:
+            query += " AND s.full_program_only = 0"
+        query += " ORDER BY s.position"
+
+        results = conn.execute(query, params).fetchall()
         subjects = [dict(r) for r in results]
         # global_logger.debug(f"Получено {len(subjects)} предметов: {subjects}")
         valid_subjects = []
@@ -298,6 +312,52 @@ def get_attestation_data(student_id, group_id):
     finally:
         conn.close()
 
+def apply_reduced_program_texts(student_dict):
+    """Якщо студент навчається за скороченою програмою відносно своєї
+    групи (program_credits_override менше за program_credits групи -
+    напр. вступив одразу на 2 курс з визнанням частини кредитів
+    попереднього диплома):
+      - підміняє "Вимоги для вступу", "Програма підготовки включає" і
+        "Програмні результати навчання" на відповідні _reduced-варіанти
+        групи, якщо вони заповнені (порожній _reduced-текст лишає
+        звичайний текст групи - щоб не ламати документи для груп, де
+        скорочений варіант ще не заповнили);
+      - підміняє саме значення student_dict['program_credits'] на
+        program_credits_override, щоб розрахунок "study_years"/
+        "end_year" нижче за текстом (а також пункт додатку "Тривалість
+        освітньої програми в кредитах та/або роках") показував РЕАЛЬНУ
+        кількість кредитів студента, а не кредити групи.
+    Викликається до розбиття program_includes/learning_outcomes на
+    рядки і до обчислення study_years/end_year, щоб обидва спирались
+    вже на підмінене значення.
+    """
+    override = student_dict.get('program_credits_override')
+    base = student_dict.get('program_credits')
+    try:
+        is_reduced = bool(override) and bool(base) and int(override) < int(base)
+    except (TypeError, ValueError):
+        is_reduced = False
+
+    if not is_reduced:
+        return
+
+    for field in ('entry_requirements', 'entry_requirements_en',
+                  'program_includes', 'program_includes_en',
+                  'learning_outcomes', 'learning_outcomes_en'):
+        # Колонки в БД називаються "..._reduced" (укр.) і
+        # "..._reduced_en" (англ.) - тобто "_reduced" завжди ПЕРЕД
+        # "_en", а не в кінці назви поля.
+        if field.endswith('_en'):
+            reduced_key = f"{field[:-3]}_reduced_en"
+        else:
+            reduced_key = f"{field}_reduced"
+        reduced_value = student_dict.get(reduced_key)
+        if reduced_value:
+            student_dict[field] = reduced_value
+
+    student_dict['program_credits'] = override
+
+
 def gen_doc(student: dict, military: dict, template='template.docx', out='out.docx', user_name='Система'):
     """Генерирует документ для студента на основе шаблона."""
     global_logger.debug(f"Запуск gen_doc: student_id={student.get('id', 'unknown')}, template={template}, out={out}")
@@ -341,7 +401,12 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     # Преобразование словарей
     student_dict = {k: clean_text(v) for k, v in dict(student).items()}
     military_dict = {k: clean_text(v) for k, v in dict(military).items()} if military else {}
-    
+
+    # Якщо студент на скороченій програмі (180/90 замість 240/120 у
+    # групі) - підміняємо 3 текстові поля програми на _reduced-варіант
+    # групи, якщо він заповнений (див. докстрінг функції вище).
+    apply_reduced_program_texts(student_dict)
+
     # Добавление данных об образовании в student_dict
     if education_docs:
         for key, value in dict(education_docs).items():

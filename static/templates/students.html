@@ -129,6 +129,17 @@
     .students-table tr:hover .fill-bar__inner--main,
     .fill-bar__inner--main { color: var(--ink); }
 
+    /* У темній темі --ink-text стає світлим (для заголовків на
+       темному фоні сторінки), але тут цей самий колір лягає ще й на
+       золоту частину смужки заповненості (--brass) - світлий текст
+       на золотому майже не видно. Тому в темній темі даємо мітці
+       фіксований білий колір з темним контуром (text-shadow), що
+       читається однаково і на темній, і на золотій ділянці смужки. */
+    html[data-theme="dark"] .fill-bar__label {
+        color: #fff;
+        text-shadow: 0 0 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7);
+    }
+
     /* ===== ACTION CHIPS ===== */
     .chip-group { display: inline-flex; gap: .3rem; }
     .btn-chip {
@@ -280,57 +291,118 @@
         <a href="{{ url_for('students.add_student') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i> Додати студента</a>
     </div>
 
-    <!-- Фильтры и поиск -->
-    <div class="row mb-3">
-        <!-- Поиск по ФИО -->
-        <div class="col-md-4 mb-2 mb-md-0">
-            <form method="GET" class="input-group input-group-sm">
-                <input type="text" name="search" placeholder="Пошук по ПІБ..." class="form-control" value="{{ search }}">
-                <button type="submit" class="btn btn-add">
-                    <i class="bi bi-search"></i>
-                </button>
-            </form>
-        </div>
-        {% if session.get('is_admin') %}
-        <!-- Фильтр по группе -->
-        <div class="col-md-4 mb-2 mb-md-0">
-            <form method="GET" class="input-group input-group-sm">
-                <input type="hidden" name="search" value="{{ search }}">
-                <input type="hidden" name="per_page" value="{{ per_page }}">
-                <input type="hidden" name="sort_by" value="{{ sort_by }}">
-                <input type="hidden" name="sort_order" value="{{ sort_order }}">
-                <label class="input-group-text">Група:</label>
-                <select name="group_id" class="form-select" onchange="this.form.submit()">
-                    <option value="">Всі групи</option>
-                    {% for group in groups %}
-                    <option value="{{ group.id }}" {% if group_id == group.id %}selected{% endif %}>
-                        {{ group.name }} ({{ group.start_year }}, {{ group.study_form }})
-                    </option>
-                    {% endfor %}
-                </select>
-            </form>
-        </div>
-		{% endif %}
+    <!-- Фільтри -->
+    <div class="card mb-3 filter-panel">
+        <div class="card-body py-3">
+            <form method="GET" id="filterForm" class="row g-2 align-items-end">
+                <input type="hidden" name="group_id" id="groupIdInput" value="{{ group_id or '' }}">
 
-        <!-- Количество записей на странице -->
-        <div class="col-md-4">
-            <form method="GET" class="input-group input-group-sm">
-                <input type="hidden" name="search" value="{{ search }}">
-                <input type="hidden" name="group_id" value="{{ group_id }}">
+                <div class="col-12 col-lg-3">
+                    <label class="form-label small text-muted mb-1">Пошук по ПІБ</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" placeholder="Прізвище, ім'я…" class="form-control" value="{{ search }}">
+                        <button type="submit" class="btn btn-add"><i class="bi bi-search"></i></button>
+                    </div>
+                </div>
+
+                {% if session.get('is_admin') %}
+                <div class="col-12 col-lg-3">
+                    <label class="form-label small text-muted mb-1">Група</label>
+                    <div class="dropdown group-picker">
+                        <button type="button" class="form-select form-select-sm text-start" id="groupPickerBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                            {% if group_id %}
+                                {% for g in groups %}{% if g.id == group_id %}{{ g.name }} ({{ g.start_year }}, {{ g.study_form }}){% endif %}{% endfor %}
+                            {% else %}
+                                Всі групи
+                            {% endif %}
+                        </button>
+                        <div class="dropdown-menu p-2 group-picker-menu" aria-labelledby="groupPickerBtn">
+                            <input type="text" class="form-control form-control-sm mb-2" id="groupPickerSearch" placeholder="Пошук групи…" autocomplete="off">
+                            <div class="group-picker-list">
+                                <button type="button" class="dropdown-item group-picker-item small fw-semibold" data-group-id="" data-group-label="Всі групи">Всі групи</button>
+                                {% for degree_level_g, glist in groups_by_degree.items() %}
+                                <div class="group-picker-degree small fw-semibold text-muted px-2 pt-2 pb-1">{{ degree_level_g }}</div>
+                                {% for g in glist %}
+                                <button type="button" class="dropdown-item group-picker-item"
+                                        data-group-id="{{ g.id }}"
+                                        data-group-label="{{ g.name }} ({{ g.start_year }}, {{ g.study_form }})"
+                                        data-search="{{ (g.name ~ ' ' ~ g.study_form ~ ' ' ~ g.start_year ~ ' ' ~ (g.specialty or ''))|lower }}">
+                                    {{ g.name }} <span class="text-muted small">({{ g.start_year }}, {{ g.study_form }}, {{ g.specialty }})</span>
+                                </button>
+                                {% endfor %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Ступінь</label>
+                    <select name="degree_level" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі</option>
+                        {% for d in degree_levels_available %}
+                        <option value="{{ d }}" {% if degree_level == d %}selected{% endif %}>{{ d }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Форма</label>
+                    <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі</option>
+                        {% for f in study_forms_available %}
+                        <option value="{{ f }}" {% if study_form == f %}selected{% endif %}>{{ f }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Курс</label>
+                    <select name="course" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі</option>
+                        {% for c in courses_available %}
+                        <option value="{{ c }}" {% if course == c %}selected{% endif %}>{{ c }} курс</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Ліцензія</label>
+                    <select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі</option>
+                        {% for l in licenses_available %}
+                        <option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">Програма</label>
+                    <select name="reduced" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі студенти</option>
+                        <option value="1" {% if reduced == '1' %}selected{% endif %}>Лише скорочена</option>
+                        <option value="0" {% if reduced == '0' %}selected{% endif %}>Лише повна</option>
+                    </select>
+                </div>
+
+                <div class="col-6 col-lg-2">
+                    <label class="form-label small text-muted mb-1">На сторінці</label>
+                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for option in [10, 20, 50, 100] %}
+                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
                 <input type="hidden" name="sort_by" value="{{ sort_by }}">
                 <input type="hidden" name="sort_order" value="{{ sort_order }}">
-                <label class="input-group-text">На сторінці:</label>
-                <select name="per_page" class="form-select" onchange="this.form.submit()">
-                    {% for option in [10, 20, 50, 100] %}
-                        <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
-                    {% endfor %}
-                </select>
             </form>
         </div>
     </div>
 
     <!-- Информация о фильтрах -->
-    {% if search or group_id %}
+    {% if search or group_id or degree_level or study_form or course or license_id or reduced %}
     <div class="filter-bar mb-3 py-2 px-3" role="alert">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -344,6 +416,16 @@
                         {% endif %}
                     {% endfor %}
                 {% endif %}
+                {% if degree_level %}<span class="filter-chip">Ступінь: {{ degree_level }}</span>{% endif %}
+                {% if study_form %}<span class="filter-chip">Форма: {{ study_form }}</span>{% endif %}
+                {% if course %}<span class="filter-chip">Курс: {{ course }}</span>{% endif %}
+                {% if license_id %}
+                    {% for l in licenses_available %}
+                        {% if l.id == license_id %}<span class="filter-chip">Ліцензія: {{ l.short_name_ua }}</span>{% endif %}
+                    {% endfor %}
+                {% endif %}
+                {% if reduced == '1' %}<span class="filter-chip">Лише скорочена програма</span>{% endif %}
+                {% if reduced == '0' %}<span class="filter-chip">Лише повна програма</span>{% endif %}
             </div>
             <a href="{{ url_for('students.student_list') }}" class="btn btn-sm" style="border:1px solid var(--stamp-semi); color: var(--stamp);">
                 <i class="bi bi-x-circle"></i> Очистити
@@ -357,7 +439,7 @@
         <table class="table table-bordered students-table mb-0">
             {% macro sort_link(column, label) -%}
                 {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
-                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
+                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
                     {{ label }}
                     {%- if sort_by == column %}
                         {% if sort_order == 'asc' %} ▲
@@ -389,7 +471,7 @@
                     <td class="text-center font-monospace">{{ student.id }}</td>
                     {% endif %}
                     <td>{{ student.last_name_UA }}</td>
-                    <td>{{ student.first_name_UA }}</td>
+                    <td>{{ student.first_name_UA }} {{ ui.reduced_program_badge(student) }}</td>
                     <td>{{ student.middle_name_UA }}</td>
                     <td>{{ student.birth_date }}</td>
                     <td>{{ student.group_name | default('-') }}</td>
@@ -456,7 +538,7 @@
             {% endif %}
             <div class="card-row">
                 <span class="card-label">ПІБ</span>
-                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}</span>
+                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }} {{ ui.reduced_program_badge(student) }}</span>
             </div>
             <div class="card-row">
                 <span class="card-label">Дата народження</span>
@@ -548,7 +630,7 @@
         <ul class="pagination justify-content-center flex-wrap" id="paginationContainer">
             {% if page > 1 %}
                 <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Previous">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Previous">
                         <span class="d-none d-sm-inline">&laquo; Назад</span>
                         <span class="d-inline d-sm-none">&laquo;</span>
                     </a>
@@ -557,7 +639,7 @@
 
             {% if page > 3 %}
                 <li class="page-item d-none d-md-block">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">1</a>
+                    <a class="page-link" href="{{ url_for('students.student_list', page=1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">1</a>
                 </li>
                 {% if page > 4 %}
                     <li class="page-item d-none d-md-block disabled">
@@ -569,7 +651,7 @@
             {% for p in range(1, total_pages + 1) %}
                 {% if p >= page-2 and p <= page+2 %}
                     <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('students.student_list', page=p, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">
+                        <a class="page-link" href="{{ url_for('students.student_list', page=p, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">
                             <span class="d-none d-sm-inline">{{ p }}</span>
                             <span class="d-inline d-sm-none">{{ p }}</span>
                         </a>
@@ -584,13 +666,13 @@
                     </li>
                 {% endif %}
                 <li class="page-item d-none d-md-block">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=total_pages, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}">{{ total_pages }}</a>
+                    <a class="page-link" href="{{ url_for('students.student_list', page=total_pages, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">{{ total_pages }}</a>
                 </li>
             {% endif %}
 
             {% if page < total_pages %}
                 <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Next">
+                    <a class="page-link" href="{{ url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Next">
                         <span class="d-none d-sm-inline">Вперед &raquo;</span>
                         <span class="d-inline d-sm-none">&raquo;</span>
                     </a>
@@ -643,4 +725,59 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Пошуковий випадаючий список груп: фільтрує пункти по мірі
+    // набору тексту, клік по пункту виставляє group_id і одразу
+    // надсилає форму фільтрів.
+    const pickerSearch = document.getElementById('groupPickerSearch');
+    const groupIdInput = document.getElementById('groupIdInput');
+    const pickerBtn = document.getElementById('groupPickerBtn');
+    const filterForm = document.getElementById('filterForm');
+
+    if (pickerSearch) {
+        pickerSearch.addEventListener('input', function () {
+            const q = this.value.trim().toLowerCase();
+            document.querySelectorAll('.group-picker-item[data-search]').forEach(item => {
+                item.style.display = (!q || item.getAttribute('data-search').includes(q)) ? '' : 'none';
+            });
+            document.querySelectorAll('.group-picker-degree').forEach(header => {
+                let node = header.nextElementSibling;
+                let hasVisible = false;
+                while (node && node.classList.contains('group-picker-item')) {
+                    if (node.style.display !== 'none') { hasVisible = true; break; }
+                    node = node.nextElementSibling;
+                }
+                header.style.display = (!q || hasVisible) ? '' : 'none';
+            });
+        });
+        // Не закривати меню кліком усередині поля пошуку
+        pickerSearch.addEventListener('click', e => e.stopPropagation());
+    }
+
+    document.querySelectorAll('.group-picker-item').forEach(item => {
+        item.addEventListener('click', function () {
+            groupIdInput.value = this.getAttribute('data-group-id') || '';
+            pickerBtn.textContent = this.getAttribute('data-group-label');
+            filterForm.submit();
+        });
+    });
+
+    // Автофокус на пошук групи одразу при відкритті меню
+    const groupPickerDropdown = document.querySelector('.group-picker');
+    if (groupPickerDropdown) {
+        groupPickerDropdown.addEventListener('shown.bs.dropdown', function () {
+            if (pickerSearch) pickerSearch.focus();
+        });
+    }
+});
+</script>
+
+<style>
+.group-picker-menu { width: 320px; max-height: 360px; overflow-y: auto; }
+.group-picker-item { cursor: pointer; }
+#groupPickerBtn { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-panel .form-label { margin-bottom: .15rem; }
+</style>
 {% endblock %}

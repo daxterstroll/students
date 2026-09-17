@@ -65,11 +65,20 @@
         gap: .3rem;
         color: var(--ink-text);
     }
+    .degree-section { margin-bottom: 2rem; }
+    .degree-section__title {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--heading, var(--ink-text));
+        margin-bottom: .75rem;
+        padding-bottom: .4rem;
+        border-bottom: 2px solid var(--brass-semi, #d8c48a);
+    }
 </style>
 
 <div class="container-fluid py-4">
 
-    {{ ui.page_header('bi-kanban', 'Курси', 'Активні групи, згруповані по поточному курсу') }}
+    {{ ui.page_header('bi-kanban', 'Курси', 'Активні групи, згруповані по ступеню і поточному курсу') }}
 
     <div class="mb-3 d-flex gap-2">
         <a href="{{ url_for('admin.course_transfer') }}" class="btn btn-primary">
@@ -80,31 +89,36 @@
         </a>
     </div>
 
-    {% if not courses_sorted %}
+    {% if not degree_sections %}
     {{ ui.empty_state('bi-kanban', 'Активних груп ще немає') }}
     {% else %}
-    <div class="course-board">
-        {% for course in courses_sorted %}
-        <div class="course-column">
-            <div class="course-column__header">
-                <span>{{ course }} курс</span>
-                <span class="course-column__count">{{ groups_by_course[course]|length }} груп</span>
-            </div>
-            <div class="course-column__body">
-                {% for g in groups_by_course[course] %}
-                <div class="course-group-card">
-                    <div class="course-group-card__name">{{ g.name }}</div>
-                    <div class="course-group-card__meta">{{ g.specialty }}</div>
-                    <div class="course-group-card__meta">{{ g.study_form }} · вступ {{ g.start_year }}</div>
-                    <div class="course-group-card__students">
-                        <i class="bi bi-people"></i> {{ g.student_count }} студент(ів)
-                    </div>
+    {% for section in degree_sections %}
+    <div class="degree-section">
+        <div class="degree-section__title">{{ section.degree_level }}</div>
+        <div class="course-board">
+            {% for course in section.courses_sorted %}
+            <div class="course-column">
+                <div class="course-column__header">
+                    <span>{{ course }} курс</span>
+                    <span class="course-column__count">{{ section.groups_by_course[course]|length }} груп</span>
                 </div>
-                {% endfor %}
+                <div class="course-column__body">
+                    {% for g in section.groups_by_course[course] %}
+                    <div class="course-group-card">
+                        <div class="course-group-card__name">{{ g.name }}</div>
+                        <div class="course-group-card__meta">{{ g.specialty }}</div>
+                        <div class="course-group-card__meta">{{ g.study_form }} · вступ {{ g.start_year }}</div>
+                        <div class="course-group-card__students">
+                            <i class="bi bi-people"></i> {{ g.student_count }} студент(ів)
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
             </div>
+            {% endfor %}
         </div>
-        {% endfor %}
     </div>
+    {% endfor %}
     {% endif %}
 
 </div>

@@ -491,6 +491,12 @@ main.container {
             background-color: var(--paper-2);
             color: var(--ink-text);
         }
+        html[data-theme="dark"] .dropdown-item { color: var(--ink-text); }
+        html[data-theme="dark"] .dropdown-item:hover,
+        html[data-theme="dark"] .dropdown-item:focus {
+            background-color: var(--brass-soft);
+            color: var(--ink-text);
+        }
         .form-control::placeholder { color: var(--muted); opacity: 1; }
         html[data-theme="dark"] .form-control::placeholder { color: var(--muted); }
 

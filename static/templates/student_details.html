@@ -37,7 +37,7 @@
             </div>
 
             <div class="flex-grow-1 text-center text-md-start">
-                <h2 class="mb-1">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}</h2>
+                <h2 class="mb-1">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }} {{ ui.reduced_program_badge(student) }}</h2>
                 <p class="mb-0 opacity-90">{{ student.group_name | default('Група не вказана') }}</p>
             </div>
 
@@ -76,6 +76,9 @@
                             <tr><th class="text-muted fw-normal">Ім'я (ENG)</th><td>{{ student.first_name_ENG | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Дата народження</th><td class="font-monospace">{{ student.birth_date | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Код ЄДЕБО</th><td class="font-monospace">{{ student.edebo_code | default('-') }}</td></tr>
+                            <tr><th class="text-muted fw-normal">Телефон</th><td>{{ student.phone | default('-') }}</td></tr>
+                            <tr><th class="text-muted fw-normal">Резервний телефон</th><td>{{ student.phone_backup | default('-') }}</td></tr>
+                            <tr><th class="text-muted fw-normal">Email</th><td>{{ student.email | default('-') }}</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -607,8 +610,8 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Документ-підстава (необов'язково)</label>
-                        <input type="file" name="document_file" class="form-control">
-                        <div class="form-text">Довідка, заява тощо - файл будь-якого типу.</div>
+                        <input type="file" name="document_files" class="form-control" multiple>
+                        <div class="form-text">Довідка, заява тощо - файл будь-якого типу, можна прикріпити декілька.</div>
                     </div>
                 </div>
                 <div class="modal-footer">

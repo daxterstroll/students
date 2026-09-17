@@ -32,7 +32,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from werkzeug.utils import secure_filename
 
 from routes.db import get_db
-from routes.utils import permission_required, log_action, logger
+from routes.utils import permission_required, log_action, logger, is_student_on_reduced_program
 from routes.helpers import current_username
 
 import_grades_bp = Blueprint('import_grades', __name__)
@@ -468,7 +468,7 @@ def mapping(token):
 
     conn = get_db()
     db_subjects = [dict(r) for r in conn.execute(
-        "SELECT id, name, type FROM subjects WHERE group_id = ? ORDER BY position, id", (state['group_id'],)
+        "SELECT id, name, type, full_program_only FROM subjects WHERE group_id = ? ORDER BY position, id", (state['group_id'],)
     ).fetchall()]
     db_students = [dict(r) for r in conn.execute(
         """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
@@ -552,6 +552,8 @@ def preview(token):
     conn = get_db()
     subj_names = {r['id']: r['name'] for r in conn.execute(
         "SELECT id, name FROM subjects WHERE group_id = ?", (state['group_id'],)).fetchall()}
+    full_program_only_subject_ids = {r['id'] for r in conn.execute(
+        "SELECT id FROM subjects WHERE group_id = ? AND full_program_only = 1", (state['group_id'],)).fetchall()}
     stud_names = {r['id']: r['full_name'] for r in conn.execute(
         """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
            FROM students WHERE group_id = ?""", (state['group_id'],)).fetchall()}
@@ -560,13 +562,30 @@ def preview(token):
     subj_map = {int(k): v for k, v in state['subj_map'].items()}
     stud_map = {int(k): v for k, v in state['stud_map'].items()}
 
-    # Зібрати план імпорту
+    # Чи навчається студент за скороченою програмою - рахуємо один раз
+    # на студента (не на кожну клітинку), кешуємо результат.
+    _reduced_cache = {}
+    def _is_reduced(student_id):
+        if student_id not in _reduced_cache:
+            _reduced_cache[student_id] = is_student_on_reduced_program(conn, student_id, state['group_id'])
+        return _reduced_cache[student_id]
+
+    # Зібрати план імпорту. Пару (студент, предмет) пропускаємо, якщо
+    # предмет позначено "лише повна програма", а студент - на
+    # скороченій: такий предмет він не проходить, навіть якщо в Excel
+    # для нього випадково стоїть якесь значення.
     plan = []           # (student_id, subject_id, value)
+    skipped_reduced = []  # [(student_id, subject_id, value)] - для показу в перегляді
     for key, val in parsed['grades'].items():
         si_str, ci_str = key.split(',')
         stud_i, subj_i = int(si_str), int(ci_str)
         if stud_i in stud_map and subj_i in subj_map:
-            plan.append((stud_map[stud_i], subj_map[subj_i], val))
+            student_id = stud_map[stud_i]
+            subject_id = subj_map[subj_i]
+            if subject_id in full_program_only_subject_ids and _is_reduced(student_id):
+                skipped_reduced.append((student_id, subject_id, val))
+                continue
+            plan.append((student_id, subject_id, val))
 
     existing = {}
     for row in conn.execute(
@@ -593,9 +612,11 @@ def preview(token):
                 current_username(),
                 f"імпортував оцінки з Excel ({state.get('filename','')}, аркуш «{state.get('sheet','')}»)",
                 group_ids=[state['group_id']],
-                details=f"додано {inserted}, оновлено {updated}, студентів {len(set(stud_map.values()))}, предметів {len(set(subj_map.values()))}"
+                details=f"додано {inserted}, оновлено {updated}, студентів {len(set(stud_map.values()))}, "
+                        f"предметів {len(set(subj_map.values()))}, пропущено (скорочена програма) {len(skipped_reduced)}"
             )
-            flash(f"Імпорт завершено: додано {inserted} оцінок, оновлено {updated}", 'success')
+            skip_note = f", пропущено {len(skipped_reduced)} (предмет не для скороченої програми)" if skipped_reduced else ""
+            flash(f"Імпорт завершено: додано {inserted} оцінок, оновлено {updated}{skip_note}", 'success')
         except Exception as e:
             conn.rollback()
             logger.error(f"Імпорт оцінок: помилка запису: {e}", exc_info=True)
@@ -613,6 +634,7 @@ def preview(token):
     conn.close()
 
     # Побудова матриці для перегляду
+    skipped_reduced_set = {(sid, subid) for sid, subid, _ in skipped_reduced}
     mapped_subjects = [(i, subj_map[i], subj_names.get(subj_map[i], '?')) for i in sorted(subj_map)]
     rows = []
     for stud_i in sorted(stud_map):
@@ -621,7 +643,8 @@ def preview(token):
             key = f"{stud_i},{subj_i}"
             val = parsed['grades'].get(key)
             over = val is not None and (stud_map[stud_i], subid) in existing
-            cells.append({'val': val, 'overwrite': over})
+            skip = (stud_map[stud_i], subid) in skipped_reduced_set
+            cells.append({'val': val, 'overwrite': over, 'skip_reduced': skip})
         rows.append({
             'excel_name': parsed['students'][stud_i]['name'],
             'db_name': stud_names.get(stud_map[stud_i], '?'),
@@ -637,4 +660,5 @@ def preview(token):
         subjects=[name for _, _, name in mapped_subjects],
         rows=rows, total=len(plan), overwrites=overwrites,
         skipped_subjects=skipped_subjects, skipped_students=skipped_students,
+        skipped_reduced_count=len(skipped_reduced),
     )
