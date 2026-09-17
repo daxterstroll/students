@@ -89,6 +89,7 @@ def dashboard():
     conn = get_db()
 
     include_archived = request.args.get('include_archived') == '1'
+    include_frozen = request.args.get('include_frozen') == '1'
     selected_student_id = request.args.get('student_id', type=int)
 
     role = session.get('role')
@@ -101,7 +102,15 @@ def dashboard():
         scope_clause = f" AND s.group_id IN ({placeholders})"
         scope_params = list(user_group_ids)
 
-    student_archived_cond = "" if include_archived else "AND COALESCE(s.archived,0)=0"
+    # За замовчуванням заморожені студенти (активна заявка в
+    # frozen_students, ще не вирішена) виключаються зі "звичайної"
+    # статистики (кількість студентів, розподіл по формах/ступенях,
+    # заповненість, оцінки тощо) - так само, як архівні студенти/групи
+    # виключаються за замовчуванням. Показуються лише коли галочку
+    # "Враховувати заморожених студентів" увімкнено.
+    frozen_exclude_cond = "" if include_frozen else \
+        "AND NOT EXISTS (SELECT 1 FROM frozen_students fz WHERE fz.student_id = s.id AND fz.resolved_at IS NULL)"
+    student_archived_cond = ("" if include_archived else "AND COALESCE(s.archived,0)=0") + " " + frozen_exclude_cond
     group_archived_cond = "" if include_archived else "AND COALESCE(g.archived,0)=0"
 
     if not is_admin and user_group_ids:
@@ -470,11 +479,44 @@ def dashboard():
             duplicate_appendix_numbers.append({'number': row['appendix_number'], 'count': row['cnt']})
 
     # ================= Заморожені студенти (активні, не вирішено) =================
+    # Той самий принцип, що й на сторінці "Архів груп": ступінь -> колишня
+    # група -> список студентів (замість голого числа), і той самий
+    # порядок ступенів (за degree_levels.id), щоб бакалаври й магістри
+    # не змішувались і йшли в узгодженому по системі порядку.
     frozen_students_count = 0
+    frozen_by_degree = {}
     if is_admin:
-        frozen_students_count = conn.execute(
-            "SELECT COUNT(*) FROM frozen_students WHERE resolved_at IS NULL"
-        ).fetchone()[0]
+        frozen_rows = conn.execute("""
+            SELECT f.id AS frozen_id, f.reason, f.frozen_at,
+                   s.id AS student_id, s.last_name_UA, s.first_name_UA, s.program_credits_override,
+                   g.id AS group_id, g.name AS group_name, g.degree_level, g.program_credits
+            FROM frozen_students f
+            JOIN students s ON s.id = f.student_id
+            LEFT JOIN groups g ON g.id = f.previous_group_id
+            WHERE f.resolved_at IS NULL
+            ORDER BY g.degree_level, g.name COLLATE UKRAINIAN, s.last_name_UA COLLATE UKRAINIAN
+        """).fetchall()
+        frozen_students_count = len(frozen_rows)
+
+        degree_order = {
+            row['name_ua']: row['id']
+            for row in conn.execute("SELECT id, name_ua FROM degree_levels").fetchall()
+        }
+
+        frozen_raw = {}
+        for row in frozen_rows:
+            degree_level = row['degree_level'] or 'Без групи'
+            group_key = row['group_id'] or 0
+            group_bucket = frozen_raw.setdefault(degree_level, {}).setdefault(group_key, {
+                'group_id': row['group_id'],
+                'group_name': row['group_name'] or 'Без групи',
+                'program_credits': row['program_credits'],
+                'students': [],
+            })
+            group_bucket['students'].append(row)
+
+        for degree_level in sorted(frozen_raw.keys(), key=lambda d: (degree_order.get(d, 999), d)):
+            frozen_by_degree[degree_level] = list(frozen_raw[degree_level].values())
 
     # ================= Прогалини в каталогах (можуть заблокувати створення групи) =================
     specialties_missing_short_name, specialties_missing_name_en = [], []
@@ -620,6 +662,7 @@ def dashboard():
         duplicate_diploma_numbers=duplicate_diploma_numbers,
         duplicate_appendix_numbers=duplicate_appendix_numbers,
         frozen_students_count=frozen_students_count,
+        frozen_by_degree=frozen_by_degree,
         specialties_missing_short_name=specialties_missing_short_name,
         specialties_missing_name_en=specialties_missing_name_en,
         course_distribution=course_distribution,
@@ -629,6 +672,7 @@ def dashboard():
         templates_admin_only=templates_admin_only,
         is_admin=is_admin,
         include_archived=include_archived,
+        include_frozen=include_frozen,
         student_options=student_options,
         selected_student_id=template_selected_student_id,
         student_detail=student_detail,

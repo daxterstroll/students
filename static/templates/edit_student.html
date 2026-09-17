@@ -60,6 +60,24 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Кредити (скорочена програма)</label>
+                        <input type="number" name="program_credits_override" class="form-control"
+                               value="{{ student.program_credits_override or '' }}" placeholder="залиште пустим, якщо як у групи">
+                        <div class="form-text">Заповнюйте лише якщо студент вступив з визнанням частини кредитів (напр. 180 замість 240) — тоді предмети, позначені «лише повна програма», не увійдуть у додаток до диплому.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Телефон</label>
+                        <input type="text" name="phone" class="form-control" placeholder="+380991234567" value="{{ student.phone or '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Резервний телефон</label>
+                        <input type="text" name="phone_backup" class="form-control" placeholder="+380991234567" value="{{ student.phone_backup or '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control" placeholder="student@example.com" value="{{ student.email or '' }}">
+                    </div>
                     <div class="col-12 d-flex flex-wrap gap-2 pt-2">
                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти зміни</button>
                         <button type="submit" name="update_english_names" value="1" class="btn btn-outline-secondary"><i class="bi bi-translate me-2"></i>Оновити англійські імена</button>

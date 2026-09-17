@@ -10,6 +10,7 @@
         <span class="badge bg-success-subtle text-success-emphasis me-1">зелений</span> - впевнений автоматичний збіг;
         <span class="badge bg-warning-subtle text-warning-emphasis mx-1">жовтий</span> - найкраще припущення, перевірте;
         <span class="badge bg-danger-subtle text-danger-emphasis mx-1">червоний</span> - збіг не знайдено, оберіть вручну або лишіть «пропустити».
+        <br><i class="bi bi-signpost-split me-1"></i>Предмети з позначкою <strong>«лише повна програма»</strong> у списку нижче не будуть імпортовані студентам на скороченій програмі (визнання частини кредитів), навіть якщо в Excel для них є оцінка.
     </div>
 
     <form method="POST">
@@ -30,7 +31,7 @@
                                     <select name="subject_{{ r.i }}" class="form-select form-select-sm js-unique-select js-subject-select">
                                         <option value="">— пропустити цю колонку —</option>
                                         {% for s in db_subjects %}
-                                        <option value="{{ s.id }}" {% if r.match_id == s.id %}selected{% endif %}>{{ s.name }}</option>
+                                        <option value="{{ s.id }}" {% if r.match_id == s.id %}selected{% endif %}>{{ s.name }}{% if s.full_program_only %} — лише повна програма{% endif %}</option>
                                         {% endfor %}
                                     </select>
                                 </td>

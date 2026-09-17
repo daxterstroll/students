@@ -31,7 +31,12 @@
                             <td>{{ f.previous_group_name or '—' }}</td>
                             <td class="small">
                                 {{ f.reason }}
-                                {% if f.document_file %}<a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>{% endif %}
+                                {% set atts = attachments_by_frozen_id.get(f.id, []) %}
+                                {% if atts %}
+                                    {% for a in atts %}<a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="ms-1" title="{{ a.original_name or 'Документ' }}"><i class="bi bi-paperclip"></i></a>{% endfor %}
+                                {% elif f.document_file %}
+                                    <a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>
+                                {% endif %}
                             </td>
                             <td class="small text-muted">
                                 {% if f.order_number %}№{{ f.order_number }} від {{ f.order_date }}{% else %}—{% endif %}
@@ -74,7 +79,12 @@
                             <td>{{ f.student_name }}</td>
                             <td class="small text-muted">
                                 {{ f.reason }}
-                                {% if f.document_file %}<a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>{% endif %}
+                                {% set atts = attachments_by_frozen_id.get(f.id, []) %}
+                                {% if atts %}
+                                    {% for a in atts %}<a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="ms-1" title="{{ a.original_name or 'Документ' }}"><i class="bi bi-paperclip"></i></a>{% endfor %}
+                                {% elif f.document_file %}
+                                    <a href="{{ url_for('static', filename=f.document_file) }}" target="_blank" class="ms-1" title="Переглянути документ"><i class="bi bi-paperclip"></i></a>
+                                {% endif %}
                             </td>
                             <td class="small">{{ f.resolution }}</td>
                             <td class="small text-muted">{{ f.resolved_at }}<br>{{ f.resolved_by }}</td>
