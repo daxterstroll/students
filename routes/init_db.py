@@ -45,6 +45,10 @@ CREATE TABLE IF NOT EXISTS "attestations" (
 	"type"	TEXT NOT NULL CHECK("type" IN ('Залік', 'Екзамен')),
 	"position"	INTEGER NOT NULL,
 	"group_id"	INTEGER NOT NULL,
+	"full_program_only"	INTEGER NOT NULL DEFAULT 0,
+	"reduced_credits"	INTEGER,
+	"reduced_type"	TEXT,
+	"reduced_only"	INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
@@ -56,6 +60,10 @@ CREATE TABLE IF NOT EXISTS "courseworks" (
 	"type"	TEXT NOT NULL CHECK("type" IN ('Залік', 'Екзамен')),
 	"position"	INTEGER NOT NULL,
 	"group_id"	INTEGER NOT NULL,
+	"full_program_only"	INTEGER NOT NULL DEFAULT 0,
+	"reduced_credits"	INTEGER,
+	"reduced_type"	TEXT,
+	"reduced_only"	INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
@@ -132,7 +140,7 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	"learning_outcomes_reduced_en"	TEXT,
 	"archived"	BOOLEAN DEFAULT FALSE,
 	PRIMARY KEY("id" AUTOINCREMENT),
-	UNIQUE("name","start_year")
+	UNIQUE("name","start_year","study_form","program_credits")
 );
 CREATE TABLE IF NOT EXISTS "military" (
 	"id"	INTEGER,
@@ -157,6 +165,10 @@ CREATE TABLE IF NOT EXISTS "practices" (
 	"type"	TEXT NOT NULL CHECK("type" IN ('Залік', 'Екзамен')),
 	"position"	INTEGER NOT NULL,
 	"group_id"	INTEGER NOT NULL,
+	"full_program_only"	INTEGER NOT NULL DEFAULT 0,
+	"reduced_credits"	INTEGER,
+	"reduced_type"	TEXT,
+	"reduced_only"	INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
@@ -190,6 +202,9 @@ CREATE TABLE IF NOT EXISTS "subjects" (
 	"position"	INTEGER DEFAULT 0,
 	"type"	TEXT DEFAULT 'Залік' CHECK("type" IN ('Залік', 'Екзамен')),
 	"full_program_only"	INTEGER NOT NULL DEFAULT 0,
+	"reduced_credits"	INTEGER,
+	"reduced_type"	TEXT,
+	"reduced_only"	INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );

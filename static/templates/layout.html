@@ -78,72 +78,36 @@
         </li>
         {% endif %}
 
-        <!-- === Адміністрування === -->
+        <!-- === Адміністрування (2 меню) === -->
         {% if is_admin or perms %}
+        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms %}
         <li class="nav-item dropdown d-none d-lg-block">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
-                <i class="bi bi-gear-fill"></i> Адміністрування
+                <i class="bi bi-mortarboard-fill"></i> Навчальний процес
             </a>
             <ul class="dropdown-menu dropdown-menu-dark">
-                {% if is_admin or 'manage_users' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_users') }}"><i class="bi bi-people"></i> Користувачі та права</a></li>
+                {% if is_admin or 'manage_groups' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
                 {% endif %}
-                {% if is_admin or 'view_logs' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.view_logs') }}"><i class="bi bi-file-earmark-binary"></i> Логування</a></li>
+                {% if is_admin or 'manage_courses' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.courses') }}"><i class="bi bi-kanban"></i> Курси</a></li>
                 {% endif %}
-                {% if is_admin or 'analytics' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('analytics.dashboard') }}"><i class="bi bi-graph-up"></i> Аналітика</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_templates' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
-                {% endif %}
-                <hr class="divider">
-
                 {% if is_admin or 'manage_subjects' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_subjects') }}"><i class="bi bi-journal"></i> Предмети</a></li>
                 {% endif %}
                 {% if is_admin or 'manage_activities' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_activities') }}"><i class="bi bi-journal-bookmark-fill"></i> Практика / атестація / курсові</a></li>
                 {% endif %}
-                <hr class="divider">
-
+                {% if is_admin or 'manage_education_documents' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
+                {% endif %}
                 {% if is_admin or 'manage_diplomas' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_diplomas') }}"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a></li>
                 {% endif %}
-				{% if is_admin or 'manage_education_documents' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
-                {% endif %}
-				{% if is_admin or 'study_periods' in perms %}
+                {% if is_admin or 'study_periods' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_study_periods_bulk_assign') }}"><i class="bi bi-calendar2-date"></i> Періоди навчання</a></li>
                 {% endif %}
-                {% if is_admin or 'manage_accreditations' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_accreditations') }}"><i class="bi bi-award"></i> Акредитації</a></li>
-                {% endif %}
                 <hr class="divider">
-                {% if is_admin or 'manage_groups' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_specialties' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_specialties') }}"><i class="bi bi-diagram-3"></i> Спеціальності</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_degree_levels' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_degree_levels') }}"><i class="bi bi-mortarboard"></i> Ступені</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_licenses' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_licenses') }}"><i class="bi bi-award"></i> Ліцензії</a></li>
-                {% endif %}
-                {% if is_admin or 'license_report' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.license_report') }}"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_educational_programs' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_educational_programs') }}"><i class="bi bi-journal-bookmark"></i> Освітня програма</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_qualification_names' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_qualification_names') }}"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_courses' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.courses') }}"><i class="bi bi-kanban"></i> Курси</a></li>
-                {% endif %}
                 {% if is_admin or 'manage_frozen_students' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.frozen_students') }}"><i class="bi bi-snow"></i> Заморожені студенти</a></li>
                 {% endif %}
@@ -155,8 +119,53 @@
                 {% endif %}
             </ul>
         </li>
-		
-		                {% if is_admin or 'group_export' in perms %}
+        {% endif %}
+
+        {% if is_admin or 'manage_specialties' in perms or 'manage_degree_levels' in perms or 'manage_licenses' in perms or 'manage_educational_programs' in perms or 'manage_qualification_names' in perms or 'manage_accreditations' in perms or 'manage_users' in perms or 'view_logs' in perms or 'analytics' in perms or 'manage_templates' in perms or 'license_report' in perms %}
+        <li class="nav-item dropdown d-none d-lg-block">
+            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
+                <i class="bi bi-diagram-3-fill"></i> Довідники та система
+            </a>
+            <ul class="dropdown-menu dropdown-menu-dark">
+                {% if is_admin or 'manage_specialties' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_specialties') }}"><i class="bi bi-diagram-3"></i> Спеціальності</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_degree_levels' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_degree_levels') }}"><i class="bi bi-mortarboard"></i> Ступені</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_educational_programs' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_educational_programs') }}"><i class="bi bi-journal-bookmark"></i> Освітня програма</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_qualification_names' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_qualification_names') }}"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_licenses' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_licenses') }}"><i class="bi bi-award"></i> Ліцензії</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_accreditations' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_accreditations') }}"><i class="bi bi-award"></i> Акредитації</a></li>
+                {% endif %}
+                <hr class="divider">
+                {% if is_admin or 'manage_users' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_users') }}"><i class="bi bi-people"></i> Користувачі та права</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_templates' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
+                {% endif %}
+                {% if is_admin or 'license_report' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.license_report') }}"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a></li>
+                {% endif %}
+                {% if is_admin or 'analytics' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('analytics.dashboard') }}"><i class="bi bi-graph-up"></i> Аналітика</a></li>
+                {% endif %}
+                {% if is_admin or 'view_logs' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.view_logs') }}"><i class="bi bi-file-earmark-binary"></i> Логування</a></li>
+                {% endif %}
+            </ul>
+        </li>
+        {% endif %}
+
+                {% if is_admin or 'group_export' in perms %}
 <li class="nav-item d-none d-lg-block">
         <a class="nav-link" href="{{ url_for('admin.group_export') }}">
             <i class="bi bi-file-zip"></i> Масова генерація документів

@@ -110,6 +110,11 @@
                         <div class="course-group-card__meta">{{ g.study_form }} · вступ {{ g.start_year }}</div>
                         <div class="course-group-card__students">
                             <i class="bi bi-people"></i> {{ g.student_count }} студент(ів)
+                            {% if g.reduced_count %}
+                            <span class="badge text-bg-warning" title="{{ g.reduced_count }} студент(ів) на скороченій програмі (визнання частини кредитів)">
+                                <i class="bi bi-signpost-split"></i> {{ g.reduced_count }}
+                            </span>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}

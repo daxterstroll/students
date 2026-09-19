@@ -42,6 +42,7 @@
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Додає предмети до обраної групи</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Автоматично розставляє позиції після існуючих предметів</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Пропускає предмет якщо код вже існує в цій групі</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Підтримує особливості скороченої програми (видимість, окремі кредити/тип) — необов'язкові колонки E-G</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує помилки по кожному рядку окремо</li>
         </ul>
 
@@ -62,7 +63,7 @@
 
         <p class="small text-muted mb-3">
           Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
-          Порядок колонок фіксований, всі 4 поля обов'язкові.
+          Колонки A-D обов'язкові й у фіксованому порядку. Колонки E-G — необов'язкові, для студентів на скороченій програмі (можна лишити порожніми для звичайних предметів).
         </p>
 
         <div class="table-responsive">
@@ -100,18 +101,42 @@
                 <td class="text-center"><span class="badge bg-danger">Так</span></td>
                 <td><code>Залік</code> або <code>Екзамен</code> — точно так, з великої літери</td>
               </tr>
+              <tr class="table-light">
+                <td colspan="4" class="small text-muted py-1 ps-2">
+                  <i class="bi bi-signpost-split me-1"></i>Скорочена програма (колонки E-G) — усі необов'язкові.
+                </td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">E</td>
+                <td>Видимість</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td>Порожньо або <code>всі</code> — предмет для всіх; <code>повна</code> — лише для повної програми; <code>скорочена</code> — лише для скороченої</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">F</td>
+                <td>Кредити для скороченої</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>10</code> — лише якщо відрізняються від звичайних кредитів (колонка C)</td>
+              </tr>
+              <tr>
+                <td class="text-center fw-bold">G</td>
+                <td>Тип для скороченої</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Залік</code> або <code>Екзамен</code> — лише якщо відрізняється від звичайного типу (колонка D)</td>
+              </tr>
             </tbody>
           </table>
         </div>
 
-        {# Причини пропуску рядка #}
+        {# Причины пропуску рядка #}
         <h6 class="mb-2">Коли рядок пропускається</h6>
         <ul class="small mb-3">
-          <li>Будь-яке з 4 полів порожнє</li>
+          <li>Будь-яке з полів A-D порожнє</li>
           <li>Предмет з таким кодом вже існує в обраній групі</li>
           <li>Тип контролю відрізняється від <code>Залік</code> або <code>Екзамен</code></li>
           <li>Кількість кредитів менше 1 або не є числом</li>
         </ul>
+        <p class="small text-muted">Некоректне значення в колонках E-G (напр. невідома видимість) не пропускає рядок — просто це конкретне поле ігнорується, а попередження показується після імпорту.</p>
 
         {# Приклад #}
         <h6 class="mb-2">Приклад заповнення</h6>
@@ -123,6 +148,9 @@
                 <th>B — Назва</th>
                 <th>C — Кредити</th>
                 <th>D — Тип</th>
+                <th>E — Видимість</th>
+                <th>F — Кред. скор.</th>
+                <th>G — Тип скор.</th>
               </tr>
             </thead>
             <tbody>
@@ -131,18 +159,36 @@
                 <td>Моделювання систем та теорія ігор/ System modeling and game theory</td>
                 <td>5</td>
                 <td>Залік</td>
+                <td></td>
+                <td></td>
+                <td></td>
               </tr>
               <tr>
                 <td><code>ВОК 1/ OEC 1</code></td>
                 <td>Педагогіка та методика викладання у вищій школі/Pedagogy and teaching methods in higher education</td>
                 <td>5</td>
                 <td>Екзамен</td>
+                <td></td>
+                <td></td>
+                <td></td>
               </tr>
               <tr>
-                <td><code>ВОК 3/ OEC 3</code></td>
-                <td>Проектування захищених вузлів та сервісів в мережі Інтернет/ Design of protected nodes and services on the Internet</td>
-                <td>3</td>
+                <td><code>КР 1</code></td>
+                <td>Курсова робота з фаху</td>
+                <td>20</td>
                 <td>Залік</td>
+                <td></td>
+                <td>10</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td><code>ВОК 9</code></td>
+                <td>Практика в галузі (лише для скороченої)</td>
+                <td>5</td>
+                <td>Залік</td>
+                <td>скорочена</td>
+                <td></td>
+                <td></td>
               </tr>
             </tbody>
           </table>
