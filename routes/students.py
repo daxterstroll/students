@@ -19,7 +19,7 @@ from routes.utils import logger
 from routes.helpers import current_username
 from werkzeug.utils import secure_filename
 from routes.db import get_db
-from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments
+from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments, program_track_condition, apply_track_overrides
 from routes.gen_docx import gen_doc
 from routes import office_editor
 import sqlite3
@@ -226,9 +226,8 @@ def student_list():
             student_dict['military_filled_fields'] = 0
             student_dict['military_total_fields'] = military_total_fields
 
-        subjects_query = "SELECT id FROM subjects WHERE group_id = ?"
-        if student_dict['group_id'] and is_student_on_reduced_program(conn, student_dict['id'], student_dict['group_id']):
-            subjects_query += " AND full_program_only = 0"
+        is_reduced = bool(student_dict['group_id']) and is_student_on_reduced_program(conn, student_dict['id'], student_dict['group_id'])
+        subjects_query = "SELECT id FROM subjects WHERE group_id = ?" + program_track_condition(is_reduced)
         subjects = conn.execute(subjects_query, (student_dict['group_id'],)).fetchall()
         subject_ids = [s['id'] for s in subjects]
         student_dict['has_grades'] = len(subjects) > 0
@@ -351,71 +350,59 @@ def student_details(student_id):
 
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
 
-    grades = conn.execute("""
-        SELECT g.grade, s.code, s.name, s.type
-        FROM grades g
-        JOIN subjects s ON g.subject_id = s.id
-        WHERE g.student_id = ?
-        ORDER BY s.position
-    """, (student_id,)).fetchall()
+    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
 
-    subjects_query = "SELECT id, code, name, type FROM subjects WHERE group_id = ?"
-    if student['group_id'] and is_student_on_reduced_program(conn, student_id, student['group_id']):
-        subjects_query += " AND full_program_only = 0"
-    subjects_query += " ORDER BY position"
-    subjects = conn.execute(subjects_query, (student['group_id'],)).fetchall()
-
-    grades_dict = {grade['code']: dict(grade) for grade in grades}
+    subjects_query = """
+        SELECT s.id, s.code, s.name, s.type, s.reduced_type, g.grade
+        FROM subjects s
+        LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
+        WHERE s.group_id = ?
+    """ + program_track_condition(is_reduced, 's') + " ORDER BY s.position"
+    subject_rows = conn.execute(subjects_query, [student_id, student['group_id']]).fetchall()
     subject_grades = [
-        {'code': s['code'], 'name': s['name'], 'type': s['type'],
-         'grade': grades_dict.get(s['code'], {}).get('grade', None)}
-        for s in subjects
+        {'code': s['code'], 'name': s['name'],
+         'type': apply_track_overrides(dict(s), is_reduced)['type'],
+         'grade': s['grade']}
+        for s in subject_rows
     ]
 
-    practices = conn.execute("""
-        SELECT id, code, name, type FROM practices WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
-    practice_grades = conn.execute("""
-        SELECT ag.grade, p.code, p.name, p.type FROM activity_grades ag
-        JOIN practices p ON ag.entity_id = p.id
-        WHERE ag.student_id = ? AND ag.entity_type = 'practice' ORDER BY p.position
-    """, (student_id,)).fetchall()
-    practice_grades_dict = {g['code']: dict(g) for g in practice_grades}
+    practices_query = """
+        SELECT p.id, p.code, p.name, p.type, p.reduced_type, ag.grade
+        FROM practices p
+        LEFT JOIN activity_grades ag ON ag.entity_id = p.id AND ag.entity_type = 'practice' AND ag.student_id = ?
+        WHERE p.group_id = ?
+    """ + program_track_condition(is_reduced, 'p') + " ORDER BY p.position"
     practice_data = [
-        {'code': p['code'], 'name': p['name'], 'type': p['type'],
-         'grade': practice_grades_dict.get(p['code'], {}).get('grade', None)}
-        for p in practices
+        {'code': p['code'], 'name': p['name'],
+         'type': apply_track_overrides(dict(p), is_reduced)['type'],
+         'grade': p['grade']}
+        for p in conn.execute(practices_query, [student_id, student['group_id']]).fetchall()
     ]
 
-    courseworks = conn.execute("""
-        SELECT id, code, name, type FROM courseworks WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
-    coursework_grades = conn.execute("""
-        SELECT ag.grade, c.code, c.name, c.type FROM activity_grades ag
-        JOIN courseworks c ON ag.entity_id = c.id
-        WHERE ag.student_id = ? AND ag.entity_type = 'coursework' ORDER BY c.position
-    """, (student_id,)).fetchall()
-    coursework_grades_dict = {g['code']: dict(g) for g in coursework_grades}
+    courseworks_query = """
+        SELECT c.id, c.code, c.name, c.type, c.reduced_type, ag.grade
+        FROM courseworks c
+        LEFT JOIN activity_grades ag ON ag.entity_id = c.id AND ag.entity_type = 'coursework' AND ag.student_id = ?
+        WHERE c.group_id = ?
+    """ + program_track_condition(is_reduced, 'c') + " ORDER BY c.position"
     coursework_data = [
-        {'code': c['code'], 'name': c['name'], 'type': c['type'],
-         'grade': coursework_grades_dict.get(c['code'], {}).get('grade', None)}
-        for c in courseworks
+        {'code': c['code'], 'name': c['name'],
+         'type': apply_track_overrides(dict(c), is_reduced)['type'],
+         'grade': c['grade']}
+        for c in conn.execute(courseworks_query, [student_id, student['group_id']]).fetchall()
     ]
 
-    attestations = conn.execute("""
-        SELECT id, code, name, type FROM attestations WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
-    attestation_grades = conn.execute("""
-        SELECT ag.grade, a.code, a.name, a.type, ag.name AS student_name FROM activity_grades ag
-        JOIN attestations a ON ag.entity_id = a.id
-        WHERE ag.student_id = ? AND ag.entity_type = 'attestation' ORDER BY a.position
-    """, (student_id,)).fetchall()
-    attestation_grades_dict = {g['code']: dict(g) for g in attestation_grades}
+    attestations_query = """
+        SELECT a.id, a.code, a.name, a.type, a.reduced_type, ag.grade, ag.name AS student_name
+        FROM attestations a
+        LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
+        WHERE a.group_id = ?
+    """ + program_track_condition(is_reduced, 'a') + " ORDER BY a.position"
     attestation_data = [
-        {'code': a['code'], 'name': a['name'], 'type': a['type'],
-         'grade': attestation_grades_dict.get(a['code'], {}).get('grade', None),
-         'student_name': attestation_grades_dict.get(a['code'], {}).get('student_name', None)}
-        for a in attestations
+        {'code': a['code'], 'name': a['name'],
+         'type': apply_track_overrides(dict(a), is_reduced)['type'],
+         'grade': a['grade'], 'student_name': a['student_name']}
+        for a in conn.execute(attestations_query, [student_id, student['group_id']]).fetchall()
     ]
 
     education_docs = conn.execute("""
@@ -1269,18 +1256,24 @@ def edit_activities_grades(student_id):
         flash("Доступ заборонено: студент не належить до вашої групи", "error")
         return redirect(url_for('students.student_list'))
 
-    practices = conn.execute("""
-        SELECT id, code, name, credits, type, position FROM practices WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
-    courseworks = conn.execute("""
-        SELECT id, code, name, credits, type, position FROM courseworks WHERE group_id = ? ORDER BY position
-    """, (student['group_id'],)).fetchall()
-    attestations = conn.execute("""
-        SELECT a.id, a.code, a.name, a.credits, a.type, a.position, ag.name AS student_name
+    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
+    track_cond = program_track_condition(is_reduced)
+
+    practices = [dict(r) for r in conn.execute(f"""
+        SELECT id, code, name, credits, reduced_credits, type, reduced_type, position FROM practices WHERE group_id = ?{track_cond} ORDER BY position
+    """, (student['group_id'],)).fetchall()]
+    courseworks = [dict(r) for r in conn.execute(f"""
+        SELECT id, code, name, credits, reduced_credits, type, reduced_type, position FROM courseworks WHERE group_id = ?{track_cond} ORDER BY position
+    """, (student['group_id'],)).fetchall()]
+    attestations = [dict(r) for r in conn.execute(f"""
+        SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type, a.position, ag.name AS student_name
         FROM attestations a
         LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
-        WHERE a.group_id = ? ORDER BY position
-    """, (student_id, student['group_id'])).fetchall()
+        WHERE a.group_id = ?{track_cond} ORDER BY position
+    """, (student_id, student['group_id'])).fetchall()]
+
+    for entity in practices + courseworks + attestations:
+        apply_track_overrides(entity, is_reduced)
 
     existing_grades = conn.execute("""
         SELECT id, entity_id, entity_type, grade, name FROM activity_grades WHERE student_id = ?
@@ -1368,9 +1361,11 @@ def edit_grades(student_id):
         return redirect(url_for('students.student_list'))
 
     subjects_query = "SELECT * FROM subjects WHERE group_id = ?"
-    if student['group_id'] and is_student_on_reduced_program(conn, student_id, student['group_id']):
-        subjects_query += " AND full_program_only = 0"
-    subjects = conn.execute(subjects_query, (student['group_id'],)).fetchall()
+    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
+    subjects_query += program_track_condition(is_reduced)
+    subjects = [dict(s) for s in conn.execute(subjects_query, (student['group_id'],)).fetchall()]
+    for subject in subjects:
+        apply_track_overrides(subject, is_reduced)
     existing_grades = conn.execute("SELECT subject_id, grade FROM grades WHERE student_id = ?", (student_id,)).fetchall()
     grade_map = {g['subject_id']: g['grade'] for g in existing_grades}
 

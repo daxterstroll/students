@@ -3,7 +3,7 @@ import re
 import sqlite3
 from datetime import datetime
 from docxtpl import DocxTemplate, InlineImage
-from routes.utils import log_action, logger as global_logger, is_student_on_reduced_program
+from routes.utils import log_action, logger as global_logger, is_student_on_reduced_program, program_track_condition, apply_track_overrides
 from routes.db import get_db
 from datetime import datetime
 from docxtpl import RichText
@@ -184,8 +184,13 @@ def get_subjects_grades(student_id, group_id):
     Якщо студент навчається за скороченою програмою відносно своєї
     групи (program_credits_override менше за program_credits групи -
     напр. вступив одразу на 2 курс з визнанням частини кредитів
-    диплома бакалавра), предмети з subjects.full_program_only=1
-    виключаються зі списку - вони стосуються лише повної програми.
+    диплома бакалавра):
+      - предмети з subjects.full_program_only=1 виключаються зі
+        списку - вони стосуються лише повної програми;
+      - для спільних предметів, де subjects.reduced_credits заповнено,
+        підміняється значення credits - той самий предмет може мати
+        меншу кількість кредитів у скороченій програмі (напр. курсова
+        робота 20 кредитів у повній, 10 - у скороченій).
     """
     # global_logger.debug(f"Запуск get_subjects_grades для student_id={student_id}, group_id={group_id}")
     conn = get_db()
@@ -194,14 +199,13 @@ def get_subjects_grades(student_id, group_id):
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT s.id, s.code, s.name, s.credits, s.type, s.position, IFNULL(g.grade, '') AS grade
+            SELECT s.id, s.code, s.name, s.credits, s.reduced_credits, s.type, s.reduced_type, s.position, IFNULL(g.grade, '') AS grade
             FROM subjects s
             LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
             WHERE s.group_id = ?
         """
         params = [student_id, group_id]
-        if is_reduced_program:
-            query += " AND s.full_program_only = 0"
+        query += program_track_condition(is_reduced_program, 's')
         query += " ORDER BY s.position"
 
         results = conn.execute(query, params).fetchall()
@@ -210,6 +214,9 @@ def get_subjects_grades(student_id, group_id):
         valid_subjects = []
         for subject in subjects:
             if all(key in subject for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
+                apply_track_overrides(subject, is_reduced_program)
+                subject.pop('reduced_credits', None)
+                subject.pop('reduced_type', None)
                 subject = {k: clean_text(v) for k, v in subject.items()}
                 subject['grade'] = format_grade(subject['grade'], subject['type']) if subject['grade'] else ''
                 valid_subjects.append(subject)
@@ -223,23 +230,37 @@ def get_subjects_grades(student_id, group_id):
         conn.close()
 
 def get_practice_data(student_id, group_id):
-    """Получение данных о практиках и их оценках."""
+    """Получение данных о практиках и их оценках.
+
+    Той самий принцип скороченої програми, що й у get_subjects_grades:
+    виключення full_program_only=1 і підміна кредитів через
+    reduced_credits, якщо заповнено.
+    """
     # global_logger.debug(f"Запуск get_practice_data для student_id={student_id}, group_id={group_id}")
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
-        results = conn.execute("""
-            SELECT p.id, p.code, p.name, p.credits, p.type, p.position, IFNULL(ag.grade, '') AS grade
+        is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
+
+        query = """
+            SELECT p.id, p.code, p.name, p.credits, p.reduced_credits, p.type, p.reduced_type, p.position, IFNULL(ag.grade, '') AS grade
             FROM practices p
             LEFT JOIN activity_grades ag ON ag.entity_id = p.id AND ag.entity_type = 'practice' AND ag.student_id = ?
             WHERE p.group_id = ?
-            ORDER BY p.position
-        """, (student_id, group_id)).fetchall()
+        """
+        params = [student_id, group_id]
+        query += program_track_condition(is_reduced_program, 'p')
+        query += " ORDER BY p.position"
+
+        results = conn.execute(query, params).fetchall()
         practices = [dict(r) for r in results]
         # global_logger.debug(f"Получено {len(practices)} практик: {practices}")
         valid_practices = []
         for practice in practices:
             if all(key in practice for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
+                apply_track_overrides(practice, is_reduced_program)
+                practice.pop('reduced_credits', None)
+                practice.pop('reduced_type', None)
                 practice = {k: clean_text(v) for k, v in practice.items()}
                 practice['grade'] = format_grade(practice['grade'], practice['type']) if practice['grade'] else ''
                 valid_practices.append(practice)
@@ -253,23 +274,35 @@ def get_practice_data(student_id, group_id):
         conn.close()
 
 def get_coursework_data(student_id, group_id):
-    """Получение данных о курсовых работах и их оценках."""
+    """Получение данных о курсовых работах и их оценках.
+
+    Той самий принцип скороченої програми, що й у get_subjects_grades.
+    """
     # global_logger.debug(f"Запуск get_coursework_data для student_id={student_id}, group_id={group_id}")
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
-        results = conn.execute("""
-            SELECT c.id, c.code, c.name, c.credits, c.type, c.position, IFNULL(ag.grade, '') AS grade
+        is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
+
+        query = """
+            SELECT c.id, c.code, c.name, c.credits, c.reduced_credits, c.type, c.reduced_type, c.position, IFNULL(ag.grade, '') AS grade
             FROM courseworks c
             LEFT JOIN activity_grades ag ON ag.entity_id = c.id AND ag.entity_type = 'coursework' AND ag.student_id = ?
             WHERE c.group_id = ?
-            ORDER BY c.position
-        """, (student_id, group_id)).fetchall()
+        """
+        params = [student_id, group_id]
+        query += program_track_condition(is_reduced_program, 'c')
+        query += " ORDER BY c.position"
+
+        results = conn.execute(query, params).fetchall()
         courseworks = [dict(r) for r in results]
         # global_logger.debug(f"Получено {len(courseworks)} курсовых работ: {courseworks}")
         valid_courseworks = []
         for coursework in courseworks:
             if all(key in coursework for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
+                apply_track_overrides(coursework, is_reduced_program)
+                coursework.pop('reduced_credits', None)
+                coursework.pop('reduced_type', None)
                 coursework = {k: clean_text(v) for k, v in coursework.items()}
                 coursework['grade'] = format_grade(coursework['grade'], coursework['type']) if coursework['grade'] else ''
                 valid_courseworks.append(coursework)
@@ -283,23 +316,35 @@ def get_coursework_data(student_id, group_id):
         conn.close()
 
 def get_attestation_data(student_id, group_id):
-    """Получение данных об аттестациях и их оценках."""
+    """Получение данных об аттестациях и их оценках.
+
+    Той самий принцип скороченої програми, що й у get_subjects_grades.
+    """
     # global_logger.debug(f"Запуск get_attestation_data для student_id={student_id}, group_id={group_id}")
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
-        results = conn.execute("""
-            SELECT a.id, a.code, a.name, a.credits, a.type, a.position, IFNULL(ag.grade, '') AS grade, IFNULL(ag.name, '') AS student_name
+        is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
+
+        query = """
+            SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type, a.position, IFNULL(ag.grade, '') AS grade, IFNULL(ag.name, '') AS student_name
             FROM attestations a
             LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
             WHERE a.group_id = ?
-            ORDER BY a.position
-        """, (student_id, group_id)).fetchall()
+        """
+        params = [student_id, group_id]
+        query += program_track_condition(is_reduced_program, 'a')
+        query += " ORDER BY a.position"
+
+        results = conn.execute(query, params).fetchall()
         attestations = [dict(r) for r in results]
         # global_logger.debug(f"Получено {len(attestations)} аттестаций: {attestations}")
         valid_attestations = []
         for attestation in attestations:
             if all(key in attestation for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade', 'student_name']):
+                apply_track_overrides(attestation, is_reduced_program)
+                attestation.pop('reduced_credits', None)
+                attestation.pop('reduced_type', None)
                 attestation = {k: clean_text(v) for k, v in attestation.items()}
                 attestation['grade'] = format_grade(attestation['grade'], attestation['type']) if attestation['grade'] else ''
                 valid_attestations.append(attestation)

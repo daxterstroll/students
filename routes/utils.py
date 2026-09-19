@@ -437,3 +437,76 @@ def is_student_on_reduced_program(conn, student_id, group_id):
         return int(row['student_override']) < int(row['group_credits'])
     except (TypeError, ValueError):
         return False
+
+
+def program_track_condition(is_reduced, alias=''):
+    """SQL-умова (починається з " AND ..."), що обмежує запит до
+    subjects/practices/courseworks/attestations пунктами, видимими на
+    ФАКТИЧНІЙ програмі студента:
+      - студент на повній програмі (is_reduced=False): ховає пункти,
+        позначені reduced_only=1 (існують лише для скороченої);
+      - студент на скороченій (is_reduced=True): ховає пункти,
+        позначені full_program_only=1 (існують лише для повної).
+
+    alias - псевдонім таблиці в запиті (напр. "s" -> "s.full_program_only");
+    порожній рядок, якщо запит без псевдоніма.
+
+    Єдина точка цієї перевірки - раніше one-off умова
+    "AND full_program_only = 0" була написана вручну в ~10 різних
+    місцях (генерація документів, картка студента, форми оцінок), і
+    коли з'явився дзеркальний reduced_only, довелось би повторити
+    правку в кожному з них. Тепер запити просто додають
+    program_track_condition(is_reduced, alias) до WHERE.
+
+    ВАЖЛИВО - архітектурне обмеження: цей механізм (full_program_only /
+    reduced_only / reduced_credits / reduced_type на предметі +
+    program_credits_override на студенті) розрахований РІВНО на дві
+    програми - повну і скорочену. Якщо колись з'явиться третій варіант
+    навчального плану (напр. ще коротша програма), цих двох булевих
+    прапорців і двох "reduced_*"-полів не вистачить - знадобиться
+    окрема таблиця "навчальний план" з plan_id на предметах і студентах
+    замість двох фіксованих полів. Прив'язуватись до буквально двох
+    варіантів у новому коді небезпечно.
+    """
+    prefix = f"{alias}." if alias else ""
+    if is_reduced:
+        return f" AND {prefix}full_program_only = 0"
+    return f" AND {prefix}reduced_only = 0"
+
+
+def apply_track_overrides(item, is_reduced):
+    """Підміняє credits/type пункту (предмета/практики/курсової/
+    атестації) на його reduced_credits/reduced_type, якщо студент на
+    скороченій програмі і ці поля заповнені. item має бути dict (не
+    sqlite3.Row - Row не підтримує присвоєння). Повертає той самий
+    item для зручності ланцюжкового виклику.
+
+    Спільна для генерації документів (gen_docx.py), картки студента і
+    форм виставлення оцінок (students.py) - раніше та сама пара
+    "if is_reduced and item.get('reduced_X'): item['Y'] = ..." була
+    продубльована в кожному з цих місць окремо.
+    """
+    if is_reduced:
+        if item.get('reduced_credits') is not None:
+            item['credits'] = item['reduced_credits']
+        if item.get('reduced_type'):
+            item['type'] = item['reduced_type']
+    return item
+
+
+def filter_students_for_item(students, item, conn, group_id):
+    """Для масового виставлення оцінки по ОДНОМУ пункту (предмет/
+    практика/...) - фільтрує список студентів групи так, щоб
+    залишились лише ті, кому цей пункт реально стосується:
+      - пункт full_program_only=1 -> лишає тільки студентів НЕ на
+        скороченій програмі;
+      - пункт reduced_only=1 -> лишає тільки студентів НА скороченій;
+      - інакше - лишає всіх без змін.
+    students - список sqlite3.Row/dict з полем 'id'. item - dict-подібний
+    з полями full_program_only/reduced_only (з рядка subjects/...).
+    """
+    if item['full_program_only']:
+        return [s for s in students if not is_student_on_reduced_program(conn, s['id'], group_id)]
+    if item['reduced_only']:
+        return [s for s in students if is_student_on_reduced_program(conn, s['id'], group_id)]
+    return students

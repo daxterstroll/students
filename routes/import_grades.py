@@ -468,7 +468,7 @@ def mapping(token):
 
     conn = get_db()
     db_subjects = [dict(r) for r in conn.execute(
-        "SELECT id, name, type, full_program_only FROM subjects WHERE group_id = ? ORDER BY position, id", (state['group_id'],)
+        "SELECT id, name, type, full_program_only, reduced_only FROM subjects WHERE group_id = ? ORDER BY position, id", (state['group_id'],)
     ).fetchall()]
     db_students = [dict(r) for r in conn.execute(
         """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
@@ -554,6 +554,8 @@ def preview(token):
         "SELECT id, name FROM subjects WHERE group_id = ?", (state['group_id'],)).fetchall()}
     full_program_only_subject_ids = {r['id'] for r in conn.execute(
         "SELECT id FROM subjects WHERE group_id = ? AND full_program_only = 1", (state['group_id'],)).fetchall()}
+    reduced_only_subject_ids = {r['id'] for r in conn.execute(
+        "SELECT id FROM subjects WHERE group_id = ? AND reduced_only = 1", (state['group_id'],)).fetchall()}
     stud_names = {r['id']: r['full_name'] for r in conn.execute(
         """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
            FROM students WHERE group_id = ?""", (state['group_id'],)).fetchall()}
@@ -572,8 +574,9 @@ def preview(token):
 
     # Зібрати план імпорту. Пару (студент, предмет) пропускаємо, якщо
     # предмет позначено "лише повна програма", а студент - на
-    # скороченій: такий предмет він не проходить, навіть якщо в Excel
-    # для нього випадково стоїть якесь значення.
+    # скороченій (і навпаки - "лише скорочена" для студента на повній):
+    # такий предмет йому не читають, навіть якщо в Excel для нього
+    # випадково стоїть якесь значення.
     plan = []           # (student_id, subject_id, value)
     skipped_reduced = []  # [(student_id, subject_id, value)] - для показу в перегляді
     for key, val in parsed['grades'].items():
@@ -582,7 +585,9 @@ def preview(token):
         if stud_i in stud_map and subj_i in subj_map:
             student_id = stud_map[stud_i]
             subject_id = subj_map[subj_i]
-            if subject_id in full_program_only_subject_ids and _is_reduced(student_id):
+            student_is_reduced = _is_reduced(student_id)
+            if (subject_id in full_program_only_subject_ids and student_is_reduced) or \
+               (subject_id in reduced_only_subject_ids and not student_is_reduced):
                 skipped_reduced.append((student_id, subject_id, val))
                 continue
             plan.append((student_id, subject_id, val))
@@ -613,9 +618,9 @@ def preview(token):
                 f"імпортував оцінки з Excel ({state.get('filename','')}, аркуш «{state.get('sheet','')}»)",
                 group_ids=[state['group_id']],
                 details=f"додано {inserted}, оновлено {updated}, студентів {len(set(stud_map.values()))}, "
-                        f"предметів {len(set(subj_map.values()))}, пропущено (скорочена програма) {len(skipped_reduced)}"
+                        f"предметів {len(set(subj_map.values()))}, пропущено (не для тієї програми) {len(skipped_reduced)}"
             )
-            skip_note = f", пропущено {len(skipped_reduced)} (предмет не для скороченої програми)" if skipped_reduced else ""
+            skip_note = f", пропущено {len(skipped_reduced)} (предмет не стосується цієї програми навчання)" if skipped_reduced else ""
             flash(f"Імпорт завершено: додано {inserted} оцінок, оновлено {updated}{skip_note}", 'success')
         except Exception as e:
             conn.rollback()
