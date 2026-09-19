@@ -258,7 +258,14 @@
                         <td data-col="educational_program" class="small">{{ group.educational_program }}</td>
                         <td data-col="knowledge_area" class="small">{{ group.knowledge_area }}</td>
                         <td data-col="qualification_name" class="small">{{ group.qualification_name }}</td>
-                        <td data-col="student_count">{{ group.student_count }}</td>
+                        <td data-col="student_count">
+                            {{ group.student_count }}
+                            {% if group.reduced_count %}
+                            <span class="badge text-bg-warning" title="{{ group.reduced_count }} студент(ів) на скороченій програмі (визнання частини кредитів)">
+                                <i class="bi bi-signpost-split"></i> {{ group.reduced_count }}
+                            </span>
+                            {% endif %}
+                        </td>
                         <td>
 							
 								<a href="{{ url_for('students.student_list', group_id=group.id) }}" class="btn btn-sm btn-primary me-1" title="Переглянути список студентів">
