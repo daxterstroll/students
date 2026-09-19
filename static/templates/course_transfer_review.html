@@ -27,7 +27,7 @@
                                 <input type="checkbox" name="include_{{ s.id }}" value="1" checked
                                        class="form-check-input js-student-toggle" data-student-id="{{ s.id }}">
                             </td>
-                            <td>{{ s.full_name }}</td>
+                            <td>{{ s.full_name }} {{ ui.reduced_program_badge_for(s.program_credits_override, g.program_credits) }}</td>
                             <td>
                                 <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
                                        class="form-control form-control-sm d-none" placeholder="Причина виключення (обов'язково)">

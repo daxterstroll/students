@@ -8,6 +8,9 @@
 
     <div class="card">
         <div class="card-body p-0">
+            <div class="alert alert-light border small m-3 mb-0">
+                <i class="bi bi-clipboard-check me-1"></i>Можна скопіювати стовпчик оцінок з Excel і вставити в перше поле "Оцінка" — решта заповниться автоматично зверху вниз.
+            </div>
             <form method="post">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0 align-middle">
@@ -26,7 +29,7 @@
                                 <td>{{ subject.name }}</td>
                                 <td>{{ subject.credits }}</td>
                                 <td>
-                                    <input type="text" name="grade_{{ subject.id }}" value="{{ grade_map[subject.id]|default('') }}" class="form-control form-control-sm">
+                                    <input type="text" name="grade_{{ subject.id }}" value="{{ grade_map[subject.id]|default('') }}" class="form-control form-control-sm grade-input">
                                 </td>
                             </tr>
                             {% endfor %}
@@ -42,4 +45,36 @@
     </div>
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const gradeInputs = Array.from(document.querySelectorAll('.grade-input'));
+
+    gradeInputs.forEach((input, index) => {
+        input.addEventListener('paste', function (e) {
+            const clipboardText = (e.clipboardData || window.clipboardData).getData('text');
+            if (!clipboardText || !clipboardText.includes('\n')) {
+                // Одне значення без переносів рядків - нехай вставляється як завжди
+                return;
+            }
+            e.preventDefault();
+
+            // Стовпчик, скопійований з Excel - рядки, розділені переносами;
+            // якщо випадково прихопили кілька колонок (є таби) - беремо перше значення з рядка.
+            const values = clipboardText
+                .split(/\r\n|\n|\r/)
+                .map(line => line.split('\t')[0].trim())
+                .filter((v, i, arr) => !(i === arr.length - 1 && v === '')); // прибрати завершальний порожній рядок
+
+            for (let i = 0; i < values.length && (index + i) < gradeInputs.length; i++) {
+                gradeInputs[index + i].value = values[i];
+            }
+
+            // Фокус на останнє заповнене поле - зручно одразу побачити результат
+            const lastIndex = Math.min(index + values.length - 1, gradeInputs.length - 1);
+            gradeInputs[lastIndex].focus();
+        });
+    });
+});
+</script>
 {% endblock %}

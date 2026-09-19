@@ -59,9 +59,40 @@
                 <label for="position" class="form-label">Позиція</label>
                 <input type="number" name="position" id="position" class="form-control form-control-sm" min="1" value="{{ (subjects|map(attribute='position')|max + 1) if subjects else 1 }}" required>
             </div>
-            <div class="col-md-12 form-check">
-                <input type="checkbox" name="full_program_only" id="full_program_only" class="form-check-input" value="1">
-                <label for="full_program_only" class="form-check-label">Лише для повної програми (не входить у додаток студентам на скороченій програмі)</label>
+            <div class="col-md-12">
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#reducedProgramAdd">
+                    <i class="bi bi-chevron-down"></i> Скорочена програма — заповнюйте, лише якщо цей предмет відрізняється для студентів на скороченій програмі
+                </button>
+                <div class="collapse mt-2" id="reducedProgramAdd">
+                    <div class="row g-3 track-fields" data-prefix="add">
+                        <div class="col-md-4">
+                            <label for="visibility" class="form-label">Кому показувати цей предмет</label>
+                            <select name="visibility" id="visibility" class="form-select form-select-sm track-input">
+                                <option value="all">Усім студентам (звичайний випадок)</option>
+                                <option value="full_only">Тільки студентам на повній програмі</option>
+                                <option value="reduced_only">Тільки студентам на скороченій програмі</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="reduced_credits" class="form-label">Кредити для скороченої програми</label>
+                            <input type="number" name="reduced_credits" id="reduced_credits" class="form-control form-control-sm track-input" min="1" placeholder="залиште пустим — як «Кредити» вище">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="reduced_type" class="form-label">Тип контролю для скороченої програми</label>
+                            <select name="reduced_type" id="reduced_type" class="form-select form-select-sm track-input">
+                                <option value="">залиште пустим — як «Тип» вище</option>
+                                <option value="Залік">Залік</option>
+                                <option value="Екзамен">Екзамен</option>
+                            </select>
+                        </div>
+                        <div class="col-md-12">
+                            <div class="alert alert-light border small mb-0 track-preview">
+                                <div><i class="bi bi-eye me-1"></i><strong>У додатку студента на повній програмі:</strong> <span class="preview-full">—</span></div>
+                                <div class="mt-1"><i class="bi bi-eye me-1"></i><strong>У додатку студента на скороченій програмі:</strong> <span class="preview-reduced">—</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="col-md-12">
                 <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle"></i> Додати</button>
@@ -79,17 +110,19 @@
             <table class="table table-hover table-sm">
                 <thead>
                     <tr>
-                        <th scope="col" style="width: 10%;">Позиція</th>
-                        <th scope="col" style="width: 15%;">Код</th>
-                        <th scope="col" style="width: 30%;">Назва</th>
-                        <th scope="col" style="width: 10%;">Кредити</th>
-                        <th scope="col" style="width: 10%;">Тип</th>
-                        <th scope="col" style="width: 10%;">Лише повна</th>
-                        <th scope="col" style="width: 15%;">Дії</th>
+                        <th scope="col" style="width: 8%;">Позиція</th>
+                        <th scope="col" style="width: 12%;">Код</th>
+                        <th scope="col" style="width: 24%;">Назва</th>
+                        <th scope="col" style="width: 9%;">Кредити</th>
+                        <th scope="col" style="width: 8%;">Тип</th>
+                        <th scope="col" style="width: 22%;">У кого і з якими параметрами</th>
+                        <th scope="col" style="width: 17%;">Дії</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for subject in subjects %}
+                    {% set eff_credits = subject.reduced_credits if subject.reduced_credits else subject.credits %}
+                    {% set eff_type = subject.reduced_type if subject.reduced_type else subject.type %}
                     <!-- Обычная строка -->
                     <tr class="subject-row" id="subject-row-{{ subject.id }}">
                         <td>{{ subject.position }}</td>
@@ -97,7 +130,18 @@
                         <td>{{ subject.name }}</td>
                         <td>{{ subject.credits }}</td>
                         <td>{{ subject.type }}</td>
-                        <td>{% if subject.full_program_only %}<span class="badge bg-secondary">так</span>{% else %}—{% endif %}</td>
+                        <td class="small">
+                            {% if subject.reduced_only %}
+                            <div class="text-muted"><i class="bi bi-dash-circle"></i> Повна програма: немає</div>
+                            {% else %}
+                            <div>Повна: {{ subject.credits }} кр., {{ subject.type }}</div>
+                            {% endif %}
+                            {% if subject.full_program_only %}
+                            <div class="text-muted"><i class="bi bi-dash-circle"></i> Скорочена програма: немає</div>
+                            {% else %}
+                            <div>Скорочена: {{ eff_credits }} кр., {{ eff_type }}{% if eff_credits == subject.credits and eff_type == subject.type %} <span class="text-muted">(як повна)</span>{% endif %}</div>
+                            {% endif %}
+                        </td>
                         <td class="action-buttons">
                             <button class="btn btn-primary btn-sm" onclick="showEditForm('{{ subject.id }}')"><i class="bi bi-pencil"></i> Редагувати</button>
                             <div class="btn-group btn-group-sm">
@@ -139,16 +183,32 @@
                                 <input type="text" name="name" value="{{ subject.name }}" class="form-control form-control-sm" placeholder="Назва" required>
                             </td>
                             <td>
-                                <input type="number" name="credits" value="{{ subject.credits }}" class="form-control form-control-sm" min="1" placeholder="Кр." required>
+                                <input type="number" name="credits" id="credits-edit-{{ subject.id }}" value="{{ subject.credits }}" class="form-control form-control-sm" min="1" placeholder="Кр." required>
                             </td>
                             <td>
-                                <select name="type" class="form-select form-select-sm">
+                                <select name="type" id="type-edit-{{ subject.id }}" class="form-select form-select-sm">
                                     <option value="Залік" {% if subject.type == 'Залік' %}selected{% endif %}>Залік</option>
                                     <option value="Екзамен" {% if subject.type == 'Екзамен' %}selected{% endif %}>Екзамен</option>
                                 </select>
                             </td>
-                            <td class="text-center">
-                                <input type="checkbox" name="full_program_only" value="1" class="form-check-input" {% if subject.full_program_only %}checked{% endif %}>
+                            <td>
+                                <div class="d-flex flex-column gap-1 track-fields" data-prefix="edit-{{ subject.id }}" data-credits-id="credits-edit-{{ subject.id }}" data-type-id="type-edit-{{ subject.id }}">
+                                    <select name="visibility" class="form-select form-select-sm track-input">
+                                        <option value="all" {% if not subject.full_program_only and not subject.reduced_only %}selected{% endif %}>Усім студентам</option>
+                                        <option value="full_only" {% if subject.full_program_only %}selected{% endif %}>Тільки повна програма</option>
+                                        <option value="reduced_only" {% if subject.reduced_only %}selected{% endif %}>Тільки скорочена програма</option>
+                                    </select>
+                                    <input type="number" name="reduced_credits" class="form-control form-control-sm track-input" min="1" value="{{ subject.reduced_credits or '' }}" placeholder="Кред. для скороченої">
+                                    <select name="reduced_type" class="form-select form-select-sm track-input">
+                                        <option value="" {% if not subject.reduced_type %}selected{% endif %}>Тип для скороченої — як звичайний</option>
+                                        <option value="Залік" {% if subject.reduced_type == 'Залік' %}selected{% endif %}>Залік</option>
+                                        <option value="Екзамен" {% if subject.reduced_type == 'Екзамен' %}selected{% endif %}>Екзамен</option>
+                                    </select>
+                                    <div class="small text-muted track-preview">
+                                        <div>Повна: <span class="preview-full">—</span></div>
+                                        <div>Скорочена: <span class="preview-reduced">—</span></div>
+                                    </div>
+                                </div>
                             </td>
                             <td class="action-buttons">
                                 <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save"></i> Зберегти</button>
@@ -244,6 +304,51 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+});
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Живий попередній перегляд: для кожного блоку "Скорочена програма"
+    // (і у формі додавання, і в кожному рядку редагування) показує, що
+    // конкретно побачить студент на повній і на скороченій програмі -
+    // замість того, щоб адміну самому рахувати комбінацію
+    // "видимість + кредити + тип" в голові.
+    document.querySelectorAll('.track-fields').forEach(container => {
+        const creditsId = container.dataset.creditsId;
+        const typeId = container.dataset.typeId;
+        const baseCredits = creditsId ? document.getElementById(creditsId) : container.closest('form').querySelector('#credits');
+        const baseType = typeId ? document.getElementById(typeId) : container.closest('form').querySelector('#type');
+        const visibility = container.querySelector('[name="visibility"]');
+        const reducedCredits = container.querySelector('[name="reduced_credits"]');
+        const reducedType = container.querySelector('[name="reduced_type"]');
+        const previewFull = container.querySelector('.preview-full');
+        const previewReduced = container.querySelector('.preview-reduced');
+        if (!baseCredits || !baseType || !previewFull || !previewReduced) return;
+
+        function updatePreview() {
+            const credits = baseCredits.value || '?';
+            const type = baseType.value;
+            const effReducedCredits = reducedCredits.value || credits;
+            const effReducedType = reducedType.value || type;
+
+            previewFull.textContent = (visibility.value === 'reduced_only')
+                ? 'немає в додатку (лише скорочена програма)'
+                : `${credits} кредитів, ${type}`;
+
+            previewReduced.textContent = (visibility.value === 'full_only')
+                ? 'немає в додатку (лише повна програма)'
+                : `${effReducedCredits} кредитів, ${effReducedType}` + (
+                    (effReducedCredits == credits && effReducedType === type) ? ' (так само, як у повній)' : ''
+                );
+        }
+
+        [baseCredits, baseType, visibility, reducedCredits, reducedType].forEach(el => {
+            el.addEventListener('input', updatePreview);
+            el.addEventListener('change', updatePreview);
+        });
+        updatePreview();
+    });
 });
 </script>
 

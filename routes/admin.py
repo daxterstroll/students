@@ -17,7 +17,7 @@ import os
 import sqlite3
 from werkzeug.security import generate_password_hash
 from routes.db import get_db
-from routes.utils import log_action, permission_required, is_student_on_reduced_program, save_multiple_attachments, get_attachments
+from routes.utils import log_action, permission_required, is_student_on_reduced_program, save_multiple_attachments, get_attachments, filter_students_for_item
 from routes.gen_docx import gen_doc
 from routes import office_editor
 from routes.utils import logger
@@ -850,7 +850,7 @@ def manage_groups():
                     flash("Рік початку навчання або кредити мають бути числами.", "error")
                 except sqlite3.IntegrityError as e:
                     if "UNIQUE constraint" in str(e):
-                        flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                        flash("Група з такою назвою, роком початку, формою навчання і кількістю кредитів вже існує.", "error")
                     else:
                         logger.error(f"Помилка збереження групи: {e}", exc_info=True)
                         flash(f"Не вдалося зберегти групу через помилку даних: {e}", "error")
@@ -997,7 +997,7 @@ def manage_groups():
                     flash("Рік початку навчання або кредити мають бути числами.", "error")
                 except sqlite3.IntegrityError as e:
                     if "UNIQUE constraint" in str(e):
-                        flash("Група з таким назвою та роком початку навчання вже існує.", "error")
+                        flash("Група з такою назвою, роком початку, формою навчання і кількістю кредитів вже існує.", "error")
                     else:
                         logger.error(f"Помилка збереження групи: {e}", exc_info=True)
                         flash(f"Не вдалося зберегти групу через помилку даних: {e}", "error")
@@ -1136,7 +1136,10 @@ def manage_groups():
                g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
                g.program_includes_reduced, g.program_includes_reduced_en,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS display_name,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id) AS student_count
+               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id) AS student_count,
+               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id
+                    AND s.program_credits_override IS NOT NULL
+                    AND s.program_credits_override < g.program_credits) AS reduced_count
         FROM groups g WHERE g.archived = FALSE ORDER BY {sortable_columns[sort_by]} {sort_order.upper()}
     """).fetchall()
 
@@ -2107,7 +2110,10 @@ def courses():
     groups = conn.execute("""
         SELECT id, name, course, start_year, study_form, program_credits,
                degree_level, specialty,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0) AS student_count
+               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0) AS student_count,
+               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0
+                    AND s.program_credits_override IS NOT NULL
+                    AND s.program_credits_override < groups.program_credits) AS reduced_count
         FROM groups
         WHERE archived = FALSE
         ORDER BY course, name
@@ -2180,13 +2186,14 @@ def course_transfer():
         groups_with_students = []
         for g in selected_groups:
             students = conn.execute("""
-                SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name
+                SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name, program_credits_override
                 FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
                 ORDER BY last_name_UA COLLATE UKRAINIAN
             """, (g['id'],)).fetchall()
             groups_with_students.append({
                 'id': g['id'], 'name': g['name'], 'course': g['course'],
                 'course_to': g['course'] + 1,
+                'program_credits': g['program_credits'],
                 'students': students,
             })
 
@@ -2809,15 +2816,12 @@ def manage_subjects():
         if selected_subject_id:
             cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
             students = cursor.fetchall()
-            selected_subject = cursor.execute('SELECT full_program_only FROM subjects WHERE id = ?', (selected_subject_id,)).fetchone()
-            if selected_subject and selected_subject['full_program_only']:
-                # Предмет лише для повної програми - студентів на
-                # скороченій програмі (визнання частини кредитів) з
-                # цього списку прибираємо, їм цей предмет не читають.
-                students = [
-                    s for s in students
-                    if not is_student_on_reduced_program(conn, s['id'], selected_group_id)
-                ]
+            selected_subject = cursor.execute('SELECT full_program_only, reduced_only FROM subjects WHERE id = ?', (selected_subject_id,)).fetchone()
+            if selected_subject:
+                # Предмет може стосуватись лише повної АБО лише
+                # скороченої програми - прибираємо зі списку тих
+                # студентів, кому він не стосується.
+                students = filter_students_for_item(students, selected_subject, conn, selected_group_id)
             students = sort_ukrainian(
                 students,
                 key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
@@ -2836,7 +2840,14 @@ def manage_subjects():
                 credits = int(request.form['credits'])
                 type_ = request.form['type']
                 position = int(request.form['position'])
-                full_program_only = 1 if request.form.get('full_program_only') else 0
+                visibility = request.form.get('visibility', 'all')
+                full_program_only = 1 if visibility == 'full_only' else 0
+                reduced_only = 1 if visibility == 'reduced_only' else 0
+                reduced_credits_raw = (request.form.get('reduced_credits') or '').strip()
+                reduced_credits = int(reduced_credits_raw) if reduced_credits_raw else None
+                reduced_type = request.form.get('reduced_type') or None
+                if reduced_type not in (None, 'Залік', 'Екзамен'):
+                    reduced_type = None
                 if not code or not name or credits < 1 or position < 1 or type_ not in ['Залік', 'Екзамен']:
                     flash('Некорректные данные предмета', 'error')
                 else:
@@ -2844,12 +2855,12 @@ def manage_subjects():
                     max_position = cursor.fetchone()[0] or 0
                     if position <= max_position:
                         cursor.execute('UPDATE subjects SET position = position + 1 WHERE position >= ? AND group_id = ?', (position, group_id))
-                    cursor.execute('INSERT INTO subjects (code, name, credits, type, position, group_id, full_program_only) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                   (code, name, credits, type_, position, group_id, full_program_only))
+                    cursor.execute('INSERT INTO subjects (code, name, credits, type, position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                                   (code, name, credits, type_, position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type))
                     conn.commit()
                     log_action(current_username(),
                                f"додав предмет: {code} — {name} (група ID {group_id})",
-                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, лише повна програма: {bool(full_program_only)}")
+                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, видимість: {visibility}, кредити скорочена: {reduced_credits if reduced_credits is not None else '-'}")
                     flash(f'Добавлен предмет {code}', 'success')
             except (KeyError, ValueError):
                 flash('Некорректные данные предмета', 'error')
@@ -2862,15 +2873,22 @@ def manage_subjects():
                 credits = int(request.form['credits'])
                 type_ = request.form['type']
                 position = int(request.form['position'])
-                full_program_only = 1 if request.form.get('full_program_only') else 0
+                visibility = request.form.get('visibility', 'all')
+                full_program_only = 1 if visibility == 'full_only' else 0
+                reduced_only = 1 if visibility == 'reduced_only' else 0
+                reduced_credits_raw = (request.form.get('reduced_credits') or '').strip()
+                reduced_credits = int(reduced_credits_raw) if reduced_credits_raw else None
+                reduced_type = request.form.get('reduced_type') or None
+                if reduced_type not in (None, 'Залік', 'Екзамен'):
+                    reduced_type = None
                 if not code or not name or credits < 1 or position < 1 or type_ not in ['Залік', 'Екзамен']:
                     flash('Некорректные данные предмета', 'error')
                 else:
                     cursor.execute('SELECT position FROM subjects WHERE id = ? AND group_id = ?', (subject_id, group_id))
                     cursor.execute('UPDATE subjects SET position = 0 WHERE id = ? AND group_id = ?', (subject_id, group_id))
                     cursor.execute('UPDATE subjects SET position = position + 1 WHERE position >= ? AND group_id = ? AND id != ?', (position, group_id, subject_id))
-                    cursor.execute('UPDATE subjects SET code=?, name=?, credits=?, type=?, position=?, full_program_only=? WHERE id=? AND group_id=?',
-                                   (code, name, credits, type_, position, full_program_only, subject_id, group_id))
+                    cursor.execute('UPDATE subjects SET code=?, name=?, credits=?, type=?, position=?, full_program_only=?, reduced_only=?, reduced_credits=?, reduced_type=? WHERE id=? AND group_id=?',
+                                   (code, name, credits, type_, position, full_program_only, reduced_only, reduced_credits, reduced_type, subject_id, group_id))
                     cursor.execute('SELECT id, position FROM subjects WHERE group_id=? ORDER BY position, id', (group_id,))
                     for i, subj in enumerate(cursor.fetchall(), 1):
                         if subj['position'] != i:
@@ -2878,7 +2896,7 @@ def manage_subjects():
                     conn.commit()
                     log_action(current_username(),
                                f"редагував предмет: {code} — {name} (група ID {group_id})",
-                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, лише повна програма: {bool(full_program_only)}")
+                               details=f"кредити: {credits}, тип: {type_}, позиція: {position}, видимість: {visibility}, кредити скорочена: {reduced_credits if reduced_credits is not None else '-'}")
                     flash(f'Обновлен предмет {code}', 'success')
             except (KeyError, ValueError):
                 flash('Некорректные данные предмета', 'error')
@@ -3025,6 +3043,12 @@ def manage_activities():
                         selected_entity_id = int(selected_entity_id)
                         cursor.execute('SELECT * FROM students WHERE group_id=?', (selected_group_id,))
                         students = cursor.fetchall()
+                        selected_entity = cursor.execute(f'SELECT full_program_only, reduced_only FROM {entity_table} WHERE id = ?', (selected_entity_id,)).fetchone()
+                        if selected_entity:
+                            # Діяльність може стосуватись лише повної
+                            # АБО лише скороченої програми - прибираємо
+                            # зі списку тих, кому вона не стосується.
+                            students = filter_students_for_item(students, selected_entity, conn, selected_group_id)
                         students = sort_ukrainian(
                             students,
                             key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
@@ -3066,6 +3090,14 @@ def manage_activities():
                 credits = request.form.get('credits')
                 type_ = request.form.get('type')
                 position = request.form.get('position')
+                visibility = request.form.get('visibility', 'all')
+                full_program_only = 1 if visibility == 'full_only' else 0
+                reduced_only = 1 if visibility == 'reduced_only' else 0
+                reduced_credits_raw = (request.form.get('reduced_credits') or '').strip()
+                reduced_credits = int(reduced_credits_raw) if reduced_credits_raw else None
+                reduced_type = request.form.get('reduced_type') or None
+                if reduced_type not in (None, 'Залік', 'Екзамен'):
+                    reduced_type = None
 
                 if not all([code, name, credits, type_, position]) and entity_type != 'attestation':
                     flash('Усі поля мають бути заповнені', 'error')
@@ -3082,12 +3114,12 @@ def manage_activities():
                 if position <= max_position:
                     cursor.execute(f'UPDATE {entity_table} SET position=position+1 WHERE position>=? AND group_id=?', (position, group_id))
 
-                cursor.execute(f'INSERT INTO {entity_table} (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)',
-                               (code, name or '', credits, type_, position, group_id))
+                cursor.execute(f'INSERT INTO {entity_table} (code, name, credits, type, position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                               (code, name or '', credits, type_, position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type))
                 conn.commit()
                 log_action(current_username(),
                            f"додав {entity_type}: {code} — {name} (група ID {group_id})",
-                           details=f"кредити: {credits}, тип: {type_}")
+                           details=f"кредити: {credits}, тип: {type_}, видимість: {visibility}, кредити скорочена: {reduced_credits if reduced_credits is not None else '-'}")
                 flash('Діяльність додано', 'success')
 
             elif action == 'edit':
@@ -3102,6 +3134,14 @@ def manage_activities():
                 credits = int(request.form.get('credits') or 0)
                 type_ = request.form.get('type')
                 position = int(request.form.get('position'))
+                visibility = request.form.get('visibility', 'all')
+                full_program_only = 1 if visibility == 'full_only' else 0
+                reduced_only = 1 if visibility == 'reduced_only' else 0
+                reduced_credits_raw = (request.form.get('reduced_credits') or '').strip()
+                reduced_credits = int(reduced_credits_raw) if reduced_credits_raw else None
+                reduced_type = request.form.get('reduced_type') or None
+                if reduced_type not in (None, 'Залік', 'Екзамен'):
+                    reduced_type = None
 
                 cursor.execute(f'SELECT id FROM {entity_table} WHERE id=? AND group_id=?', (entity_id, group_id))
                 if not cursor.fetchone():
@@ -3116,8 +3156,8 @@ def manage_activities():
                     cursor.execute(f'UPDATE {entity_table} SET position=position+1 WHERE position>=? AND group_id=? AND id!=?',
                                    (position, group_id, entity_id))
 
-                cursor.execute(f'UPDATE {entity_table} SET code=?, name=?, credits=?, type=?, position=? WHERE id=? AND group_id=?',
-                               (code, name or '', credits, type_, position, entity_id, group_id))
+                cursor.execute(f'UPDATE {entity_table} SET code=?, name=?, credits=?, type=?, position=?, full_program_only=?, reduced_only=?, reduced_credits=?, reduced_type=? WHERE id=? AND group_id=?',
+                               (code, name or '', credits, type_, position, full_program_only, reduced_only, reduced_credits, reduced_type, entity_id, group_id))
                 conn.commit()
                 log_action(current_username(),
                            f"редагував {entity_type}: {code} — {name} (група ID {group_id})")
@@ -3829,7 +3869,7 @@ def import_subjects():
                 if not row or all(cell is None for cell in row):
                     continue
                 try:
-                    code, name, credits, type_ = row
+                    code, name, credits, type_ = row[0], row[1], row[2], row[3]
                     if not all([code, name, credits, type_]):
                         skipped += 1
                         continue
@@ -3845,12 +3885,43 @@ def import_subjects():
                         flash(f"❗ Некоректні кредити у рядку {i}", "error")
                         skipped += 1
                         continue
+
+                    # Скорочена програма (колонки E-G, усі необов'язкові):
+                    # видимість / кредити для скороченої / тип для скороченої.
+                    full_program_only = 0
+                    reduced_only = 0
+                    visibility_raw = str(row[4]).strip().lower() if len(row) > 4 and row[4] not in (None, '') else ''
+                    if visibility_raw.startswith('лише повна') or visibility_raw.startswith('повна') or visibility_raw == 'full_only':
+                        full_program_only = 1
+                    elif visibility_raw.startswith('лише скорочена') or visibility_raw.startswith('скорочена') or visibility_raw == 'reduced_only':
+                        reduced_only = 1
+                    elif visibility_raw and visibility_raw not in ('всі', 'все', 'all', 'усім'):
+                        flash(f"⚠️ Рядок {i}: не розпізнано значення видимості '{row[4]}' - предмет імпортовано як звичайний (для всіх)")
+
+                    reduced_credits = None
+                    if len(row) > 5 and row[5] not in (None, ''):
+                        try:
+                            reduced_credits = int(row[5])
+                        except (ValueError, TypeError):
+                            flash(f"⚠️ Рядок {i}: некоректне значення кредитів для скороченої '{row[5]}' - поле пропущено")
+
+                    reduced_type = None
+                    if len(row) > 6 and row[6] not in (None, ''):
+                        reduced_type_raw = str(row[6]).strip()
+                        if reduced_type_raw in ('Залік', 'Екзамен'):
+                            reduced_type = reduced_type_raw
+                        else:
+                            flash(f"⚠️ Рядок {i}: некоректний тип для скороченої '{row[6]}' - поле пропущено")
+
                     cursor.execute("SELECT id FROM subjects WHERE group_id=? AND code=?", (group_id, code))
                     if cursor.fetchone():
                         skipped += 1
                         continue
-                    cursor.execute("INSERT INTO subjects (code, name, credits, type, position, group_id) VALUES (?, ?, ?, ?, ?, ?)",
-                                   (code, name, credits, type_, current_position, group_id))
+                    cursor.execute(
+                        "INSERT INTO subjects (code, name, credits, type, position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (code, name, credits, type_, current_position, group_id, full_program_only, reduced_only, reduced_credits, reduced_type)
+                    )
                     inserted += 1
                     current_position += 1
                 except Exception as e:
