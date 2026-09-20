@@ -105,6 +105,7 @@ PERMISSIONS = [
     'group_export',
     'import_from_excel',
     'manage_education_documents',
+    'manage_passport_documents',
     'study_periods',
     'manage_groups',
     'manage_subjects',
@@ -724,6 +725,238 @@ def manage_education_documents():
         student_doc_id=student_doc_id
     )
     
+@admin_bp.route('/admin/manage_passport_documents', methods=['GET', 'POST'])
+@permission_required('manage_passport_documents')
+def manage_passport_documents():
+    """CRUD-сторінка паспортних даних студентів (паспорт-книжка або
+    ID-картка) - за тим самим зразком, що й документи про освіту, але
+    без підтаблиці "іноземний документ" і з лімітом 5 сканів на запис."""
+    db = get_db()
+    cursor = db.cursor()
+    MAX_FILES = 5
+
+    cursor.execute("""
+        SELECT id, last_name_UA, first_name_UA FROM students
+        WHERE archived = FALSE ORDER BY last_name_UA, first_name_UA
+    """)
+    students = cursor.fetchall()
+
+    cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
+    groups = cursor.fetchall()
+
+    student = None
+    student_id_param = request.args.get('student_id', type=int)
+    if student_id_param:
+        cursor.execute("""
+            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
+            FROM students WHERE id = ?
+        """, (student_id_param,))
+        srow = cursor.fetchone()
+        if srow:
+            student = dict(srow)
+            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
+            grow = cursor.fetchone()
+            student['group_name'] = grow['name'] if grow else ''
+
+    selected_group_id = request.args.get('group_id', type=int)
+    if not selected_group_id and student:
+        selected_group_id = student['group_id']
+
+    students_without_docs = []
+    if selected_group_id:
+        cursor.execute("""
+            SELECT s.id, s.last_name_UA, s.first_name_UA
+            FROM students s
+            WHERE s.group_id = ? AND s.archived = FALSE
+              AND s.id NOT IN (SELECT student_id FROM passport_documents)
+            ORDER BY s.last_name_UA, s.first_name_UA
+        """, (selected_group_id,))
+        students_without_docs = cursor.fetchall()
+
+    cursor.execute("""
+        SELECT g.id AS group_id, g.name AS group_name, s.id AS student_id,
+               s.last_name_UA, s.first_name_UA,
+               pd.id AS doc_id, pd.document_type, pd.series, pd.number,
+               pd.issued_by, pd.issue_date, pd.valid_until, pd.unique_number
+        FROM passport_documents pd
+        INNER JOIN students s ON pd.student_id = s.id
+        INNER JOIN groups g ON s.group_id = g.id
+        WHERE s.archived = FALSE AND g.archived = FALSE
+        ORDER BY g.name, s.last_name_UA, s.first_name_UA, pd.id
+    """)
+    rows = cursor.fetchall()
+
+    documents_by_group = {}
+    for row in rows:
+        gid = row['group_id']
+        if gid not in documents_by_group:
+            documents_by_group[gid] = {'group_name': row['group_name'], 'docs': []}
+        doc = dict(row)
+        doc['attachments'] = get_attachments(db, 'passport_document', doc['doc_id'])
+        documents_by_group[gid]['docs'].append(doc)
+
+    sorted_documents_by_group = sorted(documents_by_group.items(), key=lambda x: x[1]['group_name'])
+
+    student_doc_id = None
+    if student:
+        for gid, gdata in documents_by_group.items():
+            for doc in gdata['docs']:
+                if doc['student_id'] == student['id']:
+                    student_doc_id = doc['doc_id']
+                    break
+            if student_doc_id:
+                break
+
+    # ====================== POST ======================
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'delete':
+            doc_id = request.form.get('doc_id')
+            try:
+                for att in get_attachments(db, 'passport_document', doc_id):
+                    att_path = os.path.join('static', att['file_path'])
+                    if os.path.exists(att_path):
+                        os.remove(att_path)
+                cursor.execute("DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id=?", (doc_id,))
+                cursor.execute("DELETE FROM passport_documents WHERE id = ?", (doc_id,))
+                db.commit()
+                log_action(current_username(), f"ВИДАЛИВ паспортні дані ID {doc_id}")
+                flash('Запис успішно видалено', 'success')
+            except sqlite3.Error as e:
+                db.rollback()
+                logger.error(f"Помилка видалення паспортних даних (ID {doc_id}): {e}", exc_info=True)
+                flash(f'Помилка видалення: {e}', 'danger')
+
+        elif action == 'delete_attachment':
+            attachment_id = request.form.get('attachment_id')
+            try:
+                att = cursor.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+                if att:
+                    att_path = os.path.join('static', att['file_path'])
+                    if os.path.exists(att_path):
+                        os.remove(att_path)
+                    cursor.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+                    db.commit()
+                    flash('Скан видалено', 'success')
+                else:
+                    flash('Файл не знайдено', 'error')
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Помилка видалення вкладення (ID {attachment_id}): {e}", exc_info=True)
+                flash(f'Помилка видалення файлу: {e}', 'danger')
+            return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+
+        elif action == 'edit':
+            doc_id = request.form.get('doc_id')
+            student_id = request.form.get('student_id')
+            document_type = request.form.get('document_type')
+
+            try:
+                existing = cursor.execute("SELECT student_id FROM passport_documents WHERE id = ?", (doc_id,)).fetchone()
+                if not existing:
+                    flash('Запис не знайдено', 'danger')
+                    return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+
+                if student_id:
+                    if not cursor.execute("SELECT id FROM students WHERE id = ? AND archived = FALSE", (student_id,)).fetchone():
+                        flash('Обраний студент не існує або заархівований', 'danger')
+                        return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+                else:
+                    student_id = existing[0]
+
+                if document_type not in ('Паспорт (книжка)', 'ID-картка'):
+                    raise ValueError("Невірний тип документа")
+
+                existing_count = cursor.execute(
+                    "SELECT COUNT(*) FROM attachments WHERE entity_type='passport_document' AND entity_id=?", (doc_id,)
+                ).fetchone()[0]
+                new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
+                if existing_count + len(new_scans) > MAX_FILES:
+                    flash(f'Забагато файлів - максимум {MAX_FILES} на запис (вже є {existing_count}).', 'error')
+                    return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+
+                cursor.execute("""
+                    UPDATE passport_documents SET
+                        student_id=?, document_type=?, series=?, number=?,
+                        issued_by=?, issue_date=?, valid_until=?, unique_number=?
+                    WHERE id=?
+                """, (
+                    student_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    request.form.get('issued_by') or None, request.form.get('issue_date') or None,
+                    request.form.get('valid_until') or None, request.form.get('unique_number') or None,
+                    doc_id,
+                ))
+                db.commit()
+
+                if new_scans:
+                    save_multiple_attachments(db, 'passport_document', doc_id, new_scans, 'passport_documents', current_username())
+                    db.commit()
+
+                log_action(current_username(), f"редагував паспортні дані ID {doc_id}", details=document_type)
+                flash('Дані успішно оновлено', 'success')
+
+            except (sqlite3.Error, ValueError) as e:
+                db.rollback()
+                logger.error(f"Помилка редагування паспортних даних (ID {doc_id}): {e}", exc_info=True)
+                flash(f'Помилка при редагуванні: {e}', 'danger')
+
+            return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+
+        # === Додавання нового запису ===
+        else:
+            student_id = request.form.get('student_id')
+            document_type = request.form.get('document_type')
+
+            try:
+                if not student_id:
+                    raise ValueError("Не обрано студента")
+                if document_type not in ('Паспорт (книжка)', 'ID-картка'):
+                    raise ValueError("Невірний тип документа")
+
+                new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
+                if len(new_scans) > MAX_FILES:
+                    raise ValueError(f"Забагато файлів - максимум {MAX_FILES} на запис")
+
+                cursor.execute("""
+                    INSERT INTO passport_documents (
+                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    student_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    request.form.get('issued_by') or None, request.form.get('issue_date') or None,
+                    request.form.get('valid_until') or None, request.form.get('unique_number') or None,
+                ))
+                passport_doc_id = cursor.lastrowid
+                db.commit()
+
+                if new_scans:
+                    save_multiple_attachments(db, 'passport_document', passport_doc_id, new_scans, 'passport_documents', current_username())
+                    db.commit()
+
+                log_action(current_username(), f"додав паспортні дані: {document_type} №{request.form.get('number')}")
+                flash('Запис успішно додано', 'success')
+
+            except (sqlite3.Error, ValueError) as e:
+                db.rollback()
+                flash(f'Помилка при додаванні: {str(e)}', 'danger')
+
+        return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+
+    cursor.close()
+    return render_template(
+        'manage_passport_documents.html',
+        groups=groups,
+        selected_group_id=selected_group_id,
+        students_without_docs=students_without_docs,
+        documents_by_group=sorted_documents_by_group,
+        students=students,
+        student=student,
+        student_doc_id=student_doc_id,
+        max_files=MAX_FILES,
+    )
+
+
 @admin_bp.route('/admin/manage_groups', methods=['GET', 'POST'])
 @permission_required('manage_groups')
 def manage_groups():
@@ -3795,6 +4028,7 @@ def manage_users():
             'group_export': 'Масова генерація документів',
             'import_from_excel': 'Інпорт студентів',
             'manage_education_documents': 'Управління документами про освіту',
+            'manage_passport_documents': 'Управління паспортними даними',
             'study_periods': 'Періоди навчання',
             'manage_groups': 'Управління групами',
             'manage_subjects': 'Предмети',

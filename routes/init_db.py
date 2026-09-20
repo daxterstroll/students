@@ -67,6 +67,19 @@ CREATE TABLE IF NOT EXISTS "courseworks" (
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
+CREATE TABLE IF NOT EXISTS "passport_documents" (
+	"id"	INTEGER,
+	"student_id"	INTEGER NOT NULL,
+	"document_type"	TEXT NOT NULL CHECK("document_type" IN ('Паспорт (книжка)', 'ID-картка')),
+	"series"	TEXT,
+	"number"	TEXT NOT NULL,
+	"issued_by"	TEXT,
+	"issue_date"	TEXT,
+	"valid_until"	TEXT,
+	"unique_number"	TEXT,
+	PRIMARY KEY("id" AUTOINCREMENT),
+	FOREIGN KEY("student_id") REFERENCES "students"("id")
+);
 CREATE TABLE IF NOT EXISTS "education_documents" (
 	"id"	INTEGER,
 	"student_id"	INTEGER NOT NULL,
@@ -182,6 +195,7 @@ CREATE TABLE IF NOT EXISTS "students" (
 	"birth_date"	TEXT,
 	"group_id"	INTEGER,
 	"edebo_code"	VARCHAR(50),
+	"tax_id"	TEXT,
 	"photo"	TEXT,
 	"license_id"	INTEGER,
 	"archived"	BOOLEAN DEFAULT FALSE,
