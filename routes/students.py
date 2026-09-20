@@ -426,6 +426,14 @@ def student_details(student_id):
     # якщо там не було вказано вид документа).
     student_attachments = get_attachments(conn, 'student', student_id)
 
+    passport_docs = conn.execute(
+        "SELECT id, document_type, series, number, issued_by, issue_date, valid_until, unique_number "
+        "FROM passport_documents WHERE student_id = ? ORDER BY id DESC", (student_id,)
+    ).fetchall()
+    passport_docs = [dict(d) for d in passport_docs]
+    for d in passport_docs:
+        d['attachments'] = get_attachments(conn, 'passport_document', d['id'])
+
     study_periods = conn.execute("""
         SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
         FROM student_study_periods
@@ -447,6 +455,7 @@ def student_details(student_id):
         attestation_data=attestation_data,
         education_docs=education_docs,
         student_attachments=student_attachments,
+        passport_docs=passport_docs,
         study_periods=study_periods
     )
 
@@ -621,11 +630,12 @@ def add_student():
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
-                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, license_id,
+                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, tax_id, license_id,
                 phone, phone_backup, email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
-              birth_date, group_int, request.form.get('edebo_code'), license_id, phone, phone_backup, email))
+              birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
+              license_id, phone, phone_backup, email))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -943,14 +953,15 @@ def edit_student(student_id):
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, edebo_code=?, license_id=?, program_credits_override=?,
+                    group_id=?, edebo_code=?, tax_id=?, license_id=?, program_credits_override=?,
                     phone=?, phone_backup=?, email=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
-                group_int, request.form.get('edebo_code'), license_id, program_credits_override,
+                group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
+                license_id, program_credits_override,
                 phone, phone_backup, email, student_id
             ))
             conn.commit()
