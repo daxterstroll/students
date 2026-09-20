@@ -24,7 +24,8 @@
 нічого не з'являється, форма просто повертається з поясненням помилки.
 """
 import os
-from datetime import datetime
+import re
+from datetime import datetime, date
 
 from flask import Blueprint, render_template, request
 from routes.db import get_db
@@ -38,6 +39,66 @@ public_apply_bp = Blueprint('public_apply', __name__)
 ALLOWED_SCAN_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.pdf'}
 MAX_SCAN_SIZE_BYTES = 15 * 1024 * 1024  # 15 МБ на файл
 MAX_SCAN_FILES = 5
+
+# Гігієна вхідних даних - форма публічна й дивиться в інтернет, тому
+# "мінімум, без якого заявка не має сенсу" (перевірка обов'язкових
+# полів нижче) сама собою не рятує від абсурдних значень (2 роки,
+# 1850 рік, телефон "asdf"). Валідація серверна, не лише HTML5 -
+# HTML5-обмеження (type="date"/"tel") легко обійти прямим POST-запитом
+# повз браузер, тож єдина надійна перевірка - тут.
+MIN_APPLICANT_AGE_YEARS = 14
+MAX_APPLICANT_AGE_YEARS = 100
+PHONE_RE = re.compile(r'^(?:\+?380|0)\d{9}$')
+
+
+def _validate_birth_date(ua_date_str):
+    """ua_date_str - вже сконвертована дата у форматі ДД.ММ.РРРР
+    (див. _iso_to_ua_date). Повертає None, якщо все гаразд, або текст
+    помилки."""
+    try:
+        d = datetime.strptime(ua_date_str, "%d.%m.%Y").date()
+    except (ValueError, TypeError):
+        return "Некоректна дата народження."
+    today = date.today()
+    if d > today:
+        return "Дата народження не може бути в майбутньому."
+    age = (today - d).days / 365.25
+    if age < MIN_APPLICANT_AGE_YEARS:
+        return f"За вказаною датою народження вік менше {MIN_APPLICANT_AGE_YEARS} років - перевірте дату."
+    if age > MAX_APPLICANT_AGE_YEARS:
+        return "Перевірте, будь ласка, дату народження - вказаний вік виглядає нереалістично великим."
+    return None
+
+
+def _validate_phone(value, label):
+    """value - сирий рядок з форми (ще без нормалізації). Повертає
+    None, якщо все гаразд (включно з порожнім - необов'язкові поля
+    штибу "резервний телефон" не повинні блокувати відправку), або
+    текст помилки."""
+    if not value:
+        return None
+    digits = re.sub(r'[\s\-()]', '', value)
+    if not PHONE_RE.match(digits):
+        return f"{label}: перевірте формат номера (напр. +380991234567 або 0991234567)."
+    return None
+
+
+def _birth_date_bounds():
+    """min/max для <input type="date"> дати народження - клієнтська
+    підказка (браузер сам не дасть обрати дату поза межами), сервер
+    все одно перевіряє незалежно (_validate_birth_date вище)."""
+    today = date.today()
+
+    def _safe_date(year, month, day):
+        try:
+            return date(year, month, day)
+        except ValueError:
+            return date(year, month, day - 1)  # 29 лютого у невисокосному році
+
+    return {
+        'min_birth_date': _safe_date(today.year - MAX_APPLICANT_AGE_YEARS, today.month, today.day).isoformat(),
+        'max_birth_date': _safe_date(today.year - MIN_APPLICANT_AGE_YEARS, today.month, today.day).isoformat(),
+    }
 
 
 def _iso_to_ua_date(value):
@@ -65,13 +126,14 @@ def _limit_request_size():
         return render_template(
             'public_apply.html',
             error="Загальний розмір прикріплених файлів завеликий. Спробуйте завантажити менше файлів або стисніть їх.",
+            **_birth_date_bounds(),
         ), 413
 
 
 @public_apply_bp.route('/apply', methods=['GET', 'POST'])
 def apply():
     if request.method == 'GET':
-        return render_template('public_apply.html')
+        return render_template('public_apply.html', **_birth_date_bounds())
 
     # Honeypot: приховане поле, яке людина не бачить і не заповнює.
     # Заповнене - майже напевно бот. Мовчки "приймаємо" (для бота),
@@ -95,7 +157,19 @@ def apply():
             'public_apply.html',
             error="Заповніть, будь ласка, прізвище, ім'я, дату народження і телефон - без них заявку не можна обробити.",
             form=request.form,
+            **_birth_date_bounds(),
         )
+
+    # Гігієна вхідних даних (див. коментар біля констант вище) - дата
+    # народження і формат телефонів. Помилка тут - одразу назад у
+    # форму з поясненням, ще до жодного запису у БД.
+    validation_error = _validate_birth_date(birth_date)
+    if not validation_error:
+        validation_error = _validate_phone(phone, "Телефон")
+    if not validation_error:
+        validation_error = _validate_phone(f('phone_backup'), "Резервний телефон")
+    if validation_error:
+        return render_template('public_apply.html', error=validation_error, form=request.form, **_birth_date_bounds())
 
     # ---- Валідація файлів ДО будь-якого запису в БД ----
     photo_file = request.files.get('photo')
@@ -110,7 +184,7 @@ def apply():
             from routes.photo import load_and_validate_image
             load_and_validate_image(photo_bytes)
         except ValueError as e:
-            return render_template('public_apply.html', error=f"Фото: {e}", form=request.form)
+            return render_template('public_apply.html', error=f"Фото: {e}", form=request.form, **_birth_date_bounds())
 
     scan_files = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
     if len(scan_files) > MAX_SCAN_FILES:
@@ -118,6 +192,7 @@ def apply():
             'public_apply.html',
             error=f"Забагато файлів сканів (максимум {MAX_SCAN_FILES}).",
             form=request.form,
+            **_birth_date_bounds(),
         )
     for sf in scan_files:
         ext = os.path.splitext(sf.filename)[1].lower()
@@ -126,6 +201,7 @@ def apply():
                 'public_apply.html',
                 error=f"Файл «{sf.filename}»: непідтримуваний формат. Дозволені: JPG, PNG, WEBP, PDF.",
                 form=request.form,
+                **_birth_date_bounds(),
             )
         sf.seek(0, os.SEEK_END)
         size = sf.tell()
@@ -136,6 +212,7 @@ def apply():
                 'public_apply.html',
                 error=f"Файл «{sf.filename}» завеликий ({size_mb} МБ, максимум {MAX_SCAN_SIZE_BYTES // 1024 // 1024} МБ).",
                 form=request.form,
+                **_birth_date_bounds(),
             )
 
     # "Видано за кордоном", "скорочена програма" і "перебуває на

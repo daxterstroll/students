@@ -28,6 +28,10 @@
                         <input type="text" name="edebo_code" class="form-control" value="{{ request.form.edebo_code or '' }}">
                     </div>
                     <div class="col-md-4">
+                        <label class="form-label">Ідентифікаційний код</label>
+                        <input type="text" name="tax_id" class="form-control" value="{{ request.form.tax_id or '' }}">
+                    </div>
+                    <div class="col-md-4">
                         <label class="form-label">Дата народження</label>
                         <input type="text" name="birth_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ request.form.birth_date or '' }}">
                     </div>

@@ -80,7 +80,7 @@
 
         <!-- === Адміністрування (2 меню) === -->
         {% if is_admin or perms %}
-        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms %}
+        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_passport_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms %}
         <li class="nav-item dropdown d-none d-lg-block">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                 <i class="bi bi-mortarboard-fill"></i> Навчальний процес
@@ -103,6 +103,9 @@
                 {% endif %}
                 {% if is_admin or 'manage_education_documents' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_passport_documents' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.manage_passport_documents') }}"><i class="bi bi-person-vcard"></i> Паспортні дані</a></li>
                 {% endif %}
                 {% if is_admin or 'manage_diplomas' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_diplomas') }}"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a></li>
@@ -213,6 +216,7 @@
             {% if is_admin or 'manage_subjects' in perms %}<a href="{{ url_for('admin.manage_subjects') }}" class="admin-link d-block"><i class="bi bi-journal"></i> Предмети</a>{% endif %}
 			{% if is_admin or 'manage_activities' in perms %}<a href="{{ url_for('admin.manage_activities') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark-fill"></i> Практика / атестація / курсові</a>{% endif %}
             {% if is_admin or 'manage_education_documents' in perms %}<a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link d-block"><i class="bi bi-file-earmark-text"></i> Документи освіти</a>{% endif %}
+            {% if is_admin or 'manage_passport_documents' in perms %}<a href="{{ url_for('admin.manage_passport_documents') }}" class="admin-link d-block"><i class="bi bi-person-vcard"></i> Паспортні дані</a>{% endif %}
             {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
             {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
             {% if is_admin or 'manage_pending_students' in perms %}<a href="{{ url_for('admin.pending_students') }}" class="admin-link d-block"><i class="bi bi-person-plus"></i> Заявки на реєстрацію</a>{% endif %}
