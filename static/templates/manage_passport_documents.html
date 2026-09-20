@@ -1,0 +1,354 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Паспортні дані{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-person-vcard-fill', 'Паспортні дані', 'Паспорт (книжка) або ID-картка студентів, до ' ~ max_files ~ ' сканів на запис') }}
+
+    {% if student %}
+        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+            <div>
+                <strong>Студент:</strong> {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}
+                <span class="badge bg-secondary ms-2">{{ student.group_name | default('') }}</span>
+            </div>
+            <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
+                ← Назад до картки студента
+            </a>
+        </div>
+    {% endif %}
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3 align-items-end">
+                <div class="col-md-6">
+                    <label for="group_id" class="form-label">Група</label>
+                    <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()" required>
+                        <option value="">— оберіть групу —</option>
+                        {% for group in groups %}
+                            <option value="{{ group.id }}" {% if group.id == selected_group_id %}selected{% endif %}>{{ group.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if selected_group_id and students_without_docs %}
+                    <div class="col-md-6">
+                        <label for="student_id" class="form-label">Студент (без паспортних даних)</label>
+                        <select name="student_id" id="student_id_select" class="form-select" form="addDocumentForm">
+                            <option value="">— оберіть студента —</option>
+                            {% for s in students_without_docs %}
+                                <option value="{{ s.id }}">{{ s.last_name_UA }} {{ s.first_name_UA }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Форма додавання -->
+    <div class="card mb-5">
+        <div class="card-header py-3">
+            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати паспортні дані</h5>
+        </div>
+        <div class="card-body">
+            <form id="addDocumentForm" method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="student_id" id="hidden_student_id" value="{{ student.id if student else '' }}">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="document_type" class="form-label">Тип документа</label>
+                        <select name="document_type" id="document_type" class="form-select" required>
+                            <option value="Паспорт (книжка)">Паспорт (книжка)</option>
+                            <option value="ID-картка">ID-картка</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6" id="series_wrap">
+                        <label for="series" class="form-label">Серія (лише для книжки)</label>
+                        <input type="text" name="series" id="series" class="form-control" placeholder="Напр., АА">
+                    </div>
+                    <div class="col-md-12">
+                        <label for="number" class="form-label">Номер документа</label>
+                        <input type="text" name="number" id="number" class="form-control" placeholder="Напр., 123456" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="issued_by" class="form-label">Ким видано</label>
+                        <input type="text" name="issued_by" id="issued_by" class="form-control" placeholder="Напр., Шевченківським РУ ГУ ДМС України">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="unique_number" class="form-label">Номер запису в ЄДДР (для ID-картки)</label>
+                        <input type="text" name="unique_number" id="unique_number" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="issue_date" class="form-label">Дата видачі</label>
+                        <input type="text" name="issue_date" id="issue_date" class="form-control" placeholder="Напр., 19.06.2020">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="valid_until" class="form-label">Дійсний до</label>
+                        <input type="text" name="valid_until" id="valid_until" class="form-control" placeholder="Напр., 19.06.2030">
+                    </div>
+                    <div class="col-md-12">
+                        <label for="document_scans" class="form-label">Скановані копії (необов'язково, до {{ max_files }} файлів)</label>
+                        <input type="file" name="document_scans" id="document_scans" class="form-control" accept="image/*,.pdf" multiple>
+                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files }} на запис.</div>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Список -->
+    {{ ui.section_title('Список паспортних даних') }}
+    {% if documents_by_group %}
+        <div class="accordion" id="groupsAccordion">
+            {% for group_id, group_data in documents_by_group %}
+                <div class="accordion-item">
+                    <h2 class="accordion-header" id="heading{{ group_id }}">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ group_id }}">
+                            {{ group_data.group_name }}
+                            <span class="badge bg-secondary ms-2">{{ group_data.docs|length }}</span>
+                        </button>
+                    </h2>
+                    <div id="collapse{{ group_id }}" class="accordion-collapse collapse" data-bs-parent="#groupsAccordion">
+                        <div class="accordion-body p-0">
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Студент</th>
+                                            <th>Тип</th>
+                                            <th>Номер</th>
+                                            <th>Дійсний до</th>
+                                            <th style="width: 40px;"></th>
+                                            <th style="width: 180px;">Дії</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for doc in group_data.docs %}
+                                            <tr data-student-id="{{ doc.student_id }}">
+                                                <td>{{ doc.last_name_UA }} {{ doc.first_name_UA }}</td>
+                                                <td>{{ doc.document_type }}</td>
+                                                <td>{{ (doc.series ~ ' ' if doc.series else '') ~ doc.number }}</td>
+                                                <td>{{ doc.valid_until or '—' }}</td>
+                                                <td>
+                                                    {% if doc.attachments %}
+                                                    <i class="bi bi-paperclip text-muted" title="{{ doc.attachments|length }} скан(ів)"></i>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#detailsModal{{ doc.doc_id }}">
+                                                        <i class="bi bi-info-circle"></i>
+                                                    </button>
+                                                    <button class="btn btn-sm btn-outline-warning me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ doc.doc_id }}">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Видалити цей запис?');">
+                                                        <input type="hidden" name="action" value="delete">
+                                                        <input type="hidden" name="doc_id" value="{{ doc.doc_id }}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+
+                                            <!-- Деталі -->
+                                            <div class="modal fade" id="detailsModal{{ doc.doc_id }}" tabindex="-1">
+                                                <div class="modal-dialog modal-lg">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title">Паспортні дані</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <div class="row g-3">
+                                                                <div class="col-12"><strong>Студент:</strong> {{ doc.last_name_UA }} {{ doc.first_name_UA }}</div>
+                                                                <div class="col-md-6"><strong>Тип:</strong> {{ doc.document_type }}</div>
+                                                                <div class="col-md-6"><strong>Серія:</strong> {{ doc.series or '—' }}</div>
+                                                                <div class="col-md-6"><strong>Номер:</strong> {{ doc.number }}</div>
+                                                                <div class="col-md-6"><strong>Ким видано:</strong> {{ doc.issued_by or '—' }}</div>
+                                                                <div class="col-md-6"><strong>Дата видачі:</strong> {{ doc.issue_date or '—' }}</div>
+                                                                <div class="col-md-6"><strong>Дійсний до:</strong> {{ doc.valid_until or '—' }}</div>
+                                                                <div class="col-12"><strong>Номер запису в ЄДДР:</strong> {{ doc.unique_number or '—' }}</div>
+                                                                {% if doc.attachments %}
+                                                                <div class="col-12 mt-3 border-top pt-3"><h6>Скановані копії</h6></div>
+                                                                <div class="col-12">
+                                                                    {% for a in doc.attachments %}
+                                                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                                    </a>
+                                                                    {% endfor %}
+                                                                </div>
+                                                                {% endif %}
+                                                            </div>
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Редагувати -->
+                                            <div class="modal fade" id="editModal{{ doc.doc_id }}" data-student-id="{{ doc.student_id }}" tabindex="-1">
+                                                <div class="modal-dialog modal-lg">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title">Редагувати паспортні дані</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" enctype="multipart/form-data">
+                                                                <input type="hidden" name="action" value="edit">
+                                                                <input type="hidden" name="doc_id" value="{{ doc.doc_id }}">
+                                                                <input type="hidden" name="student_id" value="{{ doc.student_id }}">
+                                                                <div class="row g-3">
+                                                                    <div class="col-md-6">
+                                                                        <label class="form-label">Тип документа</label>
+                                                                        <select name="document_type" class="form-select edit-doctype">
+                                                                            <option value="Паспорт (книжка)" {% if doc.document_type == 'Паспорт (книжка)' %}selected{% endif %}>Паспорт (книжка)</option>
+                                                                            <option value="ID-картка" {% if doc.document_type == 'ID-картка' %}selected{% endif %}>ID-картка</option>
+                                                                        </select>
+                                                                    </div>
+                                                                    <div class="col-md-6 edit-series-wrap">
+                                                                        <label class="form-label">Серія (лише для книжки)</label>
+                                                                        <input type="text" name="series" class="form-control" value="{{ doc.series or '' }}">
+                                                                    </div>
+                                                                    <div class="col-md-12">
+                                                                        <label class="form-label">Номер документа</label>
+                                                                        <input type="text" name="number" class="form-control" value="{{ doc.number }}" required>
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <label class="form-label">Ким видано</label>
+                                                                        <input type="text" name="issued_by" class="form-control" value="{{ doc.issued_by or '' }}">
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <label class="form-label">Номер запису в ЄДДР</label>
+                                                                        <input type="text" name="unique_number" class="form-control" value="{{ doc.unique_number or '' }}">
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <label class="form-label">Дата видачі</label>
+                                                                        <input type="text" name="issue_date" class="form-control" value="{{ doc.issue_date or '' }}">
+                                                                    </div>
+                                                                    <div class="col-md-6">
+                                                                        <label class="form-label">Дійсний до</label>
+                                                                        <input type="text" name="valid_until" class="form-control" value="{{ doc.valid_until or '' }}">
+                                                                    </div>
+                                                                    <div class="col-12 mt-3 border-top pt-3">
+                                                                        <label class="form-label">Скановані копії ({{ doc.attachments|length }}/{{ max_files }})</label>
+                                                                        {% if doc.attachments %}
+                                                                        <div class="mb-2">
+                                                                            {% for a in doc.attachments %}
+                                                                            <span class="badge bg-secondary d-inline-flex align-items-center gap-1 me-1 mb-1 p-2">
+                                                                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="text-white text-decoration-none">
+                                                                                    <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                                                </a>
+                                                                                <button type="button" class="btn-close btn-close-white" style="font-size:.6rem;"
+                                                                                        title="Видалити файл"
+                                                                                        onclick="deleteAttachment({{ a.id }}, '{{ url_for('admin.manage_passport_documents') }}')"></button>
+                                                                            </span>
+                                                                            {% endfor %}
+                                                                        </div>
+                                                                        {% else %}
+                                                                        <div class="small text-muted mb-2">Немає доданих сканів.</div>
+                                                                        {% endif %}
+                                                                        {% if doc.attachments|length < max_files %}
+                                                                        <input type="file" name="document_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
+                                                                        <div class="form-text">Додати ще файли (максимум {{ max_files - doc.attachments|length }}).</div>
+                                                                        {% endif %}
+                                                                    </div>
+                                                                    <div class="col-12 mt-3">
+                                                                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
+                                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
+                                                                    </div>
+                                                                </div>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        {{ ui.empty_state('bi-person-vcard', 'Паспортних даних ще немає (або не вибрано групу)') }}
+    {% endif %}
+
+    <div class="mb-1 pb-1">&nbsp;</div>
+</div>
+
+<style>
+    .accordion-button:not(.collapsed) { background-color: var(--paper-2) !important; color: var(--brass) !important; }
+    .accordion-button:focus { box-shadow: none; }
+</style>
+
+<script>
+    function syncSeriesVisibility(selectEl, wrapEl) {
+        wrapEl.style.display = (selectEl.value === 'ID-картка') ? 'none' : '';
+    }
+    document.getElementById('document_type').addEventListener('change', function () {
+        syncSeriesVisibility(this, document.getElementById('series_wrap'));
+    });
+    syncSeriesVisibility(document.getElementById('document_type'), document.getElementById('series_wrap'));
+
+    document.querySelectorAll('.edit-doctype').forEach(function (sel) {
+        const wrap = sel.closest('.row').querySelector('.edit-series-wrap');
+        sel.addEventListener('change', function () { syncSeriesVisibility(this, wrap); });
+        syncSeriesVisibility(sel, wrap);
+    });
+
+    document.getElementById('addDocumentForm').addEventListener('submit', function (e) {
+        const studentSelect = document.getElementById('student_id_select');
+        const hiddenInput = document.getElementById('hidden_student_id');
+        if (studentSelect && studentSelect.value) {
+            hiddenInput.value = studentSelect.value;
+        } else if (!document.getElementById('hidden_student_id').value) {
+            e.preventDefault();
+            alert('Будь ласка, оберіть групу та студента');
+        }
+    });
+
+    window.addEventListener('load', function () {
+        {% if student %}
+            const targetStudentId = {{ student.id }};
+            const studentDocId = {{ student_doc_id | default('null') }};
+            if (studentDocId) {
+                const modalEl = document.getElementById('editModal' + studentDocId);
+                if (modalEl) {
+                    const accordionBody = modalEl.closest('.accordion-collapse');
+                    if (accordionBody && !accordionBody.classList.contains('show')) {
+                        new bootstrap.Collapse(accordionBody, { toggle: true });
+                    }
+                    setTimeout(function () { new bootstrap.Modal(modalEl).show(); }, 350);
+                    const row = document.querySelector('tr[data-student-id="' + targetStudentId + '"]');
+                    if (row) { row.classList.add('table-warning'); row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+                }
+            } else {
+                const sel = document.getElementById('student_id_select');
+                const hiddenInput = document.getElementById('hidden_student_id');
+                if (sel) { sel.value = targetStudentId; }
+                if (hiddenInput) { hiddenInput.value = targetStudentId; }
+                const formCard = document.getElementById('addDocumentForm');
+                if (formCard) { formCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); formCard.classList.add('border', 'border-primary', 'rounded-3', 'p-3'); }
+            }
+        {% endif %}
+    });
+
+    function deleteAttachment(attachmentId, actionUrl) {
+        if (!confirm('Видалити цей файл?')) return;
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = actionUrl;
+        form.innerHTML = '<input type="hidden" name="action" value="delete_attachment">' +
+                          '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+</script>
+{% endblock %}

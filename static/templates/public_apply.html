@@ -5,10 +5,62 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>Анкета для зарахування — Європейський університет</title>
-    <link href="{{ url_for('static', filename='style/css/bootstrap.min.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
     <style>
-        body { background: #f4f5f7; padding: 1rem 0 3rem; }
+        /* Сторінка навмисно без зовнішніх CSS/шрифтів (навіть тих, що
+           вже є в static/style/) - публічна форма не повинна залежати
+           від жодного стороннього запиту, щоб на порту 80 не довелось
+           відкривати нічого, крім самого /apply. Тому весь стиль -
+           мінімальний, вшитий сюди, без Bootstrap і без іконкового
+           шрифту (декоративні іконки - звичайні emoji-символи нижче). */
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 1rem 0 3rem;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f4f5f7; color: #1b1b1b;
+        }
+        .container { width: 100%; max-width: 640px; margin: 0 auto; padding: 0 1rem; }
+        h4 { margin: 0 0 .25rem; font-size: 1.4rem; font-weight: 600; }
+
+        .card { background: #fff; border: 1px solid rgba(0,0,0,.125); border-radius: .5rem; }
+        .card-body { padding: 1rem; }
+        .shadow-sm { box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); }
+
+        .row { display: flex; flex-wrap: wrap; margin: 0 -.5rem; }
+        .row.g-2 { row-gap: .5rem; }
+        .col-12 { flex: 0 0 100%; max-width: 100%; padding: 0 .5rem; }
+        .col-6 { flex: 0 0 50%; max-width: 50%; padding: 0 .5rem; }
+
+        label.form-label { display: block; margin-bottom: .25rem; font-weight: 500; font-size: .9rem; }
+        .form-control {
+            display: block; width: 100%; padding: .5rem .75rem; font-size: 1rem; line-height: 1.4;
+            color: #1b1b1b; background: #fff; border: 1px solid #ced4da; border-radius: .375rem;
+        }
+        .form-control:focus { outline: 0; border-color: #8ab4f8; box-shadow: 0 0 0 .2rem rgba(58,110,220,.15); }
+
+        .form-check { position: relative; display: block; padding-left: 1.7em; margin-bottom: .25rem; }
+        .form-check-input { position: absolute; left: 0; top: .2em; width: 1.15em; height: 1.15em; accent-color: #0d6efd; }
+        .form-check-label { font-size: .92rem; }
+
+        .btn {
+            display: inline-block; font-weight: 500; text-align: center; cursor: pointer;
+            border: 1px solid transparent; padding: .6rem 1rem; font-size: 1rem; border-radius: .375rem;
+        }
+        .btn-primary { color: #fff; background-color: #0d6efd; border-color: #0d6efd; }
+        .btn-primary:hover { background-color: #0b5ed7; border-color: #0a58ca; }
+        .w-100 { width: 100%; }
+
+        .alert { padding: .75rem 1rem; margin-bottom: 1rem; border: 1px solid transparent; border-radius: .375rem; }
+        .alert-danger { color: #842029; background-color: #f8d7da; border-color: #f5c2c7; }
+
+        .text-center { text-align: center; }
+        .text-muted { color: #6c757d; }
+        .small { font-size: .875rem; }
+        .mb-1 { margin-bottom: .25rem; } .mb-4 { margin-bottom: 1.5rem; }
+        .mt-1 { margin-top: .25rem; } .mt-2 { margin-top: .5rem; }
+        .mt-3 { margin-top: 1rem; } .mt-4 { margin-top: 1.5rem; }
+        .p-3 { padding: 1rem; }
+        @media (min-width: 768px) { .p-md-4 { padding: 1.5rem; } }
+
         .apply-card { max-width: 640px; margin: 0 auto; }
         .section-title { font-weight: 700; font-size: 1.05rem; margin-top: 1.75rem; margin-bottom: .75rem;
                           padding-bottom: .4rem; border-bottom: 2px solid #d8c48a; }
@@ -42,7 +94,7 @@
                         <input type="text" name="website" tabindex="-1" autocomplete="off">
                     </div>
 
-                    <div class="section-title"><i class="bi bi-person me-1"></i>Особисті дані</div>
+                    <div class="section-title">👤 Особисті дані</div>
                     <div class="row g-2">
                         <div class="col-12">
                             <label class="form-label">Прізвище (українською) <span class="required-mark">*</span></label>
@@ -58,7 +110,9 @@
                         </div>
                         <div class="col-12">
                             <label class="form-label">Дата народження <span class="required-mark">*</span></label>
-                            <input type="date" name="birth_date" class="form-control" required value="{{ form.birth_date if form else '' }}">
+                            <input type="date" name="birth_date" class="form-control" required
+                                   min="{{ min_birth_date | default('') }}" max="{{ max_birth_date | default('') }}"
+                                   value="{{ form.birth_date if form else '' }}">
                         </div>
                         <div class="col-12">
                             <label class="form-label">Фото 3х4</label>
@@ -67,7 +121,7 @@
                         </div>
                     </div>
 
-                    <div class="section-title"><i class="bi bi-telephone me-1"></i>Контактні дані</div>
+                    <div class="section-title">📞 Контактні дані</div>
                     <div class="row g-2">
                         <div class="col-12">
                             <label class="form-label">Телефон <span class="required-mark">*</span></label>
@@ -83,7 +137,7 @@
                         </div>
                     </div>
 
-                    <div class="section-title"><i class="bi bi-file-earmark-text me-1"></i>Документ про освіту (підстава для вступу)</div>
+                    <div class="section-title">📄 Документ про освіту (підстава для вступу)</div>
                     <p class="hint">Атестат про повну загальну середню освіту, диплом молодшого спеціаліста, диплом бакалавра тощо.</p>
                     <div class="row g-2">
                         <div class="col-12">
@@ -117,7 +171,7 @@
                         </div>
                     </div>
 
-                    <div class="section-title"><i class="bi bi-shield-check me-1"></i>Військовий облік</div>
+                    <div class="section-title">🛡️ Військовий облік</div>
                     <div class="form-check">
                         <input type="checkbox" id="hasMilitary" class="form-check-input" {% if form and (form.military_registration_number_drpvr or form.military_registration_document) %}checked{% endif %}>
                         <label for="hasMilitary" class="form-check-label">На мене поширюється військовий обов'язок</label>
@@ -158,7 +212,7 @@
                     </div>
 
                     <button type="submit" class="btn btn-primary w-100 mt-4">
-                        <i class="bi bi-send-check me-1"></i> Надіслати анкету
+                        ✓ Надіслати анкету
                     </button>
                 </form>
             </div>

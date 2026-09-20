@@ -76,6 +76,7 @@
                             <tr><th class="text-muted fw-normal">Ім'я (ENG)</th><td>{{ student.first_name_ENG | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Дата народження</th><td class="font-monospace">{{ student.birth_date | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Код ЄДЕБО</th><td class="font-monospace">{{ student.edebo_code | default('-') }}</td></tr>
+                            <tr><th class="text-muted fw-normal">Ідентифікаційний код</th><td class="font-monospace">{{ student.tax_id | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Телефон</th><td>{{ student.phone | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Резервний телефон</th><td>{{ student.phone_backup | default('-') }}</td></tr>
                             <tr><th class="text-muted fw-normal">Email</th><td>{{ student.email | default('-') }}</td></tr>
@@ -88,6 +89,54 @@
         <!-- Аккордеони -->
         <div class="col-lg-7">
             <div class="accordion" id="studentDetailsAccordion">
+
+                <!-- Паспортні дані -->
+                <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#passportCollapse">
+                            <i class="bi bi-person-vcard me-3 fs-4" style="color: var(--brass);"></i>Паспортні дані
+                        </button>
+                    </h2>
+                    <div id="passportCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
+                        <div class="accordion-body">
+                            <div class="d-flex justify-content-end mb-3">
+                                <a href="{{ url_for('admin.manage_passport_documents', student_id=student.id) }}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-pencil me-1"></i>Керувати паспортними даними
+                                </a>
+                            </div>
+                            {% if passport_docs %}
+                                {% for doc in passport_docs %}
+                                <div class="border rounded-3 p-4 mb-4">
+                                    <h5>{{ doc.document_type }}</h5>
+                                    <table class="table table-sm table-borderless">
+                                        <tbody>
+                                            <tr><th class="w-50 text-muted">Серія та номер</th><td>{{ (doc.series ~ ' ' if doc.series else '') ~ doc.number }}</td></tr>
+                                            <tr><th class="text-muted">Ким видано</th><td>{{ doc.issued_by | default('-') }}</td></tr>
+                                            <tr><th class="text-muted">Дата видачі</th><td>{{ doc.issue_date | default('-') }}</td></tr>
+                                            <tr><th class="text-muted">Дійсний до</th><td>{{ doc.valid_until | default('-') }}</td></tr>
+                                            {% if doc.unique_number %}
+                                            <tr><th class="text-muted">Номер запису в ЄДДР</th><td>{{ doc.unique_number }}</td></tr>
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                    {% if doc.attachments %}
+                                    <div class="mt-2">
+                                        <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
+                                        {% for a in doc.attachments %}
+                                        <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                            <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                        </a>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <p class="text-muted text-center py-4">Паспортні дані відсутні</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
 
                 <!-- Військові дані -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
