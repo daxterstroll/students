@@ -116,6 +116,25 @@ def _iso_to_ua_date(value):
         return value  # на випадок, якщо браузер із якоїсь причини надіслав інший формат - краще зберегти як є, ніж загубити
 
 
+def _validate_scan_files(files, max_files, label):
+    """Спільна валідація для будь-якого набору сканів (документ про
+    освіту чи паспорт) - кількість, розширення, розмір кожного файлу.
+    Повертає None (усе гаразд) або текст помилки."""
+    if len(files) > max_files:
+        return f"Забагато файлів{label} (максимум {max_files})."
+    for sf in files:
+        ext = os.path.splitext(sf.filename)[1].lower()
+        if ext not in ALLOWED_SCAN_EXTENSIONS:
+            return f"Файл «{sf.filename}»{label}: непідтримуваний формат. Дозволені: JPG, PNG, WEBP, PDF."
+        sf.seek(0, os.SEEK_END)
+        size = sf.tell()
+        sf.seek(0)
+        if size > MAX_SCAN_SIZE_BYTES:
+            size_mb = round(size / 1024 / 1024, 1)
+            return f"Файл «{sf.filename}»{label} завеликий ({size_mb} МБ, максимум {MAX_SCAN_SIZE_BYTES // 1024 // 1024} МБ)."
+    return None
+
+
 @public_apply_bp.before_request
 def _limit_request_size():
     """Груба відсічка занадто великих запитів (кілька фото/сканів одразу
@@ -187,33 +206,14 @@ def apply():
             return render_template('public_apply.html', error=f"Фото: {e}", form=request.form, **_birth_date_bounds())
 
     scan_files = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
-    if len(scan_files) > MAX_SCAN_FILES:
-        return render_template(
-            'public_apply.html',
-            error=f"Забагато файлів сканів (максимум {MAX_SCAN_FILES}).",
-            form=request.form,
-            **_birth_date_bounds(),
-        )
-    for sf in scan_files:
-        ext = os.path.splitext(sf.filename)[1].lower()
-        if ext not in ALLOWED_SCAN_EXTENSIONS:
-            return render_template(
-                'public_apply.html',
-                error=f"Файл «{sf.filename}»: непідтримуваний формат. Дозволені: JPG, PNG, WEBP, PDF.",
-                form=request.form,
-                **_birth_date_bounds(),
-            )
-        sf.seek(0, os.SEEK_END)
-        size = sf.tell()
-        sf.seek(0)
-        if size > MAX_SCAN_SIZE_BYTES:
-            size_mb = round(size / 1024 / 1024, 1)
-            return render_template(
-                'public_apply.html',
-                error=f"Файл «{sf.filename}» завеликий ({size_mb} МБ, максимум {MAX_SCAN_SIZE_BYTES // 1024 // 1024} МБ).",
-                form=request.form,
-                **_birth_date_bounds(),
-            )
+    scan_error = _validate_scan_files(scan_files, MAX_SCAN_FILES, " документа про освіту")
+    if scan_error:
+        return render_template('public_apply.html', error=scan_error, form=request.form, **_birth_date_bounds())
+
+    passport_scan_files = [sf for sf in request.files.getlist('passport_scans') if sf and sf.filename]
+    passport_scan_error = _validate_scan_files(passport_scan_files, MAX_SCAN_FILES, " паспорта")
+    if passport_scan_error:
+        return render_template('public_apply.html', error=passport_scan_error, form=request.form, **_birth_date_bounds())
 
     # "Видано за кордоном", "скорочена програма" і "перебуває на
     # обліку" студент на публічній формі більше не позначає сам (ці
@@ -231,6 +231,12 @@ def apply():
     document_date = _iso_to_ua_date(f('document_date'))
     military_issued_vod = _iso_to_ua_date(f('military_issued_vod'))
 
+    passport_document_type = f('passport_document_type')
+    if passport_document_type not in ('Паспорт (книжка)', 'ID-картка'):
+        passport_document_type = None
+    passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
+    passport_valid_until = _iso_to_ua_date(f('passport_valid_until'))
+
     conn = get_db()
     cur = conn.execute("""
         INSERT INTO pending_students (
@@ -242,10 +248,12 @@ def apply():
             foreign_reference_country, foreign_reference_issue_date,
             recognition_certificate_number, recognition_issuer, recognition_date,
             reduced_program_claim, reduced_program_specialty, reduced_program_institution,
+            passport_document_type, passport_series, passport_number, passport_issued_by,
+            passport_issue_date, passport_valid_until, passport_unique_number,
             military_registration_number_drpvr, military_registration_document, military_issued_vod,
             military_specialty_number, military_rank, military_being_registered, military_address,
             military_change_credentials, military_change_reason
-        ) VALUES (?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?,?,?)
+        ) VALUES (?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?)
     """, (
         request.remote_addr,
         last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date,
@@ -256,6 +264,8 @@ def apply():
         None, None,
         None, None, None,
         reduced_program_claim, None, None,
+        passport_document_type, f('passport_series'), f('passport_number'), f('passport_issued_by'),
+        passport_issue_date, passport_valid_until, f('passport_unique_number'),
         f('military_registration_number_drpvr'), f('military_registration_document'), military_issued_vod,
         f('military_specialty_number'), f('military_rank'), military_being_registered, f('military_address'),
         f('military_change_credentials'), f('military_change_reason'),
@@ -274,10 +284,13 @@ def apply():
 
     # Скани документів - через ту саму спільну таблицю attachments, що
     # й накази/заморозка тощо (routes/utils.save_multiple_attachments),
-    # прив'язані поки що до заявки (entity_type='pending_student');
-    # адмін при підтвердженні "переприв'язує" їх до реального студента.
+    # прив'язані поки що до заявки. Документ про освіту і паспорт -
+    # РІЗНІ entity_type, щоб при підтвердженні знати, які скани куди
+    # переприв'язувати (до education_document чи до passport_document).
     if scan_files:
         save_multiple_attachments(conn, 'pending_student', pending_id, scan_files, 'pending_students')
+    if passport_scan_files:
+        save_multiple_attachments(conn, 'pending_student_passport', pending_id, passport_scan_files, 'pending_students')
 
     conn.commit()
     conn.close()
