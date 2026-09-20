@@ -74,7 +74,7 @@
                         <label for="issued_by" class="form-label">Ким видано</label>
                         <input type="text" name="issued_by" id="issued_by" class="form-control" placeholder="Напр., Шевченківським РУ ГУ ДМС України">
                     </div>
-                    <div class="col-md-6">
+                    <div class="col-md-6" id="unique_number_wrap">
                         <label for="unique_number" class="form-label">Номер запису в ЄДДР (для ID-картки)</label>
                         <input type="text" name="unique_number" id="unique_number" class="form-control">
                     </div>
@@ -222,7 +222,7 @@
                                                                         <label class="form-label">Ким видано</label>
                                                                         <input type="text" name="issued_by" class="form-control" value="{{ doc.issued_by or '' }}">
                                                                     </div>
-                                                                    <div class="col-md-6">
+                                                                    <div class="col-md-6 edit-unique-wrap">
                                                                         <label class="form-label">Номер запису в ЄДДР</label>
                                                                         <input type="text" name="unique_number" class="form-control" value="{{ doc.unique_number or '' }}">
                                                                     </div>
@@ -292,15 +292,25 @@
     function syncSeriesVisibility(selectEl, wrapEl) {
         wrapEl.style.display = (selectEl.value === 'ID-картка') ? 'none' : '';
     }
+    function syncUniqueNumberVisibility(selectEl, wrapEl) {
+        wrapEl.style.display = (selectEl.value === 'ID-картка') ? '' : 'none';
+    }
     document.getElementById('document_type').addEventListener('change', function () {
         syncSeriesVisibility(this, document.getElementById('series_wrap'));
+        syncUniqueNumberVisibility(this, document.getElementById('unique_number_wrap'));
     });
     syncSeriesVisibility(document.getElementById('document_type'), document.getElementById('series_wrap'));
+    syncUniqueNumberVisibility(document.getElementById('document_type'), document.getElementById('unique_number_wrap'));
 
     document.querySelectorAll('.edit-doctype').forEach(function (sel) {
-        const wrap = sel.closest('.row').querySelector('.edit-series-wrap');
-        sel.addEventListener('change', function () { syncSeriesVisibility(this, wrap); });
-        syncSeriesVisibility(sel, wrap);
+        const seriesWrap = sel.closest('.row').querySelector('.edit-series-wrap');
+        const uniqueWrap = sel.closest('.row').querySelector('.edit-unique-wrap');
+        sel.addEventListener('change', function () {
+            syncSeriesVisibility(this, seriesWrap);
+            syncUniqueNumberVisibility(this, uniqueWrap);
+        });
+        syncSeriesVisibility(sel, seriesWrap);
+        syncUniqueNumberVisibility(sel, uniqueWrap);
     });
 
     document.getElementById('addDocumentForm').addEventListener('submit', function (e) {
