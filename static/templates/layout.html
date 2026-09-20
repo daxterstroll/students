@@ -80,12 +80,15 @@
 
         <!-- === Адміністрування (2 меню) === -->
         {% if is_admin or perms %}
-        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms %}
+        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms %}
         <li class="nav-item dropdown d-none d-lg-block">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                 <i class="bi bi-mortarboard-fill"></i> Навчальний процес
             </a>
             <ul class="dropdown-menu dropdown-menu-dark">
+                {% if is_admin or 'manage_pending_students' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.pending_students') }}"><i class="bi bi-person-plus"></i> Заявки на реєстрацію</a></li>
+                {% endif %}
                 {% if is_admin or 'manage_groups' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
                 {% endif %}
@@ -171,11 +174,17 @@
             <i class="bi bi-file-zip"></i> Масова генерація документів
         </a>
     </li>
+<li class="nav-item d-none d-lg-block">
+        <a class="nav-link" href="{{ url_for('admin.export_photos') }}">
+            <i class="bi bi-images"></i> Фото студентів
+        </a>
+    </li>
                 {% endif %}
 
         <!-- Мобільна версія адмін-меню -->
         <div class="d-lg-none mt-2">
 		{% if is_admin or 'group_export' in perms %}<a href="{{ url_for('admin.group_export') }}" class="admin-link d-block"><i class="bi bi-file-zip"></i> Масова генерація</a>{% endif %}
+		{% if is_admin or 'group_export' in perms %}<a href="{{ url_for('admin.export_photos') }}" class="admin-link d-block"><i class="bi bi-images"></i> Фото студентів</a>{% endif %}
 
             <div class="admin-section-title">Імпорт</div>
             {% if is_admin or 'import_from_excel' in perms %}
@@ -206,6 +215,7 @@
             {% if is_admin or 'manage_education_documents' in perms %}<a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link d-block"><i class="bi bi-file-earmark-text"></i> Документи освіти</a>{% endif %}
             {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
             {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
+            {% if is_admin or 'manage_pending_students' in perms %}<a href="{{ url_for('admin.pending_students') }}" class="admin-link d-block"><i class="bi bi-person-plus"></i> Заявки на реєстрацію</a>{% endif %}
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'manage_specialties' in perms %}<a href="{{ url_for('admin.manage_specialties') }}" class="admin-link d-block"><i class="bi bi-diagram-3"></i> Спеціальності</a>{% endif %}
             {% if is_admin or 'manage_degree_levels' in perms %}<a href="{{ url_for('admin.manage_degree_levels') }}" class="admin-link d-block"><i class="bi bi-mortarboard"></i> Ступені</a>{% endif %}

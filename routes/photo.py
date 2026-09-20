@@ -140,3 +140,70 @@ def process_and_save_photo(file_bytes, crop_box, student_id):
     img = load_and_validate_image(file_bytes)
     final_img = crop_and_resize(img, crop_box)
     return save_final_image(final_img, student_id)
+
+
+# --------------------------------------------------------------------
+# Публічна анкета самореєстрації (routes/public_apply.py) - фото
+# заповнюється з телефону, без інтерактивного кроппера, тому обрізка
+# завжди автоматична по центру (той самий crop_box, що й для масового
+# завантаження). Зберігається окремо від "справжніх" фото студентів -
+# під випадковим ім'ям файлу, не прив'язаним до student_id (якого ще
+# не існує на момент подачі заявки).
+# --------------------------------------------------------------------
+PENDING_PHOTOS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'pending_photos')
+
+
+def _ensure_pending_dir():
+    os.makedirs(PENDING_PHOTOS_DIR, exist_ok=True)
+
+
+def process_and_save_pending_photo(file_bytes):
+    """Валідує, автоматично обрізає по центру до 3х4 і зберігає фото
+    абітурієнта з публічної анкети під випадковим ім'ям файлу.
+    Повертає відносний шлях (для static/) або кидає ValueError."""
+    img = load_and_validate_image(file_bytes)
+    crop_box = auto_center_crop_box(img.width, img.height)
+    final_img = crop_and_resize(img, crop_box)
+
+    _ensure_pending_dir()
+    filename = f"{uuid.uuid4().hex}.jpg"
+    dest_path = os.path.join(PENDING_PHOTOS_DIR, filename)
+    tmp_path = dest_path + ".tmp"
+    final_img.save(tmp_path, "JPEG", quality=92)
+    os.replace(tmp_path, dest_path)
+    return f"uploads/pending_photos/{filename}"
+
+
+def process_and_save_pending_photo_with_crop(file_bytes, crop_box, old_rel_path=None):
+    """Ручна обрізка (Cropper.js) фото абітурієнта - для адмінської
+    сторінки перегляду заявки, коли автоматична обрізка по центру
+    вийшла невдало (обличчя не по центру, зайвий фон тощо).
+
+    file_bytes: байти щойно завантаженого (або того самого, повторно
+        відкритого в браузері) зображення.
+    crop_box: (x, y, width, height) в пікселях ОРИГІНАЛЬНОГО зображення.
+    old_rel_path: попередній шлях (pending_students.photo_path) - якщо
+        задано, старий файл видаляється після успішного збереження
+        нового, щоб не лишати сміття на диску.
+
+    Повертає новий відносний шлях або кидає ValueError.
+    """
+    img = load_and_validate_image(file_bytes)
+    final_img = crop_and_resize(img, crop_box)
+
+    _ensure_pending_dir()
+    filename = f"{uuid.uuid4().hex}.jpg"
+    dest_path = os.path.join(PENDING_PHOTOS_DIR, filename)
+    tmp_path = dest_path + ".tmp"
+    final_img.save(tmp_path, "JPEG", quality=92)
+    os.replace(tmp_path, dest_path)
+
+    if old_rel_path:
+        old_abs_path = os.path.join('static', old_rel_path)
+        if os.path.exists(old_abs_path):
+            try:
+                os.remove(old_abs_path)
+            except OSError:
+                pass
+
+    return f"uploads/pending_photos/{filename}"

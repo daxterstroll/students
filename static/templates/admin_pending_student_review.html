@@ -1,0 +1,368 @@
+{% extends "layout.html" %}
+{% import '_macros.html' as ui %}
+{% block title %}Заявка на реєстрацію{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-person-plus', row.last_name_UA + ' ' + row.first_name_UA, 'Заявка №' + row.id|string + ' від ' + row.created_at) }}
+
+<a href="{{ url_for('admin.pending_students') }}" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-arrow-left"></i> До списку заявок</a>
+
+<div class="row g-3 mb-3">
+    {% if row.photo_path %}
+    <div class="col-auto">
+        <img id="currentPhoto" src="{{ url_for('static', filename=row.photo_path) }}" alt="Фото" class="rounded border" style="width:120px; height:160px; object-fit:cover;">
+    </div>
+    {% endif %}
+    <div class="col">
+        {% if scans %}
+        <div class="small text-muted mb-1">Скановані копії документів:</div>
+        {% for s in scans %}
+        <a href="{{ url_for('static', filename=s.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+            <i class="bi bi-file-earmark-arrow-down"></i> {{ s.original_name or ('скан ' ~ loop.index) }}
+        </a>
+        {% endfor %}
+        {% endif %}
+        <div class="mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#photoEditPanel">
+                <i class="bi bi-crop"></i> {{ 'Переобрізати фото' if row.photo_path else 'Додати фото' }}
+            </button>
+        </div>
+        <div class="collapse mt-2" id="photoEditPanel">
+            <div class="card card-body">
+                <label for="photoFileInput" class="form-label small">Оберіть файл (можна той самий, який завантажив абітурієнт, — завантажте його собі на пристрій зі скана вище, якщо файл лишився тільки там)</label>
+                <input type="file" id="photoFileInput" class="form-control form-control-sm mb-2" accept="image/jpeg,image/png,image/webp">
+                <div id="photoCropperArea" class="d-none" style="max-height:50vh; overflow:hidden; background:#222;">
+                    <img id="cropperImage" src="" style="max-width:100%; display:block;">
+                </div>
+                <button type="button" id="photoSaveBtn" class="btn btn-sm btn-primary mt-2 d-none">
+                    <i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if existing_student %}
+<div class="alert alert-danger">
+    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+    <strong>Можливий дублікат:</strong> у базі вже є студент з таким самим ПІБ і датою народження —
+    <a href="{{ url_for('students.student_details', student_id=existing_student.id) }}" target="_blank">{{ existing_student.last_name_UA }} {{ existing_student.first_name_UA }} (переглянути картку)</a>.
+    Перевірте, чи це не повторна заявка, перш ніж підтверджувати.
+</div>
+
+{% if row.status == 'new' %}
+<div class="card border-warning mb-3">
+    <div class="card-header bg-warning-subtle">
+        <i class="bi bi-arrow-repeat me-1"></i>Оновити наявного студента цими даними (замість створення нового)
+    </div>
+    <div class="card-body">
+        <p class="small text-muted">Позначте лише те, що дійсно змінилось і треба перенести в картку наявного студента. Непозначене лишиться без змін.</p>
+        <form method="post" onsubmit="return confirm('Оновити студента {{ existing_student.last_name_UA }} {{ existing_student.first_name_UA }} обраними даними? Нового студента створено НЕ буде.');">
+            <input type="hidden" name="action" value="update_existing">
+            <input type="hidden" name="existing_student_id" value="{{ existing_student.id }}">
+            <div class="form-check mb-2">
+                <input type="checkbox" name="update_personal" id="update_personal" class="form-check-input">
+                <label for="update_personal" class="form-check-label">Особисті дані (ПІБ, дата народження)</label>
+            </div>
+            <div class="form-check mb-2">
+                <input type="checkbox" name="update_contacts" id="update_contacts" class="form-check-input">
+                <label for="update_contacts" class="form-check-label">Контакти (телефон, email): {{ row.phone or '—' }}, {{ row.email or '—' }}</label>
+            </div>
+            {% if row.photo_path %}
+            <div class="form-check mb-2">
+                <input type="checkbox" name="update_photo" id="update_photo" class="form-check-input">
+                <label for="update_photo" class="form-check-label">Фото з цієї заявки (замінить наявне, якщо є)</label>
+            </div>
+            {% endif %}
+            {% if row.document_type or row.document_number %}
+            <div class="form-check mb-2">
+                <input type="checkbox" name="add_document" id="add_document" class="form-check-input">
+                <label for="add_document" class="form-check-label">Додати документ про освіту з цієї заявки: {{ row.document_type or '' }} №{{ row.document_number or '' }} (додається як НОВИЙ запис, наявні документи не чіпає)</label>
+            </div>
+            {% endif %}
+            {% if row.military_registration_number_drpvr or row.military_registration_document or row.military_rank %}
+            <div class="form-check mb-3">
+                <input type="checkbox" name="add_military" id="add_military" class="form-check-input">
+                <label for="add_military" class="form-check-label">Військовий облік з цієї заявки (оновить наявний запис або створить новий)</label>
+            </div>
+            {% endif %}
+            <button type="submit" class="btn btn-warning"><i class="bi bi-arrow-repeat me-1"></i>Оновити наявного студента</button>
+        </form>
+    </div>
+</div>
+{% endif %}
+{% endif %}
+
+{% if row.status != 'new' %}
+<div class="alert alert-secondary d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+        Заявка вже {{ 'підтверджена' if row.status == 'approved' else 'відхилена' }} ({{ row.reviewed_by }}, {{ row.reviewed_at }}).
+        {% if row.review_note %}Примітка: {{ row.review_note }}{% endif %}
+        {% if row.resulting_student_id %}<a href="{{ url_for('students.student_details', student_id=row.resulting_student_id) }}">Перейти до картки студента</a>{% endif %}
+    </div>
+    <form method="post" onsubmit="return confirm('Видалити цю заявку?{{ ' Студента (якщо вже створений) це НЕ видалить.' if row.status == 'approved' else '' }}');">
+        <input type="hidden" name="action" value="delete">
+        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash me-1"></i>Видалити заявку</button>
+    </form>
+</div>
+{% endif %}
+
+<form method="post">
+    <input type="hidden" name="action" value="save">
+
+    <div class="card mb-3">
+        <div class="card-header">Особисті дані</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Прізвище (укр.)</label>
+                <input type="text" name="last_name_UA" class="form-control" value="{{ row.last_name_UA }}" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Ім'я (укр.)</label>
+                <input type="text" name="first_name_UA" class="form-control" value="{{ row.first_name_UA }}" required>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">По батькові (укр.)</label>
+                <input type="text" name="middle_name_UA" class="form-control" value="{{ row.middle_name_UA or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Прізвище (лат.)</label>
+                <input type="text" name="last_name_ENG" class="form-control" value="{{ row.last_name_ENG or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Ім'я (лат.)</label>
+                <input type="text" name="first_name_ENG" class="form-control" value="{{ row.first_name_ENG or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Дата народження</label>
+                <input type="text" name="birth_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.birth_date }}" required>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">Контактні дані</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Телефон</label>
+                <input type="text" name="phone" class="form-control" value="{{ row.phone or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Резервний телефон</label>
+                <input type="text" name="phone_backup" class="form-control" value="{{ row.phone_backup or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Email</label>
+                <input type="email" name="email" class="form-control" value="{{ row.email or '' }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">Документ про освіту</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Вид документа</label>
+                <input type="text" name="document_type" class="form-control" value="{{ row.document_type or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Серія</label>
+                <input type="text" name="document_series" class="form-control" value="{{ row.document_series or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Номер</label>
+                <input type="text" name="document_number" class="form-control" value="{{ row.document_number or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Заклад, що видав</label>
+                <input type="text" name="document_institution" class="form-control" value="{{ row.document_institution or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Країна видачі</label>
+                <input type="text" name="document_country" class="form-control" value="{{ row.document_country or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Дата видачі</label>
+                <input type="text" name="document_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.document_date or '' }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">Військовий облік</div>
+        <div class="card-body row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Реєстраційний номер у ДРПВР</label>
+                <input type="text" name="military_registration_number_drpvr" class="form-control" value="{{ row.military_registration_number_drpvr or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Документ військового обліку</label>
+                <input type="text" name="military_registration_document" class="form-control" value="{{ row.military_registration_document or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Дата видачі</label>
+                <input type="text" name="military_issued_vod" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.military_issued_vod or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Номер ВОС</label>
+                <input type="text" name="military_specialty_number" class="form-control" value="{{ row.military_specialty_number or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Військове звання</label>
+                <input type="text" name="military_rank" class="form-control" value="{{ row.military_rank or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Адреса реєстрації/проживання</label>
+                <input type="text" name="military_address" class="form-control" value="{{ row.military_address or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Зміна облікових даних</label>
+                <input type="text" name="military_change_credentials" class="form-control" value="{{ row.military_change_credentials or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Причина зміни облікових даних</label>
+                <input type="text" name="military_change_reason" class="form-control" value="{{ row.military_change_reason or '' }}">
+            </div>
+        </div>
+    </div>
+
+    <button type="submit" class="btn btn-outline-primary mb-4"><i class="bi bi-save me-1"></i> Зберегти правки</button>
+</form>
+
+{% if row.status == 'new' %}
+<div class="row g-3">
+    <div class="col-md-7">
+        <div class="card border-success">
+            <div class="card-header bg-success-subtle">Підтвердити і створити студента</div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="action" value="approve">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Група <span class="text-danger">*</span></label>
+                            <select name="group_id" class="form-select" required>
+                                <option value="">— оберіть групу —</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}">{{ g.display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Ліцензія вступу</label>
+                            <select name="license_id" class="form-select">
+                                <option value="">— не вказано —</option>
+                                {% for l in licenses %}
+                                <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Кредити (скорочена програма)</label>
+                            <input type="number" name="program_credits_override" class="form-control" placeholder="залиште пустим, якщо як у групи">
+                            {% if row.reduced_program_claim %}
+                            <div class="form-text text-warning-emphasis"><i class="bi bi-signpost-split"></i> Студент заявив право на скорочену програму — перевірте документ і вкажіть кредити, якщо підтверджуєте.</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success mt-3"><i class="bi bi-check-circle me-1"></i> Підтвердити і додати студента</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-5">
+        <div class="card border-danger">
+            <div class="card-header bg-danger-subtle">Відхилити заявку</div>
+            <div class="card-body">
+                <form method="post">
+                    <input type="hidden" name="action" value="reject">
+                    <label class="form-label">Примітка (необов'язково)</label>
+                    <textarea name="review_note" class="form-control mb-3" rows="2" placeholder="напр. дублікат, спам, недостовірні дані"></textarea>
+                    <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Відхилити цю заявку?')"><i class="bi bi-x-circle me-1"></i> Відхилити</button>
+                </form>
+                <hr>
+                <form method="post">
+                    <input type="hidden" name="action" value="delete">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Видалити цю заявку без сліду? Це не те саме, що відхилити - запис зникне повністю.')">
+                        <i class="bi bi-trash me-1"></i> Видалити без сліду
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+</div>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+(function () {
+    const fileInput = document.getElementById('photoFileInput');
+    const cropperArea = document.getElementById('photoCropperArea');
+    const cropperImg = document.getElementById('cropperImage');
+    const saveBtn = document.getElementById('photoSaveBtn');
+    let cropper = null;
+
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    const MAX_SIZE_BYTES = 8 * 1024 * 1024;
+
+    if (!fileInput) return;
+
+    fileInput.addEventListener('change', function () {
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            alert('Непідтримуваний формат. Дозволені: JPEG, PNG, WEBP.');
+            fileInput.value = '';
+            return;
+        }
+        if (file.size > MAX_SIZE_BYTES) {
+            alert('Файл завеликий (' + (file.size / 1024 / 1024).toFixed(1) + ' МБ). Максимум - 8 МБ.');
+            fileInput.value = '';
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            cropperImg.src = e.target.result;
+            cropperArea.classList.remove('d-none');
+            saveBtn.classList.remove('d-none');
+            if (cropper) cropper.destroy();
+            cropper = new Cropper(cropperImg, {
+                aspectRatio: 3 / 4,
+                viewMode: 1,
+                autoCropArea: 0.9,
+                background: false,
+            });
+        };
+        reader.readAsDataURL(file);
+    });
+
+    saveBtn.addEventListener('click', function () {
+        if (!cropper) return;
+        const data = cropper.getData(true);
+        const formData = new FormData();
+        formData.append('photo_file', fileInput.files[0]);
+        formData.append('crop_x', data.x);
+        formData.append('crop_y', data.y);
+        formData.append('crop_w', data.width);
+        formData.append('crop_h', data.height);
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
+
+        fetch("{{ url_for('admin.pending_student_photo', pending_id=row.id) }}", {
+            method: 'POST',
+            body: formData,
+        }).then(function (resp) {
+            window.location.href = resp.url || window.location.href;
+        }).catch(function () {
+            alert('Не вдалося зберегти фото. Спробуйте ще раз.');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото';
+        });
+    });
+})();
+</script>
+{% endblock %}

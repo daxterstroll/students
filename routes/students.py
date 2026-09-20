@@ -19,7 +19,7 @@ from routes.utils import logger
 from routes.helpers import current_username
 from werkzeug.utils import secure_filename
 from routes.db import get_db
-from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments, program_track_condition, apply_track_overrides
+from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments, program_track_condition, apply_track_overrides, get_attachments
 from routes.gen_docx import gen_doc
 from routes import office_editor
 import sqlite3
@@ -417,7 +417,15 @@ def student_details(student_id):
         WHERE ed.student_id = ?
         ORDER BY ed.completion_date DESC
     """, (student_id,)).fetchall()
-    
+    education_docs = [dict(d) for d in education_docs]
+    for d in education_docs:
+        d['attachments'] = get_attachments(conn, 'education_document', d['id'])
+
+    # Файли, прикріплені до самого студента без прив'язки до
+    # конкретного документа (напр. зі сканів заявки на реєстрацію,
+    # якщо там не було вказано вид документа).
+    student_attachments = get_attachments(conn, 'student', student_id)
+
     study_periods = conn.execute("""
         SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
         FROM student_study_periods
@@ -438,6 +446,7 @@ def student_details(student_id):
         coursework_data=coursework_data,
         attestation_data=attestation_data,
         education_docs=education_docs,
+        student_attachments=student_attachments,
         study_periods=study_periods
     )
 
@@ -974,6 +983,30 @@ def delete_student(student_id):
         return redirect(url_for('students.student_list'))
 
     try:
+        # Якщо студента створено підтвердженням заявки з публічної
+        # анкети (routes/public_apply.py), заявка досі посилається на
+        # нього через resulting_student_id - без цього рядка видалення
+        # студента впало б з помилкою зовнішнього ключа. Саму заявку
+        # (історію) не чіпаємо, лише прибираємо посилання на студента,
+        # якого більше не існує.
+        conn.execute("UPDATE pending_students SET resulting_student_id = NULL WHERE resulting_student_id = ?", (student_id,))
+
+        # Файли (скани документів про освіту + загальні вкладення
+        # студента) з диска - інакше самі записи прибрались би разом з
+        # education_documents/students, а файли лишились би сміттям.
+        doc_ids = [r[0] for r in conn.execute("SELECT id FROM education_documents WHERE student_id = ?", (student_id,)).fetchall()]
+        all_attachments = list(get_attachments(conn, 'student', student_id))
+        for doc_id in doc_ids:
+            all_attachments.extend(get_attachments(conn, 'education_document', doc_id))
+        for att in all_attachments:
+            att_path = os.path.join('static', att['file_path'])
+            if os.path.exists(att_path):
+                os.remove(att_path)
+        conn.execute("DELETE FROM attachments WHERE entity_type='student' AND entity_id=?", (student_id,))
+        if doc_ids:
+            placeholders = ','.join('?' for _ in doc_ids)
+            conn.execute(f"DELETE FROM attachments WHERE entity_type='education_document' AND entity_id IN ({placeholders})", doc_ids)
+
         conn.execute("""
             DELETE FROM foreign_education_docs
             WHERE education_doc_id IN (SELECT id FROM education_documents WHERE student_id = ?)
@@ -990,7 +1023,7 @@ def delete_student(student_id):
             current_username(),
             f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
-            details="каскадне видалення: military, grades, activity_grades, education_documents, diplomas"
+            details="каскадне видалення: military, grades, activity_grades, education_documents, diplomas, вкладення"
         )
     except Exception as e:
         conn.rollback()
