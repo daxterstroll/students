@@ -2668,6 +2668,8 @@ def pending_student_review(pending_id):
                 'phone', 'phone_backup', 'email',
                 'document_type', 'document_series', 'document_number', 'document_institution',
                 'document_country', 'document_date',
+                'passport_document_type', 'passport_series', 'passport_number', 'passport_issued_by',
+                'passport_issue_date', 'passport_valid_until', 'passport_unique_number',
                 'military_registration_number_drpvr', 'military_registration_document', 'military_issued_vod',
                 'military_specialty_number', 'military_rank', 'military_address',
                 'military_change_credentials', 'military_change_reason',
@@ -2711,7 +2713,12 @@ def pending_student_review(pending_id):
                 att_abs = os.path.join('static', att['file_path'])
                 if os.path.exists(att_abs):
                     os.remove(att_abs)
+            for att in get_attachments(conn, 'pending_student_passport', pending_id):
+                att_abs = os.path.join('static', att['file_path'])
+                if os.path.exists(att_abs):
+                    os.remove(att_abs)
             conn.execute("DELETE FROM attachments WHERE entity_type='pending_student' AND entity_id=?", (pending_id,))
+            conn.execute("DELETE FROM attachments WHERE entity_type='pending_student_passport' AND entity_id=?", (pending_id,))
             conn.execute("DELETE FROM pending_students WHERE id=?", (pending_id,))
             conn.commit()
             log_action(current_username(), f"видалив заявку на реєстрацію: {row['last_name_UA']} {row['first_name_UA']} (заявка ID {pending_id})")
@@ -2783,6 +2790,26 @@ def pending_student_review(pending_id):
                 # скани, - лишаємо їх загальними вкладеннями студента.
                 conn.execute(
                     "UPDATE attachments SET entity_type='student', entity_id=? WHERE entity_type='pending_student' AND entity_id=?",
+                    (student_id, pending_id)
+                )
+
+            if row['passport_number']:
+                cur_passport = conn.execute("""
+                    INSERT INTO passport_documents (
+                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    student_id, row['passport_document_type'] or 'Паспорт (книжка)', row['passport_series'],
+                    row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
+                    row['passport_valid_until'], row['passport_unique_number'],
+                ))
+                conn.execute(
+                    "UPDATE attachments SET entity_type='passport_document', entity_id=? WHERE entity_type='pending_student_passport' AND entity_id=?",
+                    (cur_passport.lastrowid, pending_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE attachments SET entity_type='student', entity_id=? WHERE entity_type='pending_student_passport' AND entity_id=?",
                     (student_id, pending_id)
                 )
 
@@ -2889,6 +2916,30 @@ def pending_student_review(pending_id):
                 (existing_id, pending_id)
             )
 
+            passport_id_for_scans = None
+            if request.form.get('add_passport') and row['passport_number']:
+                cur_passport = conn.execute("""
+                    INSERT INTO passport_documents (
+                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    existing_id, row['passport_document_type'] or 'Паспорт (книжка)', row['passport_series'],
+                    row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
+                    row['passport_valid_until'], row['passport_unique_number'],
+                ))
+                passport_id_for_scans = cur_passport.lastrowid
+                updated_parts.append('паспортні дані (додано як новий запис)')
+
+            if passport_id_for_scans:
+                conn.execute(
+                    "UPDATE attachments SET entity_type='passport_document', entity_id=? WHERE entity_type='pending_student_passport' AND entity_id=?",
+                    (passport_id_for_scans, pending_id)
+                )
+            conn.execute(
+                "UPDATE attachments SET entity_type='student', entity_id=? WHERE entity_type='pending_student_passport' AND entity_id=?",
+                (existing_id, pending_id)
+            )
+
             if request.form.get('add_military') and any([
                 row['military_registration_number_drpvr'], row['military_registration_document'], row['military_rank']
             ]):
@@ -2955,11 +3006,13 @@ def pending_student_review(pending_id):
     """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
 
     scans = get_attachments(conn, 'pending_student', pending_id)
+    passport_scans = get_attachments(conn, 'pending_student_passport', pending_id)
 
     conn.close()
     return render_template(
         'admin_pending_student_review.html',
-        row=row, groups=groups, licenses=licenses, existing_student=existing_student, scans=scans,
+        row=row, groups=groups, licenses=licenses, existing_student=existing_student,
+        scans=scans, passport_scans=passport_scans,
     )
 
 

@@ -16,8 +16,16 @@
     {% endif %}
     <div class="col">
         {% if scans %}
-        <div class="small text-muted mb-1">Скановані копії документів:</div>
+        <div class="small text-muted mb-1">Скановані копії документа про освіту:</div>
         {% for s in scans %}
+        <a href="{{ url_for('static', filename=s.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+            <i class="bi bi-file-earmark-arrow-down"></i> {{ s.original_name or ('скан ' ~ loop.index) }}
+        </a>
+        {% endfor %}
+        {% endif %}
+        {% if passport_scans %}
+        <div class="small text-muted mb-1 mt-2">Скановані копії паспорта:</div>
+        {% for s in passport_scans %}
         <a href="{{ url_for('static', filename=s.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
             <i class="bi bi-file-earmark-arrow-down"></i> {{ s.original_name or ('скан ' ~ loop.index) }}
         </a>
@@ -79,6 +87,12 @@
             <div class="form-check mb-2">
                 <input type="checkbox" name="add_document" id="add_document" class="form-check-input">
                 <label for="add_document" class="form-check-label">Додати документ про освіту з цієї заявки: {{ row.document_type or '' }} №{{ row.document_number or '' }} (додається як НОВИЙ запис, наявні документи не чіпає)</label>
+            </div>
+            {% endif %}
+            {% if row.passport_number %}
+            <div class="form-check mb-2">
+                <input type="checkbox" name="add_passport" id="add_passport" class="form-check-input">
+                <label for="add_passport" class="form-check-label">Додати паспортні дані з цієї заявки: {{ row.passport_document_type or '' }} №{{ row.passport_number or '' }} (додається як НОВИЙ запис, наявні паспортні дані не чіпає)</label>
             </div>
             {% endif %}
             {% if row.military_registration_number_drpvr or row.military_registration_document or row.military_rank %}
@@ -185,6 +199,43 @@
             <div class="col-md-4">
                 <label class="form-label">Дата видачі</label>
                 <input type="text" name="document_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.document_date or '' }}">
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">Паспортні дані</div>
+        <div class="card-body row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Тип документа</label>
+                <select name="passport_document_type" id="passport_doctype_field" class="form-select">
+                    <option value="Паспорт (книжка)" {% if row.passport_document_type == 'Паспорт (книжка)' or not row.passport_document_type %}selected{% endif %}>Паспорт (книжка)</option>
+                    <option value="ID-картка" {% if row.passport_document_type == 'ID-картка' %}selected{% endif %}>ID-картка</option>
+                </select>
+            </div>
+            <div class="col-md-2" id="passport_series_field_wrap">
+                <label class="form-label">Серія</label>
+                <input type="text" name="passport_series" class="form-control" value="{{ row.passport_series or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Номер</label>
+                <input type="text" name="passport_number" class="form-control" value="{{ row.passport_number or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Ким видано</label>
+                <input type="text" name="passport_issued_by" class="form-control" value="{{ row.passport_issued_by or '' }}">
+            </div>
+            <div class="col-md-4" id="passport_unique_field_wrap">
+                <label class="form-label">Номер запису в ЄДДР</label>
+                <input type="text" name="passport_unique_number" class="form-control" value="{{ row.passport_unique_number or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Дата видачі</label>
+                <input type="text" name="passport_issue_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.passport_issue_date or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Дійсний до</label>
+                <input type="text" name="passport_valid_until" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.passport_valid_until or '' }}">
             </div>
         </div>
     </div>
@@ -363,6 +414,20 @@
             saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото';
         });
     });
+})();
+
+(function () {
+    const sel = document.getElementById('passport_doctype_field');
+    const seriesWrap = document.getElementById('passport_series_field_wrap');
+    const uniqueWrap = document.getElementById('passport_unique_field_wrap');
+    if (!sel) return;
+    function sync() {
+        const isIdCard = sel.value === 'ID-картка';
+        seriesWrap.style.display = isIdCard ? 'none' : '';
+        uniqueWrap.style.display = isIdCard ? '' : 'none';
+    }
+    sel.addEventListener('change', sync);
+    sync();
 })();
 </script>
 {% endblock %}
