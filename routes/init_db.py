@@ -224,7 +224,7 @@ CREATE TABLE IF NOT EXISTS "users" (
 	"permissions"	TEXT DEFAULT '[]',
 	PRIMARY KEY("id" AUTOINCREMENT)
 );
-CREATE TABLE accreditations (
+CREATE TABLE IF NOT EXISTS accreditations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     degree TEXT NOT NULL,          
     specialty TEXT NOT NULL,       
@@ -311,6 +311,55 @@ CREATE TABLE IF NOT EXISTS "qualification_names" (
 
 -- Накази про переведення на курс. Один наказ зазвичай охоплює
 -- одразу декілька груп (окремо в course_transfer_order_groups).
+CREATE TABLE IF NOT EXISTS "pending_students" (
+    "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+    "created_at" TEXT DEFAULT (datetime('now','localtime')),
+    "submitted_ip" TEXT,
+    "photo_path" TEXT,
+    "last_name_UA" TEXT NOT NULL,
+    "first_name_UA" TEXT NOT NULL,
+    "middle_name_UA" TEXT,
+    "last_name_ENG" TEXT,
+    "first_name_ENG" TEXT,
+    "birth_date" TEXT,
+    "phone" TEXT,
+    "phone_backup" TEXT,
+    "email" TEXT,
+    "document_type" TEXT,
+    "document_series" TEXT,
+    "document_number" TEXT,
+    "document_institution" TEXT,
+    "document_country" TEXT,
+    "document_date" TEXT,
+    "is_foreign_document" INTEGER NOT NULL DEFAULT 0,
+    "foreign_reference_number" TEXT,
+    "foreign_reference_institution" TEXT,
+    "foreign_reference_country" TEXT,
+    "foreign_reference_issue_date" TEXT,
+    "recognition_certificate_number" TEXT,
+    "recognition_issuer" TEXT,
+    "recognition_date" TEXT,
+    "reduced_program_claim" INTEGER NOT NULL DEFAULT 0,
+    "reduced_program_specialty" TEXT,
+    "reduced_program_institution" TEXT,
+    "military_registration_number_drpvr" TEXT,
+    "military_registration_document" TEXT,
+    "military_issued_vod" TEXT,
+    "military_specialty_number" TEXT,
+    "military_rank" TEXT,
+    "military_being_registered" INTEGER NOT NULL DEFAULT 0,
+    "military_address" TEXT,
+    "military_change_credentials" TEXT,
+    "military_change_reason" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'new' CHECK("status" IN ('new', 'approved', 'rejected')),
+    "reviewed_by" TEXT,
+    "reviewed_at" TEXT,
+    "review_note" TEXT,
+    "resulting_student_id" INTEGER,
+    FOREIGN KEY("resulting_student_id") REFERENCES "students"("id") ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_pending_students_status ON pending_students(status);
+
 CREATE TABLE IF NOT EXISTS "attachments" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_type TEXT NOT NULL,   -- 'course_transfer_order' | 'expulsion_order' | 'frozen_student'

@@ -1,0 +1,82 @@
+{% extends "layout.html" %}
+{% import '_macros.html' as ui %}
+{% block title %}Заявки на реєстрацію{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-person-plus', 'Заявки на реєстрацію', 'Заявки з публічної анкети самореєстрації (/apply)') }}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'new' %}active{% endif %}" href="{{ url_for('admin.pending_students', status='new') }}">
+            Нові <span class="badge bg-warning text-dark ms-1">{{ counts.new }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'approved' %}active{% endif %}" href="{{ url_for('admin.pending_students', status='approved') }}">
+            Підтверджені <span class="badge bg-success ms-1">{{ counts.approved }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'rejected' %}active{% endif %}" href="{{ url_for('admin.pending_students', status='rejected') }}">
+            Відхилені <span class="badge bg-secondary ms-1">{{ counts.rejected }}</span>
+        </a>
+    </li>
+</ul>
+
+{% if not rows %}
+    {{ ui.empty_state('bi-inbox', 'Заявок у цій вкладці немає') }}
+{% else %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Подано</th>
+                    <th>ПІБ</th>
+                    <th>Дата народження</th>
+                    <th>Телефон</th>
+                    {% if status_filter != 'new' %}<th>Опрацював(ла)</th>{% endif %}
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td class="small text-muted">{{ r.created_at }}</td>
+                    <td>
+                        {{ r.last_name_UA }} {{ r.first_name_UA }} {{ r.middle_name_UA or '' }}
+                        {% if r.photo_path %}<i class="bi bi-image text-muted" title="Є фото"></i>{% endif %}
+                        {% if r.scans_count %}<i class="bi bi-paperclip text-muted" title="{{ r.scans_count }} скан(ів)"></i>{% endif %}
+                        {% if r.id in duplicates_by_id %}
+                        <span class="badge bg-danger-subtle text-danger-emphasis" title="Можливий дублікат">
+                            <i class="bi bi-exclamation-triangle"></i> дублікат?
+                        </span>
+                        {% endif %}
+                        {% if r.reduced_program_claim %}
+                        <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-signpost-split"></i> скорочена?</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ r.birth_date }}</td>
+                    <td>{{ r.phone }}</td>
+                    {% if status_filter != 'new' %}<td class="small">{{ r.reviewed_by }}, {{ r.reviewed_at }}</td>{% endif %}
+                    <td class="text-end">
+                        <a href="{{ url_for('admin.pending_student_review', pending_id=r.id) }}" class="btn btn-sm btn-primary">
+                            <i class="bi bi-eye"></i> Переглянути
+                        </a>
+                        <form method="post" action="{{ url_for('admin.pending_student_review', pending_id=r.id) }}" class="d-inline"
+                              onsubmit="return confirm('Видалити цю заявку без сліду?{{ ' Студента (якщо вже створений) це НЕ видалить.' if r.status == 'approved' else '' }}');">
+                            <input type="hidden" name="action" value="delete">
+                            <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

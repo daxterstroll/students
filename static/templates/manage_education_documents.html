@@ -67,7 +67,7 @@
             <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати документ про освіту</h5>
         </div>
         <div class="card-body">
-    <form id="addDocumentForm" method="POST">
+    <form id="addDocumentForm" method="POST" enctype="multipart/form-data">
         <input type="hidden" name="student_id" id="hidden_student_id" value="{{ student.id if student else '' }}">
 
         <div class="row g-3">
@@ -102,6 +102,11 @@
             <div class="col-md-12">
                 <label for="completion_date" class="form-label">Дата закінчення</label>
                 <input type="text" name="completion_date" id="completion_date" class="form-control" placeholder="Напр., 19.06.2005 або 19/06/2005" required>
+            </div>
+            <div class="col-md-12">
+                <label for="document_scans" class="form-label">Скановані копії (необов'язково)</label>
+                <input type="file" name="document_scans" id="document_scans" class="form-control" accept="image/*,.pdf" multiple>
+                <div class="form-text">Можна кілька файлів (фото сторінок або PDF).</div>
             </div>
 
             <!-- Додаткові поля для іноземних документів -->
@@ -185,6 +190,7 @@
                                             <th>Студент</th>
                                             <th>Тип документа</th>
                                             <th>Номер</th>
+                                            <th style="width: 40px;"></th>
                                             <th style="width: 180px;">Дії</th>
                                         </tr>
                                     </thead>
@@ -194,6 +200,11 @@
                                                 <td>{{ doc.last_name_UA }} {{ doc.first_name_UA }}</td>
                                                 <td>{{ doc.document_type }}</td>
                                                 <td>{{ doc.document_number }}</td>
+                                                <td>
+                                                    {% if doc.attachments %}
+                                                    <i class="bi bi-paperclip text-muted" title="{{ doc.attachments|length }} скан(ів)"></i>
+                                                    {% endif %}
+                                                </td>
                                                 <td>
                                                     <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#detailsModal{{ doc.doc_id }}">
                                                         <i class="bi bi-info-circle"></i>
@@ -245,6 +256,16 @@
                                                                     <div class="col-md-6"><strong>Issuer (EN):</strong> {{ doc.recognition_issuer_en }}</div>
                                                                     <div class="col-12"><strong>Дата видачі свідоцтва:</strong> {{ doc.recognition_date }}</div>
                                                                 {% endif %}
+                                                                {% if doc.attachments %}
+                                                                    <div class="col-12 mt-3 border-top pt-3"><h6>Скановані копії</h6></div>
+                                                                    <div class="col-12">
+                                                                        {% for a in doc.attachments %}
+                                                                        <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                                                            <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                                        </a>
+                                                                        {% endfor %}
+                                                                    </div>
+                                                                {% endif %}
                                                             </div>
                                                         </div>
                                                         <div class="modal-footer">
@@ -262,7 +283,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <form method="POST" action="{{ url_for('admin.manage_education_documents') }}">
+                                                            <form method="POST" action="{{ url_for('admin.manage_education_documents') }}" enctype="multipart/form-data">
                                                                 <input type="hidden" name="action" value="edit">
                                                                 <input type="hidden" name="doc_id" value="{{ doc.doc_id }}">
 <div class="row g-3">
@@ -364,6 +385,27 @@
 																		</div>
 																	</div>																	
 																	{% endif %}
+                                                                <div class="col-12 mt-3 border-top pt-3">
+                                                                    <label class="form-label">Скановані копії</label>
+                                                                    {% if doc.attachments %}
+                                                                    <div class="mb-2">
+                                                                        {% for a in doc.attachments %}
+                                                                        <span class="badge bg-secondary d-inline-flex align-items-center gap-1 me-1 mb-1 p-2">
+                                                                            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="text-white text-decoration-none">
+                                                                                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                                            </a>
+                                                                            <button type="button" class="btn-close btn-close-white" style="font-size:.6rem;"
+                                                                                    title="Видалити файл"
+                                                                                    onclick="deleteAttachment({{ a.id }}, '{{ url_for('admin.manage_education_documents') }}')"></button>
+                                                                        </span>
+                                                                        {% endfor %}
+                                                                    </div>
+                                                                    {% else %}
+                                                                    <div class="small text-muted mb-2">Немає доданих сканів.</div>
+                                                                    {% endif %}
+                                                                    <input type="file" name="document_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
+                                                                    <div class="form-text">Додати ще файли (не видаляє вже наявні).</div>
+                                                                </div>
                                                                 <div class="col-12 mt-3">
                                                                     <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
                                                                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
@@ -489,5 +531,16 @@
             }
         {% endif %}
     });
+
+    function deleteAttachment(attachmentId, actionUrl) {
+        if (!confirm('Видалити цей файл?')) return;
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = actionUrl;
+        form.innerHTML = '<input type="hidden" name="action" value="delete_attachment">' +
+                          '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
 </script>
 {% endblock %}

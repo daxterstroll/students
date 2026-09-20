@@ -1,0 +1,92 @@
+{% extends "layout.html" %}
+{% import '_macros.html' as ui %}
+{% block title %}Вивантаження фото студентів{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-images', 'Вивантаження фото студентів', 'Завантажте фото всіх студентів групи (або обраних) одним ZIP-архівом, готовим для друку студентських квитків') }}
+
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label">Група</label>
+                <select name="group_id" class="form-select" onchange="this.form.submit()">
+                    <option value="">— оберіть групу —</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}" {% if g.id == selected_group_id %}selected{% endif %}>{{ g.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if selected_group_id %}
+    {% if not students %}
+        {{ ui.empty_state('bi-person-x', 'У цій групі немає студентів') }}
+    {% else %}
+    <form method="post" action="{{ url_for('admin.export_photos') }}">
+        <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">Обрати всіх</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">Зняти всі</button>
+                </div>
+                <div class="small text-muted">
+                    {% set with_photo = students|selectattr('photo')|list %}
+                    З фото: {{ with_photo|length }} з {{ students|length }}
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th style="width:60px;">Фото</th>
+                            <th>ПІБ</th>
+                            <th>Файл у архіві</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in students %}
+                        {% set name_parts = [s.last_name_UA, s.first_name_UA] %}
+                        {% if s.middle_name_UA %}{% set _ = name_parts.append(s.middle_name_UA) %}{% endif %}
+                        <tr class="{% if not s.photo %}text-muted{% endif %}">
+                            <td>
+                                <input type="checkbox" class="form-check-input student-checkbox" name="student_ids" value="{{ s.id }}"
+                                       {% if s.photo %}checked{% else %}disabled title="Немає завантаженого фото"{% endif %}>
+                            </td>
+                            <td>
+                                {% if s.photo %}
+                                <img src="{{ url_for('static', filename=s.photo) }}" alt="" class="rounded border" style="width:36px; height:48px; object-fit:cover;">
+                                {% else %}
+                                <i class="bi bi-person-badge fs-4"></i>
+                                {% endif %}
+                            </td>
+                            <td>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</td>
+                            <td class="small text-muted">
+                                {% if s.photo %}{{ name_parts|join('_') }}.jpg{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer">
+                <button type="submit" class="btn btn-primary"><i class="bi bi-file-earmark-zip me-1"></i> Завантажити ZIP</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+{% endif %}
+
+</div>
+
+<script>
+function toggleAll(state) {
+    document.querySelectorAll('.student-checkbox:not(:disabled)').forEach(cb => cb.checked = state);
+}
+</script>
+{% endblock %}
