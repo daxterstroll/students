@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Посилання недійсне — Європейський університет</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{ --ink:#0e1b2c; --ink-2:#16283f; --paper:#f4efe3; --paper-2:#fffdf8; --muted:#8a8071;
+    --brass-dark:#a5822f; --warn:#a5822f; --shadow:0 24px 60px -20px rgba(14,27,44,.35), 0 6px 18px rgba(14,27,44,.07); }
+*{ box-sizing:border-box; }
+body{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family:'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:var(--ink-2); padding:1.5rem;
+    background: radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.16), transparent 60%),
+                radial-gradient(900px 500px at 110% 110%, rgba(14,27,44,.10), transparent 55%),
+                linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%); }
+.card{ max-width:440px; width:100%; text-align:center; background:var(--paper-2); border-radius:22px; box-shadow:var(--shadow);
+    border:1px solid rgba(255,255,255,.6); padding:2.6rem 2rem; }
+.icon-wrap{ width:74px; height:74px; margin:0 auto 1.4rem; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 25%, #e9cf8f, var(--brass-dark)); box-shadow:0 10px 26px -6px rgba(165,130,47,.5); font-size:2rem; }
+h1{ margin:0 0 .6rem; font-size:1.4rem; font-weight:800; color:var(--ink); }
+p{ margin:0; color:var(--muted); font-size:.95rem; line-height:1.55; }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="icon-wrap">⏳</div>
+    {% if reason == 'expired' %}
+        <h1>Строк дії посилання минув</h1>
+        <p>Це посилання діяло обмежений час. Зверніться до деканату, щоб отримати нове.</p>
+    {% elif reason == 'used' %}
+        <h1>Посилання вже використано</h1>
+        <p>Дані за цим посиланням уже надіслано раніше. Якщо потрібно щось виправити — зверніться до деканату.</p>
+    {% else %}
+        <h1>Посилання недійсне</h1>
+        <p>Перевірте, чи правильно скопійоване посилання, або зверніться до деканату.</p>
+    {% endif %}
+</div>
+</body>
+</html>

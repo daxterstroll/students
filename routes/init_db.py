@@ -325,6 +325,26 @@ CREATE TABLE IF NOT EXISTS "qualification_names" (
 
 -- Накази про переведення на курс. Один наказ зазвичай охоплює
 -- одразу декілька груп (окремо в course_transfer_order_groups).
+CREATE TABLE IF NOT EXISTS "update_requests" (
+    "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+    "token" TEXT NOT NULL UNIQUE,
+    "student_id" INTEGER NOT NULL,
+    "allowed_fields" TEXT NOT NULL,
+    "created_at" TEXT DEFAULT (datetime('now','localtime')),
+    "created_by" TEXT,
+    "expires_at" TEXT NOT NULL,
+    "status" TEXT NOT NULL DEFAULT 'pending' CHECK("status" IN ('pending','submitted','approved','rejected')),
+    "submitted_data" TEXT,
+    "photo_path" TEXT,
+    "submitted_at" TEXT,
+    "reviewed_by" TEXT,
+    "reviewed_at" TEXT,
+    "review_note" TEXT,
+    FOREIGN KEY("student_id") REFERENCES "students"("id") ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_update_requests_token ON update_requests(token);
+CREATE INDEX IF NOT EXISTS idx_update_requests_student ON update_requests(student_id);
+
 CREATE TABLE IF NOT EXISTS "pending_students" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
     "created_at" TEXT DEFAULT (datetime('now','localtime')),

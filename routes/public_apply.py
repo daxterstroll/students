@@ -215,6 +215,11 @@ def apply():
     if passport_scan_error:
         return render_template('public_apply.html', error=passport_scan_error, form=request.form, **_birth_date_bounds())
 
+    military_scan_files = [sf for sf in request.files.getlist('military_scans') if sf and sf.filename]
+    military_scan_error = _validate_scan_files(military_scan_files, MAX_SCAN_FILES, " військового обліку")
+    if military_scan_error:
+        return render_template('public_apply.html', error=military_scan_error, form=request.form, **_birth_date_bounds())
+
     # "Видано за кордоном", "скорочена програма" і "перебуває на
     # обліку" студент на публічній формі більше не позначає сам (ці
     # нюанси визначає адмін під час обробки заявки, дивлячись у сам
@@ -291,6 +296,8 @@ def apply():
         save_multiple_attachments(conn, 'pending_student', pending_id, scan_files, 'pending_students')
     if passport_scan_files:
         save_multiple_attachments(conn, 'pending_student_passport', pending_id, passport_scan_files, 'pending_students')
+    if military_scan_files:
+        save_multiple_attachments(conn, 'pending_student_military', pending_id, military_scan_files, 'pending_students')
 
     conn.commit()
     conn.close()

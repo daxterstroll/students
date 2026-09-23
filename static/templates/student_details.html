@@ -61,10 +61,16 @@
             <div class="card h-100 shadow-sm border-0" style="border-radius: 16px; overflow: hidden;">
                 <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-4 pb-3">
                     <h4 class="mb-0"><i class="bi bi-info-circle-fill me-2" style="color: var(--brass);"></i>Основна інформація</h4>
-                    <a href="{{ url_for('students.edit_student', student_id=student.id) }}" 
-                       class="btn btn-sm btn-outline-primary">
-                        <i class="bi bi-pencil"></i> Редагувати
-                    </a>
+                    <div class="d-flex gap-2">
+                        <a href="{{ url_for('students.generate_update_link', student_id=student.id) }}"
+                           class="btn btn-sm btn-outline-secondary" title="Створити посилання для студента">
+                            <i class="bi bi-link-45deg"></i> Посилання для оновлення
+                        </a>
+                        <a href="{{ url_for('students.edit_student', student_id=student.id) }}"
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-pencil"></i> Редагувати
+                        </a>
+                    </div>
                 </div>
                 <div class="card-body pt-0">
                     <table class="table table-borderless table-sm">
@@ -166,6 +172,16 @@
                                         <tr><th class="text-muted fw-normal">Військове звання</th><td>{{ military.military_rank | default('-') }}</td></tr>
                                     </tbody>
                                 </table>
+                                {% if military_attachments %}
+                                <div class="mt-2">
+                                    <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
+                                    {% for a in military_attachments %}
+                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                    </a>
+                                    {% endfor %}
+                                </div>
+                                {% endif %}
                             {% else %}
                                 <p class="text-muted text-center py-4">Військові дані відсутні</p>
                             {% endif %}

@@ -1,0 +1,165 @@
+{% extends "layout.html" %}
+{% import '_macros.html' as ui %}
+{% block title %}Заявка на оновлення даних{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-link-45deg', row.last_name_UA + ' ' + row.first_name_UA, 'Заявка №' + row.id|string + ' - подано ' + (row.submitted_at or row.created_at)) }}
+
+<a href="{{ url_for('admin.update_requests') }}" class="btn btn-sm btn-outline-secondary mb-3"><i class="bi bi-arrow-left"></i> До списку заявок</a>
+
+{% if row.status != 'submitted' %}
+<div class="alert alert-secondary">
+    Заявка вже {{ 'застосована' if row.status == 'approved' else ('відхилена' if row.status == 'rejected' else 'очікує заповнення студентом') }}
+    {% if row.reviewed_by %}({{ row.reviewed_by }}, {{ row.reviewed_at }}){% endif %}.
+    {% if row.review_note %}Примітка: {{ row.review_note }}{% endif %}
+</div>
+{% endif %}
+
+{% if row.status == 'submitted' %}
+<form method="post">
+    <input type="hidden" name="action" value="apply">
+
+    {% if 'last_name_UA' in allowed_fields or 'first_name_UA' in allowed_fields or 'middle_name_UA' in allowed_fields
+        or 'phone' in allowed_fields or 'phone_backup' in allowed_fields or 'email' in allowed_fields
+        or 'tax_id' in allowed_fields or 'edebo_code' in allowed_fields %}
+    <div class="card mb-3">
+        <div class="card-header">Основні дані</div>
+        <div class="card-body">
+            {% for key, label in [('last_name_UA','Прізвище'), ('first_name_UA', "Ім'я"), ('middle_name_UA','По батькові'),
+                                   ('phone','Телефон'), ('phone_backup','Резервний телефон'), ('email','Email'),
+                                   ('tax_id','Ідентифікаційний код'), ('edebo_code','Код ЄДЕБО')] %}
+            {% if key in allowed_fields %}
+            <div class="form-check mb-2">
+                <input type="checkbox" name="apply_{{ key }}" id="apply_{{ key }}" class="form-check-input" checked>
+                <label for="apply_{{ key }}" class="form-check-label">
+                    <strong>{{ label }}:</strong> {{ submitted.get(key) or '(порожньо)' }}
+                </label>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if 'photo' in allowed_fields and row.photo_path %}
+    <div class="card mb-3">
+        <div class="card-header">Фото</div>
+        <div class="card-body d-flex align-items-center gap-3">
+            <img src="{{ url_for('static', filename=row.photo_path) }}" class="rounded border" style="width:90px; height:120px; object-fit:cover;">
+            <div class="form-check">
+                <input type="checkbox" name="apply_photo" id="apply_photo" class="form-check-input" checked>
+                <label for="apply_photo" class="form-check-label">Замінити фото студента цим</label>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if 'passport' in allowed_fields and submitted.get('passport') %}
+    <div class="card mb-3">
+        <div class="card-header">Паспортні дані</div>
+        <div class="card-body">
+            <div class="form-check mb-2">
+                <input type="checkbox" name="apply_passport" id="apply_passport" class="form-check-input" checked>
+                <label for="apply_passport" class="form-check-label">Додати як новий запис (наявні паспортні дані не чіпає)</label>
+            </div>
+            <table class="table table-sm table-borderless mb-2">
+                <tbody>
+                    <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.passport.document_type or '-' }}</td></tr>
+                    <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.passport.series ~ ' ' if submitted.passport.series else '') ~ (submitted.passport.number or '') }}</td></tr>
+                    <tr><th class="text-muted">Ким видано</th><td>{{ submitted.passport.issued_by or '-' }}</td></tr>
+                    <tr><th class="text-muted">Дата видачі / Дійсний до</th><td>{{ submitted.passport.issue_date or '-' }} / {{ submitted.passport.valid_until or '-' }}</td></tr>
+                    {% if submitted.passport.unique_number %}<tr><th class="text-muted">Номер запису в ЄДДР</th><td>{{ submitted.passport.unique_number }}</td></tr>{% endif %}
+                </tbody>
+            </table>
+            {% if passport_scans %}
+            <div class="small text-muted mb-1">Скани:</div>
+            {% for a in passport_scans %}
+            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+            </a>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if 'education_document' in allowed_fields and submitted.get('education_document') %}
+    <div class="card mb-3">
+        <div class="card-header">Документ про освіту</div>
+        <div class="card-body">
+            <div class="form-check mb-2">
+                <input type="checkbox" name="apply_education_document" id="apply_education_document" class="form-check-input" checked>
+                <label for="apply_education_document" class="form-check-label">Додати як новий запис (наявні документи не чіпає)</label>
+            </div>
+            <table class="table table-sm table-borderless mb-2">
+                <tbody>
+                    <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.education_document.document_type or '-' }}</td></tr>
+                    <tr><th class="text-muted">Номер</th><td>{{ submitted.education_document.number or '-' }}</td></tr>
+                    <tr><th class="text-muted">Заклад</th><td>{{ submitted.education_document.institution or '-' }}</td></tr>
+                    <tr><th class="text-muted">Країна / дата закінчення</th><td>{{ submitted.education_document.country or '-' }} / {{ submitted.education_document.completion_date or '-' }}</td></tr>
+                </tbody>
+            </table>
+            {% if education_scans %}
+            <div class="small text-muted mb-1">Скани:</div>
+            {% for a in education_scans %}
+            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+            </a>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if 'military' in allowed_fields and submitted.get('military') %}
+    <div class="card mb-3">
+        <div class="card-header">Військові дані</div>
+        <div class="card-body">
+            <div class="form-check mb-2">
+                <input type="checkbox" name="apply_military" id="apply_military" class="form-check-input" checked>
+                <label for="apply_military" class="form-check-label">Оновити наявний запис або створити новий</label>
+            </div>
+            <table class="table table-sm table-borderless mb-2">
+                <tbody>
+                    <tr><th class="text-muted w-25">Номер ДРПВР</th><td>{{ submitted.military.registration_number_of_the_DRPVR or '-' }}</td></tr>
+                    <tr><th class="text-muted">Документ</th><td>{{ submitted.military.military_registration_document or '-' }}</td></tr>
+                    <tr><th class="text-muted">Звання</th><td>{{ submitted.military.military_rank or '-' }}</td></tr>
+                </tbody>
+            </table>
+            {% if military_scans %}
+            <div class="small text-muted mb-1">Скани:</div>
+            {% for a in military_scans %}
+            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+            </a>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-1"></i>Застосувати обране</button>
+</form>
+
+<form method="post" class="mt-3">
+    <input type="hidden" name="action" value="reject">
+    <div class="card border-danger">
+        <div class="card-header bg-danger-subtle">Відхилити заявку</div>
+        <div class="card-body">
+            <textarea name="review_note" class="form-control mb-2" rows="2" placeholder="Примітка (необов'язково)"></textarea>
+            <button type="submit" class="btn btn-outline-danger" onclick="return confirm('Відхилити цю заявку?')"><i class="bi bi-x-circle me-1"></i>Відхилити</button>
+        </div>
+    </div>
+</form>
+{% endif %}
+
+<form method="post" class="mt-3">
+    <input type="hidden" name="action" value="delete">
+    <button type="submit" class="btn btn-sm btn-outline-secondary" onclick="return confirm('Видалити цю заявку без сліду (разом із файлами)?')">
+        <i class="bi bi-trash me-1"></i>Видалити заявку без сліду
+    </button>
+</form>
+
+</div>
+{% endblock %}

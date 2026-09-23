@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Оновлення даних — Європейський університет</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+:root{
+    --ink:#0e1b2c; --ink-2:#16283f; --ink-text:#1f2a3a;
+    --paper:#f4efe3; --paper-2:#fffdf8;
+    --muted:#8a8071;
+    --brass:#c8a24a; --brass-lt:#e9cf8f; --brass-dark:#a5822f;
+    --line:rgba(31,42,58,.13);
+    --danger:#a23b2e; --danger-soft:rgba(162,59,46,.08); --danger-line:rgba(162,59,46,.28);
+    --shadow:0 24px 60px -20px rgba(14,27,44,.35), 0 6px 18px rgba(14,27,44,.07);
+    --radius:20px;
+}
+*{ box-sizing:border-box; }
+html{ scroll-behavior:smooth; }
+body{
+    margin:0; min-height:100vh;
+    font-family:'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color:var(--ink-text);
+    background:
+        radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.16), transparent 60%),
+        radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.10), transparent 55%),
+        linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
+    padding: 0 0 4rem;
+}
+.hero{
+    background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 60%, #1d3450 100%);
+    color:#fff; text-align:center; padding: 3rem 1.5rem 5.5rem; position:relative; overflow:hidden;
+}
+.hero::after{ content:""; position:absolute; left:0; right:0; bottom:-1px; height:60px;
+    background: radial-gradient(80px 30px at 50% 100%, rgba(200,162,74,.35), transparent 70%); }
+.hero-badge{
+    width:64px; height:64px; margin:0 auto 1.1rem; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; font-size:1.8rem;
+    background: linear-gradient(145deg, var(--brass-lt), var(--brass-dark));
+    box-shadow: 0 8px 22px rgba(200,162,74,.45), inset 0 1px 1px rgba(255,255,255,.5);
+    animation: pop .5s cubic-bezier(.34,1.56,.64,1) both;
+}
+.hero h1{ margin:0 0 .35rem; font-size:1.6rem; font-weight:800; letter-spacing:-.01em; }
+.hero p{ margin:0; opacity:.75; font-size:.95rem; font-weight:500; }
+@keyframes pop{ from{ transform:scale(.4); opacity:0; } to{ transform:scale(1); opacity:1; } }
+@keyframes fadeUp{ from{ transform:translateY(18px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+
+.wrap{ max-width:660px; margin: -3.5rem auto 0; padding: 0 1.1rem; position:relative; z-index:2; }
+.card{ background:var(--paper-2); border-radius:var(--radius); box-shadow:var(--shadow); border:1px solid rgba(255,255,255,.6); animation: fadeUp .55s cubic-bezier(.22,1,.36,1) both; }
+.card-body{ padding: 2rem 1.6rem; }
+@media (min-width:640px){ .card-body{ padding: 2.6rem 2.6rem; } }
+
+.intro-note{ font-size:.87rem; color:var(--muted); background:rgba(200,162,74,.10); border:1px solid rgba(200,162,74,.25); border-radius:12px; padding:.8rem 1rem; margin-bottom:1.6rem; }
+.alert-error{ display:flex; gap:.6rem; align-items:flex-start; font-size:.92rem; background:var(--danger-soft); border:1px solid var(--danger-line); color:#7a2b21; border-radius:12px; padding:.9rem 1rem; margin-bottom:1.5rem; }
+
+.section{ margin-top:2.2rem; } .section:first-of-type{ margin-top:0; }
+.section-head{ display:flex; align-items:center; gap:.7rem; margin-bottom:1.1rem; }
+.section-num{ width:30px; height:30px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.85rem; color:#fff; background:linear-gradient(145deg, var(--brass-lt), var(--brass-dark)); box-shadow:0 3px 10px rgba(200,162,74,.4); }
+.section-title{ font-weight:800; font-size:1.05rem; color:var(--ink); }
+.section-sub{ font-size:.83rem; color:var(--muted); margin:-.6rem 0 1rem 2.6rem; }
+
+.grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:.9rem; }
+.col-12{ grid-column:span 12; } .col-6{ grid-column:span 12; }
+@media (min-width:520px){ .col-6{ grid-column:span 6; } }
+
+label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink-2); margin-bottom:.35rem; }
+.f-control{ width:100%; padding:.68rem .9rem; font-size:.97rem; font-family:inherit; color:var(--ink-text); background:#fff; border:1.5px solid var(--line); border-radius:11px; transition: border-color .15s ease, box-shadow .15s ease; }
+.f-control:focus{ outline:none; border-color:var(--brass); box-shadow:0 0 0 4px rgba(200,162,74,.18); }
+.f-hint{ font-size:.78rem; color:var(--muted); margin-top:.35rem; line-height:1.4; }
+
+.file-drop{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; border:1.5px dashed var(--line); border-radius:11px; padding:.7rem .9rem; background:#fbf9f4; }
+.file-drop input[type=file]{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
+.file-btn{ display:inline-flex; align-items:center; gap:.4rem; cursor:pointer; background:var(--ink); color:#fff; font-weight:700; font-size:.82rem; padding:.5rem .9rem; border-radius:8px; white-space:nowrap; }
+.file-name{ font-size:.85rem; color:var(--muted); overflow-wrap:anywhere; }
+.current-photo{ width:64px; height:85px; object-fit:cover; border-radius:8px; border:1.5px solid var(--line); flex:0 0 auto; }
+
+.submit-btn{ width:100%; margin-top:2.2rem; padding:1rem 1.2rem; border:none; border-radius:13px; font-family:inherit; font-size:1.02rem; font-weight:800; color:#241a06; cursor:pointer; background:linear-gradient(135deg, var(--brass-lt), var(--brass) 60%, var(--brass-dark)); box-shadow:0 10px 26px -6px rgba(200,162,74,.55); display:flex; align-items:center; justify-content:center; gap:.55rem; }
+.footnote{ text-align:center; font-size:.82rem; color:var(--muted); margin-top:1.4rem; padding:0 1rem; }
+.hp-field{ position:absolute; left:-9999px; top:-9999px; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+    <div class="hero-badge">✏️</div>
+    <h1>Оновлення ваших даних</h1>
+    <p>Європейський університет</p>
+</div>
+
+<div class="wrap">
+    <div class="card">
+        <div class="card-body">
+
+            {% if error %}
+            <div class="alert-error">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#a23b2e" stroke-width="2"/><path d="M12 7v6" stroke="#a23b2e" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.2" r="1.1" fill="#a23b2e"/></svg>
+                <span>{{ error }}</span>
+            </div>
+            {% endif %}
+
+            <div class="intro-note">
+                Вас, <strong>{{ student.last_name_UA }} {{ student.first_name_UA }}</strong>, попросили оновити частину даних. Заповніть лише те, що бачите нижче — решта картки не змінюється. Після відправки дані перевірить деканат, перш ніж вони потраплять у систему.
+            </div>
+
+            <form method="POST" enctype="multipart/form-data" novalidate>
+                <div class="hp-field" aria-hidden="true">
+                    <label>Сайт</label>
+                    <input type="text" name="website" tabindex="-1" autocomplete="off">
+                </div>
+
+                {% set n = [0] %}
+
+                {% set simple_selected = [] %}
+                {% for key in simple_fields %}
+                    {% if key in allowed_fields %}{% set _ = simple_selected.append(key) %}{% endif %}
+                {% endfor %}
+                {% if simple_selected %}
+                {% set _ = n.append(n.pop() + 1) %}
+                <div class="section">
+                    <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Основні дані</span></div>
+                    <div class="grid">
+                        {% for key in simple_selected %}
+                        <div class="col-12">
+                            <label class="f-label">{{ simple_fields[key] }}</label>
+                            <input type="text" name="{{ key }}" class="f-control" value="{{ form[key] if form else (student[key] or '') }}">
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'photo' in allowed_fields %}
+                {% set _ = n.append(n.pop() + 1) %}
+                <div class="section">
+                    <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Фото 3х4</span></div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <div class="file-drop">
+                                {% if student.photo %}<img src="/static/{{ student.photo }}" class="current-photo" alt="">{% endif %}
+                                <label class="file-btn" for="photo">📷 {{ 'Замінити фото' if student.photo else 'Обрати фото' }}</label>
+                                <span class="file-name" id="photo_name">Файл не обрано</span>
+                                <input type="file" name="photo" id="photo" accept="image/*">
+                            </div>
+                            <div class="f-hint">Система сама обріже фото під формат 3х4. Анфас, на світлому однотонному фоні, без головного убору.</div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'passport' in allowed_fields %}
+                {% set _ = n.append(n.pop() + 1) %}
+                <div class="section">
+                    <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Паспортні дані</span></div>
+                    <div class="section-sub">Паспорт (книжка) або ID-картка.</div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <label class="f-label">Тип документа</label>
+                            <select name="passport_document_type" id="passport_document_type" class="f-control">
+                                <option value="Паспорт (книжка)">Паспорт (книжка)</option>
+                                <option value="ID-картка">ID-картка</option>
+                            </select>
+                        </div>
+                        <div class="col-6" id="passport_series_wrap">
+                            <label class="f-label">Серія (лише для книжки)</label>
+                            <input type="text" name="passport_series" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Номер документа</label>
+                            <input type="text" name="passport_number" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Ким видано</label>
+                            <input type="text" name="passport_issued_by" class="f-control">
+                        </div>
+                        <div class="col-12" id="passport_unique_wrap">
+                            <label class="f-label">Номер запису в ЄДДР (для ID-картки)</label>
+                            <input type="text" name="passport_unique_number" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата видачі</label>
+                            <input type="date" name="passport_issue_date" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дійсний до</label>
+                            <input type="date" name="passport_valid_until" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Скановані копії паспорта</label>
+                            <div class="file-drop">
+                                <label class="file-btn" for="passport_scans">📎 Обрати файли</label>
+                                <span class="file-name" id="passport_scans_name">Файли не обрано</span>
+                                <input type="file" name="passport_scans" id="passport_scans" accept="image/*,.pdf" multiple>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'education_document' in allowed_fields %}
+                {% set _ = n.append(n.pop() + 1) %}
+                <div class="section">
+                    <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Документ про освіту</span></div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <label class="f-label">Вид документа</label>
+                            <input type="text" name="document_type" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Серія</label>
+                            <input type="text" name="document_series" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Номер</label>
+                            <input type="text" name="document_number" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Заклад освіти, що видав документ</label>
+                            <input type="text" name="document_institution" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Країна видачі</label>
+                            <input type="text" name="document_country" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата видачі</label>
+                            <input type="date" name="document_date" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Скановані копії документа</label>
+                            <div class="file-drop">
+                                <label class="file-btn" for="document_scans">📎 Обрати файли</label>
+                                <span class="file-name" id="document_scans_name">Файли не обрано</span>
+                                <input type="file" name="document_scans" id="document_scans" accept="image/*,.pdf" multiple>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if 'military' in allowed_fields %}
+                {% set _ = n.append(n.pop() + 1) %}
+                <div class="section">
+                    <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Військові дані</span></div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <label class="f-label">Реєстраційний номер у ДРПВР</label>
+                            <input type="text" name="military_registration_number_drpvr" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Документ військового обліку (вид та номер)</label>
+                            <input type="text" name="military_registration_document" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата видачі документа</label>
+                            <input type="date" name="military_issued_vod" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Номер ВОС</label>
+                            <input type="text" name="military_specialty_number" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Військове звання</label>
+                            <input type="text" name="military_rank" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Адреса реєстрації/проживання</label>
+                            <input type="text" name="military_address" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Скановані копії військового документа</label>
+                            <div class="file-drop">
+                                <label class="file-btn" for="military_scans">📎 Обрати файли</label>
+                                <span class="file-name" id="military_scans_name">Файли не обрано</span>
+                                <input type="file" name="military_scans" id="military_scans" accept="image/*,.pdf" multiple>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <button type="submit" class="submit-btn">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M4 12l6 6L20 6" stroke="#241a06" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Надіслати на перевірку
+                </button>
+            </form>
+        </div>
+    </div>
+    <p class="footnote">Дані спершу перевірить деканат — вони не потраплять у систему автоматично.</p>
+</div>
+
+<script>
+    function bindFileLabel(inputId, labelId) {
+        const input = document.getElementById(inputId);
+        const label = document.getElementById(labelId);
+        if (!input || !label) return;
+        input.addEventListener('change', function () {
+            if (!input.files || input.files.length === 0) { label.textContent = 'Файли не обрано'; }
+            else if (input.files.length === 1) { label.textContent = input.files[0].name; }
+            else { label.textContent = input.files.length + ' файлів обрано'; }
+        });
+    }
+    bindFileLabel('photo', 'photo_name');
+    bindFileLabel('passport_scans', 'passport_scans_name');
+    bindFileLabel('document_scans', 'document_scans_name');
+    bindFileLabel('military_scans', 'military_scans_name');
+
+    const passportType = document.getElementById('passport_document_type');
+    if (passportType) {
+        function syncPassportFields() {
+            const isIdCard = passportType.value === 'ID-картка';
+            document.getElementById('passport_series_wrap').style.display = isIdCard ? 'none' : '';
+            document.getElementById('passport_unique_wrap').style.display = isIdCard ? '' : 'none';
+        }
+        passportType.addEventListener('change', syncPassportFields);
+        syncPassportFields();
+    }
+</script>
+</body>
+</html>

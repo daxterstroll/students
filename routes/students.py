@@ -11,9 +11,11 @@ Excel.
 """
 
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import uuid
+import secrets
+import json
 import openpyxl
 from routes.utils import logger
 from routes.helpers import current_username
@@ -349,6 +351,7 @@ def student_details(student_id):
     )
 
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
+    military_attachments = get_attachments(conn, 'military', military['id']) if military else []
 
     is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
 
@@ -449,6 +452,7 @@ def student_details(student_id):
         'student_details.html',
         student=student_dict,
         military=military_dict,
+        military_attachments=military_attachments,
         subject_grades=subject_grades,
         practice_data=practice_data,
         coursework_data=coursework_data,
@@ -1104,6 +1108,7 @@ def add_military(student_id):
 @login_required('')
 def military_data(student_id):
     """Форма перегляду/редагування наявних даних військового обліку студента."""
+    MAX_FILES = 5
     conn = get_db()
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
 
@@ -1115,7 +1120,16 @@ def military_data(student_id):
             issued_VOD = issued_VOD_clean
         except ValueError:
             flash("Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
-            return render_template('edit_military.html', student_id=student_id, military=military)
+            military_attachments = get_attachments(conn, 'military', military['id']) if military else []
+            return render_template('edit_military.html', student_id=student_id, military=military,
+                                    military_attachments=military_attachments, max_files=MAX_FILES)
+
+        new_scans = [f for f in request.files.getlist('military_scans') if f and f.filename]
+        existing_count = get_attachments(conn, 'military', military['id']) if military else []
+        if len(existing_count) + len(new_scans) > MAX_FILES:
+            flash(f'Забагато файлів - максимум {MAX_FILES} на запис (вже є {len(existing_count)}).', 'error')
+            return render_template('edit_military.html', student_id=student_id, military=military,
+                                    military_attachments=existing_count, max_files=MAX_FILES)
 
         data = (
             request.form['registration_number_of_the_DRPVR'],
@@ -1138,8 +1152,9 @@ def military_data(student_id):
                     being_on_military_registration=?, address_of_residence=?
                 WHERE student_id=?
             """, data)
+            military_id = military['id']
         else:
-            conn.execute("""
+            cur = conn.execute("""
                 INSERT INTO military (
                     registration_number_of_the_DRPVR, military_registration_document,
                     issued_VOD, military_accounting_specialty_number, military_rank,
@@ -1147,7 +1162,12 @@ def military_data(student_id):
                     being_on_military_registration, address_of_residence, student_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, data)
+            military_id = cur.lastrowid
         conn.commit()
+
+        if new_scans:
+            save_multiple_attachments(conn, 'military', military_id, new_scans, 'military_records', current_username())
+            conn.commit()
 
         student_row = conn.execute(
             "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
@@ -1162,17 +1182,45 @@ def military_data(student_id):
         )
         return redirect(url_for('students.student_list'))
 
+    military_attachments = get_attachments(conn, 'military', military['id']) if military else []
     conn.close()
-    return render_template('edit_military.html', student_id=student_id, military=military)
+    return render_template('edit_military.html', student_id=student_id, military=military,
+                            military_attachments=military_attachments, max_files=MAX_FILES)
+
+@students_bp.route('/students/<int:student_id>/military/delete_attachment', methods=['POST'])
+@login_required('')
+def delete_military_attachment(student_id):
+    """Видаляє один скан із військових даних студента (файл з диска + запис)."""
+    conn = get_db()
+    attachment_id = request.form.get('attachment_id')
+    att = conn.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+    if att:
+        att_path = os.path.join('static', att['file_path'])
+        if os.path.exists(att_path):
+            os.remove(att_path)
+        conn.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+        conn.commit()
+        flash('Скан видалено', 'success')
+    else:
+        flash('Файл не знайдено', 'error')
+    conn.close()
+    return redirect(url_for('students.military_data', student_id=student_id))
 
 @students_bp.route('/students/<int:student_id>/military/delete')
 @permission_required('manage_students')
 def delete_military(student_id):
-    """Видаляє запис військового обліку студента."""
+    """Видаляє запис військового обліку студента (разом зі сканами)."""
     conn = get_db()
     student_row = conn.execute(
         "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
     ).fetchone()
+    military_row = conn.execute("SELECT id FROM military WHERE student_id = ?", (student_id,)).fetchone()
+    if military_row:
+        for att in get_attachments(conn, 'military', military_row['id']):
+            att_path = os.path.join('static', att['file_path'])
+            if os.path.exists(att_path):
+                os.remove(att_path)
+        conn.execute("DELETE FROM attachments WHERE entity_type='military' AND entity_id=?", (military_row['id'],))
     conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
     conn.commit()
     conn.close()
@@ -1183,6 +1231,67 @@ def delete_military(student_id):
         group_ids=[student_row['group_id']] if student_row else []
     )
     return redirect(url_for('students.student_list'))
+
+UPDATE_REQUEST_FIELD_LABELS = {
+    'last_name_UA': "Прізвище (українською)",
+    'first_name_UA': "Ім'я (українською)",
+    'middle_name_UA': "По батькові (українською)",
+    'phone': "Телефон",
+    'phone_backup': "Резервний телефон",
+    'email': "Email",
+    'tax_id': "Ідентифікаційний код",
+    'edebo_code': "Код ЄДЕБО",
+    'photo': "Фото 3х4",
+    'passport': "Паспортні дані (окремий розділ)",
+    'education_document': "Документ про освіту (окремий розділ)",
+    'military': "Військові дані (окремий розділ)",
+}
+
+@students_bp.route('/students/<int:student_id>/generate_update_link', methods=['GET', 'POST'])
+@permission_required('manage_students')
+def generate_update_link(student_id):
+    """
+    Створює токен-посилання, яке можна надіслати студенту самостійно
+    (поза системою - месенджером, поштою), щоб він оновив ЛИШЕ обрані
+    адміном поля (routes/public_update.py - окрема ізольована сторінка
+    без входу в систему). Діє 1 добу або до першого заповнення - що
+    настане раніше. Заповнене студентом лягає на модерацію
+    (admin.update_requests), тут нічого одразу не змінюється.
+    """
+    conn = get_db()
+    student = conn.execute(
+        "SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE id = ?", (student_id,)
+    ).fetchone()
+    if not student:
+        conn.close()
+        flash("Студента не знайдено", "error")
+        return redirect(url_for('students.student_list'))
+
+    generated_link = None
+    if request.method == 'POST':
+        selected_fields = [f for f in UPDATE_REQUEST_FIELD_LABELS if request.form.get(f)]
+        if not selected_fields:
+            flash("Оберіть хоча б одне поле", "error")
+        else:
+            token = secrets.token_urlsafe(24)
+            expires_at = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "INSERT INTO update_requests (token, student_id, allowed_fields, created_by, expires_at) VALUES (?, ?, ?, ?, ?)",
+                (token, student_id, json.dumps(selected_fields, ensure_ascii=False), current_username(), expires_at)
+            )
+            conn.commit()
+            log_action(
+                current_username(),
+                f"створив посилання для оновлення даних: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+                details=", ".join(selected_fields)
+            )
+            generated_link = url_for('public_update.update_info', token=token, _external=True)
+
+    conn.close()
+    return render_template(
+        'generate_update_link.html',
+        student=student, field_labels=UPDATE_REQUEST_FIELD_LABELS, generated_link=generated_link,
+    )
 
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')

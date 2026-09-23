@@ -1,0 +1,58 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Посилання для оновлення даних{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-link-45deg', 'Посилання для оновлення даних', student.last_name_UA + ' ' + student.first_name_UA + ' ' + (student.middle_name_UA or '')) }}
+
+<a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary mb-3">← Назад до картки студента</a>
+
+{% if generated_link %}
+<div class="alert alert-success">
+    <strong>Посилання створено.</strong> Скопіюйте й надішліть студенту самостійно (месенджером, поштою тощо) — система нікому його не показує і нікуди не публікує.
+</div>
+<div class="card mb-4">
+    <div class="card-body">
+        <label class="form-label">Посилання (діє 1 добу або до першого заповнення)</label>
+        <div class="input-group">
+            <input type="text" class="form-control" id="linkField" value="{{ generated_link }}" readonly>
+            <button class="btn btn-outline-secondary" type="button" onclick="copyLink()"><i class="bi bi-clipboard"></i> Копіювати</button>
+        </div>
+    </div>
+</div>
+<script>
+function copyLink() {
+    const el = document.getElementById('linkField');
+    el.select();
+    navigator.clipboard.writeText(el.value).then(() => {
+        const btn = event.target.closest('button');
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2"></i> Скопійовано';
+        setTimeout(() => { btn.innerHTML = old; }, 1500);
+    });
+}
+</script>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">Оберіть, які поля дозволити редагувати студенту</div>
+    <div class="card-body">
+        <form method="post">
+            <div class="row g-2 mb-3">
+                {% for key, label in field_labels.items() %}
+                <div class="col-md-6">
+                    <div class="form-check">
+                        <input type="checkbox" name="{{ key }}" id="fld_{{ key }}" class="form-check-input">
+                        <label for="fld_{{ key }}" class="form-check-label">{{ label }}</label>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-link-45deg me-1"></i>Створити нове посилання</button>
+        </form>
+    </div>
+</div>
+
+</div>
+{% endblock %}

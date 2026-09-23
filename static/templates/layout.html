@@ -74,13 +74,18 @@
                     <i class="bi bi-file-earmark-arrow-up"></i> Документи студентів
                 </a></li>
                 {% endif %}
+                {% if is_admin or 'import_passport_documents' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.import_passport_documents') }}">
+                    <i class="bi bi-person-vcard"></i> Паспортні дані
+                </a></li>
+                {% endif %}
             </ul>
         </li>
         {% endif %}
 
         <!-- === Адміністрування (2 меню) === -->
         {% if is_admin or perms %}
-        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_passport_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms %}
+        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_passport_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms or 'manage_students' in perms %}
         <li class="nav-item dropdown d-none d-lg-block">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                 <i class="bi bi-mortarboard-fill"></i> Навчальний процес
@@ -88,6 +93,9 @@
             <ul class="dropdown-menu dropdown-menu-dark">
                 {% if is_admin or 'manage_pending_students' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.pending_students') }}"><i class="bi bi-person-plus"></i> Заявки на реєстрацію</a></li>
+                {% endif %}
+                {% if is_admin or 'manage_students' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('admin.update_requests') }}"><i class="bi bi-link-45deg"></i> Заявки на оновлення даних</a></li>
                 {% endif %}
                 {% if is_admin or 'manage_groups' in perms %}
                 <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
@@ -220,6 +228,7 @@
             {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
             {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
             {% if is_admin or 'manage_pending_students' in perms %}<a href="{{ url_for('admin.pending_students') }}" class="admin-link d-block"><i class="bi bi-person-plus"></i> Заявки на реєстрацію</a>{% endif %}
+            {% if is_admin or 'manage_students' in perms %}<a href="{{ url_for('admin.update_requests') }}" class="admin-link d-block"><i class="bi bi-link-45deg"></i> Заявки на оновлення даних</a>{% endif %}
             {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
             {% if is_admin or 'manage_specialties' in perms %}<a href="{{ url_for('admin.manage_specialties') }}" class="admin-link d-block"><i class="bi bi-diagram-3"></i> Спеціальності</a>{% endif %}
             {% if is_admin or 'manage_degree_levels' in perms %}<a href="{{ url_for('admin.manage_degree_levels') }}" class="admin-link d-block"><i class="bi bi-mortarboard"></i> Ступені</a>{% endif %}

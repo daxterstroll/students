@@ -106,6 +106,7 @@ PERMISSIONS = [
     'import_from_excel',
     'manage_education_documents',
     'manage_passport_documents',
+    'import_passport_documents',
     'study_periods',
     'manage_groups',
     'manage_subjects',
@@ -2717,8 +2718,13 @@ def pending_student_review(pending_id):
                 att_abs = os.path.join('static', att['file_path'])
                 if os.path.exists(att_abs):
                     os.remove(att_abs)
+            for att in get_attachments(conn, 'pending_student_military', pending_id):
+                att_abs = os.path.join('static', att['file_path'])
+                if os.path.exists(att_abs):
+                    os.remove(att_abs)
             conn.execute("DELETE FROM attachments WHERE entity_type='pending_student' AND entity_id=?", (pending_id,))
             conn.execute("DELETE FROM attachments WHERE entity_type='pending_student_passport' AND entity_id=?", (pending_id,))
+            conn.execute("DELETE FROM attachments WHERE entity_type='pending_student_military' AND entity_id=?", (pending_id,))
             conn.execute("DELETE FROM pending_students WHERE id=?", (pending_id,))
             conn.commit()
             log_action(current_username(), f"видалив заявку на реєстрацію: {row['last_name_UA']} {row['first_name_UA']} (заявка ID {pending_id})")
@@ -2814,7 +2820,7 @@ def pending_student_review(pending_id):
                 )
 
             if any([row['military_registration_number_drpvr'], row['military_registration_document'], row['military_rank']]):
-                conn.execute("""
+                cur_military = conn.execute("""
                     INSERT INTO military (
                         student_id, registration_number_of_the_DRPVR, military_registration_document, issued_VOD,
                         military_accounting_specialty_number, military_rank, address_of_residence,
@@ -2825,6 +2831,15 @@ def pending_student_review(pending_id):
                     row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
                     row['military_address'], row['military_change_credentials'], row['military_change_reason'],
                 ))
+                conn.execute(
+                    "UPDATE attachments SET entity_type='military', entity_id=? WHERE entity_type='pending_student_military' AND entity_id=?",
+                    (cur_military.lastrowid, pending_id)
+                )
+            else:
+                conn.execute(
+                    "UPDATE attachments SET entity_type='student', entity_id=? WHERE entity_type='pending_student_military' AND entity_id=?",
+                    (student_id, pending_id)
+                )
 
             conn.execute(
                 "UPDATE pending_students SET status='approved', reviewed_by=?, reviewed_at=datetime('now','localtime'), resulting_student_id=? WHERE id=?",
@@ -2956,8 +2971,9 @@ def pending_student_review(pending_id):
                         row['military_address'], row['military_change_credentials'], row['military_change_reason'],
                         existing_military['id']
                     ))
+                    military_id_for_scans = existing_military['id']
                 else:
-                    conn.execute("""
+                    cur_military = conn.execute("""
                         INSERT INTO military (
                             student_id, registration_number_of_the_DRPVR, military_registration_document, issued_VOD,
                             military_accounting_specialty_number, military_rank, address_of_residence,
@@ -2968,7 +2984,16 @@ def pending_student_review(pending_id):
                         row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
                         row['military_address'], row['military_change_credentials'], row['military_change_reason'],
                     ))
+                    military_id_for_scans = cur_military.lastrowid
                 updated_parts.append('військовий облік')
+                conn.execute(
+                    "UPDATE attachments SET entity_type='military', entity_id=? WHERE entity_type='pending_student_military' AND entity_id=?",
+                    (military_id_for_scans, pending_id)
+                )
+            conn.execute(
+                "UPDATE attachments SET entity_type='student', entity_id=? WHERE entity_type='pending_student_military' AND entity_id=?",
+                (existing_id, pending_id)
+            )
 
             if not updated_parts:
                 conn.rollback()
@@ -3007,12 +3032,13 @@ def pending_student_review(pending_id):
 
     scans = get_attachments(conn, 'pending_student', pending_id)
     passport_scans = get_attachments(conn, 'pending_student_passport', pending_id)
+    military_scans = get_attachments(conn, 'pending_student_military', pending_id)
 
     conn.close()
     return render_template(
         'admin_pending_student_review.html',
         row=row, groups=groups, licenses=licenses, existing_student=existing_student,
-        scans=scans, passport_scans=passport_scans,
+        scans=scans, passport_scans=passport_scans, military_scans=military_scans,
     )
 
 
@@ -3064,6 +3090,206 @@ def pending_student_photo(pending_id):
     conn.close()
     flash("Фото оновлено", "success")
     return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
+
+
+@admin_bp.route('/admin/update_requests')
+@permission_required('manage_students')
+def update_requests():
+    """
+    Список заявок на оновлення даних наявного студента (з токен-
+    посилань, які адмін сам створює на картці студента - routes/
+    students.generate_update_link). За замовчуванням - лише ті, що
+    студент уже заповнив і чекають на модерацію (status='submitted').
+    """
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    status_filter = request.args.get('status', 'submitted')
+    if status_filter not in ('pending', 'submitted', 'approved', 'rejected'):
+        status_filter = 'submitted'
+
+    rows = conn.execute("""
+        SELECT ur.*, s.last_name_UA, s.first_name_UA
+        FROM update_requests ur
+        JOIN students s ON s.id = ur.student_id
+        WHERE ur.status = ?
+        ORDER BY ur.created_at DESC
+    """, (status_filter,)).fetchall()
+
+    counts = {
+        s: conn.execute("SELECT COUNT(*) FROM update_requests WHERE status=?", (s,)).fetchone()[0]
+        for s in ('pending', 'submitted', 'approved', 'rejected')
+    }
+
+    conn.close()
+    return render_template('admin_update_requests.html', rows=rows, status_filter=status_filter, counts=counts)
+
+
+@admin_bp.route('/admin/update_requests/<int:request_id>', methods=['GET', 'POST'])
+@permission_required('manage_students')
+def update_request_review(request_id):
+    """Перегляд однієї заявки на оновлення - вибіркове застосування
+    полів до наявного студента (та сама логіка "яке поле застосувати",
+    що й для дублікатів заявок на реєстрацію)."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("""
+        SELECT ur.*, s.last_name_UA, s.first_name_UA, s.middle_name_UA
+        FROM update_requests ur JOIN students s ON s.id = ur.student_id
+        WHERE ur.id = ?
+    """, (request_id,)).fetchone()
+    if not row:
+        conn.close()
+        flash("Заявку не знайдено", "error")
+        return redirect(url_for('admin.update_requests'))
+
+    allowed_fields = json.loads(row['allowed_fields'])
+    submitted = json.loads(row['submitted_data']) if row['submitted_data'] else {}
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'delete':
+            for entity_type in ('update_request_passport', 'update_request_education', 'update_request_military'):
+                for att in get_attachments(conn, entity_type, request_id):
+                    att_path = os.path.join('static', att['file_path'])
+                    if os.path.exists(att_path):
+                        os.remove(att_path)
+                conn.execute("DELETE FROM attachments WHERE entity_type=? AND entity_id=?", (entity_type, request_id))
+            if row['photo_path']:
+                photo_abs = os.path.join('static', row['photo_path'])
+                if os.path.exists(photo_abs):
+                    os.remove(photo_abs)
+            conn.execute("DELETE FROM update_requests WHERE id=?", (request_id,))
+            conn.commit()
+            log_action(current_username(), f"видалив заявку на оновлення даних ID {request_id}")
+            conn.close()
+            flash("Заявку видалено", "success")
+            return redirect(url_for('admin.update_requests'))
+
+        elif action == 'reject':
+            note = (request.form.get('review_note') or '').strip() or None
+            conn.execute(
+                "UPDATE update_requests SET status='rejected', reviewed_by=?, reviewed_at=datetime('now','localtime'), review_note=? WHERE id=?",
+                (current_username(), note, request_id)
+            )
+            conn.commit()
+            log_action(current_username(), f"відхилив заявку на оновлення даних ID {request_id}", details=note or '')
+            conn.close()
+            flash("Заявку відхилено", "success")
+            return redirect(url_for('admin.update_requests'))
+
+        elif action == 'apply':
+            student_id = row['student_id']
+            applied_parts = []
+
+            simple_updates = {}
+            for key in ('last_name_UA', 'first_name_UA', 'middle_name_UA', 'phone', 'phone_backup', 'email', 'tax_id', 'edebo_code'):
+                if key in allowed_fields and request.form.get(f'apply_{key}'):
+                    simple_updates[key] = submitted.get(key)
+            if simple_updates:
+                set_clause = ", ".join(f"{k}=?" for k in simple_updates)
+                conn.execute(f"UPDATE students SET {set_clause} WHERE id=?", list(simple_updates.values()) + [student_id])
+                applied_parts.append(", ".join(simple_updates.keys()))
+
+            if 'photo' in allowed_fields and row['photo_path'] and request.form.get('apply_photo'):
+                from routes.photo import photo_path_for_student, _ensure_dir
+                _ensure_dir()
+                src_path = os.path.join('static', row['photo_path'])
+                if os.path.exists(src_path):
+                    dest_path = photo_path_for_student(student_id)
+                    with open(src_path, 'rb') as src, open(dest_path, 'wb') as dst:
+                        dst.write(src.read())
+                    conn.execute("UPDATE students SET photo=? WHERE id=?", (f"uploads/photos/student_{student_id}.jpg", student_id))
+                    applied_parts.append('фото')
+
+            if 'passport' in allowed_fields and submitted.get('passport') and request.form.get('apply_passport'):
+                p = submitted['passport']
+                cur_p = conn.execute("""
+                    INSERT INTO passport_documents (student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, p.get('document_type') or 'Паспорт (книжка)', p.get('series'), p.get('number'),
+                      p.get('issued_by'), p.get('issue_date'), p.get('valid_until'), p.get('unique_number')))
+                conn.execute(
+                    "UPDATE attachments SET entity_type='passport_document', entity_id=? WHERE entity_type='update_request_passport' AND entity_id=?",
+                    (cur_p.lastrowid, request_id)
+                )
+                applied_parts.append('паспортні дані (новий запис)')
+
+            if 'education_document' in allowed_fields and submitted.get('education_document') and request.form.get('apply_education_document'):
+                d = submitted['education_document']
+                cur_d = conn.execute("""
+                    INSERT INTO education_documents (student_id, document_type, document_type_en, document_number,
+                        institution_name, institution_name_en, country, country_en, completion_date)
+                    VALUES (?, ?, '', ?, ?, '', ?, '', ?)
+                """, (student_id, d.get('document_type') or '', d.get('number') or '', d.get('institution') or '',
+                      d.get('country') or '', d.get('completion_date') or ''))
+                conn.execute(
+                    "UPDATE attachments SET entity_type='education_document', entity_id=? WHERE entity_type='update_request_education' AND entity_id=?",
+                    (cur_d.lastrowid, request_id)
+                )
+                applied_parts.append('документ про освіту (новий запис)')
+
+            if 'military' in allowed_fields and submitted.get('military') and request.form.get('apply_military'):
+                m = submitted['military']
+                existing_military = conn.execute("SELECT id FROM military WHERE student_id=?", (student_id,)).fetchone()
+                if existing_military:
+                    conn.execute("""
+                        UPDATE military SET registration_number_of_the_DRPVR=?, military_registration_document=?,
+                            issued_VOD=?, military_accounting_specialty_number=?, military_rank=?, address_of_residence=?
+                        WHERE id=?
+                    """, (m.get('registration_number_of_the_DRPVR'), m.get('military_registration_document'),
+                          m.get('issued_VOD'), m.get('military_accounting_specialty_number'), m.get('military_rank'),
+                          m.get('address_of_residence'), existing_military['id']))
+                    military_id = existing_military['id']
+                else:
+                    cur_m = conn.execute("""
+                        INSERT INTO military (student_id, registration_number_of_the_DRPVR, military_registration_document,
+                            issued_VOD, military_accounting_specialty_number, military_rank, address_of_residence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (student_id, m.get('registration_number_of_the_DRPVR'), m.get('military_registration_document'),
+                          m.get('issued_VOD'), m.get('military_accounting_specialty_number'), m.get('military_rank'),
+                          m.get('address_of_residence')))
+                    military_id = cur_m.lastrowid
+                conn.execute(
+                    "UPDATE attachments SET entity_type='military', entity_id=? WHERE entity_type='update_request_military' AND entity_id=?",
+                    (military_id, request_id)
+                )
+                applied_parts.append('військові дані')
+
+            if not applied_parts:
+                conn.rollback()
+                conn.close()
+                flash("Не обрано жодного пункту для застосування", "error")
+                return redirect(url_for('admin.update_request_review', request_id=request_id))
+
+            conn.execute(
+                "UPDATE update_requests SET status='approved', reviewed_by=?, reviewed_at=datetime('now','localtime') WHERE id=?",
+                (current_username(), request_id)
+            )
+            conn.commit()
+            log_action(
+                current_username(),
+                f"застосував заявку на оновлення даних: {row['last_name_UA']} {row['first_name_UA']} (ID {student_id})",
+                details=", ".join(applied_parts)
+            )
+            conn.close()
+            flash(f"Застосовано: {', '.join(applied_parts)}", "success")
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        conn.close()
+        return redirect(url_for('admin.update_request_review', request_id=request_id))
+
+    passport_scans = get_attachments(conn, 'update_request_passport', request_id)
+    education_scans = get_attachments(conn, 'update_request_education', request_id)
+    military_scans = get_attachments(conn, 'update_request_military', request_id)
+
+    conn.close()
+    return render_template(
+        'admin_update_request_review.html',
+        row=row, allowed_fields=allowed_fields, submitted=submitted,
+        passport_scans=passport_scans, education_scans=education_scans, military_scans=military_scans,
+    )
 
 
 @admin_bp.route('/admin/frozen_students')
@@ -4082,6 +4308,7 @@ def manage_users():
             'import_from_excel': 'Інпорт студентів',
             'manage_education_documents': 'Управління документами про освіту',
             'manage_passport_documents': 'Управління паспортними даними',
+            'import_passport_documents': 'Імпорт паспортних даних',
             'study_periods': 'Періоди навчання',
             'manage_groups': 'Управління групами',
             'manage_subjects': 'Предмети',
@@ -4804,6 +5031,94 @@ def import_subjects():
 
     conn.close()
     return render_template('import_subjects.html', groups=groups, selected_group_id=selected_group_id)
+
+
+@admin_bp.route('/admin/import_passport_documents', methods=['GET', 'POST'])
+@permission_required('import_passport_documents')
+def import_passport_documents():
+    """
+    Масовий імпорт паспортних даних з Excel: кожен рядок - один
+    студент (знаходиться нечітким пошуком за ПІБ серед усіх активних
+    студентів, routes/admin.fuzzy_find_student). Якщо студент уже має
+    паспортні дані - додає ще один запис (історія), не перезаписує.
+    """
+    if request.method == 'POST':
+        file = request.files.get('excel_file')
+        if not file or not allowed_file(file.filename):
+            flash("⚠️ Оберіть коректний файл .xlsx", "error")
+            return redirect(url_for('admin.import_passport_documents'))
+
+        filename = f"passport_import_{int(time.time())}.xlsx"
+        filepath = os.path.join('static', 'uploads', 'tmp', filename)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        file.save(filepath)
+
+        conn = get_db()
+        cursor = conn.cursor()
+        inserted, skipped = 0, 0
+        try:
+            wb = load_workbook(filepath)
+            sheet = wb.active
+            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                if not row or all(cell is None for cell in row):
+                    continue
+                try:
+                    fio = row[0]
+                    document_type = str(row[1]).strip() if len(row) > 1 and row[1] else None
+                    number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
+
+                    if not fio or not document_type or not number:
+                        flash(f"❗ Рядок {i}: не заповнено ПІБ, тип документа чи номер - пропущено")
+                        skipped += 1
+                        continue
+                    if document_type not in ('Паспорт (книжка)', 'ID-картка'):
+                        flash(f"❗ Рядок {i}: невідомий тип документа '{document_type}' (очікується 'Паспорт (книжка)' або 'ID-картка') - пропущено")
+                        skipped += 1
+                        continue
+
+                    student_id, matched_name, score = fuzzy_find_student(cursor, str(fio).strip())
+                    if not student_id:
+                        flash(f"❗ Рядок {i}: студента не знайдено за ПІБ '{fio}' - пропущено")
+                        skipped += 1
+                        continue
+
+                    series = str(row[2]).strip() if len(row) > 2 and row[2] not in (None, '') else None
+                    issued_by = str(row[4]).strip() if len(row) > 4 and row[4] not in (None, '') else None
+                    issue_date = str(row[5]).strip().replace('-', '.') if len(row) > 5 and row[5] not in (None, '') else None
+                    valid_until = str(row[6]).strip().replace('-', '.') if len(row) > 6 and row[6] not in (None, '') else None
+                    unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
+
+                    cursor.execute("""
+                        INSERT INTO passport_documents (
+                            student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number))
+                    inserted += 1
+                except Exception as e:
+                    logger.error(f"Row {i} error (passport import): {e}")
+                    flash(f"❗ Рядок {i}: помилка обробки - {e}")
+                    skipped += 1
+                    continue
+
+            conn.commit()
+            log_action(
+                current_username(),
+                f"імпорт паспортних даних з Excel: додано {inserted}, пропущено {skipped}",
+                details=f"файл: {filename}"
+            )
+            flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}", "success")
+        except Exception as e:
+            conn.rollback()
+            flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
+            logger.error(f"Error importing passport Excel: {e}")
+        finally:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            conn.close()
+
+        return redirect(url_for('admin.import_passport_documents'))
+
+    return render_template('import_passport_documents.html')
 
 
 # ============================================================

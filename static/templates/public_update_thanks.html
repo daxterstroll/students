@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Дані надіслано — Європейський університет</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{ --ink:#0e1b2c; --ink-2:#16283f; --paper:#f4efe3; --paper-2:#fffdf8; --muted:#8a8071;
+    --brass-dark:#a5822f; --success:#3f8a5b; --shadow:0 24px 60px -20px rgba(14,27,44,.35), 0 6px 18px rgba(14,27,44,.07); }
+*{ box-sizing:border-box; }
+body{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family:'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color:var(--ink-2); padding:1.5rem;
+    background: radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.16), transparent 60%),
+                radial-gradient(900px 500px at 110% 110%, rgba(14,27,44,.10), transparent 55%),
+                linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%); }
+.card{ max-width:440px; width:100%; text-align:center; background:var(--paper-2); border-radius:22px; box-shadow:var(--shadow);
+    border:1px solid rgba(255,255,255,.6); padding:2.6rem 2rem; animation: fadeUp .5s cubic-bezier(.22,1,.36,1) both; }
+@keyframes fadeUp{ from{ transform:translateY(18px); opacity:0; } to{ transform:translateY(0); opacity:1; } }
+.check-wrap{ width:74px; height:74px; margin:0 auto 1.4rem; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(circle at 30% 25%, #6fbf8b, var(--success)); box-shadow:0 10px 26px -6px rgba(63,138,91,.5);
+    animation: pop .5s .1s cubic-bezier(.34,1.56,.64,1) both; }
+@keyframes pop{ from{ transform:scale(.3); opacity:0; } to{ transform:scale(1); opacity:1; } }
+h1{ margin:0 0 .6rem; font-size:1.4rem; font-weight:800; color:var(--ink); }
+p{ margin:0; color:var(--muted); font-size:.95rem; line-height:1.55; }
+.brand{ margin-top:1.8rem; font-size:.78rem; font-weight:700; letter-spacing:.03em; color:var(--brass-dark); text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="check-wrap">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M4 12l6 6L20 6" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <h1>Дякуємо, дані надіслано</h1>
+    <p>Деканат перевірить надіслані дані перед тим, як вони потраплять у вашу картку. Це посилання більше не діятиме.</p>
+    <div class="brand">Європейський університет</div>
+</div>
+</body>
+</html>
