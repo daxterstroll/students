@@ -8,7 +8,7 @@
 
     <div class="card">
         <div class="card-body">
-            <form method="POST">
+            <form method="POST" enctype="multipart/form-data">
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label">Реєстраційний номер ЄДРПВР</label>
@@ -46,6 +46,30 @@
                         <label class="form-label">Адреса місця проживання</label>
                         <input type="text" name="address_of_residence" class="form-control" value="{{ military.address_of_residence if military }}">
                     </div>
+
+                    <div class="col-12 border-top pt-3">
+                        <label class="form-label">Скановані копії ({{ military_attachments|length }}/{{ max_files }})</label>
+                        {% if military_attachments %}
+                        <div class="mb-2">
+                            {% for a in military_attachments %}
+                            <span class="badge bg-secondary d-inline-flex align-items-center gap-1 me-1 mb-1 p-2">
+                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="text-white text-decoration-none">
+                                    <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                </a>
+                                <button type="button" class="btn-close btn-close-white" style="font-size:.6rem;"
+                                        title="Видалити файл" onclick="deleteMilitaryAttachment({{ a.id }})"></button>
+                            </span>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="small text-muted mb-2">Немає доданих сканів.</div>
+                        {% endif %}
+                        {% if military_attachments|length < max_files %}
+                        <input type="file" name="military_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
+                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files - military_attachments|length }} ще.</div>
+                        {% endif %}
+                    </div>
+
                     <div class="col-12 d-flex flex-wrap gap-2 pt-2">
                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
                         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-2"></i>Назад</a>
@@ -61,4 +85,15 @@
     </div>
 
 </div>
+<script>
+    function deleteMilitaryAttachment(attachmentId) {
+        if (!confirm('Видалити цей файл?')) return;
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = "{{ url_for('students.delete_military_attachment', student_id=student_id) }}";
+        form.innerHTML = '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
+        document.body.appendChild(form);
+        form.submit();
+    }
+</script>
 {% endblock %}

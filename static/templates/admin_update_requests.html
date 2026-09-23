@@ -1,0 +1,66 @@
+{% extends "layout.html" %}
+{% import '_macros.html' as ui %}
+{% block title %}Заявки на оновлення даних{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+{{ ui.page_header('bi-link-45deg', 'Заявки на оновлення даних', 'Заповнені студентами дані за токен-посиланнями (генеруються з картки студента)') }}
+
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'submitted' %}active{% endif %}" href="{{ url_for('admin.update_requests', status='submitted') }}">
+            На модерації <span class="badge bg-warning text-dark ms-1">{{ counts.submitted }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'pending' %}active{% endif %}" href="{{ url_for('admin.update_requests', status='pending') }}">
+            Очікують заповнення <span class="badge bg-secondary ms-1">{{ counts.pending }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'approved' %}active{% endif %}" href="{{ url_for('admin.update_requests', status='approved') }}">
+            Застосовані <span class="badge bg-success ms-1">{{ counts.approved }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if status_filter == 'rejected' %}active{% endif %}" href="{{ url_for('admin.update_requests', status='rejected') }}">
+            Відхилені <span class="badge bg-secondary ms-1">{{ counts.rejected }}</span>
+        </a>
+    </li>
+</ul>
+
+{% if not rows %}
+    {{ ui.empty_state('bi-inbox', 'Заявок у цій вкладці немає') }}
+{% else %}
+<div class="card">
+    <div class="table-responsive">
+        <table class="table table-hover mb-0 align-middle">
+            <thead>
+                <tr>
+                    <th>Студент</th>
+                    <th>Створено</th>
+                    {% if status_filter == 'submitted' %}<th>Заповнено</th>{% endif %}
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in rows %}
+                <tr>
+                    <td>{{ r.last_name_UA }} {{ r.first_name_UA }}</td>
+                    <td class="small text-muted">{{ r.created_at }} ({{ r.created_by }})</td>
+                    {% if status_filter == 'submitted' %}<td class="small text-muted">{{ r.submitted_at }}</td>{% endif %}
+                    <td class="text-end">
+                        <a href="{{ url_for('admin.update_request_review', request_id=r.id) }}" class="btn btn-sm btn-primary">
+                            <i class="bi bi-eye"></i> Переглянути
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+</div>
+{% endblock %}

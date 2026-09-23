@@ -383,6 +383,15 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                 <label class="f-label">Причина зміни облікових даних</label>
                                 <input type="text" name="military_change_reason" class="f-control" value="{{ form.military_change_reason if form else '' }}">
                             </div>
+                            <div class="col-12">
+                                <label class="f-label">Скановані копії військового документа</label>
+                                <div class="file-drop">
+                                    <label class="file-btn" for="military_scans">📎 Обрати файли</label>
+                                    <span class="file-name" id="military_scans_name">Файли не обрано</span>
+                                    <input type="file" name="military_scans" id="military_scans" accept="image/*,.pdf" multiple>
+                                </div>
+                                <div class="f-hint">До 5 файлів (фото сторінок або PDF), до 15 МБ кожен.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -423,6 +432,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
     bindFileLabel('photo', 'photo_name', false);
     bindFileLabel('document_scans', 'scans_name', true);
     bindFileLabel('passport_scans', 'passport_scans_name', true);
+    bindFileLabel('military_scans', 'military_scans_name', true);
 
     function syncPassportFields() {
         const isIdCard = document.getElementById('passport_document_type').value === 'ID-картка';
