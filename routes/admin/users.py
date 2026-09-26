@@ -54,9 +54,8 @@ PERMISSIONS = [
 @permission_required('view_logs')
 def view_logs():
     """Показує журнал дій (app.log) у зручному розібраному вигляді: дата/час/рівень/користувач/дія, з можливістю фільтрації на фронтенді."""
-    current_dir = os.path.dirname(__file__)
-    project_root = os.path.dirname(current_dir)
-    log_file_path = os.path.join(project_root, 'app.log')
+    from routes.config import PROJECT_ROOT
+    log_file_path = os.path.join(PROJECT_ROOT, 'app.log')
 
     parsed_logs = []
 
