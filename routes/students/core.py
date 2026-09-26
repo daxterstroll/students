@@ -1,34 +1,44 @@
 """
-routes/students.py
-===================
-Основний робочий простір користувача: список студентів (з пошуком,
-фільтрами, пагінацією), картка студента, персональні оцінки, військовий
-облік, генерація документа для одного студента та імпорт студентів з
-Excel.
-
-Опис призначення кожної функції - див. докстрінг під відповідним
-`def ...` нижче, або підсумкову таблицю в FUNCTIONS.md.
+routes/students/core.py
+========================
+Список студентів (пошук/фільтри/пагінація), картка студента, додати/
+редагувати/видалити студента, фото 3х4, заморозка, періоди навчання,
+посилання на оновлення даних (/update-info), генерація документів для
+одного студента, FAQ.
 """
-
-from flask import Blueprint, render_template, request, redirect, url_for, session, flash
+from flask import render_template, request, redirect, url_for, session, flash
+from routes.db import get_db
+from routes.utils import log_action, login_required, permission_required, logger
+from routes.helpers import current_username
+from routes.students import students_bp
+import sqlite3
+from routes.utils import (
+    generate_english_name, is_student_on_reduced_program, save_multiple_attachments,
+    program_track_condition, apply_track_overrides, get_attachments, get_templates_with_metadata,
+)
+from routes.gen_docx import gen_doc
+from routes import office_editor
+from routes.config import PUBLIC_APPLY_BASE_URL
 from datetime import datetime, timedelta
 import os
 import uuid
 import secrets
 import json
-import openpyxl
-from routes.utils import logger
-from routes.helpers import current_username
-from werkzeug.utils import secure_filename
-from routes.db import get_db
-from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments, program_track_condition, apply_track_overrides, get_attachments
-from routes.gen_docx import gen_doc
-from routes import office_editor
-from routes.config import PUBLIC_APPLY_BASE_URL
-import sqlite3
-from routes.utils import get_templates_with_metadata
 
-students_bp = Blueprint('students', __name__)
+UPDATE_REQUEST_FIELD_LABELS = {
+    'last_name_UA': "Прізвище (українською)",
+    'first_name_UA': "Ім'я (українською)",
+    'middle_name_UA': "По батькові (українською)",
+    'phone': "Телефон",
+    'phone_backup': "Резервний телефон",
+    'email': "Email",
+    'tax_id': "Ідентифікаційний код",
+    'edebo_code': "Код ЄДЕБО",
+    'photo': "Фото 3х4",
+    'passport': "Паспортні дані (окремий розділ)",
+    'education_document': "Документ про освіту (окремий розділ)",
+    'military': "Військові дані (окремий розділ)",
+}
 
 
 @students_bp.route('/faq')
@@ -326,6 +336,7 @@ def student_list():
         sort_order=sort_order
     )
 
+
 @students_bp.route('/students/<int:student_id>')
 @login_required('')
 def student_details(student_id):
@@ -464,6 +475,7 @@ def student_details(student_id):
         study_periods=study_periods
     )
 
+
 @students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
 @permission_required('study_periods')
 def manage_study_periods(student_id):
@@ -553,6 +565,7 @@ def manage_study_periods(student_id):
         student=student,
         periods=periods
     )
+
 
 @students_bp.route('/students/add', methods=['GET', 'POST'])
 @login_required('')
@@ -984,6 +997,7 @@ def edit_student(student_id):
     conn.close()
     return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
+
 @students_bp.route('/students/<int:student_id>/delete')
 @permission_required('manage_students')
 def delete_student(student_id):
@@ -1050,203 +1064,6 @@ def delete_student(student_id):
 
     return redirect(url_for('students.student_list'))
 
-@students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
-@login_required('')
-def add_military(student_id):
-    """Форма додавання даних військового обліку студенту, який ще їх не має."""
-    if request.method == 'POST':
-        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
-        if issued_VOD_raw:
-            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
-            try:
-                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
-                issued_VOD = issued_VOD_clean
-            except ValueError:
-                flash("Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
-                return render_template('add_military.html', student_id=student_id)
-        else:
-            issued_VOD = None
-
-        data = (
-            student_id,
-            request.form['registration_number_of_the_DRPVR'],
-            request.form['military_registration_document'],
-            issued_VOD,
-            request.form['military_accounting_specialty_number'],
-            request.form['military_rank'],
-            request.form['change_credentials'],
-            request.form['reason_for_changing_credentials'],
-            request.form['being_on_military_registration'],
-            request.form['address_of_residence'],
-        )
-
-        conn = get_db()
-        conn.execute("""
-            INSERT INTO military (
-                student_id, registration_number_of_the_DRPVR, military_registration_document,
-                issued_VOD, military_accounting_specialty_number, military_rank,
-                change_credentials, reason_for_changing_credentials,
-                being_on_military_registration, address_of_residence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, data)
-        conn.commit()
-
-        student_row = conn.execute(
-            "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
-        ).fetchone()
-        conn.close()
-
-        log_action(
-            current_username(),
-            f"додав військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
-            group_ids=[student_row['group_id']]
-        )
-        return redirect(url_for('students.student_list'))
-
-    return render_template('add_military.html', student_id=student_id)
-
-@students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
-@login_required('')
-def military_data(student_id):
-    """Форма перегляду/редагування наявних даних військового обліку студента."""
-    MAX_FILES = 5
-    conn = get_db()
-    military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
-
-    if request.method == 'POST':
-        issued_VOD_raw = request.form['issued_VOD'].strip()
-        issued_VOD_clean = issued_VOD_raw.replace("-", ".")
-        try:
-            datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
-            issued_VOD = issued_VOD_clean
-        except ValueError:
-            flash("Невірний формат дати. Введіть у форматі ДД.ММ.РРРР")
-            military_attachments = get_attachments(conn, 'military', military['id']) if military else []
-            return render_template('edit_military.html', student_id=student_id, military=military,
-                                    military_attachments=military_attachments, max_files=MAX_FILES)
-
-        new_scans = [f for f in request.files.getlist('military_scans') if f and f.filename]
-        existing_count = get_attachments(conn, 'military', military['id']) if military else []
-        if len(existing_count) + len(new_scans) > MAX_FILES:
-            flash(f'Забагато файлів - максимум {MAX_FILES} на запис (вже є {len(existing_count)}).', 'error')
-            return render_template('edit_military.html', student_id=student_id, military=military,
-                                    military_attachments=existing_count, max_files=MAX_FILES)
-
-        data = (
-            request.form['registration_number_of_the_DRPVR'],
-            request.form['military_registration_document'],
-            issued_VOD,
-            request.form['military_accounting_specialty_number'],
-            request.form['military_rank'],
-            request.form['change_credentials'],
-            request.form['reason_for_changing_credentials'],
-            request.form['being_on_military_registration'],
-            request.form['address_of_residence'],
-            student_id
-        )
-        if military:
-            conn.execute("""
-                UPDATE military SET
-                    registration_number_of_the_DRPVR=?, military_registration_document=?,
-                    issued_VOD=?, military_accounting_specialty_number=?, military_rank=?,
-                    change_credentials=?, reason_for_changing_credentials=?,
-                    being_on_military_registration=?, address_of_residence=?
-                WHERE student_id=?
-            """, data)
-            military_id = military['id']
-        else:
-            cur = conn.execute("""
-                INSERT INTO military (
-                    registration_number_of_the_DRPVR, military_registration_document,
-                    issued_VOD, military_accounting_specialty_number, military_rank,
-                    change_credentials, reason_for_changing_credentials,
-                    being_on_military_registration, address_of_residence, student_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, data)
-            military_id = cur.lastrowid
-        conn.commit()
-
-        if new_scans:
-            save_multiple_attachments(conn, 'military', military_id, new_scans, 'military_records', current_username())
-            conn.commit()
-
-        student_row = conn.execute(
-            "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
-        ).fetchone()
-        conn.close()
-
-        action_name = "редагував" if military else "додав"
-        log_action(
-            current_username(),
-            f"{action_name} військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
-            group_ids=[student_row['group_id']]
-        )
-        return redirect(url_for('students.student_list'))
-
-    military_attachments = get_attachments(conn, 'military', military['id']) if military else []
-    conn.close()
-    return render_template('edit_military.html', student_id=student_id, military=military,
-                            military_attachments=military_attachments, max_files=MAX_FILES)
-
-@students_bp.route('/students/<int:student_id>/military/delete_attachment', methods=['POST'])
-@login_required('')
-def delete_military_attachment(student_id):
-    """Видаляє один скан із військових даних студента (файл з диска + запис)."""
-    conn = get_db()
-    attachment_id = request.form.get('attachment_id')
-    att = conn.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
-    if att:
-        att_path = os.path.join('static', att['file_path'])
-        if os.path.exists(att_path):
-            os.remove(att_path)
-        conn.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
-        conn.commit()
-        flash('Скан видалено', 'success')
-    else:
-        flash('Файл не знайдено', 'error')
-    conn.close()
-    return redirect(url_for('students.military_data', student_id=student_id))
-
-@students_bp.route('/students/<int:student_id>/military/delete')
-@permission_required('manage_students')
-def delete_military(student_id):
-    """Видаляє запис військового обліку студента (разом зі сканами)."""
-    conn = get_db()
-    student_row = conn.execute(
-        "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
-    ).fetchone()
-    military_row = conn.execute("SELECT id FROM military WHERE student_id = ?", (student_id,)).fetchone()
-    if military_row:
-        for att in get_attachments(conn, 'military', military_row['id']):
-            att_path = os.path.join('static', att['file_path'])
-            if os.path.exists(att_path):
-                os.remove(att_path)
-        conn.execute("DELETE FROM attachments WHERE entity_type='military' AND entity_id=?", (military_row['id'],))
-    conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
-    conn.commit()
-    conn.close()
-
-    log_action(
-        current_username(),
-        f"ВИДАЛИВ військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
-        group_ids=[student_row['group_id']] if student_row else []
-    )
-    return redirect(url_for('students.student_list'))
-
-UPDATE_REQUEST_FIELD_LABELS = {
-    'last_name_UA': "Прізвище (українською)",
-    'first_name_UA': "Ім'я (українською)",
-    'middle_name_UA': "По батькові (українською)",
-    'phone': "Телефон",
-    'phone_backup': "Резервний телефон",
-    'email': "Email",
-    'tax_id': "Ідентифікаційний код",
-    'edebo_code': "Код ЄДЕБО",
-    'photo': "Фото 3х4",
-    'passport': "Паспортні дані (окремий розділ)",
-    'education_document': "Документ про освіту (окремий розділ)",
-    'military': "Військові дані (окремий розділ)",
-}
 
 @students_bp.route('/students/<int:student_id>/generate_update_link', methods=['GET', 'POST'])
 @permission_required('manage_students')
@@ -1293,6 +1110,7 @@ def generate_update_link(student_id):
         'generate_update_link.html',
         student=student, field_labels=UPDATE_REQUEST_FIELD_LABELS, generated_link=generated_link,
     )
+
 
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
@@ -1380,374 +1198,3 @@ def generate(student_id):
 
     available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))
     return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
-
-    
-
-@students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required('')
-def edit_activities_grades(student_id):
-    """Масове виставлення оцінок студентам групи з практик/курсових/атестацій (аналог admin.manage_activities, але з боку картки студента/групи)."""
-    conn = get_db()
-
-    student = conn.execute("""
-        SELECT s.*,
-               g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
-               g.study_form, g.program_credits, g.qualification_name, g.degree_level, g.specialty,
-               g.educational_program, g.knowledge_area, g.qualification_name_en, g.degree_level_en,
-               g.specialty_en, g.educational_program_en, g.knowledge_area_en
-        FROM students s
-        LEFT JOIN groups g ON s.group_id = g.id
-        WHERE s.id = ?
-    """, (student_id,)).fetchone()
-
-    if not student:
-        conn.close()
-        flash("Студента не знайдено", "error")
-        return redirect(url_for('students.student_list'))
-
-    if session.get('role') != 'admin' and student['group_id'] not in session.get('group_ids', []):
-        conn.close()
-        flash("Доступ заборонено: студент не належить до вашої групи", "error")
-        return redirect(url_for('students.student_list'))
-
-    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
-    track_cond = program_track_condition(is_reduced)
-
-    practices = [dict(r) for r in conn.execute(f"""
-        SELECT id, code, name, credits, reduced_credits, type, reduced_type, position FROM practices WHERE group_id = ?{track_cond} ORDER BY position
-    """, (student['group_id'],)).fetchall()]
-    courseworks = [dict(r) for r in conn.execute(f"""
-        SELECT id, code, name, credits, reduced_credits, type, reduced_type, position FROM courseworks WHERE group_id = ?{track_cond} ORDER BY position
-    """, (student['group_id'],)).fetchall()]
-    attestations = [dict(r) for r in conn.execute(f"""
-        SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type, a.position, ag.name AS student_name
-        FROM attestations a
-        LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
-        WHERE a.group_id = ?{track_cond} ORDER BY position
-    """, (student_id, student['group_id'])).fetchall()]
-
-    for entity in practices + courseworks + attestations:
-        apply_track_overrides(entity, is_reduced)
-
-    existing_grades = conn.execute("""
-        SELECT id, entity_id, entity_type, grade, name FROM activity_grades WHERE student_id = ?
-    """, (student_id,)).fetchall()
-    grade_map = {(g['entity_id'], g['entity_type']): {'id': g['id'], 'grade': g['grade'], 'name': g['name']}
-                 for g in existing_grades}
-
-    if request.method == 'POST':
-        try:
-            for entity_type, entities in [('practice', practices), ('coursework', courseworks), ('attestation', attestations)]:
-                for entity in entities:
-                    grade_key = f'grade_{entity_type}_{entity["id"]}'
-                    name_key = f'name_{entity_type}_{entity["id"]}' if entity_type == 'attestation' else None
-                    grade_value = request.form.get(grade_key)
-                    student_name = request.form.get(name_key) if entity_type == 'attestation' else ''
-                    key = (entity['id'], entity_type)
-
-                    if grade_value:
-                        try:
-                            grade_value = int(grade_value)
-                            if not 0 <= grade_value <= 100:
-                                flash(f"Некоректна оцінка для {entity['name']}: має бути від 0 до 100", "error")
-                                continue
-                            if key in grade_map:
-                                conn.execute("""
-                                    UPDATE activity_grades SET grade = ?, name = ?
-                                    WHERE id = ? AND student_id = ? AND entity_id = ? AND entity_type = ?
-                                """, (grade_value, student_name, grade_map[key]['id'], student_id, entity['id'], entity_type))
-                            else:
-                                conn.execute("""
-                                    INSERT INTO activity_grades (student_id, entity_id, entity_type, grade, name)
-                                    VALUES (?, ?, ?, ?, ?)
-                                """, (student_id, entity['id'], entity_type, grade_value, student_name))
-                        except ValueError:
-                            conn.execute("""
-                                DELETE FROM activity_grades WHERE student_id = ? AND entity_id = ? AND entity_type = ?
-                            """, (student_id, entity['id'], entity_type))
-                            flash(f"Некоректна оцінка для {entity['name']}: має бути числом", "error")
-                    else:
-                        if key in grade_map:
-                            conn.execute("""
-                                DELETE FROM activity_grades WHERE id = ? AND student_id = ? AND entity_id = ? AND entity_type = ?
-                            """, (grade_map[key]['id'], student_id, entity['id'], entity_type))
-                        else:
-                            conn.execute("""
-                                DELETE FROM activity_grades WHERE student_id = ? AND entity_id = ? AND entity_type = ?
-                            """, (student_id, entity['id'], entity_type))
-
-            conn.commit()
-            flash("Оцінки успішно збережено", "success")
-            log_action(
-                current_username(),
-                f"змінив активності: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
-                group_ids=[student['group_id']],
-                details=f"практики: {len(practices)}, курсові: {len(courseworks)}, атестації: {len(attestations)}"
-            )
-            conn.close()
-            return redirect(url_for('students.student_list'))
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Помилка при збереженні оцінок з активностей (student_id={student_id}): {e}", exc_info=True)
-            flash(f"Помилка при збереженні оцінок: {str(e)}", "error")
-
-    conn.close()
-    return render_template(
-        "edit_activities_grades.html",
-        student=student, practices=practices, courseworks=courseworks,
-        attestations=attestations, grade_map=grade_map
-    )
-
-@students_bp.route('/grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required('')
-def edit_grades(student_id):
-    """Форма виставлення/редагування оцінок одного студента з усіх предметів його групи."""
-    conn = get_db()
-
-    student = conn.execute("""
-        SELECT s.*, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name
-        FROM students s LEFT JOIN groups g ON s.group_id = g.id WHERE s.id = ?
-    """, (student_id,)).fetchone()
-
-    if not student:
-        conn.close()
-        flash("Студент не знайдений")
-        return redirect(url_for('students.student_list'))
-
-    subjects_query = "SELECT * FROM subjects WHERE group_id = ?"
-    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
-    subjects_query += program_track_condition(is_reduced)
-    subjects = [dict(s) for s in conn.execute(subjects_query, (student['group_id'],)).fetchall()]
-    for subject in subjects:
-        apply_track_overrides(subject, is_reduced)
-    existing_grades = conn.execute("SELECT subject_id, grade FROM grades WHERE student_id = ?", (student_id,)).fetchall()
-    grade_map = {g['subject_id']: g['grade'] for g in existing_grades}
-
-    if request.method == 'POST':
-        filled = 0
-        for subject in subjects:
-            grade_value = request.form.get(f'grade_{subject["id"]}')
-            if grade_value:
-                filled += 1
-                if subject["id"] in grade_map:
-                    conn.execute("UPDATE grades SET grade = ? WHERE student_id = ? AND subject_id = ?",
-                                 (grade_value, student_id, subject["id"]))
-                else:
-                    conn.execute("INSERT INTO grades (student_id, subject_id, grade) VALUES (?, ?, ?)",
-                                 (student_id, subject["id"], grade_value))
-        conn.commit()
-        conn.close()
-
-        log_action(
-            current_username(),
-            f"змінив оцінки з дисциплін: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
-            group_ids=[student['group_id']],
-            details=f"заповнено {filled} з {len(subjects)} предметів"
-        )
-        flash("Оцінки збережено")
-        return redirect(url_for('students.student_list'))
-
-    conn.close()
-    return render_template("edit_grades.html", student=student, subjects=subjects, grade_map=grade_map)
-
-@students_bp.route('/import_from_excel', methods=['GET', 'POST'])
-@permission_required('import_from_excel')
-def import_from_excel():
-    """Імпорт студентів з Excel-файлу."""
-    if request.method == 'POST':
-        file = request.files.get('excel_file')
-        if not file or not file.filename.endswith('.xlsx'):
-            flash("Будь ласка, виберіть файл формату .xlsx")
-            return render_template('import_excel.html')
-
-        filename = secure_filename(file.filename)
-        filepath = os.path.join('uploads', filename)
-        os.makedirs('uploads', exist_ok=True)
-        file.save(filepath)
-
-        conn = get_db()
-        inserted = 0
-        skipped = 0
-
-        role = session.get('role')
-        user_group_ids = session.get('group_ids', [])
-
-        if role == 'admin':
-            allowed_group_ids = {
-                row['id'] for row in conn.execute("SELECT id FROM groups WHERE archived = FALSE").fetchall()
-            }
-        else:
-            if not user_group_ids:
-                allowed_group_ids = set()
-            else:
-                placeholders = ','.join('?' * len(user_group_ids))
-                allowed_group_ids = {
-                    row['id'] for row in conn.execute(
-                        f"SELECT id FROM groups WHERE id IN ({placeholders}) AND archived = FALSE",
-                        user_group_ids
-                    ).fetchall()
-                }
-
-        # Каталог ліцензій - для зіставлення тексту з колонки E з
-        # institution_licenses (за short_name_ua, без регістру).
-        license_lookup = {}
-        for row in conn.execute("SELECT id, short_name_ua FROM institution_licenses").fetchall():
-            if row['short_name_ua']:
-                license_lookup[row['short_name_ua'].strip().lower()] = row['id']
-
-        try:
-            wb = openpyxl.load_workbook(filepath)
-            sheet = wb.active
-
-            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-                try:
-                    if not row or len(row) < 4:
-                        skipped += 1
-                        continue
-
-                    group_id = row[0]
-                    full_name = row[1]
-                    birth_date_raw = row[2]
-                    edebo_code = row[3] if len(row) > 3 and row[3] else ''
-
-                    # Ліцензія вступу (колонка E, необов'язкова) - за
-                    # короткою назвою з каталогу ("Київська", "Львівська"
-                    # тощо, без регістру). Не знайдено - лишаємо
-                    # порожнім і попереджаємо, рядок все одно імпортується.
-                    license_id = None
-                    if len(row) > 4 and row[4] not in (None, ''):
-                        license_key = str(row[4]).strip().lower()
-                        license_id = license_lookup.get(license_key)
-                        if license_id is None:
-                            flash(f"⚠️ Рядок {i}: ліцензію '{row[4]}' не знайдено в каталозі - поле пропущено, студент імпортований без неї")
-
-                    # Кредити скороченої програми (колонка F, необов'язкова) -
-                    # вступ з визнанням частини кредитів попереднього
-                    # диплома. Порожнє/некоректне значення = звичайний
-                    # студент за програмою групи, рядок все одно імпортується.
-                    program_credits_override = None
-                    if len(row) > 5 and row[5] not in (None, ''):
-                        try:
-                            program_credits_override = int(row[5])
-                        except (ValueError, TypeError):
-                            flash(f"⚠️ Рядок {i}: некоректне значення кредитів скороченої програми '{row[5]}' - поле пропущено, студент імпортований без нього")
-
-                    raw_military = list(row[6:15]) if len(row) > 6 else []
-                    military_data = raw_military + [None] * max(0, 9 - len(raw_military))
-
-                    # Телефон (колонка P, необов'язкова) - основний і
-                    # резервний номер через кому, напр.
-                    # "+380991234567, +380991234568". Другий номер
-                    # необов'язковий; якщо коми немає - записується
-                    # лише основний.
-                    phone = None
-                    phone_backup = None
-                    if len(row) > 15 and row[15] not in (None, ''):
-                        phone_parts = [p.strip() for p in str(row[15]).split(',') if p.strip()]
-                        if phone_parts:
-                            phone = phone_parts[0]
-                        if len(phone_parts) > 1:
-                            phone_backup = phone_parts[1]
-
-                    # Email (колонка Q, необов'язкова).
-                    email = str(row[16]).strip() if len(row) > 16 and row[16] not in (None, '') else None
-
-                    if not full_name:
-                        continue
-
-                    try:
-                        group_id = int(group_id)
-                    except (ValueError, TypeError):
-                        flash(f"❗ Рядок {i}: некоректний ID групи '{row[0]}'")
-                        skipped += 1
-                        continue
-
-                    if group_id not in allowed_group_ids:
-                        flash(f"❗ Рядок {i}: група {group_id} не існує або недоступна")
-                        skipped += 1
-                        continue
-
-                    name_parts = full_name.strip().split()
-                    if len(name_parts) != 3:
-                        flash(f"❗ Рядок {i}: невірний формат ПІБ '{full_name}'")
-                        skipped += 1
-                        continue
-                    last_name, first_name, middle_name = name_parts
-
-                    if isinstance(birth_date_raw, datetime):
-                        birth_date = birth_date_raw.strftime("%d.%m.%Y")
-                    else:
-                        birth_date = str(birth_date_raw).strip()
-
-                    existing = conn.execute("""
-                        SELECT id FROM students
-                        WHERE last_name_UA=? AND first_name_UA=? AND middle_name_UA=? AND birth_date=?
-                    """, (last_name, first_name, middle_name, birth_date)).fetchone()
-                    if existing:
-                        skipped += 1
-                        continue
-
-                    last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
-
-                    conn.execute("""
-                        INSERT INTO students (
-                            last_name_UA, first_name_UA, middle_name_UA,
-                            last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code,
-                            license_id, program_credits_override, phone, phone_backup, email
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (last_name, first_name, middle_name, last_name_eng, first_name_eng,
-                          birth_date, group_id, edebo_code, license_id, program_credits_override,
-                          phone, phone_backup, email))
-                    student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-                    if any(military_data):
-                        issued_VOD_raw = military_data[2]
-                        if isinstance(issued_VOD_raw, datetime):
-                            issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
-                        elif isinstance(issued_VOD_raw, str):
-                            issued_VOD = issued_VOD_raw.strip().replace('-', '.')
-                            try:
-                                datetime.strptime(issued_VOD, "%d.%m.%Y")
-                            except ValueError:
-                                issued_VOD = ''
-                        else:
-                            issued_VOD = ''
-
-                        conn.execute("""
-                            INSERT INTO military (
-                                student_id, registration_number_of_the_DRPVR,
-                                military_registration_document, issued_VOD,
-                                military_accounting_specialty_number, military_rank,
-                                change_credentials, reason_for_changing_credentials,
-                                being_on_military_registration, address_of_residence
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (student_id, military_data[0], military_data[1], issued_VOD,
-                              military_data[3], military_data[4], military_data[5],
-                              military_data[6], military_data[7], military_data[8]))
-
-                    inserted += 1
-
-                except Exception as e:
-                    logger.debug(f"Пропущено рядок {i} при імпорті студентів з Excel: {e}")
-                    flash(f"⚠️ Помилка в рядку {i}: {e}")
-                    skipped += 1
-                    continue
-
-            conn.commit()
-
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Помилка при імпорті студентів з Excel (файл: {filename}): {e}", exc_info=True)
-            flash(f"⚠️ Помилка при читанні файлу: {e}")
-        finally:
-            conn.close()
-
-        log_action(
-            current_username(),
-            f"імпорт студентів з Excel: додано {inserted}, пропущено {skipped}",
-            details=f"файл: {filename}"
-        )
-        flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}")
-        return redirect(url_for('students.student_list'))
-
-    return render_template('import_excel.html')
