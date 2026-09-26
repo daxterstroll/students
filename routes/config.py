@@ -22,10 +22,25 @@ import secrets
 
 logger = logging.getLogger('Students')
 
+# Корінь проєкту (папка, де лежить app.py) - визначається ОДИН раз тут,
+# незалежно від того, наскільки глибоко вкладений файл, який його
+# використовує (routes/config.py сам лежить на 1 рівень нижче кореня,
+# тому один os.path.dirname() і піднімає рівно до кореня). Будь-який
+# інший файл, якому потрібен шлях до кореня проєкту (не до students.db
+# конкретно - для цього є routes/db.py, а саме до кореня, напр. щоб
+# знайти app.log поруч з app.py), повинен імпортувати САМЕ цю
+# константу, а не рахувати os.path.dirname(__file__) самостійно -
+# кількість "рівнів угору" залежить від того, наскільки глибоко лежить
+# конкретний файл (routes/admin/users.py лежить на рівень глибше, ніж
+# колишній routes/admin.py, і рахунок "на два рівні вгору" для нього
+# вже дає не корінь проєкту, а просто routes/ - саме so стався баг із
+# "app.log не знайдено" на сторінці журналу дій після розбиття admin.py
+# на пакет).
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 try:
     from dotenv import load_dotenv
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    load_dotenv(os.path.join(BASE_DIR, '.env'))
+    load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 except ImportError:
     # python-dotenv не встановлено - це нормально, просто працюємо лише
     # зі змінними середовища ОС. Встановити: pip install python-dotenv
