@@ -46,14 +46,18 @@
         </div>
         <div class="collapse mt-2" id="photoEditPanel">
             <div class="card card-body">
-                <label for="photoFileInput" class="form-label small">Оберіть файл (можна той самий, який завантажив абітурієнт, — завантажте його собі на пристрій зі скана вище, якщо файл лишився тільки там)</label>
-                <input type="file" id="photoFileInput" class="form-control form-control-sm mb-2" accept="image/jpeg,image/png,image/webp">
-                <div id="photoCropperArea" class="d-none" style="max-height:50vh; overflow:hidden; background:#222;">
-                    <img id="cropperImage" src="" style="max-width:100%; display:block;">
+                <div id="photoCropperArea" style="max-height:50vh; overflow:hidden; background:#222;">
+                    <img id="cropperImage" src="{{ url_for('static', filename=row.photo_path) if row.photo_path else '' }}" style="max-width:100%; display:block;">
                 </div>
-                <button type="button" id="photoSaveBtn" class="btn btn-sm btn-primary mt-2 d-none">
-                    <i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото
-                </button>
+                <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                    <button type="button" id="photoSaveBtn" class="btn btn-sm btn-primary">
+                        <i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото
+                    </button>
+                    <label class="btn btn-sm btn-outline-secondary mb-0" for="photoFileInput">
+                        <i class="bi bi-upload me-1"></i>Завантажити інший файл
+                    </label>
+                    <input type="file" id="photoFileInput" class="d-none" accept="image/jpeg,image/png,image/webp">
+                </div>
             </div>
         </div>
     </div>
@@ -362,12 +366,33 @@
     const cropperArea = document.getElementById('photoCropperArea');
     const cropperImg = document.getElementById('cropperImage');
     const saveBtn = document.getElementById('photoSaveBtn');
+    const panelEl = document.getElementById('photoEditPanel');
     let cropper = null;
+    let newFileSelected = false;
 
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     const MAX_SIZE_BYTES = 8 * 1024 * 1024;
 
     if (!fileInput) return;
+
+    function initCropper() {
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(cropperImg, {
+            aspectRatio: 3 / 4,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+        });
+    }
+
+    // Якщо фото вже є - кроппер ініціалізується одразу на ньому, щойно
+    // розгортається панель, без потреби спершу обирати файл. Якщо фото
+    // ще немає (свіжа заявка без сканів фото) - чекаємо вибору файлу.
+    panelEl.addEventListener('shown.bs.collapse', function () {
+        if (!cropper && cropperImg.getAttribute('src')) {
+            initCropper();
+        }
+    });
 
     fileInput.addEventListener('change', function () {
         const file = fileInput.files[0];
@@ -382,18 +407,11 @@
             fileInput.value = '';
             return;
         }
+        newFileSelected = true;
         const reader = new FileReader();
         reader.onload = function (e) {
             cropperImg.src = e.target.result;
-            cropperArea.classList.remove('d-none');
-            saveBtn.classList.remove('d-none');
-            if (cropper) cropper.destroy();
-            cropper = new Cropper(cropperImg, {
-                aspectRatio: 3 / 4,
-                viewMode: 1,
-                autoCropArea: 0.9,
-                background: false,
-            });
+            initCropper();
         };
         reader.readAsDataURL(file);
     });
@@ -402,7 +420,9 @@
         if (!cropper) return;
         const data = cropper.getData(true);
         const formData = new FormData();
-        formData.append('photo_file', fileInput.files[0]);
+        if (newFileSelected && fileInput.files[0]) {
+            formData.append('photo_file', fileInput.files[0]);
+        }
         formData.append('crop_x', data.x);
         formData.append('crop_y', data.y);
         formData.append('crop_w', data.width);

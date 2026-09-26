@@ -45,11 +45,32 @@
     {% if 'photo' in allowed_fields and row.photo_path %}
     <div class="card mb-3">
         <div class="card-header">Фото</div>
-        <div class="card-body d-flex align-items-center gap-3">
-            <img src="{{ url_for('static', filename=row.photo_path) }}" class="rounded border" style="width:90px; height:120px; object-fit:cover;">
-            <div class="form-check">
-                <input type="checkbox" name="apply_photo" id="apply_photo" class="form-check-input" checked>
-                <label for="apply_photo" class="form-check-label">Замінити фото студента цим</label>
+        <div class="card-body">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <img id="currentPhoto" src="{{ url_for('static', filename=row.photo_path) }}" class="rounded border" style="width:90px; height:120px; object-fit:cover;">
+                <div class="form-check">
+                    <input type="checkbox" name="apply_photo" id="apply_photo" class="form-check-input" checked>
+                    <label for="apply_photo" class="form-check-label">Замінити фото студента цим</label>
+                </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#photoEditPanel">
+                <i class="bi bi-crop"></i> Переобрізати фото
+            </button>
+            <div class="collapse mt-2" id="photoEditPanel">
+                <div class="card card-body">
+                    <div id="photoCropperArea" style="max-height:50vh; overflow:hidden; background:#222;">
+                        <img id="cropperImage" src="{{ url_for('static', filename=row.photo_path) }}" style="max-width:100%; display:block;">
+                    </div>
+                    <div class="d-flex align-items-center gap-2 mt-2 flex-wrap">
+                        <button type="button" id="photoSaveBtn" class="btn btn-sm btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото
+                        </button>
+                        <label class="btn btn-sm btn-outline-secondary mb-0" for="photoFileInput">
+                            <i class="bi bi-upload me-1"></i>Завантажити інший файл
+                        </label>
+                        <input type="file" id="photoFileInput" class="d-none" accept="image/jpeg,image/png,image/webp">
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -162,4 +183,88 @@
 </form>
 
 </div>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+(function () {
+    const cropperArea = document.getElementById('photoCropperArea');
+    const cropperImg = document.getElementById('cropperImage');
+    const saveBtn = document.getElementById('photoSaveBtn');
+    const fileInput = document.getElementById('photoFileInput');
+    const panelEl = document.getElementById('photoEditPanel');
+    let cropper = null;
+    let newFileSelected = false;
+
+    if (!cropperArea) return;
+
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    const MAX_SIZE_BYTES = 8 * 1024 * 1024;
+
+    function initCropper() {
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(cropperImg, {
+            aspectRatio: 3 / 4,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+        });
+    }
+
+    // Кроппер ініціалізується одразу на вже наявному фото, щойно
+    // розгортається панель - без потреби спершу обирати файл.
+    panelEl.addEventListener('shown.bs.collapse', function () {
+        if (!cropper) initCropper();
+    });
+
+    fileInput.addEventListener('change', function () {
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (!ALLOWED_TYPES.includes(file.type)) {
+            alert('Непідтримуваний формат. Дозволені: JPEG, PNG, WEBP.');
+            fileInput.value = '';
+            return;
+        }
+        if (file.size > MAX_SIZE_BYTES) {
+            alert('Файл завеликий (' + (file.size / 1024 / 1024).toFixed(1) + ' МБ). Максимум - 8 МБ.');
+            fileInput.value = '';
+            return;
+        }
+        newFileSelected = true;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            cropperImg.src = e.target.result;
+            initCropper();
+        };
+        reader.readAsDataURL(file);
+    });
+
+    saveBtn.addEventListener('click', function () {
+        if (!cropper) return;
+        const data = cropper.getData(true);
+        const formData = new FormData();
+        if (newFileSelected && fileInput.files[0]) {
+            formData.append('photo_file', fileInput.files[0]);
+        }
+        formData.append('crop_x', data.x);
+        formData.append('crop_y', data.y);
+        formData.append('crop_w', data.width);
+        formData.append('crop_h', data.height);
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
+
+        fetch("{{ url_for('admin.update_request_photo', request_id=row.id) }}", {
+            method: 'POST',
+            body: formData,
+        }).then(function (resp) {
+            window.location.href = resp.url || window.location.href;
+        }).catch(function () {
+            alert('Не вдалося зберегти фото. Спробуйте ще раз.');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Зберегти обрізане фото';
+        });
+    });
+})();
+</script>
 {% endblock %}

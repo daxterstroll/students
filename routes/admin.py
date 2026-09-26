@@ -3060,10 +3060,22 @@ def pending_student_photo(pending_id):
         return redirect(url_for('admin.pending_students'))
 
     file = request.files.get('photo_file')
-    if not file or file.filename == '':
-        conn.close()
-        flash("Оберіть файл фотографії", "error")
-        return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
+    if file and file.filename:
+        file_bytes = file.read()
+    else:
+        # Новий файл не завантажували - переобрізаємо той самий, що вже
+        # є (адмін просто підправляє рамку на наявному фото).
+        if not row['photo_path']:
+            conn.close()
+            flash("Немає наявного фото для переобрізки - завантажте файл", "error")
+            return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
+        src_path = os.path.join('static', row['photo_path'])
+        if not os.path.exists(src_path):
+            conn.close()
+            flash("Файл наявного фото не знайдено на диску", "error")
+            return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
+        with open(src_path, 'rb') as f:
+            file_bytes = f.read()
 
     try:
         crop_box = (
@@ -3079,7 +3091,7 @@ def pending_student_photo(pending_id):
 
     from routes.photo import process_and_save_pending_photo_with_crop
     try:
-        new_path = process_and_save_pending_photo_with_crop(file.read(), crop_box, old_rel_path=row['photo_path'])
+        new_path = process_and_save_pending_photo_with_crop(file_bytes, crop_box, old_rel_path=row['photo_path'])
     except ValueError as e:
         conn.close()
         flash(str(e), "error")
@@ -3123,6 +3135,67 @@ def update_requests():
 
     conn.close()
     return render_template('admin_update_requests.html', rows=rows, status_filter=status_filter, counts=counts)
+
+
+@admin_bp.route('/admin/update_requests/<int:request_id>/photo', methods=['POST'])
+@permission_required('manage_students')
+def update_request_photo(request_id):
+    """
+    Ручна (пере)обрізка фото, надісланого студентом через /update-info -
+    той самий Cropper.js-підхід, що й для заявок на реєстрацію
+    (admin.pending_student_photo), лише зберігає результат у поле
+    update_requests.photo_path замість pending_students.photo_path.
+    """
+    conn = get_db()
+    row = conn.execute("SELECT photo_path FROM update_requests WHERE id=?", (request_id,)).fetchone()
+    if not row:
+        conn.close()
+        flash("Заявку не знайдено", "error")
+        return redirect(url_for('admin.update_requests'))
+
+    file = request.files.get('photo_file')
+    if file and file.filename:
+        file_bytes = file.read()
+    else:
+        # Новий файл не завантажували - переобрізаємо той самий, що вже
+        # є (адмін просто підправляє рамку на наявному фото).
+        if not row['photo_path']:
+            conn.close()
+            flash("Немає наявного фото для переобрізки - завантажте файл", "error")
+            return redirect(url_for('admin.update_request_review', request_id=request_id))
+        src_path = os.path.join('static', row['photo_path'])
+        if not os.path.exists(src_path):
+            conn.close()
+            flash("Файл наявного фото не знайдено на диску", "error")
+            return redirect(url_for('admin.update_request_review', request_id=request_id))
+        with open(src_path, 'rb') as f:
+            file_bytes = f.read()
+
+    try:
+        crop_box = (
+            float(request.form['crop_x']),
+            float(request.form['crop_y']),
+            float(request.form['crop_w']),
+            float(request.form['crop_h']),
+        )
+    except (KeyError, ValueError):
+        conn.close()
+        flash("Некоректні дані обрізки фото - спробуйте ще раз", "error")
+        return redirect(url_for('admin.update_request_review', request_id=request_id))
+
+    from routes.photo import process_and_save_pending_photo_with_crop
+    try:
+        new_path = process_and_save_pending_photo_with_crop(file_bytes, crop_box, old_rel_path=row['photo_path'])
+    except ValueError as e:
+        conn.close()
+        flash(str(e), "error")
+        return redirect(url_for('admin.update_request_review', request_id=request_id))
+
+    conn.execute("UPDATE update_requests SET photo_path=? WHERE id=?", (new_path, request_id))
+    conn.commit()
+    conn.close()
+    flash("Фото оновлено", "success")
+    return redirect(url_for('admin.update_request_review', request_id=request_id))
 
 
 @admin_bp.route('/admin/update_requests/<int:request_id>', methods=['GET', 'POST'])
