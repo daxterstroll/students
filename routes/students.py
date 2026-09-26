@@ -24,6 +24,7 @@ from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, transliterate_ukrainian, generate_english_name, is_student_on_reduced_program, save_multiple_attachments, program_track_condition, apply_track_overrides, get_attachments
 from routes.gen_docx import gen_doc
 from routes import office_editor
+from routes.config import PUBLIC_APPLY_BASE_URL
 import sqlite3
 from routes.utils import get_templates_with_metadata
 
@@ -1285,7 +1286,7 @@ def generate_update_link(student_id):
                 f"створив посилання для оновлення даних: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
                 details=", ".join(selected_fields)
             )
-            generated_link = url_for('public_update.update_info', token=token, _external=True)
+            generated_link = f"{PUBLIC_APPLY_BASE_URL.rstrip('/')}/update-info/{token}"
 
     conn.close()
     return render_template(

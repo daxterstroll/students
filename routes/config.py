@@ -97,6 +97,21 @@ ONLYOFFICE_CALLBACK_BASE_URL = os.environ.get('ONLYOFFICE_CALLBACK_BASE_URL', 'h
 # збереження).
 ONLYOFFICE_JWT_SECRET = os.environ.get('ONLYOFFICE_JWT_SECRET', '')
 
+# --------------------------------------------------------------------
+# Публічно доступна база для посилань, які бачить студент з інтернету
+# (не з внутрішньої мережі) - /apply і /update-info (див. nginx.conf,
+# порт 80).
+#
+# ВАЖЛИВО: посилання для /update-info генерується адміном, поки він
+# сам перебуває у внутрішній адмінці (https://students.eu.local/...).
+# Якщо будувати посилання просто через url_for(..., _external=True),
+# Flask підставить ТОЙ САМИЙ внутрішній домен, з якого прийшов запит, -
+# студент з мобільного інтернету на нього просто не потрапить. Тому
+# посилання для /update-info збирається вручну з цієї константи, а не
+# автоматично з поточного запиту.
+# --------------------------------------------------------------------
+PUBLIC_APPLY_BASE_URL = os.environ.get('PUBLIC_APPLY_BASE_URL', 'https://join.e-u.edu.ua')
+
 if not ONLYOFFICE_JWT_SECRET:
     logger.warning(
         "ONLYOFFICE_JWT_SECRET не задано - перевірка підпису запитів від "

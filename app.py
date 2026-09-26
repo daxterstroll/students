@@ -5,7 +5,7 @@ import argparse
 import json
 import os
 
-from flask import Flask, render_template, request, abort
+from flask import Flask, render_template, request, abort, session
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from routes.config import SECRET_KEY, PREFERRED_URL_SCHEME
@@ -57,6 +57,28 @@ def block_templates_static_access():
     """
     if request.path.startswith('/static/templates/'):
         abort(404)
+
+
+@app.context_processor
+def inject_pending_counts():
+    """
+    Кількість заявок, що чекають на розгляд - доступна в БУДЬ-ЯКОМУ
+    шаблоні (насамперед layout.html, для бейджів у меню) без потреби
+    передавати це окремо з кожного маршруту. Рахується лише для
+    залогинених - публічні сторінки (/apply, /update-info, /login)
+    цей запит до бази взагалі не викликають.
+    """
+    if not session.get('user_id'):
+        return {}
+    try:
+        from routes.db import get_db
+        conn = get_db()
+        new_applications = conn.execute("SELECT COUNT(*) FROM pending_students WHERE status='new'").fetchone()[0]
+        new_update_requests = conn.execute("SELECT COUNT(*) FROM update_requests WHERE status='submitted'").fetchone()[0]
+        conn.close()
+        return {'nav_pending_applications': new_applications, 'nav_pending_updates': new_update_requests}
+    except Exception:
+        return {'nav_pending_applications': 0, 'nav_pending_updates': 0}
 
 # ProxyFix: застосунок працює за nginx (SSL termination + reverse proxy,
 # див. nginx.conf). Без цього middleware Flask/Werkzeug не довіряють

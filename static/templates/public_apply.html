@@ -27,7 +27,7 @@
 *{ box-sizing:border-box; }
 html{ scroll-behavior:smooth; }
 body{
-    margin:0; min-height:100vh;
+    margin:0;
     font-family:'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     color:var(--ink-text);
     background:
@@ -35,6 +35,7 @@ body{
         radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.10), transparent 55%),
         linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
     padding: 0 0 4rem;
+    overflow-x:hidden;
 }
 
 /* Декоративна "шапка" університету */
@@ -99,13 +100,13 @@ body{
 .section-sub{ font-size:.83rem; color:var(--muted); margin:-.6rem 0 1rem 2.6rem; }
 
 .grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:.9rem; }
-.col-12{ grid-column:span 12; }
-.col-6{ grid-column:span 12; }
+.col-12{ grid-column:span 12; min-width:0; }
+.col-6{ grid-column:span 12; min-width:0; }
 @media (min-width:520px){ .col-6{ grid-column:span 6; } }
 
 label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink-2); margin-bottom:.35rem; }
 .f-control{
-    width:100%; padding:.68rem .9rem; font-size:.97rem; font-family:inherit; color:var(--ink-text);
+    width:100%; min-width:0; max-width:100%; padding:.68rem .9rem; font-size:.97rem; font-family:inherit; color:var(--ink-text);
     background:#fff; border:1.5px solid var(--line); border-radius:11px;
     transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -151,7 +152,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
 .toggle-label{ font-size:.92rem; font-weight:600; color:var(--ink-2); }
 
 .reveal{
-    max-height:0; overflow:hidden; opacity:0;
+    max-height:0; overflow:hidden; opacity:0; contain:layout;
     transition: max-height .35s ease, opacity .3s ease, margin-top .35s ease;
 }
 .reveal.open{ max-height:900px; opacity:1; margin-top:1rem; }
