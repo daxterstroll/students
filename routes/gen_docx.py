@@ -39,20 +39,26 @@ def _format_date_ddmmyyyy(date_str):
             continue
     return date_str  # неизвестный формат — вернуть как есть
 
+def _parse_date(date_str):
+    """Повертає datetime або None, якщо формат не розпізнано."""
+    if not date_str:
+        return None
+    date_str = date_str.strip()
+    for fmt in ('%Y-%m-%d', '%d.%m.%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
+# З цієї дати (включно) і далі - формат "з ... до ..." / "from ... to ...".
+# До неї (напр. 29/09/2026) - звичайний "01/09/2022-29/09/2026".
+LONG_DATES_FORMAT_FROM = datetime(2026, 9, 30)
+
 def get_study_periods(cursor, student_id, lang='ua',
                        default_filiya="Львівська філія Приватного вищого навчального закладу «Європейський університет»",
                        default_filiya_en="Lviv Branch of Private Higher Education Establishment «European University»"):
-    """
-    Единый хелпер для подстановки в docx-шаблон.
-    Возвращает кортеж (names_text, dates_text):
-      names_text -> "Назва 1; Назва 2"
-      dates_text -> "01/09/2022-31/05/2025; 01/09/2025-31/05/2026"
-
-    lang='ua' -> використовує filiya
-    lang='en' -> використовує filiya_en
-
-    Якщо записів немає — повертає дефолтну філію і порожні дати.
-    """
+    """... (докстрінг без змін) ..."""
     cursor.execute("""
         SELECT filiya, filiya_en, group_name, start_date, end_date
         FROM student_study_periods
@@ -65,6 +71,9 @@ def get_study_periods(cursor, student_id, lang='ua',
         default_name = default_filiya if lang == 'ua' else default_filiya_en
         return default_name, ""
 
+    end_dates = [d for d in (_parse_date(p['end_date']) for p in periods) if d]
+    use_long_format = bool(end_dates) and max(end_dates) >= LONG_DATES_FORMAT_FROM
+
     names = []
     dates = []
     for p in periods:
@@ -74,7 +83,10 @@ def get_study_periods(cursor, student_id, lang='ua',
         start = _format_date_ddmmyyyy(p['start_date'])
         end = _format_date_ddmmyyyy(p['end_date'])
         if start and end:
-            dates.append(f"{start}-{end}")
+            if use_long_format:
+                dates.append(f"з {start} до {end}" if lang == 'ua' else f"from {start} to {end}")
+            else:
+                dates.append(f"{start}-{end}")
         elif start:
             dates.append(f"{start}-т.ч." if lang == 'ua' else f"{start}-present")
         else:
@@ -746,9 +758,14 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     if not dates_ua:
         start_year = student_dict.get('start_year', '')
         end_year = student_dict.get('end_year', '')
+        
         if start_year and end_year:
-            dates_ua = f"01/09/{start_year}–25/06/{end_year}"
-            dates_en = f"01/09/{start_year}–25/06/{end_year}"
+            if end_year >= "2025":
+                dates_ua = f"з 01/09/{start_year} до 30/09/{end_year}"
+                dates_en = f"from 01/09/{start_year} to 30/09/{end_year}"
+            else:
+                dates_ua = f"01/09/{start_year}–30/09/{end_year}"
+                dates_en = f"01/09/{start_year}–30/09/{end_year}"
 
         # Раніше тут було жорстке порівняння з двома захардкодженими
         # рядками (Львівська філія / основний заклад) - ламалось би для
@@ -756,8 +773,18 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         # institution_name_and_status/_en беруться напряму з ліцензії
         # студента (routes/students.py, routes/admin.py) - тому просто
         # використовуємо їх як є, без порівняння.
-        names_ua = student_dict.get('institution_name_and_status', '') or names_ua
-        names_en = student_dict.get('institution_name_and_status_en', '') or names_en
+        
+        def _institution_short_name(full_text):
+            """'Назва «Х». Приватна форма... Ліцензія...' -> 'Назва «Х»' (до першої »).
+            Якщо лапок немає - повертає '', і тоді лишається назва за замовчуванням."""
+            if not full_text:
+                return ''
+            end = full_text.find('»')
+            return full_text[:end + 1].strip() if end != -1 else ''    
+        
+        
+        names_ua = _institution_short_name(student_dict.get('institution_name_and_status', '')) or names_ua
+        names_en = _institution_short_name(student_dict.get('institution_name_and_status_en', '')) or names_en
 
     context['study_period_names'] = _to_richtext_multiline(names_ua, font_size_pt=8, font_name='Times New Roman')
     context['study_period_dates'] = _to_richtext_multiline(dates_ua, font_size_pt=8, font_name='Times New Roman')
