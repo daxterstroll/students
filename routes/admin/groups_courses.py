@@ -1365,6 +1365,14 @@ def archive():
             FROM students WHERE group_id=? AND archived=TRUE ORDER BY last_name_UA
         """, (group['id'],)).fetchall()
         students_by_group[group['id']] = students
+        # Скорочена програма - те саме порівняння, що й
+        # is_student_on_reduced_program(): override менший за кредити
+        # групи. Рахуємо напряму тут (а не окремим запитом на студента),
+        # бо дані вже є в пам'яті з SELECT вище.
+        group['reduced_count'] = sum(
+            1 for s in students
+            if s['program_credits_override'] and int(s['program_credits_override']) < group['program_credits']
+        )
 
     # Відраховані студенти - окремо від архівних груп, бо наказ про
     # відрахування може стосуватись студента з ГРУПИ, яка сама

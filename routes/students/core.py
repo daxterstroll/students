@@ -215,7 +215,7 @@ def student_list():
     total_students = conn.execute(count_query, params).fetchone()[0]
 
     students_with_filled_fields = []
-    student_fields = ['last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code']
+    student_fields = ['last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code', 'tax_id', 'phone', 'email']
     military_fields = [
         'registration_number_of_the_DRPVR', 'military_registration_document', 'issued_VOD',
         'military_accounting_specialty_number', 'military_rank', 'change_credentials',
@@ -230,6 +230,7 @@ def student_list():
         student_filled_fields = sum(1 for field in student_fields if student_dict.get(field) and str(student_dict.get(field)).strip())
         student_dict['filled_fields'] = student_filled_fields
         student_dict['total_fields'] = student_total_fields
+        student_dict['has_photo'] = bool(student_dict.get('photo'))
 
         if student_dict.get('has_military'):
             military_filled_fields = sum(1 for field in military_fields if student_dict.get(field) and str(student_dict.get(field)).strip())
@@ -271,6 +272,47 @@ def student_list():
         student_dict['activities_filled_fields'] = activities_filled
         student_dict['activities_total_fields'] = activities_total
         student_dict['activities_fill_percentage'] = (activities_filled / activities_total * 100) if activities_total > 0 else 0
+
+        # Паспортні дані - найновіший запис студента. Набір обов'язкових
+        # полів залежить від типу документа (серія - лише для книжки,
+        # дійсний до і запис у ЄДДР - лише для ID-картки).
+        passport_doc = conn.execute("""
+            SELECT document_type, series, number, issued_by, issue_date, valid_until, unique_number
+            FROM passport_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1
+        """, (student_dict['id'],)).fetchone()
+        student_dict['has_passport'] = passport_doc is not None
+        if passport_doc:
+            pd = dict(passport_doc)
+            if pd.get('document_type') == 'ID-картка':
+                passport_fields = ['document_type', 'number', 'issued_by', 'issue_date', 'valid_until', 'unique_number']
+            else:
+                passport_fields = ['document_type', 'series', 'number', 'issued_by', 'issue_date']
+            passport_filled = sum(1 for f in passport_fields if pd.get(f) and str(pd.get(f)).strip())
+            student_dict['passport_filled_fields'] = passport_filled
+            student_dict['passport_total_fields'] = len(passport_fields)
+        else:
+            student_dict['passport_filled_fields'] = 0
+            student_dict['passport_total_fields'] = 0
+
+        # Документ про освіту - найновіший запис студента (основні поля
+        # обома мовами; блок іноземного документа - довідка/визнання -
+        # сюди не входить, бо стосується не всіх студентів).
+        edu_doc = conn.execute("""
+            SELECT document_type, document_type_en, document_number, institution_name,
+                   institution_name_en, country, country_en, completion_date
+            FROM education_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1
+        """, (student_dict['id'],)).fetchone()
+        student_dict['has_education_doc'] = edu_doc is not None
+        if edu_doc:
+            ed = dict(edu_doc)
+            edu_fields = ['document_type', 'document_type_en', 'document_number', 'institution_name',
+                          'institution_name_en', 'country', 'country_en', 'completion_date']
+            edu_filled = sum(1 for f in edu_fields if ed.get(f) and str(ed.get(f)).strip())
+            student_dict['edu_doc_filled_fields'] = edu_filled
+            student_dict['edu_doc_total_fields'] = len(edu_fields)
+        else:
+            student_dict['edu_doc_filled_fields'] = 0
+            student_dict['edu_doc_total_fields'] = 0
 
         students_with_filled_fields.append(student_dict)
 
@@ -343,9 +385,11 @@ def student_details(student_id):
     """Картка студента: особисті дані, військовий облік, оцінки з предметів/практик/курсових/атестацій, документи про освіту та періоди навчання."""
     conn = get_db()
     student = conn.execute("""
-        SELECT s.*, g.program_credits, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name
+        SELECT s.*, g.program_credits, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
+               il.name_ua AS license_name_ua, il.short_name_ua AS license_short_name_ua
         FROM students s
         LEFT JOIN groups g ON s.group_id = g.id
+        LEFT JOIN institution_licenses il ON s.license_id = il.id
         WHERE s.id = ?
     """, (student_id,)).fetchone()
 

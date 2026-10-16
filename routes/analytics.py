@@ -31,12 +31,20 @@ from datetime import datetime
 analytics_bp = Blueprint('analytics', __name__)
 
 STUDENT_FIELDS = ['last_name_UA', 'first_name_UA', 'middle_name_UA',
-                   'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code']
+                   'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code',
+                   'tax_id', 'phone', 'email']
 MILITARY_FIELDS = [
     'registration_number_of_the_DRPVR', 'military_registration_document', 'issued_VOD',
     'military_accounting_specialty_number', 'military_rank', 'change_credentials',
     'reason_for_changing_credentials', 'being_on_military_registration', 'address_of_residence'
 ]
+# Набір обов'язкових полів паспортного документа залежить від типу
+# (серія - лише для книжки; дійсний до і запис у ЄДДР - лише для
+# ID-картки) - так само, як рахується в students.py, student_list().
+PASSPORT_FIELDS_BOOK = ['document_type', 'series', 'number', 'issued_by', 'issue_date']
+PASSPORT_FIELDS_ID_CARD = ['document_type', 'number', 'issued_by', 'issue_date', 'valid_until', 'unique_number']
+EDU_DOC_FIELDS = ['document_type', 'document_type_en', 'document_number', 'institution_name',
+                  'institution_name_en', 'country', 'country_en', 'completion_date']
 
 
 def _grade_letter(grade):
@@ -208,6 +216,17 @@ def dashboard():
         for row in conn.execute(f"SELECT * FROM military WHERE student_id IN ({placeholders})", student_ids):
             military_by_student.setdefault(row['student_id'], dict(row))
 
+    # Паспортні дані - найновіший запис кожного студента (як і в
+    # students.py, student_list() - ORDER BY id DESC, перший що
+    # трапиться на студента лишається найновішим завдяки setdefault).
+    passport_by_student = {}
+    if student_ids:
+        placeholders = ','.join('?' for _ in student_ids)
+        for row in conn.execute(f"""
+            SELECT * FROM passport_documents WHERE student_id IN ({placeholders}) ORDER BY id DESC
+        """, student_ids):
+            passport_by_student.setdefault(row['student_id'], dict(row))
+
     grades_by_student = {}
     all_grade_rows = []
     if student_ids:
@@ -278,11 +297,17 @@ def dashboard():
             activities_total_by_group[row['group_id']] = activities_total_by_group.get(row['group_id'], 0) + 1
             activities_credits_by_group[row['group_id']] = activities_credits_by_group.get(row['group_id'], 0) + (row['credits'] or 0)
 
-    edu_doc_students = set()
+    # Документ про освіту - найновіший запис кожного студента, з усіма
+    # полями (а не лише присутність), щоб порахувати детальний відсоток
+    # заповненості так само, як в students.py, student_list().
+    edu_doc_by_student = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
-        for row in conn.execute(f"SELECT DISTINCT student_id FROM education_documents WHERE student_id IN ({placeholders})", student_ids):
-            edu_doc_students.add(row['student_id'])
+        for row in conn.execute(f"""
+            SELECT * FROM education_documents WHERE student_id IN ({placeholders}) ORDER BY id DESC
+        """, student_ids):
+            edu_doc_by_student.setdefault(row['student_id'], dict(row))
+    edu_doc_students = set(edu_doc_by_student.keys())
 
     diploma_by_student = {}
     if student_ids:
@@ -292,7 +317,9 @@ def dashboard():
 
     # ================= Обчислення заповненості по кожному студенту (+ по групах окремо) =================
     personal_pcts, military_pcts, grades_pcts, activities_pcts = [], [], [], []
+    passport_pcts, edu_doc_pcts = [], []
     has_military_cnt = has_edu_doc_cnt = has_diploma_num_cnt = has_appendix_num_cnt = 0
+    has_passport_cnt = has_photo_cnt = 0
     readiness_scores = []
     all_letters = []
     honor_eligible = 0
@@ -309,11 +336,21 @@ def dashboard():
         personal_pcts.append(personal_pct)
         per_group_stats[gid]['personal'].append(personal_pct)
 
+        if st.get('photo'):
+            has_photo_cnt += 1
+
         mil = military_by_student.get(st['id'])
         if mil:
             has_military_cnt += 1
             mil_filled = sum(1 for f in MILITARY_FIELDS if mil.get(f) and str(mil.get(f)).strip())
             military_pcts.append(mil_filled / len(MILITARY_FIELDS) * 100)
+
+        passport = passport_by_student.get(st['id'])
+        if passport:
+            has_passport_cnt += 1
+            passport_fields = PASSPORT_FIELDS_ID_CARD if passport.get('document_type') == 'ID-картка' else PASSPORT_FIELDS_BOOK
+            passport_filled = sum(1 for f in passport_fields if passport.get(f) and str(passport.get(f)).strip())
+            passport_pcts.append(passport_filled / len(passport_fields) * 100)
 
         group_subj_total = subjects_total_by_group.get(gid, 0)
         st_grades = grades_by_student.get(st['id'], [])
@@ -331,6 +368,9 @@ def dashboard():
         has_edu = st['id'] in edu_doc_students
         if has_edu:
             has_edu_doc_cnt += 1
+            edu_doc = edu_doc_by_student[st['id']]
+            edu_filled = sum(1 for f in EDU_DOC_FIELDS if edu_doc.get(f) and str(edu_doc.get(f)).strip())
+            edu_doc_pcts.append(edu_filled / len(EDU_DOC_FIELDS) * 100)
         dip = diploma_by_student.get(st['id'], {})
         if dip.get('diploma_number'):
             has_diploma_num_cnt += 1
@@ -387,7 +427,11 @@ def dashboard():
         'military_have_pct': round(has_military_cnt / n * 100, 1),
         'grades_avg': _avg(grades_pcts),
         'activities_avg': _avg(activities_pcts),
-        'edu_doc_pct': round(has_edu_doc_cnt / n * 100, 1),
+        'passport_avg': _avg(passport_pcts),
+        'passport_have_pct': round(has_passport_cnt / n * 100, 1),
+        'edu_doc_avg': _avg(edu_doc_pcts),
+        'edu_doc_have_pct': round(has_edu_doc_cnt / n * 100, 1),
+        'photo_pct': round(has_photo_cnt / n * 100, 1),
         'diploma_num_pct': round(has_diploma_num_cnt / n * 100, 1),
         'appendix_num_pct': round(has_appendix_num_cnt / n * 100, 1),
     }

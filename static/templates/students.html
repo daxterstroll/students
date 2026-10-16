@@ -140,6 +140,53 @@
         text-shadow: 0 0 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7);
     }
 
+    /* ===== КОМПАКТНІ ЧІПИ ДОДАТКОВОЇ ЗАПОВНЕНОСТІ =====
+       Окрема повнорозмірна смужка на кожну категорію (оцінки,
+       активності, військові, паспорт, документ про освіту) займала б
+       забагато висоти - тому тільки "особисті дані" лишається повною
+       смужкою (fill-bar вище), а решта показується маленькими чіпами
+       в один рядок, що переноситься, не розтягуючи колонку. */
+    .fill-chips {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 3px;
+        margin-top: 4px;
+    }
+    /* Лише іконка, без цифр чи підпису - повна інформація (X з Y) в
+       title-підказці при наведенні. Так усі значки (фото, оцінки,
+       практика, документи...) гарантовано влазять в один рядок,
+       навіть у вузькій колонці. Колір - не за категорією, а за
+       статусом: червоний, поки не все заповнено, зелений - коли
+       заповнено повністю (для фото - просто є/немає). */
+    .fill-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 23px;
+        height: 23px;
+        flex-shrink: 0;
+        border-radius: 50%;
+        font-size: 12px;
+        border: 1px solid transparent;
+    }
+    .fill-chip--complete   { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.4); }
+    .fill-chip--incomplete { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    html[data-theme="dark"] .fill-chip--complete { background: rgba(79,122,82,.25); color: #bfe3c2; border-color: rgba(79,122,82,.4); }
+
+    /* У мобільній картці title-підказка при наведенні не працює (немає
+       hover на дотику), тому там значки показують короткий підпис
+       прямо в чіпі замість того, щоб ховати все в title. Колонка в
+       таблиці для десктопу лишається вузькою - там тільки іконка. */
+    .student-card .fill-chips { flex-wrap: wrap; }
+    .student-card .fill-chip {
+        width: auto;
+        height: auto;
+        padding: 2px 8px;
+        border-radius: 10px;
+        font-size: 11px;
+        gap: 4px;
+    }
+
     /* ===== ACTION CHIPS ===== */
     .chip-group { display: inline-flex; gap: .3rem; }
     .btn-chip {
@@ -481,24 +528,28 @@
                                 <div class="fill-bar__inner fill-bar__inner--main" data-width="{{ (student.filled_fields / student.total_fields) * 100 }}%"></div>
                                 <div class="fill-bar__label">{{ student.filled_fields }} з {{ student.total_fields }}</div>
                             </div>
+                            <div class="fill-chips">
+                            {% if student.has_photo %}
+                            <span class="fill-chip fill-chip--complete" title="Фото завантажено"><i class="bi bi-camera-fill"></i></span>
+                            {% else %}
+                            <span class="fill-chip fill-chip--incomplete" title="Фото не завантажено"><i class="bi bi-camera"></i></span>
+                            {% endif %}
                             {% if student.grades_filled %}
-                            <div class="fill-bar">
-                                <div class="fill-bar__inner fill-bar__inner--grades" data-width="{{ (student.grades_filled / student.grades_total if student.grades_total > 0 else 0) * 100 }}%"></div>
-                                <div class="fill-bar__label" style="color:#fff;">{{ student.grades_filled }} з {{ student.grades_total }}</div>
-                            </div>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}" title="Оцінки: {{ student.grades_filled }} з {{ student.grades_total }}"><i class="bi bi-journal-check"></i></span>
                             {% endif %}
                             {% if student.activities_filled_fields %}
-                            <div class="fill-bar">
-                                <div class="fill-bar__inner fill-bar__inner--activities" data-width="{{ student.activities_fill_percentage }}%"></div>
-                                <div class="fill-bar__label" style="color:#fff;">{{ student.activities_filled_fields }} з {{ student.activities_total_fields }}</div>
-                            </div>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}" title="Практика/курсові/атестація: {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}"><i class="bi bi-briefcase"></i></span>
                             {% endif %}
                             {% if student.has_military %}
-                            <div class="fill-bar">
-                                <div class="fill-bar__inner fill-bar__inner--military" data-width="{{ (student.military_filled_fields / student.military_total_fields) * 100 }}%"></div>
-                                <div class="fill-bar__label" style="color:#fff;">{{ student.military_filled_fields }} з {{ student.military_total_fields }}</div>
-                            </div>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}" title="Військові дані: {{ student.military_filled_fields }} з {{ student.military_total_fields }}"><i class="bi bi-shield"></i></span>
                             {% endif %}
+                            {% if student.has_passport %}
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}" title="Паспортні дані: {{ student.passport_filled_fields }} з {{ student.passport_total_fields }}"><i class="bi bi-person-vcard"></i></span>
+                            {% endif %}
+                            {% if student.has_education_doc %}
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}" title="Документ про освіту: {{ student.edu_doc_filled_fields }} з {{ student.edu_doc_total_fields }}"><i class="bi bi-mortarboard"></i></span>
+                            {% endif %}
+                            </div>
                         </div>
                     </td>
                     <td class="text-center">
@@ -559,24 +610,28 @@
                         <div class="fill-bar__inner fill-bar__inner--main" data-width="{{ (student.filled_fields / student.total_fields) * 100 }}%"></div>
                         <div class="fill-bar__label">{{ student.filled_fields }} з {{ student.total_fields }}</div>
                     </div>
+                    <div class="fill-chips">
+                    {% if student.has_photo %}
+                    <span class="fill-chip fill-chip--complete"><i class="bi bi-camera-fill"></i>Фото</span>
+                    {% else %}
+                    <span class="fill-chip fill-chip--incomplete"><i class="bi bi-camera"></i>Без фото</span>
+                    {% endif %}
                     {% if student.grades_filled %}
-                    <div class="fill-bar">
-                        <div class="fill-bar__inner fill-bar__inner--grades" data-width="{{ (student.grades_filled / student.grades_total if student.grades_total > 0 else 0) * 100 }}%"></div>
-                        <div class="fill-bar__label" style="color:#fff;">{{ student.grades_filled }} з {{ student.grades_total }}</div>
-                    </div>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}"><i class="bi bi-journal-check"></i>Оцінки {{ student.grades_filled }}/{{ student.grades_total }}</span>
                     {% endif %}
                     {% if student.activities_filled_fields %}
-                    <div class="fill-bar">
-                        <div class="fill-bar__inner fill-bar__inner--activities" data-width="{{ student.activities_fill_percentage }}%"></div>
-                        <div class="fill-bar__label" style="color:#fff;">{{ student.activities_filled_fields }} з {{ student.activities_total_fields }}</div>
-                    </div>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-briefcase"></i>Практика {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}</span>
                     {% endif %}
                     {% if student.has_military %}
-                    <div class="fill-bar">
-                        <div class="fill-bar__inner fill-bar__inner--military" data-width="{{ (student.military_filled_fields / student.military_total_fields) * 100 }}%"></div>
-                        <div class="fill-bar__label" style="color:#fff;">{{ student.military_filled_fields }} з {{ student.military_total_fields }}</div>
-                    </div>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ student.military_filled_fields }}/{{ student.military_total_fields }}</span>
                     {% endif %}
+                    {% if student.has_passport %}
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-person-vcard"></i>Паспорт {{ student.passport_filled_fields }}/{{ student.passport_total_fields }}</span>
+                    {% endif %}
+                    {% if student.has_education_doc %}
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-mortarboard"></i>Документ {{ student.edu_doc_filled_fields }}/{{ student.edu_doc_total_fields }}</span>
+                    {% endif %}
+                    </div>
                 </div>
             </div>
 
