@@ -165,7 +165,9 @@
             {{ bar('Оцінки з предметів', completeness.grades_avg or 0) }}
             {{ bar('Практика / курсові / атестація', completeness.activities_avg or 0) }}
             {{ bar('Військовий облік (серед тих, у кого є запис)', completeness.military_avg or 0, '- запис є у ' ~ completeness.military_have_pct ~ '% студентів') }}
-            {{ bar('Документ про освіту додано', completeness.edu_doc_pct) }}
+            {{ bar('Паспортні дані (серед тих, у кого є запис)', completeness.passport_avg or 0, '- запис є у ' ~ completeness.passport_have_pct ~ '% студентів') }}
+            {{ bar('Документ про освіту (серед тих, у кого доданий)', completeness.edu_doc_avg or 0, '- доданий у ' ~ completeness.edu_doc_have_pct ~ '% студентів') }}
+            {{ bar('Фото завантажено', completeness.photo_pct) }}
             {{ bar('Номер диплома призначено', completeness.diploma_num_pct) }}
             {{ bar('Номер додатка призначено', completeness.appendix_num_pct) }}
         </div>
