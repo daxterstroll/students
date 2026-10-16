@@ -281,6 +281,34 @@
         color: var(--muted);
     }
 
+    /* ===== Нова пагінація: стрілки + випадний список сторінок =====
+       Кольори - через ті самі CSS-змінні, що вже визначені в :root і
+       перевизначені в html[data-theme="dark"] (main.css), тому окремий
+       dark-theme override тут не потрібен - підлаштовується сама. */
+    .pagination-arrow {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--ink-text);
+        text-decoration: none;
+        font-size: 1rem;
+        transition: all .15s ease;
+    }
+    .pagination-arrow:hover { background: var(--brass-soft); border-color: var(--brass); color: var(--ink-text); }
+    .pagination-arrow.disabled { opacity: .35; pointer-events: none; }
+    .pagination-select {
+        width: auto;
+        min-width: 160px;
+        text-align: center;
+        font-weight: 600;
+        font-size: .875rem;
+    }
+
     @media (max-width: 991px) {
         .table-responsive table, .table-responsive thead, .table-responsive tbody,
         .table-responsive tbody tr, .table-responsive th, .table-responsive td {
@@ -291,15 +319,6 @@
         .admin-section-title {}
 
         .pagination .page-link { padding: 0.25rem 0.5rem; font-size: 0.8125rem; margin: 0 1px; }
-        .pagination .page-item:not(.active):not(:first-child):not(:last-child) .page-link { display: none; }
-        .pagination .page-item.active,
-        .pagination .page-item:first-child,
-        .pagination .page-item:last-child,
-        .pagination .page-item.active ~ .page-item:nth-child(2),
-        .pagination .page-item.active + .page-item,
-        .pagination .page-item.active + .page-item + .page-item {
-            display: block;
-        }
     }
     @media (min-width: 992px) {
         .student-cards-container { display: none !important; }
@@ -309,16 +328,6 @@
         }
     }
     @media (max-width: 576px) {
-        .pagination { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 5px; }
-        .pagination::-webkit-scrollbar { height: 3px; }
-        .pagination::-webkit-scrollbar-track { background: var(--paper-2); border-radius: 3px; }
-        .pagination::-webkit-scrollbar-thumb { background: var(--brass); border-radius: 3px; }
-        .pagination .page-item { flex: 0 0 auto; }
-        .pagination .page-item:not(.active):not(:first-child):not(:last-child):not(.mobile-visible) { display: none; }
-        .pagination .page-item.active, .pagination .page-item:first-child, .pagination .page-item:last-child { display: block; }
-        .pagination .page-link span:not(.visually-hidden) { display: none; }
-        .pagination .page-link { padding: 0.2rem 0.4rem; min-width: 32px; text-align: center; }
-
         .student-card { padding: 12px; margin-bottom: 12px; }
         .student-card .card-label, .student-card .card-value { font-size: 13px; }
         .btn-chip { width: 30px; height: 30px; font-size: .85rem; }
@@ -339,12 +348,22 @@
     </div>
 
     <!-- Фільтри -->
+    {% set active_extra_filters = [] %}
+    {% if degree_level %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if study_form %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if course %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if license_id %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if reduced %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if include_frozen %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if include_archived %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% set extra_filters_open = active_extra_filters|length > 0 %}
+
     <div class="card mb-3 filter-panel">
         <div class="card-body py-3">
             <form method="GET" id="filterForm" class="row g-2 align-items-end">
                 <input type="hidden" name="group_id" id="groupIdInput" value="{{ group_id or '' }}">
 
-                <div class="col-12 col-lg-3">
+                <div class="col-12 {% if session.get('is_admin') %}col-lg-5{% else %}col-lg-9{% endif %}">
                     <label class="form-label small text-muted mb-1">Пошук по ПІБ</label>
                     <div class="input-group input-group-sm">
                         <input type="text" name="search" placeholder="Прізвище, ім'я…" class="form-control" value="{{ search }}">
@@ -353,7 +372,7 @@
                 </div>
 
                 {% if session.get('is_admin') %}
-                <div class="col-12 col-lg-3">
+                <div class="col-12 col-lg-4">
                     <label class="form-label small text-muted mb-1">Група</label>
                     <div class="dropdown group-picker">
                         <button type="button" class="form-select form-select-sm text-start" id="groupPickerBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
@@ -384,62 +403,83 @@
                 </div>
                 {% endif %}
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">Ступінь</label>
-                    <select name="degree_level" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Всі</option>
-                        {% for d in degree_levels_available %}
-                        <option value="{{ d }}" {% if degree_level == d %}selected{% endif %}>{{ d }}</option>
-                        {% endfor %}
-                    </select>
+                <div class="col-12 col-lg-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-center gap-2" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="{{ 'true' if extra_filters_open else 'false' }}" aria-controls="advancedFilters">
+                        <i class="bi bi-sliders"></i> Інші фільтри
+                        {% if active_extra_filters %}<span class="badge rounded-pill text-bg-primary">{{ active_extra_filters|length }}</span>{% endif %}
+                    </button>
                 </div>
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">Форма</label>
-                    <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Всі</option>
-                        {% for f in study_forms_available %}
-                        <option value="{{ f }}" {% if study_form == f %}selected{% endif %}>{{ f }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                <div class="collapse col-12{% if extra_filters_open %} show{% endif %}" id="advancedFilters">
+                    <div class="row g-2 pt-3 mt-1 border-top">
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">Ступінь</label>
+                            <select name="degree_level" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for d in degree_levels_available %}
+                                <option value="{{ d }}" {% if degree_level == d %}selected{% endif %}>{{ d }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">Курс</label>
-                    <select name="course" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Всі</option>
-                        {% for c in courses_available %}
-                        <option value="{{ c }}" {% if course == c %}selected{% endif %}>{{ c }} курс</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">Форма</label>
+                            <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for f in study_forms_available %}
+                                <option value="{{ f }}" {% if study_form == f %}selected{% endif %}>{{ f }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">Ліцензія</label>
-                    <select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Всі</option>
-                        {% for l in licenses_available %}
-                        <option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">Курс</label>
+                            <select name="course" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for c in courses_available %}
+                                <option value="{{ c }}" {% if course == c %}selected{% endif %}>{{ c }} курс</option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">Програма</label>
-                    <select name="reduced" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Всі студенти</option>
-                        <option value="1" {% if reduced == '1' %}selected{% endif %}>Лише скорочена</option>
-                        <option value="0" {% if reduced == '0' %}selected{% endif %}>Лише повна</option>
-                    </select>
-                </div>
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">Ліцензія</label>
+                            <select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for l in licenses_available %}
+                                <option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
 
-                <div class="col-6 col-lg-2">
-                    <label class="form-label small text-muted mb-1">На сторінці</label>
-                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
-                        {% for option in [10, 20, 50, 100] %}
-                            <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
-                        {% endfor %}
-                    </select>
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">Програма</label>
+                            <select name="reduced" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі студенти</option>
+                                <option value="1" {% if reduced == '1' %}selected{% endif %}>Лише скорочена</option>
+                                <option value="0" {% if reduced == '0' %}selected{% endif %}>Лише повна</option>
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-muted mb-1">На сторінці</label>
+                            <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                                {% for option in [10, 20, 50, 100] %}
+                                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-12 d-flex align-items-center gap-2 flex-wrap mt-1">
+                            <span class="small text-muted">Показати також:</span>
+
+                            <input type="checkbox" class="btn-check" id="includeFrozenCheck" name="include_frozen" value="1" autocomplete="off" {% if include_frozen %}checked{% endif %} onchange="this.form.submit()">
+                            <label class="btn btn-sm btn-outline-secondary" for="includeFrozenCheck"><i class="bi bi-snow"></i> Заморожені</label>
+
+                            <input type="checkbox" class="btn-check" id="includeArchivedCheck" name="include_archived" value="1" autocomplete="off" {% if include_archived %}checked{% endif %} onchange="this.form.submit()">
+                            <label class="btn btn-sm btn-outline-secondary" for="includeArchivedCheck"><i class="bi bi-archive"></i> Архівні</label>
+                        </div>
+                    </div>
                 </div>
 
                 <input type="hidden" name="sort_by" value="{{ sort_by }}">
@@ -449,7 +489,7 @@
     </div>
 
     <!-- Информация о фильтрах -->
-    {% if search or group_id or degree_level or study_form or course or license_id or reduced %}
+    {% if search or group_id or degree_level or study_form or course or license_id or reduced or include_frozen or include_archived %}
     <div class="filter-bar mb-3 py-2 px-3" role="alert">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -473,6 +513,8 @@
                 {% endif %}
                 {% if reduced == '1' %}<span class="filter-chip">Лише скорочена програма</span>{% endif %}
                 {% if reduced == '0' %}<span class="filter-chip">Лише повна програма</span>{% endif %}
+                {% if include_frozen %}<span class="filter-chip"><i class="bi bi-snow"></i> + Заморожені</span>{% endif %}
+                {% if include_archived %}<span class="filter-chip"><i class="bi bi-archive"></i> + Архівні</span>{% endif %}
             </div>
             <a href="{{ url_for('students.student_list') }}" class="btn btn-sm" style="border:1px solid var(--stamp-semi); color: var(--stamp);">
                 <i class="bi bi-x-circle"></i> Очистити
@@ -486,7 +528,7 @@
         <table class="table table-bordered students-table mb-0">
             {% macro sort_link(column, label) -%}
                 {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
-                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
+                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
                     {{ label }}
                     {%- if sort_by == column %}
                         {% if sort_order == 'asc' %} ▲
@@ -518,10 +560,18 @@
                     <td class="text-center font-monospace">{{ student.id }}</td>
                     {% endif %}
                     <td>{{ student.last_name_UA }}</td>
-                    <td>{{ student.first_name_UA }} {{ ui.reduced_program_badge(student) }}</td>
+                    <td>{{ student.first_name_UA }} {{ ui.reduced_program_badge(student) }} {{ ui.student_status_badge(student) }}</td>
                     <td>{{ student.middle_name_UA }}</td>
                     <td>{{ student.birth_date }}</td>
-                    <td>{{ student.group_name | default('-') }}</td>
+                    <td>
+                        {% if student.group_name %}
+                            {{ student.group_name }}
+                        {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
+                            <span class="text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
+                        {% else %}
+                            <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
                     <td style="min-width:160px;">
                         <div class="progress-bar-container">
                             <div class="fill-bar">
@@ -579,7 +629,7 @@
             {% endif %}
             <div class="card-row">
                 <span class="card-label">ПІБ</span>
-                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }} {{ ui.reduced_program_badge(student) }}</span>
+                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }} {{ ui.reduced_program_badge(student) }} {{ ui.student_status_badge(student) }}</span>
             </div>
             <div class="card-row">
                 <span class="card-label">Дата народження</span>
@@ -589,6 +639,11 @@
             <div class="card-row">
                 <span class="card-label">Група</span>
                 <span class="card-value">{{ student.group_name }}</span>
+            </div>
+            {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
+            <div class="card-row">
+                <span class="card-label">Група</span>
+                <span class="card-value text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
             </div>
             {% endif %}
 
@@ -610,7 +665,7 @@
                     <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}"><i class="bi bi-journal-check"></i>Оцінки {{ student.grades_filled }}/{{ student.grades_total }}</span>
                     {% endif %}
                     <span class="fill-chip {{ 'fill-chip--complete' if student.activities_total_fields and student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-briefcase"></i>Практика {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}</span>
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ (student.military_filled_fields ~ '/' ~ student.military_total_fields) if student.has_military else '-  немає запису' }}</span>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ (student.military_filled_fields ~ '/' ~ student.military_total_fields) if student.has_military else ' - немає запису' }}</span>
                     <span class="fill-chip {{ 'fill-chip--complete' if student.has_passport and student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-person-vcard"></i>Паспорт {{ (student.passport_filled_fields ~ '/' ~ student.passport_total_fields) if student.has_passport else ' - немає запису' }}</span>
                     <span class="fill-chip {{ 'fill-chip--complete' if student.has_education_doc and student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-mortarboard"></i>Документ {{ (student.edu_doc_filled_fields ~ '/' ~ student.edu_doc_total_fields) if student.has_education_doc else ' - немає запису' }}</span>
                     </div>
@@ -661,66 +716,53 @@
         {% endfor %}
     </div>
 
-    <!-- ПАГИНАЦИЯ -->
+    <!-- ПАГІНАЦІЯ: замість списку номерів з "..." - компактна строка:
+         стрілки вперед/назад + нативний select з усіма сторінками
+         (без окремих мобільної/десктопної версій), і знизу - скільки
+         студентів показано з скількох усього. -->
     {% if total_pages > 1 %}
-    <nav aria-label="Page navigation" class="mt-3">
-        <ul class="pagination justify-content-center flex-wrap" id="paginationContainer">
+    {% set prev_url = url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set next_url = url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set range_start = (page - 1) * per_page + 1 %}
+    {% set range_end = [page * per_page, total_students] | min %}
+
+    <div class="pagination-bar mt-3 d-flex flex-column align-items-center gap-2">
+        <div class="d-flex align-items-center gap-2">
             {% if page > 1 %}
-                <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Previous">
-                        <span class="d-none d-sm-inline">&laquo; Назад</span>
-                        <span class="d-inline d-sm-none">&laquo;</span>
-                    </a>
-                </li>
+                <a href="{{ prev_url }}" class="pagination-arrow" aria-label="Попередня сторінка" title="Попередня сторінка"><i class="bi bi-chevron-left"></i></a>
+            {% else %}
+                <span class="pagination-arrow disabled" aria-hidden="true"><i class="bi bi-chevron-left"></i></span>
             {% endif %}
 
-            {% if page > 3 %}
-                <li class="page-item d-none d-md-block">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">1</a>
-                </li>
-                {% if page > 4 %}
-                    <li class="page-item d-none d-md-block disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                {% endif %}
-            {% endif %}
-
-            {% for p in range(1, total_pages + 1) %}
-                {% if p >= page-2 and p <= page+2 %}
-                    <li class="page-item {% if p == page %}active{% endif %}">
-                        <a class="page-link" href="{{ url_for('students.student_list', page=p, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">
-                            <span class="d-none d-sm-inline">{{ p }}</span>
-                            <span class="d-inline d-sm-none">{{ p }}</span>
-                        </a>
-                    </li>
-                {% endif %}
-            {% endfor %}
-
-            {% if page < total_pages - 2 %}
-                {% if page < total_pages - 3 %}
-                    <li class="page-item d-none d-md-block disabled">
-                        <span class="page-link">...</span>
-                    </li>
-                {% endif %}
-                <li class="page-item d-none d-md-block">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=total_pages, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}">{{ total_pages }}</a>
-                </li>
-            {% endif %}
+            <form method="GET" class="d-flex">
+                <input type="hidden" name="search" value="{{ search }}">
+                <input type="hidden" name="group_id" value="{{ group_id or '' }}">
+                <input type="hidden" name="degree_level" value="{{ degree_level }}">
+                <input type="hidden" name="study_form" value="{{ study_form }}">
+                <input type="hidden" name="course" value="{{ course or '' }}">
+                <input type="hidden" name="license_id" value="{{ license_id or '' }}">
+                <input type="hidden" name="reduced" value="{{ reduced }}">
+                <input type="hidden" name="include_frozen" value="{{ include_frozen }}">
+                <input type="hidden" name="include_archived" value="{{ include_archived }}">
+                <input type="hidden" name="per_page" value="{{ per_page }}">
+                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                <input type="hidden" name="sort_order" value="{{ sort_order }}">
+                <select name="page" class="form-select form-select-sm pagination-select" onchange="this.form.submit()" aria-label="Обрати сторінку">
+                    {% for p in range(1, total_pages + 1) %}
+                        <option value="{{ p }}" {% if p == page %}selected{% endif %}>Сторінка {{ p }} з {{ total_pages }}</option>
+                    {% endfor %}
+                </select>
+            </form>
 
             {% if page < total_pages %}
-                <li class="page-item">
-                    <a class="page-link" href="{{ url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, sort_by=sort_by, sort_order=sort_order) }}" aria-label="Next">
-                        <span class="d-none d-sm-inline">Вперед &raquo;</span>
-                        <span class="d-inline d-sm-none">&raquo;</span>
-                    </a>
-                </li>
+                <a href="{{ next_url }}" class="pagination-arrow" aria-label="Наступна сторінка" title="Наступна сторінка"><i class="bi bi-chevron-right"></i></a>
+            {% else %}
+                <span class="pagination-arrow disabled" aria-hidden="true"><i class="bi bi-chevron-right"></i></span>
             {% endif %}
-        </ul>
-
-        <div class="text-center mt-2 d-block d-md-none">
-            <small style="color: var(--muted);">Сторінка {{ page }} з {{ total_pages }}</small>
         </div>
-    </nav>
+
+        <div class="small" style="color: var(--muted);">Показано {{ range_start }}-{{ range_end }} з {{ total_students }} студентів</div>
+    </div>
     {% endif %}
 </div>
 

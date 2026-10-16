@@ -41,6 +41,21 @@
 {{ reduced_program_badge_for(student.program_credits_override, student.program_credits) }}
 {% endmacro %}
 
+{# Показує, що студент у списку - не звичайний активний, а заморожений
+   чи архівний (ці категорії додаються до списку лише коли на сторінці
+   увімкнено відповідний перемикач - "status" рахується тільки там). #}
+{% macro student_status_badge(student) %}
+{% if student.status == 'frozen' %}
+<span class="badge text-bg-info" title="Заморожений{% if student.frozen_previous_group_name %} - попередня група: {{ student.frozen_previous_group_name }}{% endif %}{% if student.frozen_reason %}. Причина: {{ student.frozen_reason }}{% endif %}">
+    <i class="bi bi-snow"></i> заморожений
+</span>
+{% elif student.status == 'archived' %}
+<span class="badge text-bg-secondary" title="Студент в архіві">
+    <i class="bi bi-archive"></i> в архіві
+</span>
+{% endif %}
+{% endmacro %}
+
 {% macro empty_state(icon, text, hint=None) %}
 <div class="card">
     <div class="card-body empty-state">

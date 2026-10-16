@@ -59,7 +59,14 @@ def student_list():
     course = request.args.get('course', type=int)
     license_id = request.args.get('license_id', type=int)
     reduced = request.args.get('reduced', '')  # '' = всі, '1' = лише скорочена, '0' = лише повна
-    page = request.args.get('page', 1, type=int)
+    # Навмисно рядки '1'/'' а не bool: url_for() в пагінації/сортуванні
+    # підставляє ці значення назад у GET-параметри, а str(True)/str(False)
+    # ("True"/"False") не збігається з перевіркою `== '1'` на наступному
+    # запиті - перемикач виглядав би скинутим після переходу на сторінку.
+    # Порожній і непорожній рядок однаково коректно працюють в {% if %}.
+    include_frozen = '1' if request.args.get('include_frozen') == '1' else ''
+    include_archived = '1' if request.args.get('include_archived') == '1' else ''
+    page = max(1, request.args.get('page', 1, type=int))
     per_page = request.args.get('per_page', 10, type=int)
     sort_by = request.args.get('sort_by', 'id')
     sort_order = request.args.get('sort_order', 'desc')
@@ -107,16 +114,25 @@ def student_list():
                g.degree_level_en,
                g.specialty_en,
                g.educational_program_en,
-               g.knowledge_area_en
+               g.knowledge_area_en,
+               fs.id AS frozen_record_id,
+               fs.reason AS frozen_reason,
+               pg.name AS frozen_previous_group_name
         FROM students s
         LEFT JOIN military m ON m.student_id = s.id
         LEFT JOIN groups g ON s.group_id = g.id
+        LEFT JOIN frozen_students fs ON fs.student_id = s.id AND fs.resolved_at IS NULL
+        LEFT JOIN groups pg ON pg.id = fs.previous_group_id
     """
     count_query = "SELECT COUNT(*) FROM students s LEFT JOIN groups g ON s.group_id = g.id"
-    where_clauses = [
-        "s.archived = FALSE",
-        "s.id NOT IN (SELECT student_id FROM frozen_students WHERE resolved_at IS NULL)"
-    ]
+    where_clauses = []
+    # За замовчуванням - лише активні студенти (не заморожені й не в
+    # архіві). Перемикачі на сторінці ДОДАЮТЬ ці категорії до
+    # результатів пошуку, а не замінюють ними звичайний список.
+    if not include_archived:
+        where_clauses.append("s.archived = FALSE")
+    if not include_frozen:
+        where_clauses.append("s.id NOT IN (SELECT student_id FROM frozen_students WHERE resolved_at IS NULL)")
     params = []
 
     if group_id:
@@ -169,9 +185,12 @@ def student_list():
                 license_id=license_id,
                 licenses_available=[],
                 reduced=reduced,
+                include_frozen=include_frozen,
+                include_archived=include_archived,
                 page=page,
                 per_page=per_page,
                 total_pages=0,
+                total_students=0,
                 sort_by=sort_by,
                 sort_order=sort_order
             )
@@ -226,6 +245,17 @@ def student_list():
 
     for student in students:
         student_dict = dict(student)
+
+        # Статус для бейджа в списку - лише коли показуємо
+        # заморожених/архівних поряд зі звичайними (перемикачі
+        # include_frozen/include_archived), інакше в списку й так лише
+        # активні, бейдж не потрібен.
+        if student_dict.get('frozen_record_id'):
+            student_dict['status'] = 'frozen'
+        elif student_dict.get('archived'):
+            student_dict['status'] = 'archived'
+        else:
+            student_dict['status'] = 'active'
 
         student_filled_fields = sum(1 for field in student_fields if student_dict.get(field) and str(student_dict.get(field)).strip())
         student_dict['filled_fields'] = student_filled_fields
@@ -371,9 +401,12 @@ def student_list():
         license_id=license_id,
         licenses_available=licenses_available,
         reduced=reduced,
+        include_frozen=include_frozen,
+        include_archived=include_archived,
         page=page,
         per_page=per_page,
         total_pages=total_pages,
+        total_students=total_students,
         sort_by=sort_by,
         sort_order=sort_order
     )
