@@ -5,25 +5,106 @@ routes/utils.py
 декоратори перевірки авторизації/прав (login_required, permission_required),
 транслітерація українських імен та пошук шаблонів .docx.
 
-Логування: усі модулі, які хочуть писати помилки/події в app.log,
+Логування: усі модулі, які хочуть писати помилки/події в лог,
 ПОВИННІ використовувати саме логер `logger`, визначений нижче
 (`from routes.utils import logger`), а не голий `import logging`.
-Лише `logger` тут налаштований з файловим обробником (app.log) та
-консольним виводом; звичайний кореневий логер Python (`logging.error(...)`)
+Лише `logger` тут налаштований з файловим обробником та консольним
+виводом; звичайний кореневий логер Python (`logging.error(...)`)
 обробників не має і в файл нічого не пише.
+
+Логи лежать у папці logs/ окремим файлом на кожен місяць
+(logs/app-2026-10.log і т.д.) - раніше все писалось в один app.log,
+який ріс необмежено і який /admin/view_logs доводилось повністю
+вичитувати в пам'ять на кожен запит. MonthlyFileHandler нижче сам
+перемикається на новий файл, коли починається новий місяць; стара
+накопичена app.log (якщо лишилась з попередньої версії) розбивається
+на місячні файли один раз при старті - див. _migrate_legacy_log().
 """
 
 from functools import wraps
 from flask import session, redirect, url_for, flash
 import logging
 import os
+from datetime import datetime
 from routes.db import get_db
 import json
 import re
 
 # Настройка пути к файлу
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-log_file_path = os.path.join(PROJECT_ROOT, 'app.log')
+LOGS_DIR = os.path.join(PROJECT_ROOT, 'logs')
+os.makedirs(LOGS_DIR, exist_ok=True)
+
+LEGACY_LOG_PATH = os.path.join(PROJECT_ROOT, 'app.log')
+_LOG_LINE_DATE_RE = re.compile(r'^(\d{4})-(\d{2})-\d{2}\s*\|')
+
+
+def monthly_log_path(dt=None):
+    """Шлях до файлу логів конкретного місяця (за замовчуванням - поточного)."""
+    dt = dt or datetime.now()
+    return os.path.join(LOGS_DIR, f"app-{dt.strftime('%Y-%m')}.log")
+
+
+def _migrate_legacy_log():
+    """
+    Одноразова міграція: якщо з попередньої версії лишився старий
+    суцільний app.log у корені проєкту - розбиває його рядки по
+    місяцях (за датою на початку кожного рядка) у нові файли в logs/,
+    а сам старий файл перейменовує в app.log.bak (не видаляє - про
+    всяк випадок). Якщо app.log.bak вже існує, нічого не робить -
+    міграція вже відбулась раніше.
+    """
+    if not os.path.exists(LEGACY_LOG_PATH):
+        return
+    backup_path = LEGACY_LOG_PATH + '.bak'
+    if os.path.exists(backup_path):
+        return
+    try:
+        buckets = {}
+        with open(LEGACY_LOG_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                m = _LOG_LINE_DATE_RE.match(line)
+                year_month = f"{m.group(1)}-{m.group(2)}" if m else 'unknown'
+                buckets.setdefault(year_month, []).append(line)
+
+        for year_month, lines in buckets.items():
+            target = os.path.join(LOGS_DIR, f"app-{year_month}.log")
+            # Дописуємо в кінець - якщо файл цього місяця вже існує
+            # (малоймовірно для першого запуску, але про всяк випадок),
+            # старі записи не губляться.
+            with open(target, 'a', encoding='utf-8') as out:
+                out.writelines(lines)
+
+        os.rename(LEGACY_LOG_PATH, backup_path)
+    except Exception as e:
+        # Логер ще не налаштований на цьому етапі - друкуємо прямо в консоль.
+        print(f"Не вдалося розбити старий app.log по місяцях: {e}")
+
+
+_migrate_legacy_log()
+
+
+class MonthlyFileHandler(logging.FileHandler):
+    """
+    FileHandler, що сам перемикається на файл нового місяця щойно
+    починається новий місяць - без цього довелось би перезапускати
+    застосунок першого числа, щоб лог почав писатися в новий файл.
+    """
+    def __init__(self, encoding=None):
+        self._current_year_month = datetime.now().strftime('%Y-%m')
+        super().__init__(monthly_log_path(), encoding=encoding)
+
+    def emit(self, record):
+        now_year_month = datetime.now().strftime('%Y-%m')
+        if now_year_month != self._current_year_month:
+            self._current_year_month = now_year_month
+            if self.stream:
+                self.stream.close()
+                self.stream = None
+            self.baseFilename = monthly_log_path()
+            self.stream = self._open()
+        super().emit(record)
+
 
 # Настройка глобального логгера
 logger = logging.getLogger('Students')
@@ -34,7 +115,7 @@ if logger.handlers:
     logger.handlers.clear()
 
 # Создаем обработчики
-file_handler = logging.FileHandler(log_file_path, encoding='utf-8')
+file_handler = MonthlyFileHandler(encoding='utf-8')
 console_handler = logging.StreamHandler()
 
 # Форматирование
@@ -48,11 +129,11 @@ logger.addHandler(console_handler)
 
 # Проверка создания файла логов
 try:
-    with open(log_file_path, 'a', encoding='utf-8'):
+    with open(monthly_log_path(), 'a', encoding='utf-8'):
         pass
-    logger.debug(f"Логирование инициализировано. Файл логов: {log_file_path}")
+    logger.debug(f"Логирование инициализировано. Файл логов: {monthly_log_path()}")
 except Exception as e:
-    logger.error(f"Ошибка при доступе к файлу логов {log_file_path}: {e}")
+    logger.error(f"Ошибка при доступе к файлу логов {monthly_log_path()}: {e}")
     print(f"Ошибка при доступе к файлу логов: {e}")
 
 def log_action(username, action, group_ids=None, mode=None, details=None):
