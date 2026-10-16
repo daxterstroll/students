@@ -22,6 +22,140 @@ import io
 import threading
 import uuid
 import time
+from docx import Document as DocxDocument
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+
+def _set_table_borders(table):
+    """Тонка суцільна рамка й внутрішні лінії, як у зразку студквитків."""
+    tblPr = table._tbl.tblPr
+    borders = OxmlElement('w:tblBorders')
+    for edge in ('top', 'left', 'bottom', 'right', 'insideH', 'insideV'):
+        el = OxmlElement(f'w:{edge}')
+        el.set(qn('w:val'), 'single')
+        el.set(qn('w:sz'), '4')
+        el.set(qn('w:space'), '0')
+        el.set(qn('w:color'), 'auto')
+        borders.append(el)
+    tblPr.append(borders)
+
+
+def _set_table_fixed_width(table, width_in, indent_in=0.0):
+    """Фіксована ширина таблиці (а не автопідбір) + зсув вліво, як у зразку."""
+    tblPr = table._tbl.tblPr
+    tblW = OxmlElement('w:tblW')
+    tblW.set(qn('w:w'), str(int(width_in * 1440)))
+    tblW.set(qn('w:type'), 'dxa')
+    tblPr.append(tblW)
+    layout = OxmlElement('w:tblLayout')
+    layout.set(qn('w:type'), 'fixed')
+    tblPr.append(layout)
+    if indent_in:
+        tblInd = OxmlElement('w:tblInd')
+        tblInd.set(qn('w:w'), str(int(indent_in * 1440)))
+        tblInd.set(qn('w:type'), 'dxa')
+        tblPr.append(tblInd)
+
+
+# Ширини колонок (дюйми) - підібрані під зразок "Інформація для
+# студентських квитків": №, ПІБ, Паспорт, Виданий, Дата видачі,
+# Дійсний, Запис (ЄДДР), Ідентифікаційний номер.
+_ID_CARD_COL_WIDTHS_IN = [0.494, 2.535, 1.108, 1.496, 0.994, 0.994, 1.369, 1.613]
+_ID_CARD_HEADERS = ['№ з/п', 'ПІБ', 'Паспорт', 'Виданий', 'Дата видачі',
+                     'Дійсний', 'Запис', 'Ідентифікаційний номер']
+
+
+def build_id_card_info_docx(rows, group_name, degree_level, course):
+    """
+    Формує .docx "Інформація для студентських квитків" - така сама
+    структура/форматування, як у зразку, яким Домінік користується для
+    друку студентських квитків (ПВНЗ/філія зверху, таблиця з
+    паспортними даними, підпис завідувача знизу).
+
+    rows: список dict з ключами full_name, passport, issued_by,
+          issue_date, valid_until, unique_number, tax_id.
+    """
+    doc = DocxDocument()
+
+    section = doc.sections[0]
+    section.orientation = WD_ORIENT.LANDSCAPE
+    section.page_width, section.page_height = Inches(11.69), Inches(8.27)
+    section.top_margin = Inches(0.25)
+    section.bottom_margin = Inches(0.2)
+    section.left_margin = Inches(0.79)
+    section.right_margin = Inches(0.79)
+
+    style = doc.styles['Normal']
+    style.font.name = 'Times New Roman'
+    style.font.size = Pt(12)
+
+    def add_centered(text, size_pt, bold):
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(text)
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(size_pt)
+        run.bold = bold
+        return p
+
+    add_centered('ПВНЗ «Європейський університет»', 14, True)
+    add_centered('Львівська філія', 14, True)
+    add_centered(
+        f"Інформація для студентських квитків {degree_level.lower()} {course}курс {group_name}",
+        14, False
+    )
+    doc.add_paragraph()
+
+    table = doc.add_table(rows=1, cols=len(_ID_CARD_HEADERS))
+    table.autofit = False
+    _set_table_fixed_width(table, sum(_ID_CARD_COL_WIDTHS_IN), indent_in=-0.3)
+    _set_table_borders(table)
+
+    header_cells = table.rows[0].cells
+    for i, text in enumerate(_ID_CARD_HEADERS):
+        header_cells[i].width = Inches(_ID_CARD_COL_WIDTHS_IN[i])
+        p = header_cells[i].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.paragraph_format.space_after = Pt(0)
+        run = p.add_run(text)
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(12)
+        run.bold = True
+
+    for i, col in enumerate(table.columns):
+        col.width = Inches(_ID_CARD_COL_WIDTHS_IN[i])
+
+    for idx, r in enumerate(rows, start=1):
+        cells = table.add_row().cells
+        values = [
+            str(idx), r['full_name'], r['passport'], r['issued_by'],
+            r['issue_date'], r['valid_until'], r['unique_number'], r['tax_id'],
+        ]
+        for i, val in enumerate(values):
+            cells[i].width = Inches(_ID_CARD_COL_WIDTHS_IN[i])
+            p = cells[i].paragraphs[0]
+            p.paragraph_format.space_after = Pt(0)
+            if i != 1:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(val or '')
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(12)
+
+    doc.add_paragraph()
+    add_centered(
+        'Завідувач ВУП Львівської філії' + ' ' * 35 + 'Людмила СТАНІЩУК',
+        12, False
+    )
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
 
 
 @admin_bp.route('/admin/templates', methods=['GET', 'POST'])
@@ -226,7 +360,49 @@ def export_photos():
             FROM students WHERE id IN ({placeholders}) AND photo IS NOT NULL
         """, student_ids).fetchall()
 
-        group = conn.execute("SELECT name FROM groups WHERE id=?", (group_id,)).fetchone()
+        group = conn.execute(
+            "SELECT name, degree_level, course FROM groups WHERE id=?", (group_id,)
+        ).fetchone()
+
+        # Паспортні дані (найновіший запис кожного студента) + ІПН -
+        # для супровідного docx "Інформація для студентських квитків".
+        id_card_rows = []
+        if students:
+            id_card_placeholders = ','.join('?' for _ in students)
+            id_card_student_ids = [s['id'] for s in students]
+            passport_by_student = {}
+            for pd_row in conn.execute(f"""
+                SELECT student_id, series, number, issued_by, issue_date, valid_until, unique_number
+                FROM passport_documents
+                WHERE student_id IN ({id_card_placeholders})
+                ORDER BY id DESC
+            """, id_card_student_ids).fetchall():
+                passport_by_student.setdefault(pd_row['student_id'], pd_row)
+
+            tax_id_by_student = {
+                r['id']: r['tax_id'] for r in conn.execute(f"""
+                    SELECT id, tax_id FROM students WHERE id IN ({id_card_placeholders})
+                """, id_card_student_ids).fetchall()
+            }
+
+            sorted_students = sort_ukrainian(
+                students,
+                key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}"
+            )
+            for s in sorted_students:
+                pd_row = passport_by_student.get(s['id'])
+                name_parts = [s['last_name_UA'], s['first_name_UA'], s['middle_name_UA']]
+                full_name = ' '.join(p.strip() for p in name_parts if p and p.strip())
+                id_card_rows.append({
+                    'full_name': full_name,
+                    'passport': ((pd_row['series'] or '') + (pd_row['number'] or '')) if pd_row else '',
+                    'issued_by': pd_row['issued_by'] if pd_row else '',
+                    'issue_date': pd_row['issue_date'] if pd_row else '',
+                    'valid_until': pd_row['valid_until'] if pd_row else '',
+                    'unique_number': pd_row['unique_number'] if pd_row else '',
+                    'tax_id': tax_id_by_student.get(s['id']) or '',
+                })
+
         conn.close()
 
         if not students:
@@ -255,6 +431,15 @@ def export_photos():
                 else:
                     used_names[arcname] = 1
                 zf.write(photo_path, arcname=arcname)
+
+            if id_card_rows:
+                id_card_doc = build_id_card_info_docx(
+                    id_card_rows,
+                    group_name=(group['name'] if group else ''),
+                    degree_level=(group['degree_level'] if group else ''),
+                    course=(group['course'] if group else '')
+                )
+                zf.writestr('Інформація_для_студентських_квитків.docx', id_card_doc.read())
 
         buffer.seek(0)
         log_action(current_username(), f"вивантажив фото студентів (ZIP): {len(students)} шт., група ID {group_id}")
