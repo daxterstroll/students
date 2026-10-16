@@ -534,21 +534,11 @@
                             {% else %}
                             <span class="fill-chip fill-chip--incomplete" title="Фото не завантажено"><i class="bi bi-camera"></i></span>
                             {% endif %}
-                            {% if student.grades_filled %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}" title="Оцінки: {{ student.grades_filled }} з {{ student.grades_total }}"><i class="bi bi-journal-check"></i></span>
-                            {% endif %}
-                            {% if student.activities_filled_fields %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}" title="Практика/курсові/атестація: {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}"><i class="bi bi-briefcase"></i></span>
-                            {% endif %}
-                            {% if student.has_military %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}" title="Військові дані: {{ student.military_filled_fields }} з {{ student.military_total_fields }}"><i class="bi bi-shield"></i></span>
-                            {% endif %}
-                            {% if student.has_passport %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}" title="Паспортні дані: {{ student.passport_filled_fields }} з {{ student.passport_total_fields }}"><i class="bi bi-person-vcard"></i></span>
-                            {% endif %}
-                            {% if student.has_education_doc %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}" title="Документ про освіту: {{ student.edu_doc_filled_fields }} з {{ student.edu_doc_total_fields }}"><i class="bi bi-mortarboard"></i></span>
-                            {% endif %}
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.grades_total and student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}" title="Оцінки: {{ student.grades_filled }} з {{ student.grades_total }}"><i class="bi bi-journal-check"></i></span>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.activities_total_fields and student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}" title="Практика/курсові/атестація: {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}"><i class="bi bi-briefcase"></i></span>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}" title="Військові дані: {{ 'відсутні' if not student.has_military else (student.military_filled_fields ~ ' з ' ~ student.military_total_fields) }}"><i class="bi bi-shield"></i></span>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_passport and student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}" title="Паспортні дані: {{ 'відсутні' if not student.has_passport else (student.passport_filled_fields ~ ' з ' ~ student.passport_total_fields) }}"><i class="bi bi-person-vcard"></i></span>
+                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_education_doc and student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}" title="Документ про освіту: {{ 'відсутній' if not student.has_education_doc else (student.edu_doc_filled_fields ~ ' з ' ~ student.edu_doc_total_fields) }}"><i class="bi bi-mortarboard"></i></span>
                             </div>
                         </div>
                     </td>
@@ -619,18 +609,10 @@
                     {% if student.grades_filled %}
                     <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}"><i class="bi bi-journal-check"></i>Оцінки {{ student.grades_filled }}/{{ student.grades_total }}</span>
                     {% endif %}
-                    {% if student.activities_filled_fields %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-briefcase"></i>Практика {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}</span>
-                    {% endif %}
-                    {% if student.has_military %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ student.military_filled_fields }}/{{ student.military_total_fields }}</span>
-                    {% endif %}
-                    {% if student.has_passport %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-person-vcard"></i>Паспорт {{ student.passport_filled_fields }}/{{ student.passport_total_fields }}</span>
-                    {% endif %}
-                    {% if student.has_education_doc %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-mortarboard"></i>Документ {{ student.edu_doc_filled_fields }}/{{ student.edu_doc_total_fields }}</span>
-                    {% endif %}
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.activities_total_fields and student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-briefcase"></i>Практика {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}</span>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ (student.military_filled_fields ~ '/' ~ student.military_total_fields) if student.has_military else '-  немає запису' }}</span>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_passport and student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-person-vcard"></i>Паспорт {{ (student.passport_filled_fields ~ '/' ~ student.passport_total_fields) if student.has_passport else ' - немає запису' }}</span>
+                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_education_doc and student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-mortarboard"></i>Документ {{ (student.edu_doc_filled_fields ~ '/' ~ student.edu_doc_total_fields) if student.has_education_doc else ' - немає запису' }}</span>
                     </div>
                 </div>
             </div>
