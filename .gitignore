@@ -3,6 +3,7 @@ uploads/
 photo_bulk_sessions/
 template_word/
 temp_preview/
+logs/
 office_sessions/
 import_sessions/
 *.db
