@@ -6,11 +6,62 @@
 
 {{ ui.page_header('bi-file-earmark-text-fill', 'Журнал дій', 'Історія всіх дій користувачів у системі') }}
 
-<div class="d-flex justify-content-end mb-3">
-  <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1"></i>Назад
-  </a>
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+  <form method="GET" class="d-flex align-items-center gap-2">
+    <label class="small text-muted mb-0" for="month-select">Місяць:</label>
+    <select name="month" id="month-select" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+      {% for m in available_months %}
+        <option value="{{ m.value }}" {% if m.value == selected_month %}selected{% endif %}>
+          {{ m.value }}{% if m.value == current_month %} (поточний){% endif %} - {{ m.size_kb }} КБ
+        </option>
+      {% endfor %}
+      {% if not available_months %}
+        <option value="{{ selected_month }}" selected>{{ selected_month }}</option>
+      {% endif %}
+    </select>
+  </form>
+
+  <div class="d-flex gap-2">
+    {% if logs %}
+    <a href="{{ url_for('admin.download_log', month=selected_month) }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-download me-1"></i>Завантажити .log за {{ selected_month }}
+    </a>
+    {% endif %}
+    <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left me-1"></i>Назад
+    </a>
+  </div>
 </div>
+
+{# ── Останні помилки за кілька останніх місяців (а не лише обраний) ── #}
+{% if recent_errors %}
+<div class="card mb-4 border-danger">
+  <div class="card-body py-2">
+    <button class="btn btn-sm btn-link text-danger text-decoration-none p-0 fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#recentErrorsPanel">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i>Останні помилки за весь час ({{ recent_errors|length }})
+      <i class="bi bi-chevron-down small"></i>
+    </button>
+    <div class="collapse mt-2" id="recentErrorsPanel">
+      <table class="table table-sm mb-0">
+        <tbody>
+          {% for e in recent_errors %}
+          <tr>
+            <td class="text-muted small font-monospace" style="white-space:nowrap;">{{ e.date }} {{ e.time }}</td>
+            <td class="small"><span class="badge bg-secondary">{{ e.month }}</span></td>
+            <td class="small">{{ e.action }}</td>
+            <td class="text-end" style="white-space:nowrap;">
+              {% if e.month != selected_month %}
+              <a href="{{ url_for('admin.view_logs', month=e.month) }}" class="small">Відкрити місяць</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 {# ── Статистика ── #}
 {% if logs %}
@@ -152,7 +203,7 @@
 </div>
 
 {% else %}
-  {{ ui.empty_state('bi-file-earmark-text', 'Журнал порожній або файл не знайдено') }}
+  {{ ui.empty_state('bi-file-earmark-text', 'За ' ~ selected_month ~ ' записів немає') }}
 {% endif %}
 
 </div>

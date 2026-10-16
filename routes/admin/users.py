@@ -50,46 +50,105 @@ PERMISSIONS = [
 ]
 
 
+_LOG_ENTRY_RE = re.compile(r'(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*)')
+_LOG_USER_RE = re.compile(r'👤\s*([^\s-][^-]*?)\s+-\s+(.*)')
+
+
+def _parse_log_file(path):
+    """Читає один місячний лог-файл і розбирає кожен рядок на дату/час/рівень/користувача/дію."""
+    entries = []
+    if not os.path.exists(path):
+        return entries
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                entry = {'raw': line, 'date': '', 'time': '', 'level': 'INFO', 'username': '', 'action': line}
+                m = _LOG_ENTRY_RE.match(line)
+                if m:
+                    entry['date'] = m.group(1)
+                    entry['time'] = m.group(2)
+                    entry['level'] = m.group(3)
+                    rest = m.group(4).strip()
+                    entry['action'] = rest
+                    u = _LOG_USER_RE.match(rest)
+                    if u:
+                        entry['username'] = u.group(1).strip()
+                        entry['action'] = u.group(2).strip()
+                entries.append(entry)
+    except Exception as e:
+        logger.error(f"Помилка при читанні логів {path}: {e}")
+    return entries
+
+
 @admin_bp.route('/admin/view_logs')
 @permission_required('view_logs')
 def view_logs():
-    """Показує журнал дій (app.log) у зручному розібраному вигляді: дата/час/рівень/користувач/дія, з можливістю фільтрації на фронтенді."""
-    from routes.config import PROJECT_ROOT
-    log_file_path = os.path.join(PROJECT_ROOT, 'app.log')
+    """
+    Показує журнал дій за обраний місяць (logs/app-YYYY-MM.log) у зручному
+    розібраному вигляді: дата/час/рівень/користувач/дія, з фільтрацією на
+    фронтенді. Раніше читало і парсило ОДИН суцільний app.log, що з часом
+    ріс без обмежень - тепер на кожен запит вичитується лише файл одного
+    місяця (обраного через ?month=YYYY-MM, за замовчуванням - поточний).
+    """
+    from routes.utils import LOGS_DIR
 
-    parsed_logs = []
+    month_pattern = re.compile(r'^app-(\d{4}-\d{2})\.log$')
+    available_months = []
+    if os.path.isdir(LOGS_DIR):
+        for fname in os.listdir(LOGS_DIR):
+            m = month_pattern.match(fname)
+            if m:
+                fpath = os.path.join(LOGS_DIR, fname)
+                available_months.append({'value': m.group(1), 'size_kb': round(os.path.getsize(fpath) / 1024, 1)})
+    available_months.sort(key=lambda x: x['value'], reverse=True)
 
-    if os.path.exists(log_file_path):
-        try:
-            with open(log_file_path, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    entry = {'raw': line, 'date': '', 'time': '', 'level': 'INFO', 'username': '', 'action': line}
-                    m = re.match(r'(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*)', line)
-                    if m:
-                        entry['date'] = m.group(1)
-                        entry['time'] = m.group(2)
-                        entry['level'] = m.group(3)
-                        rest = m.group(4).strip()
-                        entry['action'] = rest
-                        u = re.match(r'👤\s*([^\s-][^-]*?)\s+-\s+(.*)', rest)
-                        if u:
-                            entry['username'] = u.group(1).strip()
-                            entry['action'] = u.group(2).strip()
-                    parsed_logs.append(entry)
-        except Exception as e:
-            logger.error(f"Помилка при читанні логів: {e}")
+    current_month = datetime.now().strftime('%Y-%m')
+    selected_month = request.args.get('month', current_month)
+    if not re.match(r'^\d{4}-\d{2}$', selected_month):
+        selected_month = current_month
 
+    parsed_logs = _parse_log_file(os.path.join(LOGS_DIR, f"app-{selected_month}.log"))
     parsed_logs.reverse()
     usernames = sorted({e['username'] for e in parsed_logs if e['username']})
+
+    # Останні помилки за кілька останніх місяців (а не лише з обраного) -
+    # щоб критичне не губилось, якщо зараз дивишся старий місяць. Межа в
+    # 6 місяців - щоб не вичитувати всю історію на кожне відкриття сторінки.
+    recent_errors = []
+    for month_info in available_months[:6]:
+        for entry in _parse_log_file(os.path.join(LOGS_DIR, f"app-{month_info['value']}.log")):
+            if entry['level'] == 'ERROR':
+                recent_errors.append({**entry, 'month': month_info['value']})
+    recent_errors.sort(key=lambda e: (e['date'], e['time']), reverse=True)
+    recent_errors = recent_errors[:20]
 
     log_action(current_username(), "переглянув журнал дій")
 
     from datetime import date
     return render_template('view_logs.html', logs=parsed_logs, usernames=usernames,
-                           now=date.today().strftime('%Y-%m-%d'))
+                           now=date.today().strftime('%Y-%m-%d'),
+                           available_months=available_months, selected_month=selected_month,
+                           current_month=current_month, recent_errors=recent_errors)
+
+
+@admin_bp.route('/admin/download_log')
+@permission_required('view_logs')
+def download_log():
+    """Завантажити .log-файл обраного місяця (напр. щоб переслати розробнику)."""
+    from routes.utils import LOGS_DIR
+    month = request.args.get('month', '')
+    if not re.match(r'^\d{4}-\d{2}$', month):
+        flash("Невірний формат місяця.", "error")
+        return redirect(url_for('admin.view_logs'))
+    fpath = os.path.join(LOGS_DIR, f"app-{month}.log")
+    if not os.path.exists(fpath):
+        flash("Файл логів за цей місяць не знайдено.", "error")
+        return redirect(url_for('admin.view_logs'))
+    log_action(current_username(), f"завантажив лог за {month}")
+    return send_file(fpath, as_attachment=True, download_name=f"app-{month}.log")
 
 
 @admin_bp.route('/admin/users', methods=['GET', 'POST'])
