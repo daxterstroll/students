@@ -501,17 +501,20 @@ def manage_study_periods(student_id):
             group_name = (request.form.get('group_name') or '').strip() or None
             start_date = (request.form.get('start_date') or '').strip() or None
             end_date = (request.form.get('end_date') or '').strip() or None
-            period_order = request.form.get('period_order', type=int) or 0
             note = (request.form.get('note') or '').strip() or None
 
             if not filiya:
                 flash('Потрібно вказати філію', 'danger')
             else:
+                next_order = cursor.execute(
+                    "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods WHERE student_id = ?",
+                    (student_id,)
+                ).fetchone()[0]
                 cursor.execute("""
                     INSERT INTO student_study_periods
                         (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note))
+                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, next_order, note))
                 db.commit()
                 log_action(current_username(),
                            f"додав період навчання студенту ID {student_id}: {filiya}")

@@ -275,8 +275,12 @@
                                         <h5>{{ doc.document_type | default('Документ') }}</h5>
                                         <table class="table table-sm table-borderless">
                                             <tbody>
-                                                <tr><th class="w-50 text-muted">Номер</th><td>{{ doc.document_number | default('-') }}</td></tr>
+                                                <tr><th class="w-50 text-muted">Тип (EN)</th><td>{{ doc.document_type_en | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Номер</th><td>{{ doc.document_number | default('-') }}</td></tr>
                                                 <tr><th class="text-muted">Заклад</th><td>{{ doc.institution_name | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Institution (EN)</th><td>{{ doc.institution_name_en | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Країна</th><td>{{ doc.country | default('-') }}</td></tr>
+                                                <tr><th class="text-muted">Country (EN)</th><td>{{ doc.country_en | default('-') }}</td></tr>
                                                 <tr><th class="text-muted">Дата закінчення</th><td>{{ doc.completion_date | default('-') }}</td></tr>
                                             </tbody>
                                         </table>
