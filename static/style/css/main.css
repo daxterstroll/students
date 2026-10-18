@@ -558,6 +558,11 @@ main.container {
             color: var(--ink-text);
         }
         html[data-theme="dark"] .text-muted { color: var(--muted) !important; }
+        /* .form-text (підказки під полями форм, напр. "Заповнюйте лише
+           якщо...") використовує --bs-secondary-color - фіксований
+           темний колір, розрахований на світлий фон, тому в темній
+           темі був практично невидимий. */
+        html[data-theme="dark"] .form-text { color: var(--muted) !important; }
         html[data-theme="dark"] .btn-outline-secondary {
             color: var(--ink-text);
             border-color: var(--line);
