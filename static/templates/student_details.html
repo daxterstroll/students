@@ -181,10 +181,12 @@
                                             <div class="text-muted small">Дата видачі</div>
                                             <div>{{ val(doc.issue_date) }}</div>
                                         </div>
+                                        {% if doc.document_type == 'ID-картка' %}
                                         <div class="col-sm-6">
                                             <div class="text-muted small">Дійсний до</div>
                                             <div>{{ val(doc.valid_until) }}</div>
                                         </div>
+                                        {% endif %}
                                         {% if doc.unique_number %}
                                         <div class="col-sm-6">
                                             <div class="text-muted small">Номер запису в ЄДДР</div>

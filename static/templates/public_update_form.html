@@ -187,8 +187,8 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                             <label class="f-label">Дата видачі</label>
                             <input type="date" name="passport_issue_date" class="f-control">
                         </div>
-                        <div class="col-6">
-                            <label class="f-label">Дійсний до</label>
+                        <div class="col-6" id="passport_valid_until_wrap">
+                            <label class="f-label">Дійсний до (для ID-картки)</label>
                             <input type="date" name="passport_valid_until" class="f-control">
                         </div>
                         <div class="col-12">
@@ -317,6 +317,12 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
             const isIdCard = passportType.value === 'ID-картка';
             document.getElementById('passport_series_wrap').style.display = isIdCard ? 'none' : '';
             document.getElementById('passport_unique_wrap').style.display = isIdCard ? '' : 'none';
+            const validUntilWrap = document.getElementById('passport_valid_until_wrap');
+            validUntilWrap.style.display = isIdCard ? '' : 'none';
+            if (!isIdCard) {
+                const input = validUntilWrap.querySelector('input');
+                if (input) input.value = '';
+            }
         }
         passportType.addEventListener('change', syncPassportFields);
         syncPassportFields();
