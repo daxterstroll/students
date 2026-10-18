@@ -83,7 +83,7 @@
             <input type="hidden" name="existing_student_id" value="{{ existing_student.id }}">
             <div class="form-check mb-2">
                 <input type="checkbox" name="update_personal" id="update_personal" class="form-check-input">
-                <label for="update_personal" class="form-check-label">Особисті дані (ПІБ, дата народження)</label>
+                <label for="update_personal" class="form-check-label">Особисті дані (ПІБ, дата народження, ідентифікаційний код)</label>
             </div>
             <div class="form-check mb-2">
                 <input type="checkbox" name="update_contacts" id="update_contacts" class="form-check-input">
@@ -99,6 +99,15 @@
             <div class="form-check mb-2">
                 <input type="checkbox" name="add_document" id="add_document" class="form-check-input">
                 <label for="add_document" class="form-check-label">Додати документ про освіту з цієї заявки: {{ row.document_type or '' }} №{{ row.document_number or '' }} (додається як НОВИЙ запис, наявні документи не чіпає)</label>
+            </div>
+            {% endif %}
+            {% if row.foreign_reference_number or row.foreign_reference_institution or row.recognition_certificate_number or row.recognition_issuer %}
+            <div class="form-check mb-2">
+                <input type="checkbox" name="add_reference_recognition" id="add_reference_recognition" class="form-check-input">
+                <label for="add_reference_recognition" class="form-check-label">
+                    Академічна довідка / Свідоцтво про визнання з цієї заявки - додасться до
+                    {{ 'нового документа вище (якщо позначено)' if (row.document_type or row.document_number) else 'найновішого наявного документа студента' }}
+                </label>
             </div>
             {% endif %}
             {% if row.passport_number %}
@@ -164,6 +173,10 @@
                 <label class="form-label">Дата народження</label>
                 <input type="text" name="birth_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.birth_date }}" required>
             </div>
+            <div class="col-md-4">
+                <label class="form-label">Ідентифікаційний код</label>
+                <input type="text" name="tax_id" class="form-control" value="{{ row.tax_id or '' }}">
+            </div>
         </div>
     </div>
 
@@ -211,6 +224,42 @@
             <div class="col-md-4">
                 <label class="form-label">Дата видачі</label>
                 <input type="text" name="document_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.document_date or '' }}">
+            </div>
+
+            {% if row.foreign_reference_number or row.foreign_reference_institution %}
+            <div class="col-12 mt-2 pt-2 border-top"><strong>Академічна довідка</strong></div>
+            {% endif %}
+            <div class="col-md-4">
+                <label class="form-label">Номер довідки</label>
+                <input type="text" name="foreign_reference_number" class="form-control" value="{{ row.foreign_reference_number or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Заклад (довідка)</label>
+                <input type="text" name="foreign_reference_institution" class="form-control" value="{{ row.foreign_reference_institution or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Країна довідки</label>
+                <input type="text" name="foreign_reference_country" class="form-control" value="{{ row.foreign_reference_country or '' }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Дата видачі довідки</label>
+                <input type="text" name="foreign_reference_issue_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.foreign_reference_issue_date or '' }}">
+            </div>
+
+            {% if row.recognition_certificate_number or row.recognition_issuer %}
+            <div class="col-12 mt-2 pt-2 border-top"><strong>Свідоцтво про визнання в Україні іноземного документа про освіту</strong></div>
+            {% endif %}
+            <div class="col-md-4">
+                <label class="form-label">Номер свідоцтва</label>
+                <input type="text" name="recognition_certificate_number" class="form-control" value="{{ row.recognition_certificate_number or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Орган, що видав</label>
+                <input type="text" name="recognition_issuer" class="form-control" value="{{ row.recognition_issuer or '' }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Дата видачі свідоцтва</label>
+                <input type="text" name="recognition_date" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.recognition_date or '' }}">
             </div>
         </div>
     </div>

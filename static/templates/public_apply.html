@@ -222,6 +222,10 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                    value="{{ form.birth_date if form else '' }}">
                         </div>
                         <div class="col-12">
+                            <label class="f-label">Ідентифікаційний код (РНОКПП)</label>
+                            <input type="text" name="tax_id" class="f-control" value="{{ form.tax_id if form else '' }}">
+                        </div>
+                        <div class="col-12">
                             <label class="f-label">Фото 3х4</label>
                             <div class="file-drop">
                                 <label class="file-btn" for="photo">📷 Обрати фото</label>
@@ -288,7 +292,55 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                 <span class="file-name" id="scans_name">Файли не обрано</span>
                                 <input type="file" name="document_scans" id="document_scans" accept="image/*,.pdf" multiple>
                             </div>
-                            <div class="f-hint">Можна кілька файлів (фото сторінок або PDF), до 5 файлів, до 15 МБ кожен. Якщо документ видано за кордоном — просто вкажіть це в скані чи назві файлу, приймальна комісія уточнить деталі визнання окремо.</div>
+                            <div class="f-hint">Можна кілька файлів (фото сторінок або PDF), до 5 файлів, до 15 МБ кожен.</div>
+                        </div>
+                    </div>
+
+                    <label class="toggle-row" for="toggle_reference" style="margin-top:1rem;">
+                        <input type="checkbox" id="toggle_reference" {% if form and (form.reference_number or form.reference_institution) %}checked{% endif %}>
+                        <span class="toggle-switch"></span>
+                        <span class="toggle-label">У мене є академічна довідка</span>
+                    </label>
+                    <div id="referenceBlock" class="reveal">
+                        <div class="grid">
+                            <div class="col-12">
+                                <label class="f-label">Номер довідки</label>
+                                <input type="text" name="reference_number" class="f-control" value="{{ form.reference_number if form else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="f-label">Назва закладу (довідка)</label>
+                                <input type="text" name="reference_institution" class="f-control" value="{{ form.reference_institution if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Країна довідки</label>
+                                <input type="text" name="reference_country" class="f-control" value="{{ form.reference_country if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дата видачі довідки</label>
+                                <input type="date" name="reference_issue_date" class="f-control" value="{{ form.reference_issue_date if form else '' }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <label class="toggle-row" for="toggle_recognition" style="margin-top:1rem;">
+                        <input type="checkbox" id="toggle_recognition" {% if form and (form.recognition_certificate_number or form.recognition_issuer) %}checked{% endif %}>
+                        <span class="toggle-switch"></span>
+                        <span class="toggle-label">У мене є свідоцтво про визнання в Україні іноземного документа про освіту</span>
+                    </label>
+                    <div id="recognitionBlock" class="reveal">
+                        <div class="grid">
+                            <div class="col-12">
+                                <label class="f-label">Номер свідоцтва про визнання</label>
+                                <input type="text" name="recognition_certificate_number" class="f-control" value="{{ form.recognition_certificate_number if form else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="f-label">Орган, що видав свідоцтво</label>
+                                <input type="text" name="recognition_issuer" class="f-control" value="{{ form.recognition_issuer if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дата видачі свідоцтва</label>
+                                <input type="date" name="recognition_date" class="f-control" value="{{ form.recognition_date if form else '' }}">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -416,6 +468,8 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
         sync();
     }
     bindToggle('hasMilitary', 'militaryBlock');
+    bindToggle('toggle_reference', 'referenceBlock');
+    bindToggle('toggle_recognition', 'recognitionBlock');
 
     function bindFileLabel(inputId, labelId, multiple) {
         const input = document.getElementById(inputId);

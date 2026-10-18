@@ -14,6 +14,7 @@ config.py
     ONLYOFFICE_JWT_SECRET=ще-один-довгий-випадковий-рядок
     ONLYOFFICE_PUBLIC_URL=https://ваш-сервер/onlyoffice/
     ONLYOFFICE_CALLBACK_BASE_URL=http://localhost:5000
+    DEEPL_API_KEY=ваш-безкоштовний-ключ-з-deepl.com
 """
 
 import logging
@@ -126,6 +127,30 @@ ONLYOFFICE_JWT_SECRET = os.environ.get('ONLYOFFICE_JWT_SECRET', '')
 # автоматично з поточного запиту.
 # --------------------------------------------------------------------
 PUBLIC_APPLY_BASE_URL = os.environ.get('PUBLIC_APPLY_BASE_URL', 'https://join.e-u.edu.ua')
+
+# --------------------------------------------------------------------
+# DEEPL_API_KEY - автопереклад укр.->англ. полів документа про освіту
+# (routes/admin/documents.py, translate_to_en) через офіційний API
+# DeepL замість GoogleTranslator/MyMemory (ненадійні безкоштовні
+# неофіційні сервіси, що агресивно блокують за частотою запитів).
+#
+# ВАЖЛИВО: звичайний акаунт на deepl.com (для перекладу в браузері чи
+# застосунку DeepL) не підходить - потрібен ОКРЕМИЙ ключ з тарифу
+# "DeepL API Free". Зареєструватись і взяти ключ:
+# https://www.deepl.com/en/pro-api -> після реєстрації ключ лежить в
+# акаунті: Account -> API Keys. Безкоштовний тариф - 500 000
+# символів/місяць, ключ завжди закінчується на ":fx".
+# --------------------------------------------------------------------
+DEEPL_API_KEY = os.environ.get('DEEPL_API_KEY', '').strip()
+
+if not DEEPL_API_KEY:
+    logger.warning(
+        "DEEPL_API_KEY не задано - автопереклад EN-полів документа про "
+        "освіту (Document Type/Institution Name/Country) не працюватиме, "
+        "доведеться вписувати переклад вручну. Зареєструйте ключ тарифу "
+        "'DeepL API Free' на https://www.deepl.com/en/pro-api і додайте "
+        "DEEPL_API_KEY=ваш-ключ у .env поруч з app.py."
+    )
 
 if not ONLYOFFICE_JWT_SECRET:
     logger.warning(

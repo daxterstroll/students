@@ -245,14 +245,14 @@ CREATE TABLE IF NOT EXISTS accreditations (
     text_ua TEXT,
     text_en TEXT
 );
-CREATE TABLE diplomas (
+CREATE TABLE IF NOT EXISTS diplomas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
     diploma_number TEXT,
     appendix_number TEXT,
     FOREIGN KEY (student_id) REFERENCES students(id)
 );
-CREATE TABLE student_study_periods (
+CREATE TABLE IF NOT EXISTS student_study_periods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     filiya TEXT NOT NULL,             
@@ -264,7 +264,7 @@ CREATE TABLE student_study_periods (
     note TEXT                         
 );
 
-CREATE INDEX idx_study_periods_student ON student_study_periods(student_id);
+CREATE INDEX IF NOT EXISTS idx_study_periods_student ON student_study_periods(student_id);
 
 CREATE TABLE IF NOT EXISTS "document_templates" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -340,6 +340,7 @@ CREATE TABLE IF NOT EXISTS "update_requests" (
     "reviewed_by" TEXT,
     "reviewed_at" TEXT,
     "review_note" TEXT,
+    "applied_fields" TEXT,
     FOREIGN KEY("student_id") REFERENCES "students"("id") ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_update_requests_token ON update_requests(token);
@@ -694,6 +695,21 @@ for username, password, role, is_admin, permissions in DEFAULT_USERS:
         )
     except sqlite3.Error as e:
         logging.error(f"Не вдалося створити користувача за замовчуванням '{username}': {e}")
+
+# --------------------------------------------------------------------
+# Міграції для вже існуючих баз: CREATE TABLE IF NOT EXISTS не додає
+# нові колонки до таблиці, яка вже була створена попередньою версією
+# схеми - для цього потрібен окремий ALTER TABLE. Перевіряємо через
+# PRAGMA table_info, щоб повторний запуск init_db.py був безпечним і
+# не падав з "duplicate column name".
+# --------------------------------------------------------------------
+def _add_column_if_missing(table, column, coltype):
+    existing = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        cur.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {coltype}')
+        print(f"➕ Додано колонку {table}.{column} (міграція існуючої бази).")
+
+_add_column_if_missing('update_requests', 'applied_fields', 'TEXT')
 
 conn.commit()
 conn.close()

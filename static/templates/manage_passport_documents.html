@@ -286,6 +286,16 @@
 <style>
     .accordion-button:not(.collapsed) { background-color: var(--paper-2) !important; color: var(--brass) !important; }
     .accordion-button:focus { box-shadow: none; }
+
+    /* table-hover домальовує поверх наведеного рядка напівпрозорий
+       box-shadow (окрема властивість, не background-color) - inline-
+       колір підсвіченого рядка (студент, на якого прийшли з картки)
+       це не перебиває, тому при наведенні колір "змішувався" і псував
+       вигляд. Прибираємо саме цей box-shadow для підсвіченого рядка. */
+    html[data-theme="dark"] tr.table-warning:hover > td,
+    html[data-theme="dark"] tr.table-warning:hover > th {
+        box-shadow: none !important;
+    }
 </style>
 
 <script>
@@ -358,7 +368,21 @@
                     }
                     setTimeout(function () { new bootstrap.Modal(modalEl).show(); }, 350);
                     const row = document.querySelector('tr[data-student-id="' + targetStudentId + '"]');
-                    if (row) { row.classList.add('table-warning'); row.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+                    if (row) {
+                        row.classList.add('table-warning');
+                        // Клас сам по собі іноді не перебиває кешовані/
+                        // успадковані стилі Bootstrap (світлий
+                        // --bs-table-bg у темній темі) - inline-стиль
+                        // через JS гарантовано виграє завжди.
+                        if (document.documentElement.getAttribute('data-theme') === 'dark') {
+                            row.querySelectorAll('td, th').forEach(function (cell) {
+                                cell.style.setProperty('background-color', 'rgba(200,162,74,.22)', 'important');
+                                cell.style.setProperty('color', 'var(--brass-lt)', 'important');
+                                cell.style.setProperty('border-color', 'rgba(200,162,74,.4)', 'important');
+                            });
+                        }
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
                 }
             } else {
                 const sel = document.getElementById('student_id_select');

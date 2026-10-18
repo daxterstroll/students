@@ -73,7 +73,7 @@
         <div class="row g-3">
             <div class="col-md-6">
                 <label for="document_type" class="form-label">Тип документа</label>
-                <input type="text" name="document_type" id="document_type" class="form-control" placeholder="Напр., Диплом молодшого спеціаліста" required>
+                <input type="text" name="document_type" id="document_type" class="form-control" placeholder="Напр., Диплом молодшого спеціаліста" data-translate-target="#document_type_en" required>
             </div>
             <div class="col-md-6">
                 <label for="document_type_en" class="form-label">Document Type (EN)</label>
@@ -85,7 +85,7 @@
             </div>
             <div class="col-md-6">
                 <label for="institution_name" class="form-label">Назва навчального закладу</label>
-                <input type="text" name="institution_name" id="institution_name" class="form-control" placeholder="Напр., Середня школа імені Мамедалі Ахмедова" required>
+                <input type="text" name="institution_name" id="institution_name" class="form-control" placeholder="Напр., Середня школа імені Мамедалі Ахмедова" data-translate-target="#institution_name_en" required>
             </div>
             <div class="col-md-6">
                 <label for="institution_name_en" class="form-label">Institution Name (EN)</label>
@@ -93,7 +93,7 @@
             </div>
             <div class="col-md-6">
                 <label for="country" class="form-label">Країна</label>
-                <input type="text" name="country" id="country" class="form-control" placeholder="Напр., Республіка Азербайджан" required>
+                <input type="text" name="country" id="country" class="form-control" placeholder="Напр., Республіка Азербайджан" data-translate-target="#country_en" required>
             </div>
             <div class="col-md-6">
                 <label for="country_en" class="form-label">Country (EN)</label>
@@ -109,17 +109,25 @@
                 <div class="form-text">Можна кілька файлів (фото сторінок або PDF).</div>
             </div>
 
-            <!-- Додаткові поля для іноземних документів -->
-            <div id="foreign_fields" style="display: none;">
-                <h5 class="mt-4">Додаткові дані (для іноземних документів)</h5>
-                <div class="row g-3">
+            <!-- Додаткові поля для іноземних документів - незалежно одне
+                 від одного і незалежно від обраної країни (раніше обидва
+                 блоки разом показувались лише коли країна не Україна -
+                 тепер кожен студент/документ може мати будь-яке з цього
+                 окремо, не прив'язано до країни). -->
+            <h5 class="mt-4">Додаткові дані (для іноземних документів)</h5>
+
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input foreign-doc-toggle" type="checkbox" role="switch" id="toggle_reference" data-target="#reference_fields">
+                <label class="form-check-label" for="toggle_reference">Академічна довідка</label>
+            </div>
+            <div id="reference_fields" class="row g-3 mb-3" style="display: none;">
                     <div class="col-md-12">
                         <label for="reference_number" class="form-label">Номер довідки</label>
                         <input type="text" name="reference_number" id="reference_number" class="form-control" placeholder="Напр., 08-17/04">
                     </div>
                     <div class="col-md-6">
                         <label for="reference_institution" class="form-label">Назва закладу (довідка)</label>
-                        <input type="text" name="reference_institution" id="reference_institution" class="form-control" placeholder="Напр., ТОВ Кавказький університет">
+                        <input type="text" name="reference_institution" id="reference_institution" class="form-control" placeholder="Напр., ТОВ Кавказький університет" data-translate-target="#reference_institution_en">
                     </div>
                     <div class="col-md-6">
                         <label for="reference_institution_en" class="form-label">Reference Institution (EN)</label>
@@ -127,7 +135,7 @@
                     </div>
                     <div class="col-md-6">
                         <label for="reference_country" class="form-label">Країна довідки</label>
-                        <input type="text" name="reference_country" id="reference_country" class="form-control" placeholder="Напр., Грузія">
+                        <input type="text" name="reference_country" id="reference_country" class="form-control" placeholder="Напр., Грузія" data-translate-target="#reference_country_en">
                     </div>
                     <div class="col-md-6">
                         <label for="reference_country_en" class="form-label">Reference Country (EN)</label>
@@ -137,13 +145,20 @@
                         <label for="reference_issue_date" class="form-label">Дата видачі довідки</label>
                         <input type="text" name="reference_issue_date" id="reference_issue_date" class="form-control" placeholder="Напр., 02.06.2017">
                     </div>
+            </div>
+
+            <div class="form-check form-switch mb-2">
+                <input class="form-check-input foreign-doc-toggle" type="checkbox" role="switch" id="toggle_recognition" data-target="#recognition_fields">
+                <label class="form-check-label" for="toggle_recognition">Свідоцтво про визнання в Україні іноземного документа про освіту</label>
+            </div>
+            <div id="recognition_fields" class="row g-3" style="display: none;">
                     <div class="col-md-12">
                         <label for="recognition_certificate_number" class="form-label">Номер свідоцтва про визнання</label>
                         <input type="text" name="recognition_certificate_number" id="recognition_certificate_number" class="form-control" placeholder="Напр., № N-7916-20">
                     </div>
                     <div class="col-md-6">
                         <label for="recognition_issuer" class="form-label">Орган, що видав свідоцтво</label>
-                        <input type="text" name="recognition_issuer" id="recognition_issuer" class="form-control" placeholder="Напр., Приватний вищий навчальний заклад «Європейський університет»">
+                        <input type="text" name="recognition_issuer" id="recognition_issuer" class="form-control" placeholder="Напр., Приватний вищий навчальний заклад «Європейський університет»" data-translate-target="#recognition_issuer_en">
                     </div>
                     <div class="col-md-6">
                         <label for="recognition_issuer_en" class="form-label">Recognition Issuer (EN)</label>
@@ -153,7 +168,6 @@
                         <label for="recognition_date" class="form-label">Дата видачі свідоцтва</label>
                         <input type="text" name="recognition_date" id="recognition_date" class="form-control" placeholder="Напр., 12.05.2020">
                     </div>
-                </div>
             </div>
 
             <div class="col-md-3 d-flex align-items-end">
@@ -293,7 +307,7 @@
 																	</div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_document_type{{ doc.doc_id }}" class="form-label">Тип документа</label>
-                                                                        <input type="text" name="document_type" id="edit_document_type{{ doc.doc_id }}" class="form-control" value="{{ doc.document_type }}" required>
+                                                                        <input type="text" name="document_type" id="edit_document_type{{ doc.doc_id }}" class="form-control" value="{{ doc.document_type }}" data-translate-target="#edit_document_type_en{{ doc.doc_id }}" required>
                                                                     </div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_document_type_en{{ doc.doc_id }}" class="form-label">Document Type</label>
@@ -305,7 +319,7 @@
                                                                     </div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_institution_name{{ doc.doc_id }}" class="form-label">Назва навчального закладу</label>
-                                                                        <input type="text" name="institution_name" id="edit_institution_name{{ doc.doc_id }}" class="form-control" value="{{ doc.institution_name }}" required>
+                                                                        <input type="text" name="institution_name" id="edit_institution_name{{ doc.doc_id }}" class="form-control" value="{{ doc.institution_name }}" data-translate-target="#edit_institution_name_en{{ doc.doc_id }}" required>
                                                                     </div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_institution_name_en{{ doc.doc_id }}" class="form-label">Institution Name</label>
@@ -313,7 +327,7 @@
                                                                     </div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_country{{ doc.doc_id }}" class="form-label">Країна</label>
-                                                                        <input type="text" name="country" id="edit_country{{ doc.doc_id }}" class="form-control" value="{{ doc.country }}" required>
+                                                                        <input type="text" name="country" id="edit_country{{ doc.doc_id }}" class="form-control" value="{{ doc.country }}" data-translate-target="#edit_country_en{{ doc.doc_id }}" required>
                                                                     </div>
                                                                     <div class="col-md-6">
                                                                         <label for="edit_country_en{{ doc.doc_id }}" class="form-label">Country</label>
@@ -324,67 +338,76 @@
                                                                         <input type="text" name="completion_date" id="edit_completion_date{{ doc.doc_id }}" class="form-control" value="{{ doc.completion_date }}" required>
                                                                     </div>
 
-                                                                    <!-- Іноземні поля -->
-																	{% if doc.reference_number %}
-																	<h6 class="mt-4">Академічна довідка:</h6>
-																	<div class="row g-3">
-																		<div class="col-md-12">
-																			<label for="edit_reference_number{{ doc.doc_id }}" class="form-label">Номер довідки</label>
-																			<input type="text" name="reference_number" id="edit_reference_number{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_number or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_reference_institution{{ doc.doc_id }}" class="form-label">Назва закладу довідки</label>
-																			<input type="text" name="reference_institution" id="edit_reference_institution{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_institution or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_reference_institution_en{{ doc.doc_id }}" class="form-label">Reference Institution (EN)</label>
-																			<input type="text" name="reference_institution_en" id="edit_reference_institution_en{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_institution_en or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_reference_country{{ doc.doc_id }}" class="form-label">Країна довідки</label>
-																			<input type="text" name="reference_country" id="edit_reference_country{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_country or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_reference_country_en{{ doc.doc_id }}" class="form-label">Reference Country (EN)</label>
-																			<input type="text" name="reference_country_en" id="edit_reference_country_en{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_country_en or '' }}">
-																		</div>
-																		<div class="col-md-12">
-																			<label for="edit_reference_issue_date{{ doc.doc_id }}" class="form-label">Дата видачі довідки</label>
-																			<input type="text" name="reference_issue_date" id="edit_reference_issue_date{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.reference_issue_date or '' }}">
-																		</div>																	
-																	</div>																	
-																	{% endif %}
-																	{% if doc.recognition_certificate_number %}
-																	<h6 class="mt-4">Свідоцтво про визнання в Україні іноземного документа про освіту:</h6>
-																	<div class="row g-3">
-																		<div class="col-md-12">
-																			<label for="edit_recognition_certificate_number{{ doc.doc_id }}" class="form-label">Номер</label>
-																			<input type="text" name="recognition_certificate_number" id="edit_recognition_certificate_number{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.recognition_certificate_number or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_recognition_issuer{{ doc.doc_id }}" class="form-label">Хто видав</label>
-																			<input type="text" name="recognition_issuer" id="edit_recognition_issuer{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.recognition_issuer or '' }}">
-																		</div>
-																		<div class="col-md-6">
-																			<label for="edit_recognition_issuer_en{{ doc.doc_id }}" class="form-label">Recognition Issuer (EN)</label>
-																			<input type="text" name="recognition_issuer_en" id="edit_recognition_issuer_en{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.recognition_issuer_en or '' }}">
-																		</div>
-																		<div class="col-md-12">
-																			<label for="edit_recognition_date{{ doc.doc_id }}" class="form-label">Дата видачі</label>
-																			<input type="text" name="recognition_date" id="edit_recognition_date{{ doc.doc_id }}" 
-																				   class="form-control" value="{{ doc.recognition_date or '' }}">
-																		</div>
-																	</div>																	
-																	{% endif %}
+                                                                    <!-- Іноземні поля - незалежні галочки замість прив'язки до країни;
+                                                                         поля тепер завжди в розмітці (не лише коли дані вже є), щоб можна
+                                                                         було додати довідку/свідоцтво й до вже наявного документа. -->
+                                                                    <div class="form-check form-switch mb-2 mt-3">
+                                                                        <input class="form-check-input foreign-doc-toggle" type="checkbox" role="switch"
+                                                                               id="edit_toggle_reference{{ doc.doc_id }}" data-target="#edit_reference_fields{{ doc.doc_id }}"
+                                                                               {% if doc.reference_number %}checked{% endif %}>
+                                                                        <label class="form-check-label" for="edit_toggle_reference{{ doc.doc_id }}">Академічна довідка</label>
+                                                                    </div>
+                                                                    <div id="edit_reference_fields{{ doc.doc_id }}" class="row g-3 mb-2" style="display: {{ '' if doc.reference_number else 'none' }};">
+                                                                        <div class="col-md-12">
+                                                                            <label for="edit_reference_number{{ doc.doc_id }}" class="form-label">Номер довідки</label>
+                                                                            <input type="text" name="reference_number" id="edit_reference_number{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_number or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_reference_institution{{ doc.doc_id }}" class="form-label">Назва закладу довідки</label>
+                                                                            <input type="text" name="reference_institution" id="edit_reference_institution{{ doc.doc_id }}" data-translate-target="#edit_reference_institution_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_institution or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_reference_institution_en{{ doc.doc_id }}" class="form-label">Reference Institution (EN)</label>
+                                                                            <input type="text" name="reference_institution_en" id="edit_reference_institution_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_institution_en or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_reference_country{{ doc.doc_id }}" class="form-label">Країна довідки</label>
+                                                                            <input type="text" name="reference_country" id="edit_reference_country{{ doc.doc_id }}" data-translate-target="#edit_reference_country_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_country or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_reference_country_en{{ doc.doc_id }}" class="form-label">Reference Country (EN)</label>
+                                                                            <input type="text" name="reference_country_en" id="edit_reference_country_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_country_en or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-12">
+                                                                            <label for="edit_reference_issue_date{{ doc.doc_id }}" class="form-label">Дата видачі довідки</label>
+                                                                            <input type="text" name="reference_issue_date" id="edit_reference_issue_date{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.reference_issue_date or '' }}">
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div class="form-check form-switch mb-2">
+                                                                        <input class="form-check-input foreign-doc-toggle" type="checkbox" role="switch"
+                                                                               id="edit_toggle_recognition{{ doc.doc_id }}" data-target="#edit_recognition_fields{{ doc.doc_id }}"
+                                                                               {% if doc.recognition_certificate_number %}checked{% endif %}>
+                                                                        <label class="form-check-label" for="edit_toggle_recognition{{ doc.doc_id }}">Свідоцтво про визнання в Україні іноземного документа про освіту</label>
+                                                                    </div>
+                                                                    <div id="edit_recognition_fields{{ doc.doc_id }}" class="row g-3" style="display: {{ '' if doc.recognition_certificate_number else 'none' }};">
+                                                                        <div class="col-md-12">
+                                                                            <label for="edit_recognition_certificate_number{{ doc.doc_id }}" class="form-label">Номер</label>
+                                                                            <input type="text" name="recognition_certificate_number" id="edit_recognition_certificate_number{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.recognition_certificate_number or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_recognition_issuer{{ doc.doc_id }}" class="form-label">Хто видав</label>
+                                                                            <input type="text" name="recognition_issuer" id="edit_recognition_issuer{{ doc.doc_id }}" data-translate-target="#edit_recognition_issuer_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.recognition_issuer or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-6">
+                                                                            <label for="edit_recognition_issuer_en{{ doc.doc_id }}" class="form-label">Recognition Issuer (EN)</label>
+                                                                            <input type="text" name="recognition_issuer_en" id="edit_recognition_issuer_en{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.recognition_issuer_en or '' }}">
+                                                                        </div>
+                                                                        <div class="col-md-12">
+                                                                            <label for="edit_recognition_date{{ doc.doc_id }}" class="form-label">Дата видачі</label>
+                                                                            <input type="text" name="recognition_date" id="edit_recognition_date{{ doc.doc_id }}"
+                                                                                   class="form-control" value="{{ doc.recognition_date or '' }}">
+                                                                        </div>
+                                                                    </div>
                                                                 <div class="col-12 mt-3 border-top pt-3">
                                                                     <label class="form-label">Скановані копії</label>
                                                                     {% if doc.attachments %}
@@ -440,26 +463,51 @@
         color: var(--brass) !important;
     }
     .accordion-button:focus { box-shadow: none; }
+
+    /* Рядок студента, на якого прийшли з картки (?student_id=...),
+       підсвічується через Bootstrap .table-warning - у світлій темі
+       він виглядає нормально (блідо-жовтий), але в темній лишався
+       ясно-жовтим/білим, бо загальне правило для .table-warning у
+       main.css чомусь не спрацьовувало на цій сторінці. Тому тут -
+       жорстке, явне перевизначення прямо на клітинках рядка. */
+    html[data-theme="dark"] tr.table-warning > td,
+    html[data-theme="dark"] tr.table-warning > th {
+        background-color: rgba(200, 162, 74, .22) !important;
+        color: var(--brass-lt) !important;
+        border-color: rgba(200, 162, 74, .4) !important;
+    }
+    /* table-hover домальовує поверх наведеного рядка напівпрозорий
+       box-shadow (окрема властивість, не background-color) - ні цей,
+       ні inline-колір з JS вище це не перебивають, тому при наведенні
+       колір "змішувався" і псував вигляд. Прибираємо саме box-shadow
+       для підсвіченого рядка. */
+    html[data-theme="dark"] tr.table-warning:hover > td,
+    html[data-theme="dark"] tr.table-warning:hover > th {
+        box-shadow: none !important;
+    }
 </style>
 
 <script>
-    // JavaScript для іноземних полів (оригінальний)
-    document.getElementById('country').addEventListener('change', function() {
-        var country = this.value.toLowerCase();
-        var foreignFields = document.getElementById('foreign_fields');
-        if (country !== 'україна' && country !== 'ukraine') {
-            foreignFields.style.display = 'block';
-        } else {
-            foreignFields.style.display = 'none';
+    // Академічна довідка / Свідоцтво про визнання - кожне перемикається
+    // своєю власною галочкою, незалежно від країни і одне від одного
+    // (раніше обидва блоки показувались разом лише коли країна не
+    // Україна). Та сама логіка для форми додавання і для кожного рядка
+    // редагування - розрізняються лише id через data-target.
+    document.querySelectorAll('.foreign-doc-toggle').forEach(function (checkbox) {
+        var target = document.querySelector(checkbox.dataset.target);
+        if (!target) return;
+        // clearOnUncheck - лише при ручному знятті галочки користувачем,
+        // не при початковій синхронізації на завантаженні сторінки -
+        // інакше вже наявні дані документа стирались би одразу при
+        // відкритті форми редагування.
+        function sync(clearOnUncheck) {
+            target.style.display = checkbox.checked ? '' : 'none';
+            if (!checkbox.checked && clearOnUncheck) {
+                target.querySelectorAll('input').forEach(function (input) { input.value = ''; });
+            }
         }
-    });
-
-    window.addEventListener('load', function() {
-        var countryInput = document.getElementById('country');
-        if (countryInput && countryInput.value) {
-            var event = new Event('change');
-            countryInput.dispatchEvent(event);
-        }
+        checkbox.addEventListener('change', function () { sync(true); });
+        sync(false);
     });
 
     document.getElementById('addDocumentForm').addEventListener('submit', function(e) {
@@ -509,6 +557,18 @@
                     const row = document.querySelector('tr[data-student-id="' + targetStudentId + '"]');
                     if (row) {
                         row.classList.add('table-warning');
+                        // Клас сам по собі іноді не перебиває кешовані/
+                        // успадковані стилі Bootstrap (світлий
+                        // --bs-table-bg у темній темі) - inline-стиль
+                        // через JS гарантовано виграє завжди, незалежно
+                        // від кешу CSS чи специфічності правил.
+                        if (document.documentElement.getAttribute('data-theme') === 'dark') {
+                            row.querySelectorAll('td, th').forEach(function (cell) {
+                                cell.style.setProperty('background-color', 'rgba(200,162,74,.22)', 'important');
+                                cell.style.setProperty('color', 'var(--brass-lt)', 'important');
+                                cell.style.setProperty('border-color', 'rgba(200,162,74,.4)', 'important');
+                            });
+                        }
                         row.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                 }
@@ -542,5 +602,42 @@
         document.body.appendChild(form);
         form.submit();
     }
+
+// ===== Автопереклад укр. полів у відповідні EN-поля =====
+// Working on будь-яке поле з data-translate-target: при виході з поля
+// (focusout, а не blur - щоб працювало через делегування на document,
+// адже blur не спливає) відправляє введений текст на /admin/translate_text
+// і підставляє переклад у ціль - АЛЕ лише якщо ціль ще порожня, щоб не
+// затерти переклад, який адмін уже підправив вручну.
+document.addEventListener('focusout', function (e) {
+    const field = e.target.closest('[data-translate-target]');
+    if (!field) return;
+    const text = field.value.trim();
+    if (!text) return;
+    const target = document.querySelector(field.dataset.translateTarget);
+    if (!target || target.value.trim()) return;
+
+    const originalPlaceholder = target.placeholder;
+    target.placeholder = 'Перекладаємо…';
+    fetch("{{ url_for('admin.translate_text_endpoint') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.translation && !target.value.trim()) {
+                target.value = data.translation;
+            } else if (!data.translation && !target.value.trim()) {
+                // Перекладач зараз недоступний (напр. ліміт запитів Google) -
+                // явно показуємо це, а не мовчки лишаємо незрозуміло порожнє
+                // поле, щоб адмін знав, що треба вписати вручну.
+                target.placeholder = 'Не вдалося перекласти - впишіть вручну';
+                return;
+            }
+            target.placeholder = originalPlaceholder;
+        })
+        .catch(() => { target.placeholder = 'Не вдалося перекласти - впишіть вручну'; });
+});
 </script>
 {% endblock %}

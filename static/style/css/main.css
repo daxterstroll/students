@@ -658,6 +658,17 @@ main.container {
             --bs-table-color: var(--brass-lt);
             --bs-table-border-color: var(--brass-semi);
         }
+        /* Дублюємо явними властивостями з !important - на одній зі
+           сторінок (manage_education_documents, рядок з
+           ?student_id=...) саме через --bs-table-* змінні підсвічування
+           чомусь лишалось світлим. Явні background-color/color на
+           клітинках надійніші, ніж покладатись лише на змінні. */
+        html[data-theme="dark"] tr.table-warning > td,
+        html[data-theme="dark"] tr.table-warning > th {
+            background-color: rgba(200,162,74,.20) !important;
+            color: var(--brass-lt) !important;
+            border-color: var(--brass-semi) !important;
+        }
         html[data-theme="dark"] .table-danger {
             --bs-table-bg: rgba(162,59,46,.22);
             --bs-table-color: #f0b3ab;

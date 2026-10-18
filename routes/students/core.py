@@ -37,6 +37,8 @@ UPDATE_REQUEST_FIELD_LABELS = {
     'photo': "Фото 3х4",
     'passport': "Паспортні дані (окремий розділ)",
     'education_document': "Документ про освіту (окремий розділ)",
+    'education_document_reference': "— Академічна довідка",
+    'education_document_recognition': "— Свідоцтво про визнання в Україні іноземного документа про освіту",
     'military': "Військові дані (окремий розділ)",
 }
 
@@ -1084,7 +1086,7 @@ def delete_student(student_id):
     """Видаляє студента разом з усіма пов'язаними записами (military, grades, activity_grades, education_documents, diplomas)."""
     conn = get_db()
     student = conn.execute(
-        "SELECT last_name_UA, first_name_UA, middle_name_UA, group_id FROM students WHERE id = ?", (student_id,)
+        "SELECT last_name_UA, first_name_UA, middle_name_UA, group_id, photo FROM students WHERE id = ?", (student_id,)
     ).fetchone()
 
     if not student:
@@ -1101,13 +1103,17 @@ def delete_student(student_id):
         # якого більше не існує.
         conn.execute("UPDATE pending_students SET resulting_student_id = NULL WHERE resulting_student_id = ?", (student_id,))
 
-        # Файли (скани документів про освіту + загальні вкладення
-        # студента) з диска - інакше самі записи прибрались би разом з
-        # education_documents/students, а файли лишились би сміттям.
+        # Файли (скани документів про освіту й паспорта + загальні
+        # вкладення студента + фото) з диска - інакше самі записи
+        # прибрались би разом з education_documents/passport_documents/
+        # students, а файли лишились би сміттям.
         doc_ids = [r[0] for r in conn.execute("SELECT id FROM education_documents WHERE student_id = ?", (student_id,)).fetchall()]
+        passport_ids = [r[0] for r in conn.execute("SELECT id FROM passport_documents WHERE student_id = ?", (student_id,)).fetchall()]
         all_attachments = list(get_attachments(conn, 'student', student_id))
         for doc_id in doc_ids:
             all_attachments.extend(get_attachments(conn, 'education_document', doc_id))
+        for passport_id in passport_ids:
+            all_attachments.extend(get_attachments(conn, 'passport_document', passport_id))
         for att in all_attachments:
             att_path = os.path.join('static', att['file_path'])
             if os.path.exists(att_path):
@@ -1116,12 +1122,37 @@ def delete_student(student_id):
         if doc_ids:
             placeholders = ','.join('?' for _ in doc_ids)
             conn.execute(f"DELETE FROM attachments WHERE entity_type='education_document' AND entity_id IN ({placeholders})", doc_ids)
+        if passport_ids:
+            placeholders = ','.join('?' for _ in passport_ids)
+            conn.execute(f"DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id IN ({placeholders})", passport_ids)
+
+        # Файл-підстава заморожування (frozen_students.document_file) -
+        # окрема колонка, не через загальну таблицю attachments.
+        for row in conn.execute("SELECT document_file FROM frozen_students WHERE student_id = ? AND document_file IS NOT NULL", (student_id,)).fetchall():
+            doc_path = os.path.join('static', row[0])
+            if os.path.exists(doc_path):
+                os.remove(doc_path)
+
+        if student['photo']:
+            photo_path = os.path.join('static', student['photo'])
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
 
         conn.execute("""
             DELETE FROM foreign_education_docs
             WHERE education_doc_id IN (SELECT id FROM education_documents WHERE student_id = ?)
         """, (student_id,))
         conn.execute("DELETE FROM education_documents WHERE student_id = ?", (student_id,))
+        # НОВЕ: passport_documents, frozen_students, expulsion_order_students,
+        # license_transfer_order_students - ці чотири таблиці теж мають
+        # FOREIGN KEY на students(id) без ON DELETE CASCADE, але раніше
+        # тут не видалялись - звідси й "FOREIGN KEY constraint failed"
+        # при спробі видалити студента, який мав паспортні дані (чи
+        # колись був заморожений/відрахований/переведений між ліцензіями).
+        conn.execute("DELETE FROM passport_documents WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM frozen_students WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM expulsion_order_students WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM license_transfer_order_students WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM diplomas WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))
@@ -1133,7 +1164,8 @@ def delete_student(student_id):
             current_username(),
             f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
-            details="каскадне видалення: military, grades, activity_grades, education_documents, diplomas, вкладення"
+            details="каскадне видалення: military, grades, activity_grades, education_documents, passport_documents, "
+                    "frozen_students, expulsion_order_students, license_transfer_order_students, diplomas, вкладення, фото"
         )
     except Exception as e:
         conn.rollback()

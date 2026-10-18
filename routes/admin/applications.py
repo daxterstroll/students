@@ -12,7 +12,8 @@ from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
 import os
-from routes.utils import get_attachments, save_multiple_attachments
+from routes.utils import get_attachments, save_multiple_attachments, generate_english_name
+from routes.admin.documents import translate_to_en
 from datetime import datetime
 import json
 
@@ -104,10 +105,12 @@ def pending_student_review(pending_id):
 
         if action == 'save':
             fields = [
-                'last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date',
+                'last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date', 'tax_id',
                 'phone', 'phone_backup', 'email',
                 'document_type', 'document_series', 'document_number', 'document_institution',
                 'document_country', 'document_date',
+                'foreign_reference_number', 'foreign_reference_institution', 'foreign_reference_country',
+                'foreign_reference_issue_date', 'recognition_certificate_number', 'recognition_issuer', 'recognition_date',
                 'passport_document_type', 'passport_series', 'passport_number', 'passport_issued_by',
                 'passport_issue_date', 'passport_valid_until', 'passport_unique_number',
                 'military_registration_number_drpvr', 'military_registration_document', 'military_issued_vod',
@@ -115,6 +118,10 @@ def pending_student_review(pending_id):
                 'military_change_credentials', 'military_change_reason',
             ]
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
+            # "Дійсний до" стосується лише ID-картки - JS ховає поле для
+            # книжки, але форму теоретично можна надіслати і з вимкненим JS.
+            if values.get('passport_document_type') != 'ID-картка':
+                values['passport_valid_until'] = None
 
             if not values['last_name_UA'] or not values['first_name_UA'] or not values['birth_date']:
                 flash("Прізвище, ім'я і дата народження обов'язкові", "error")
@@ -184,12 +191,12 @@ def pending_student_review(pending_id):
 
             cur = conn.execute("""
                 INSERT INTO students (
-                    last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date,
+                    last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
                     group_id, license_id, phone, phone_backup, email, program_credits_override
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'], row['last_name_ENG'], row['first_name_ENG'],
-                row['birth_date'], group_id, license_id, row['phone'], row['phone_backup'], row['email'],
+                row['birth_date'], row['tax_id'], group_id, license_id, row['phone'], row['phone_backup'], row['email'],
                 program_credits_override,
             ))
             student_id = cur.lastrowid
@@ -219,8 +226,9 @@ def pending_student_review(pending_id):
                         institution_name, institution_name_en, country, country_en, completion_date
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, row['document_type'] or '', '', doc_number,
-                    row['document_institution'] or '', '', row['document_country'] or '', '',
+                    student_id, row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
+                    row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
+                    row['document_country'] or '', translate_to_en(row['document_country'] or ''),
                     row['document_date'] or '',
                 ))
                 # Скани, завантажені разом із заявкою, - це скани саме
@@ -230,6 +238,28 @@ def pending_student_review(pending_id):
                     "UPDATE attachments SET entity_type='education_document', entity_id=? WHERE entity_type='pending_student' AND entity_id=?",
                     (cur_doc.lastrowid, pending_id)
                 )
+
+                # Академічна довідка / Свідоцтво про визнання - абітурієнт
+                # міг позначити одне, обидва чи жодне на формі /apply;
+                # записуємо лише те, що реально заповнене.
+                if row['foreign_reference_number'] or row['foreign_reference_institution'] or row['recognition_certificate_number'] or row['recognition_issuer']:
+                    conn.execute("""
+                        INSERT INTO foreign_education_docs (
+                            education_doc_id, reference_number, reference_institution, reference_institution_en,
+                            reference_country, reference_country_en, reference_issue_date,
+                            recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        cur_doc.lastrowid,
+                        row['foreign_reference_number'], row['foreign_reference_institution'],
+                        translate_to_en(row['foreign_reference_institution']) if row['foreign_reference_institution'] else None,
+                        row['foreign_reference_country'],
+                        translate_to_en(row['foreign_reference_country']) if row['foreign_reference_country'] else None,
+                        row['foreign_reference_issue_date'],
+                        row['recognition_certificate_number'], row['recognition_issuer'],
+                        translate_to_en(row['recognition_issuer']) if row['recognition_issuer'] else None,
+                        row['recognition_date'],
+                    ))
             else:
                 # Немає окремого документа про освіту, куди прив'язати
                 # скани, - лишаємо їх загальними вкладеннями студента.
@@ -311,11 +341,11 @@ def pending_student_review(pending_id):
             if request.form.get('update_personal'):
                 conn.execute("""
                     UPDATE students SET last_name_UA=?, first_name_UA=?, middle_name_UA=?,
-                                         last_name_ENG=?, first_name_ENG=?, birth_date=?
+                                         last_name_ENG=?, first_name_ENG=?, birth_date=?, tax_id=?
                     WHERE id=?
                 """, (
                     row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'],
-                    row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], existing_id
+                    row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], row['tax_id'], existing_id
                 ))
                 updated_parts.append('особисті дані')
 
@@ -350,12 +380,68 @@ def pending_student_review(pending_id):
                         institution_name, institution_name_en, country, country_en, completion_date
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    existing_id, row['document_type'] or '', '', doc_number,
-                    row['document_institution'] or '', '', row['document_country'] or '', '',
+                    existing_id, row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
+                    row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
+                    row['document_country'] or '', translate_to_en(row['document_country'] or ''),
                     row['document_date'] or '',
                 ))
                 doc_id_for_scans = cur_doc.lastrowid
                 updated_parts.append('документ про освіту (додано як новий)')
+
+            if request.form.get('add_reference_recognition') and (
+                row['foreign_reference_number'] or row['foreign_reference_institution']
+                or row['recognition_certificate_number'] or row['recognition_issuer']
+            ):
+                target_doc_id = doc_id_for_scans
+                if target_doc_id is None:
+                    existing_doc = conn.execute(
+                        "SELECT id FROM education_documents WHERE student_id=? ORDER BY id DESC LIMIT 1", (existing_id,)
+                    ).fetchone()
+                    target_doc_id = existing_doc[0] if existing_doc else None
+
+                if target_doc_id is None:
+                    flash("Немає жодного документа про освіту студента, до якого можна додати довідку/свідоцтво.", "error")
+                else:
+                    existing_foreign = conn.execute(
+                        "SELECT id FROM foreign_education_docs WHERE education_doc_id=?", (target_doc_id,)
+                    ).fetchone()
+                    ref_institution_en = translate_to_en(row['foreign_reference_institution']) if row['foreign_reference_institution'] else None
+                    ref_country_en = translate_to_en(row['foreign_reference_country']) if row['foreign_reference_country'] else None
+                    rec_issuer_en = translate_to_en(row['recognition_issuer']) if row['recognition_issuer'] else None
+
+                    if existing_foreign:
+                        conn.execute("""
+                            UPDATE foreign_education_docs SET
+                                reference_number=COALESCE(?, reference_number),
+                                reference_institution=COALESCE(?, reference_institution),
+                                reference_institution_en=COALESCE(?, reference_institution_en),
+                                reference_country=COALESCE(?, reference_country),
+                                reference_country_en=COALESCE(?, reference_country_en),
+                                reference_issue_date=COALESCE(?, reference_issue_date),
+                                recognition_certificate_number=COALESCE(?, recognition_certificate_number),
+                                recognition_issuer=COALESCE(?, recognition_issuer),
+                                recognition_issuer_en=COALESCE(?, recognition_issuer_en),
+                                recognition_date=COALESCE(?, recognition_date)
+                            WHERE education_doc_id=?
+                        """, (
+                            row['foreign_reference_number'], row['foreign_reference_institution'], ref_institution_en,
+                            row['foreign_reference_country'], ref_country_en, row['foreign_reference_issue_date'],
+                            row['recognition_certificate_number'], row['recognition_issuer'], rec_issuer_en,
+                            row['recognition_date'], target_doc_id,
+                        ))
+                    else:
+                        conn.execute("""
+                            INSERT INTO foreign_education_docs (
+                                education_doc_id, reference_number, reference_institution, reference_institution_en,
+                                reference_country, reference_country_en, reference_issue_date,
+                                recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            target_doc_id, row['foreign_reference_number'], row['foreign_reference_institution'], ref_institution_en,
+                            row['foreign_reference_country'], ref_country_en, row['foreign_reference_issue_date'],
+                            row['recognition_certificate_number'], row['recognition_issuer'], rec_issuer_en, row['recognition_date'],
+                        ))
+                    updated_parts.append('академічна довідка/свідоцтво про визнання')
 
             if doc_id_for_scans:
                 conn.execute(
@@ -664,8 +750,18 @@ def update_request_review(request_id):
         if action == 'delete':
             for entity_type in ('update_request_passport', 'update_request_education', 'update_request_military'):
                 for att in get_attachments(conn, entity_type, request_id):
+                    # Після застосування заявки той самий файл копіюється і
+                    # на реальний запис студента (passport_document/
+                    # education_document/military) - видаляти файл з диска
+                    # можна, лише якщо жоден ІНШИЙ рядок attachments на
+                    # нього більше не посилається, інакше документ студента
+                    # лишиться з "мертвим" посиланням.
+                    still_used = conn.execute(
+                        "SELECT 1 FROM attachments WHERE file_path=? AND id!=? LIMIT 1",
+                        (att['file_path'], att['id'])
+                    ).fetchone()
                     att_path = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_path):
+                    if not still_used and os.path.exists(att_path):
                         os.remove(att_path)
                 conn.execute("DELETE FROM attachments WHERE entity_type=? AND entity_id=?", (entity_type, request_id))
             if row['photo_path']:
@@ -694,15 +790,35 @@ def update_request_review(request_id):
         elif action == 'apply':
             student_id = row['student_id']
             applied_parts = []
+            # Які саме секції/поля реально застосовано (на відміну від
+            # applied_parts, який лише для flash-повідомлення й логу,
+            # applied_field_keys зберігається в update_requests, щоб
+            # сторінку заявки можна було відкрити й пізніше і побачити,
+            # що саме було прийнято - а не лише "заявка застосована".
+            applied_field_keys = []
 
             simple_updates = {}
             for key in ('last_name_UA', 'first_name_UA', 'middle_name_UA', 'phone', 'phone_backup', 'email', 'tax_id', 'edebo_code'):
                 if key in allowed_fields and request.form.get(f'apply_{key}'):
                     simple_updates[key] = submitted.get(key)
+            if 'last_name_UA' in simple_updates or 'first_name_UA' in simple_updates:
+                # Англійська транслітерація генерується автоматично при
+                # створенні студента (add_student) - але раніше тут, при
+                # застосуванні зміни прізвища/імені із заявки, лишалась
+                # НЕ оновленою, доки адмін не підправить її вручну окремо.
+                # Беремо нове значення там, де воно змінюється, і поточне
+                # студентське там, де ні (напр. якщо міняється лише
+                # прізвище - ім'я для транслітерації береться з row).
+                new_last_ua = simple_updates.get('last_name_UA', row['last_name_UA'])
+                new_first_ua = simple_updates.get('first_name_UA', row['first_name_UA'])
+                last_eng, first_eng = generate_english_name(new_last_ua, new_first_ua)
+                simple_updates['last_name_ENG'] = last_eng
+                simple_updates['first_name_ENG'] = first_eng
             if simple_updates:
                 set_clause = ", ".join(f"{k}=?" for k in simple_updates)
                 conn.execute(f"UPDATE students SET {set_clause} WHERE id=?", list(simple_updates.values()) + [student_id])
                 applied_parts.append(", ".join(simple_updates.keys()))
+                applied_field_keys.extend(simple_updates.keys())
 
             if 'photo' in allowed_fields and row['photo_path'] and request.form.get('apply_photo'):
                 from routes.photo import photo_path_for_student, _ensure_dir
@@ -714,6 +830,7 @@ def update_request_review(request_id):
                         dst.write(src.read())
                     conn.execute("UPDATE students SET photo=? WHERE id=?", (f"uploads/photos/student_{student_id}.jpg", student_id))
                     applied_parts.append('фото')
+                    applied_field_keys.append('photo')
 
             if 'passport' in allowed_fields and submitted.get('passport') and request.form.get('apply_passport'):
                 p = submitted['passport']
@@ -722,25 +839,118 @@ def update_request_review(request_id):
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (student_id, p.get('document_type') or 'Паспорт (книжка)', p.get('series'), p.get('number'),
                       p.get('issued_by'), p.get('issue_date'), p.get('valid_until'), p.get('unique_number')))
-                conn.execute(
-                    "UPDATE attachments SET entity_type='passport_document', entity_id=? WHERE entity_type='update_request_passport' AND entity_id=?",
-                    (cur_p.lastrowid, request_id)
-                )
+                # Копіюємо (а не переносимо) скани - інакше сторінка заявки,
+                # яку адмін може відкрити повторно пізніше, лишилась би без
+                # жодного файлу, бо він "переїхав" би на сам документ.
+                conn.execute("""
+                    INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_at, uploaded_by)
+                    SELECT 'passport_document', ?, file_path, original_name, uploaded_at, uploaded_by
+                    FROM attachments WHERE entity_type='update_request_passport' AND entity_id=?
+                """, (cur_p.lastrowid, request_id))
                 applied_parts.append('паспортні дані (новий запис)')
+                applied_field_keys.append('passport')
 
-            if 'education_document' in allowed_fields and submitted.get('education_document') and request.form.get('apply_education_document'):
-                d = submitted['education_document']
+            d = submitted.get('education_document') or {}
+            education_doc_id = None  # id новоствореного (чи наявного) документа - для довідки/свідоцтва нижче
+
+            if 'education_document' in allowed_fields and d.get('document_type') and request.form.get('apply_education_document'):
+                # education_documents не має окремої колонки "серія" (на
+                # відміну від passport_documents) - раніше серія, яку
+                # студент вводив у заявці, просто ніде не опинялась:
+                # не показувалась при перегляді й не застосовувалась.
+                # Об'єднуємо її з номером, як і скрізь у системі
+                # (так само, як серія+номер паспорта зводяться в один рядок).
+                document_number = ((d.get('series') + ' ') if d.get('series') else '') + (d.get('number') or '')
                 cur_d = conn.execute("""
                     INSERT INTO education_documents (student_id, document_type, document_type_en, document_number,
                         institution_name, institution_name_en, country, country_en, completion_date)
-                    VALUES (?, ?, '', ?, ?, '', ?, '', ?)
-                """, (student_id, d.get('document_type') or '', d.get('number') or '', d.get('institution') or '',
-                      d.get('country') or '', d.get('completion_date') or ''))
-                conn.execute(
-                    "UPDATE attachments SET entity_type='education_document', entity_id=? WHERE entity_type='update_request_education' AND entity_id=?",
-                    (cur_d.lastrowid, request_id)
-                )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, d.get('document_type') or '', translate_to_en(d.get('document_type') or ''), document_number,
+                      d.get('institution') or '', translate_to_en(d.get('institution') or ''),
+                      d.get('country') or '', translate_to_en(d.get('country') or ''),
+                      d.get('completion_date') or ''))
+                education_doc_id = cur_d.lastrowid
+                conn.execute("""
+                    INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_at, uploaded_by)
+                    SELECT 'education_document', ?, file_path, original_name, uploaded_at, uploaded_by
+                    FROM attachments WHERE entity_type='update_request_education' AND entity_id=?
+                """, (education_doc_id, request_id))
                 applied_parts.append('документ про освіту (новий запис)')
+                applied_field_keys.append('education_document')
+
+            # Академічна довідка / Свідоцтво про визнання - незалежні від
+            # базового документа: студент міг подати лише їх (без нового
+            # документа), щоб долучити до вже наявного. Якщо вище не
+            # створено нового документа - прикріплюємо до найновішого
+            # наявного запису студента; якщо такого взагалі немає,
+            # прикріпити нема до чого, тож пропускаємо з позначкою в логах.
+            reference = d.get('reference') or {}
+            recognition = d.get('recognition') or {}
+            apply_reference = ('education_document_reference' in allowed_fields and reference
+                                and request.form.get('apply_education_reference'))
+            apply_recognition = ('education_document_recognition' in allowed_fields and recognition
+                                  and request.form.get('apply_education_recognition'))
+
+            if apply_reference or apply_recognition:
+                if education_doc_id is None:
+                    existing_doc = conn.execute(
+                        "SELECT id FROM education_documents WHERE student_id=? ORDER BY id DESC LIMIT 1", (student_id,)
+                    ).fetchone()
+                    education_doc_id = existing_doc[0] if existing_doc else None
+
+                if education_doc_id is None:
+                    flash("Немає жодного документа про освіту, до якого можна додати довідку/свідоцтво - спершу додайте основний документ.", "error")
+                else:
+                    existing_foreign = conn.execute(
+                        "SELECT id FROM foreign_education_docs WHERE education_doc_id=?", (education_doc_id,)
+                    ).fetchone()
+
+                    ref_number = reference.get('number') if apply_reference else None
+                    ref_institution = reference.get('institution') if apply_reference else None
+                    ref_institution_en = translate_to_en(ref_institution) if ref_institution else None
+                    ref_country = reference.get('country') if apply_reference else None
+                    ref_country_en = translate_to_en(ref_country) if ref_country else None
+                    ref_issue_date = reference.get('issue_date') if apply_reference else None
+                    rec_number = recognition.get('certificate_number') if apply_recognition else None
+                    rec_issuer = recognition.get('issuer') if apply_recognition else None
+                    rec_issuer_en = translate_to_en(rec_issuer) if rec_issuer else None
+                    rec_date = recognition.get('date') if apply_recognition else None
+
+                    if existing_foreign:
+                        # COALESCE - щоб застосування лише довідки (без
+                        # свідоцтва) не затирало вже наявне свідоцтво на
+                        # цьому ж документі, і навпаки.
+                        conn.execute("""
+                            UPDATE foreign_education_docs SET
+                                reference_number=COALESCE(?, reference_number),
+                                reference_institution=COALESCE(?, reference_institution),
+                                reference_institution_en=COALESCE(?, reference_institution_en),
+                                reference_country=COALESCE(?, reference_country),
+                                reference_country_en=COALESCE(?, reference_country_en),
+                                reference_issue_date=COALESCE(?, reference_issue_date),
+                                recognition_certificate_number=COALESCE(?, recognition_certificate_number),
+                                recognition_issuer=COALESCE(?, recognition_issuer),
+                                recognition_issuer_en=COALESCE(?, recognition_issuer_en),
+                                recognition_date=COALESCE(?, recognition_date)
+                            WHERE education_doc_id=?
+                        """, (ref_number, ref_institution, ref_institution_en, ref_country, ref_country_en, ref_issue_date,
+                              rec_number, rec_issuer, rec_issuer_en, rec_date, education_doc_id))
+                    else:
+                        conn.execute("""
+                            INSERT INTO foreign_education_docs (
+                                education_doc_id, reference_number, reference_institution, reference_institution_en,
+                                reference_country, reference_country_en, reference_issue_date,
+                                recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (education_doc_id, ref_number, ref_institution, ref_institution_en, ref_country, ref_country_en,
+                              ref_issue_date, rec_number, rec_issuer, rec_issuer_en, rec_date))
+
+                    if apply_reference:
+                        applied_parts.append('академічна довідка')
+                        applied_field_keys.append('education_document_reference')
+                    if apply_recognition:
+                        applied_parts.append('свідоцтво про визнання')
+                        applied_field_keys.append('education_document_recognition')
 
             if 'military' in allowed_fields and submitted.get('military') and request.form.get('apply_military'):
                 m = submitted['military']
@@ -763,11 +973,13 @@ def update_request_review(request_id):
                           m.get('issued_VOD'), m.get('military_accounting_specialty_number'), m.get('military_rank'),
                           m.get('address_of_residence')))
                     military_id = cur_m.lastrowid
-                conn.execute(
-                    "UPDATE attachments SET entity_type='military', entity_id=? WHERE entity_type='update_request_military' AND entity_id=?",
-                    (military_id, request_id)
-                )
+                conn.execute("""
+                    INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_at, uploaded_by)
+                    SELECT 'military', ?, file_path, original_name, uploaded_at, uploaded_by
+                    FROM attachments WHERE entity_type='update_request_military' AND entity_id=?
+                """, (military_id, request_id))
                 applied_parts.append('військові дані')
+                applied_field_keys.append('military')
 
             if not applied_parts:
                 conn.rollback()
@@ -776,8 +988,8 @@ def update_request_review(request_id):
                 return redirect(url_for('admin.update_request_review', request_id=request_id))
 
             conn.execute(
-                "UPDATE update_requests SET status='approved', reviewed_by=?, reviewed_at=datetime('now','localtime') WHERE id=?",
-                (current_username(), request_id)
+                "UPDATE update_requests SET status='approved', reviewed_by=?, reviewed_at=datetime('now','localtime'), applied_fields=? WHERE id=?",
+                (current_username(), json.dumps(applied_field_keys), request_id)
             )
             conn.commit()
             log_action(
@@ -795,10 +1007,11 @@ def update_request_review(request_id):
     passport_scans = get_attachments(conn, 'update_request_passport', request_id)
     education_scans = get_attachments(conn, 'update_request_education', request_id)
     military_scans = get_attachments(conn, 'update_request_military', request_id)
+    applied_fields = json.loads(row['applied_fields']) if row['applied_fields'] else []
 
     conn.close()
     return render_template(
         'admin_update_request_review.html',
-        row=row, allowed_fields=allowed_fields, submitted=submitted,
+        row=row, allowed_fields=allowed_fields, submitted=submitted, applied_fields=applied_fields,
         passport_scans=passport_scans, education_scans=education_scans, military_scans=military_scans,
     )

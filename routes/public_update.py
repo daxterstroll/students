@@ -206,6 +206,31 @@ def update_info(token):
                 'completion_date': _iso_to_ua_date(f('document_date')),
             }
 
+    # Академічна довідка і Свідоцтво про визнання - незалежні права від
+    # базового документа (education_document): адмін може дозволити
+    # студенту долучити лише довідку до вже наявного документа, без
+    # повторного заповнення типу/номера/закладу. Тому читаємо їх тут
+    # окремо і вкладаємо в submitted['education_document'], створюючи
+    # його, якщо базовий документ не дозволено взагалі.
+    if 'education_document_reference' in allowed_fields:
+        if any([f('reference_number'), f('reference_institution')]):
+            submitted.setdefault('education_document', {})
+            submitted['education_document']['reference'] = {
+                'number': f('reference_number'),
+                'institution': f('reference_institution'),
+                'country': f('reference_country'),
+                'issue_date': _iso_to_ua_date(f('reference_issue_date')),
+            }
+
+    if 'education_document_recognition' in allowed_fields:
+        if any([f('recognition_certificate_number'), f('recognition_issuer')]):
+            submitted.setdefault('education_document', {})
+            submitted['education_document']['recognition'] = {
+                'certificate_number': f('recognition_certificate_number'),
+                'issuer': f('recognition_issuer'),
+                'date': _iso_to_ua_date(f('recognition_date')),
+            }
+
     if 'military' in allowed_fields:
         scans = [sf for sf in request.files.getlist('military_scans') if sf and sf.filename]
         err = _validate_scan_files(scans, MAX_SCAN_FILES, " військового обліку")

@@ -65,6 +65,8 @@ body{
 .section-num{ width:30px; height:30px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.85rem; color:#fff; background:linear-gradient(145deg, var(--brass-lt), var(--brass-dark)); box-shadow:0 3px 10px rgba(200,162,74,.4); }
 .section-title{ font-weight:800; font-size:1.05rem; color:var(--ink); }
 .section-sub{ font-size:.83rem; color:var(--muted); margin:-.6rem 0 1rem 2.6rem; }
+.subsection-title{ font-weight:700; font-size:.92rem; color:var(--ink); margin-bottom:.8rem; padding-top:1.4rem; border-top:1px dashed var(--line); }
+.subsection-title.is-first{ padding-top:0; border-top:none; }
 
 .grid{ display:grid; grid-template-columns:repeat(12,1fr); gap:.9rem; }
 .col-12{ grid-column:span 12; min-width:0; } .col-6{ grid-column:span 12; min-width:0; }
@@ -203,10 +205,12 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                 </div>
                 {% endif %}
 
-                {% if 'education_document' in allowed_fields %}
+                {% if 'education_document' in allowed_fields or 'education_document_reference' in allowed_fields or 'education_document_recognition' in allowed_fields %}
                 {% set _ = n.append(n.pop() + 1) %}
                 <div class="section">
                     <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Документ про освіту</span></div>
+
+                    {% if 'education_document' in allowed_fields %}
                     <div class="grid">
                         <div class="col-12">
                             <label class="f-label">Вид документа</label>
@@ -241,6 +245,47 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                             </div>
                         </div>
                     </div>
+                    {% endif %}
+
+                    {% if 'education_document_reference' in allowed_fields %}
+                    <div class="subsection-title{{ ' is-first' if 'education_document' not in allowed_fields else '' }}">Академічна довідка</div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <label class="f-label">Номер довідки</label>
+                            <input type="text" name="reference_number" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Назва закладу (довідка)</label>
+                            <input type="text" name="reference_institution" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Країна довідки</label>
+                            <input type="text" name="reference_country" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата видачі довідки</label>
+                            <input type="date" name="reference_issue_date" class="f-control">
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if 'education_document_recognition' in allowed_fields %}
+                    <div class="subsection-title{{ ' is-first' if ('education_document' not in allowed_fields and 'education_document_reference' not in allowed_fields) else '' }}">Свідоцтво про визнання в Україні іноземного документа про освіту</div>
+                    <div class="grid">
+                        <div class="col-12">
+                            <label class="f-label">Номер свідоцтва про визнання</label>
+                            <input type="text" name="recognition_certificate_number" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Орган, що видав свідоцтво</label>
+                            <input type="text" name="recognition_issuer" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата видачі свідоцтва</label>
+                            <input type="date" name="recognition_date" class="f-control">
+                        </div>
+                    </div>
+                    {% endif %}
                 </div>
                 {% endif %}
 
