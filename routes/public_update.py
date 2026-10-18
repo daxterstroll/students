@@ -172,13 +172,17 @@ def update_info(token):
                 error=err, form=request.form,
             )
         if any([f('passport_number'), f('passport_document_type')]):
+            passport_doc_type = f('passport_document_type') if f('passport_document_type') in ('Паспорт (книжка)', 'ID-картка') else None
             submitted['passport'] = {
-                'document_type': f('passport_document_type') if f('passport_document_type') in ('Паспорт (книжка)', 'ID-картка') else None,
+                'document_type': passport_doc_type,
                 'series': f('passport_series'),
                 'number': f('passport_number'),
                 'issued_by': f('passport_issued_by'),
                 'issue_date': _iso_to_ua_date(f('passport_issue_date')),
-                'valid_until': _iso_to_ua_date(f('passport_valid_until')),
+                # "Дійсний до" стосується лише ID-картки - JS ховає поле
+                # для книжки, але форму теоретично можна надіслати і з
+                # вимкненим JS, тому підстраховуємось і тут.
+                'valid_until': _iso_to_ua_date(f('passport_valid_until')) if passport_doc_type == 'ID-картка' else None,
                 'unique_number': f('passport_unique_number'),
             }
 

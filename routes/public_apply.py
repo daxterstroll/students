@@ -240,7 +240,9 @@ def apply():
     if passport_document_type not in ('Паспорт (книжка)', 'ID-картка'):
         passport_document_type = None
     passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
-    passport_valid_until = _iso_to_ua_date(f('passport_valid_until'))
+    # "Дійсний до" стосується лише ID-картки - JS ховає поле для книжки,
+    # але форму теоретично можна надіслати і з вимкненим JS.
+    passport_valid_until = _iso_to_ua_date(f('passport_valid_until')) if passport_document_type == 'ID-картка' else None
 
     conn = get_db()
     cur = conn.execute("""

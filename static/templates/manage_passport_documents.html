@@ -82,8 +82,8 @@
                         <label for="issue_date" class="form-label">Дата видачі</label>
                         <input type="text" name="issue_date" id="issue_date" class="form-control" placeholder="Напр., 19.06.2020">
                     </div>
-                    <div class="col-md-6">
-                        <label for="valid_until" class="form-label">Дійсний до</label>
+                    <div class="col-md-6" id="valid_until_wrap">
+                        <label for="valid_until" class="form-label">Дійсний до (для ID-картки)</label>
                         <input type="text" name="valid_until" id="valid_until" class="form-control" placeholder="Напр., 19.06.2030">
                     </div>
                     <div class="col-md-12">
@@ -230,7 +230,7 @@
                                                                         <label class="form-label">Дата видачі</label>
                                                                         <input type="text" name="issue_date" class="form-control" value="{{ doc.issue_date or '' }}">
                                                                     </div>
-                                                                    <div class="col-md-6">
+                                                                    <div class="col-md-6 edit-valid-until-wrap">
                                                                         <label class="form-label">Дійсний до</label>
                                                                         <input type="text" name="valid_until" class="form-control" value="{{ doc.valid_until or '' }}">
                                                                     </div>
@@ -295,22 +295,43 @@
     function syncUniqueNumberVisibility(selectEl, wrapEl) {
         wrapEl.style.display = (selectEl.value === 'ID-картка') ? '' : 'none';
     }
+    // "Дійсний до" стосується лише ID-картки (книжка в Україні безстрокова) -
+    // той самий патерн, що й для серії/номера ЄДДР вище. При перемиканні
+    // назад на книжку поле ще й очищається, щоб стара дата не "просочилась"
+    // у запис книжки, якщо адмін її випадково не прибере сам.
+    function syncValidUntilVisibility(selectEl, wrapEl) {
+        const isBook = selectEl.value !== 'ID-картка';
+        wrapEl.style.display = isBook ? 'none' : '';
+        if (isBook) {
+            const input = wrapEl.querySelector('input');
+            if (input) input.value = '';
+        }
+    }
     document.getElementById('document_type').addEventListener('change', function () {
         syncSeriesVisibility(this, document.getElementById('series_wrap'));
         syncUniqueNumberVisibility(this, document.getElementById('unique_number_wrap'));
+        syncValidUntilVisibility(this, document.getElementById('valid_until_wrap'));
     });
     syncSeriesVisibility(document.getElementById('document_type'), document.getElementById('series_wrap'));
     syncUniqueNumberVisibility(document.getElementById('document_type'), document.getElementById('unique_number_wrap'));
+    syncValidUntilVisibility(document.getElementById('document_type'), document.getElementById('valid_until_wrap'));
 
     document.querySelectorAll('.edit-doctype').forEach(function (sel) {
         const seriesWrap = sel.closest('.row').querySelector('.edit-series-wrap');
         const uniqueWrap = sel.closest('.row').querySelector('.edit-unique-wrap');
+        const validUntilWrap = sel.closest('.row').querySelector('.edit-valid-until-wrap');
         sel.addEventListener('change', function () {
             syncSeriesVisibility(this, seriesWrap);
             syncUniqueNumberVisibility(this, uniqueWrap);
+            syncValidUntilVisibility(this, validUntilWrap);
         });
         syncSeriesVisibility(sel, seriesWrap);
         syncUniqueNumberVisibility(sel, uniqueWrap);
+        // На завантаженні НЕ ховаємо й НЕ очищаємо наявне значення для
+        // книжки - якщо старий запис уже мав дійсний до (дані, внесені
+        // до цього правила), адмін побачить і зможе прибрати свідомо,
+        // а не втратить непомітно при відкритті картки на редагування.
+        if (validUntilWrap) validUntilWrap.style.display = (sel.value === 'ID-картка') ? '' : 'none';
     });
 
     document.getElementById('addDocumentForm').addEventListener('submit', function (e) {
