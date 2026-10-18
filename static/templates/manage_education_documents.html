@@ -46,11 +46,18 @@
                 </div>
                 {% if selected_group_id and students_without_docs %}
                     <div class="col-md-6">
-                        <label for="student_id" class="form-label">Студент (без документів)</label>
-                        <select name="student_id" id="student_id_select" class="form-select" form="addDocumentForm">
+                        <label for="student_id_select" class="form-label">Студент (без документів)</label>
+                        <!-- НЕ name="student_id" - форма додавання документа (addDocumentForm) вже
+                             має власне приховане поле student_id (заповнене, коли сторінка відкрита
+                             з картки конкретного студента). Через form="addDocumentForm" цей select
+                             теж належав би до тієї ж форми, і два поля з однаковим ім'ям призводили
+                             до того, що на сервер йшло порожнє значення цього select, а не id
+                             студента з картки. Замість цього - без name, значення переносимо в
+                             приховане поле через JS (див. скрипт нижче). -->
+                        <select id="student_id_select" class="form-select">
                             <option value="">— оберіть студента —</option>
                             {% for s in students_without_docs %}
-                                <option value="{{ s.id }}">
+                                <option value="{{ s.id }}" {% if student and s.id == student.id %}selected{% endif %}>
                                     {{ s.last_name_UA }} {{ s.first_name_UA }}
                                 </option>
                             {% endfor %}
@@ -488,6 +495,17 @@
 </style>
 
 <script>
+    // Переносимо вибір студента з picker-select (без name - див. коментар
+    // біля нього) у справжнє приховане поле student_id форми додавання
+    // документа, щоб на сервер завжди йшло рівно одне значення student_id.
+    (function () {
+        var picker = document.getElementById('student_id_select');
+        var hidden = document.getElementById('hidden_student_id');
+        if (picker && hidden) {
+            picker.addEventListener('change', function () { hidden.value = this.value; });
+        }
+    })();
+
     // Академічна довідка / Свідоцтво про визнання - кожне перемикається
     // своєю власною галочкою, незалежно від країни і одне від одного
     // (раніше обидва блоки показувались разом лише коли країна не

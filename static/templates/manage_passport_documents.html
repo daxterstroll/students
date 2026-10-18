@@ -33,11 +33,15 @@
                 </div>
                 {% if selected_group_id and students_without_docs %}
                     <div class="col-md-6">
-                        <label for="student_id" class="form-label">Студент (без паспортних даних)</label>
-                        <select name="student_id" id="student_id_select" class="form-select" form="addDocumentForm">
+                        <label for="student_id_select" class="form-label">Студент (без паспортних даних)</label>
+                        <!-- НЕ name="student_id" - те саме поле вже є прихованим у
+                             addDocumentForm (заповнене, коли сторінка відкрита з картки
+                             студента); з однаковим ім'ям на сервер йшло б порожнє
+                             значення цього select замість id студента з картки. -->
+                        <select id="student_id_select" class="form-select">
                             <option value="">— оберіть студента —</option>
                             {% for s in students_without_docs %}
-                                <option value="{{ s.id }}">{{ s.last_name_UA }} {{ s.first_name_UA }}</option>
+                                <option value="{{ s.id }}" {% if student and s.id == student.id %}selected{% endif %}>{{ s.last_name_UA }} {{ s.first_name_UA }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -299,6 +303,17 @@
 </style>
 
 <script>
+    // Переносимо вибір студента з picker-select (без name) у справжнє
+    // приховане поле student_id форми додавання - щоб на сервер завжди
+    // йшло рівно одне значення student_id.
+    (function () {
+        var picker = document.getElementById('student_id_select');
+        var hidden = document.getElementById('hidden_student_id');
+        if (picker && hidden) {
+            picker.addEventListener('change', function () { hidden.value = this.value; });
+        }
+    })();
+
     function syncSeriesVisibility(selectEl, wrapEl) {
         wrapEl.style.display = (selectEl.value === 'ID-картка') ? 'none' : '';
     }
