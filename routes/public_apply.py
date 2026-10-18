@@ -248,7 +248,7 @@ def apply():
     cur = conn.execute("""
         INSERT INTO pending_students (
             submitted_ip,
-            last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date,
+            last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
             phone, phone_backup, email,
             document_type, document_series, document_number, document_institution, document_country, document_date,
             is_foreign_document, foreign_reference_number, foreign_reference_institution,
@@ -260,16 +260,16 @@ def apply():
             military_registration_number_drpvr, military_registration_document, military_issued_vod,
             military_specialty_number, military_rank, military_being_registered, military_address,
             military_change_credentials, military_change_reason
-        ) VALUES (?, ?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?)
+        ) VALUES (?, ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?)
     """, (
         request.remote_addr,
-        last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date,
+        last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date, f('tax_id'),
         phone, f('phone_backup'), f('email'),
         f('document_type'), f('document_series'), f('document_number'), f('document_institution'),
         f('document_country'), document_date,
-        is_foreign_document, None, None,
-        None, None,
-        None, None, None,
+        is_foreign_document, f('reference_number'), f('reference_institution'),
+        f('reference_country'), _iso_to_ua_date(f('reference_issue_date')),
+        f('recognition_certificate_number'), f('recognition_issuer'), _iso_to_ua_date(f('recognition_date')),
         reduced_program_claim, None, None,
         passport_document_type, f('passport_series'), f('passport_number'), f('passport_issued_by'),
         passport_issue_date, passport_valid_until, f('passport_unique_number'),

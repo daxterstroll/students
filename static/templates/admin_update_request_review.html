@@ -16,7 +16,18 @@
 </div>
 {% endif %}
 
-{% if row.status == 'submitted' %}
+{% set is_decided = row.status != 'submitted' %}
+{% macro applied_badge(key) %}
+    {% if row.status == 'approved' %}
+        {% if key in applied_fields %}
+        <span class="badge bg-success ms-2"><i class="bi bi-check-circle"></i> Застосовано</span>
+        {% else %}
+        <span class="badge bg-secondary ms-2"><i class="bi bi-dash-circle"></i> Не застосовано</span>
+        {% endif %}
+    {% endif %}
+{% endmacro %}
+
+{% if row.status == 'submitted' or is_decided %}
 <form method="post">
     <input type="hidden" name="action" value="apply">
 
@@ -31,7 +42,11 @@
                                    ('tax_id','Ідентифікаційний код'), ('edebo_code','Код ЄДЕБО')] %}
             {% if key in allowed_fields %}
             <div class="form-check mb-2">
+                {% if is_decided %}
+                <i class="bi bi-{{ 'check-square text-success' if key in applied_fields else 'square text-muted' }} me-2"></i>
+                {% else %}
                 <input type="checkbox" name="apply_{{ key }}" id="apply_{{ key }}" class="form-check-input" checked>
+                {% endif %}
                 <label for="apply_{{ key }}" class="form-check-label">
                     <strong>{{ label }}:</strong> {{ submitted.get(key) or '(порожньо)' }}
                 </label>
@@ -44,15 +59,20 @@
 
     {% if 'photo' in allowed_fields and row.photo_path %}
     <div class="card mb-3">
-        <div class="card-header">Фото</div>
+        <div class="card-header">Фото{{ applied_badge('photo') }}</div>
         <div class="card-body">
             <div class="d-flex align-items-center gap-3 mb-2">
                 <img id="currentPhoto" src="{{ url_for('static', filename=row.photo_path) }}" class="rounded border" style="width:90px; height:120px; object-fit:cover;">
+                {% if is_decided %}
+                <div><i class="bi bi-{{ 'check-square text-success' if 'photo' in applied_fields else 'square text-muted' }} me-2"></i>Замінити фото студента цим</div>
+                {% else %}
                 <div class="form-check">
                     <input type="checkbox" name="apply_photo" id="apply_photo" class="form-check-input" checked>
                     <label for="apply_photo" class="form-check-label">Замінити фото студента цим</label>
                 </div>
+                {% endif %}
             </div>
+            {% if not is_decided %}
             <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#photoEditPanel">
                 <i class="bi bi-crop"></i> Переобрізати фото
             </button>
@@ -72,24 +92,33 @@
                     </div>
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
 
     {% if 'passport' in allowed_fields and submitted.get('passport') %}
     <div class="card mb-3">
-        <div class="card-header">Паспортні дані</div>
+        <div class="card-header">Паспортні дані{{ applied_badge('passport') }}</div>
         <div class="card-body">
             <div class="form-check mb-2">
+                {% if is_decided %}
+                <i class="bi bi-{{ 'check-square text-success' if 'passport' in applied_fields else 'square text-muted' }} me-2"></i>Додано як новий запис (наявні паспортні дані не зачіпались)
+                {% else %}
                 <input type="checkbox" name="apply_passport" id="apply_passport" class="form-check-input" checked>
                 <label for="apply_passport" class="form-check-label">Додати як новий запис (наявні паспортні дані не чіпає)</label>
+                {% endif %}
             </div>
             <table class="table table-sm table-borderless mb-2">
                 <tbody>
                     <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.passport.document_type or '-' }}</td></tr>
                     <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.passport.series ~ ' ' if submitted.passport.series else '') ~ (submitted.passport.number or '') }}</td></tr>
                     <tr><th class="text-muted">Ким видано</th><td>{{ submitted.passport.issued_by or '-' }}</td></tr>
+                    {% if submitted.passport.document_type == 'ID-картка' %}
                     <tr><th class="text-muted">Дата видачі / Дійсний до</th><td>{{ submitted.passport.issue_date or '-' }} / {{ submitted.passport.valid_until or '-' }}</td></tr>
+                    {% else %}
+                    <tr><th class="text-muted">Дата видачі</th><td>{{ submitted.passport.issue_date or '-' }}</td></tr>
+                    {% endif %}
                     {% if submitted.passport.unique_number %}<tr><th class="text-muted">Номер запису в ЄДДР</th><td>{{ submitted.passport.unique_number }}</td></tr>{% endif %}
                 </tbody>
             </table>
@@ -105,18 +134,26 @@
     </div>
     {% endif %}
 
-    {% if 'education_document' in allowed_fields and submitted.get('education_document') %}
+    {% set has_base_doc = 'education_document' in allowed_fields and submitted.get('education_document', {}).get('document_type') %}
+    {% set has_reference = 'education_document_reference' in allowed_fields and submitted.get('education_document', {}).get('reference') %}
+    {% set has_recognition = 'education_document_recognition' in allowed_fields and submitted.get('education_document', {}).get('recognition') %}
+    {% if has_base_doc or has_reference or has_recognition %}
     <div class="card mb-3">
         <div class="card-header">Документ про освіту</div>
         <div class="card-body">
+            {% if has_base_doc %}
             <div class="form-check mb-2">
+                {% if is_decided %}
+                <i class="bi bi-{{ 'check-square text-success' if 'education_document' in applied_fields else 'square text-muted' }} me-2"></i>Додано як новий запис (наявні документи не зачіпались){{ applied_badge('education_document') }}
+                {% else %}
                 <input type="checkbox" name="apply_education_document" id="apply_education_document" class="form-check-input" checked>
                 <label for="apply_education_document" class="form-check-label">Додати як новий запис (наявні документи не чіпає)</label>
+                {% endif %}
             </div>
             <table class="table table-sm table-borderless mb-2">
                 <tbody>
                     <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.education_document.document_type or '-' }}</td></tr>
-                    <tr><th class="text-muted">Номер</th><td>{{ submitted.education_document.number or '-' }}</td></tr>
+                    <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.education_document.series ~ ' ' if submitted.education_document.series else '') ~ (submitted.education_document.number or '') or '-' }}</td></tr>
                     <tr><th class="text-muted">Заклад</th><td>{{ submitted.education_document.institution or '-' }}</td></tr>
                     <tr><th class="text-muted">Країна / дата закінчення</th><td>{{ submitted.education_document.country or '-' }} / {{ submitted.education_document.completion_date or '-' }}</td></tr>
                 </tbody>
@@ -129,23 +166,71 @@
             </a>
             {% endfor %}
             {% endif %}
+            {% endif %}
+
+            {% if has_reference %}
+            <div class="{{ 'mt-3 pt-3 border-top' if has_base_doc else '' }}">
+                <div class="form-check mb-2">
+                    {% if is_decided %}
+                    <i class="bi bi-{{ 'check-square text-success' if 'education_document_reference' in applied_fields else 'square text-muted' }} me-2"></i><strong>Академічна довідка</strong>{{ applied_badge('education_document_reference') }}
+                    {% else %}
+                    <input type="checkbox" name="apply_education_reference" id="apply_education_reference" class="form-check-input" checked>
+                    <label for="apply_education_reference" class="form-check-label"><strong>Академічна довідка</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
+                    {% endif %}
+                </div>
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr><th class="text-muted w-25">Номер довідки</th><td>{{ submitted.education_document.reference.number or '-' }}</td></tr>
+                        <tr><th class="text-muted">Заклад</th><td>{{ submitted.education_document.reference.institution or '-' }}</td></tr>
+                        <tr><th class="text-muted">Країна / дата видачі</th><td>{{ submitted.education_document.reference.country or '-' }} / {{ submitted.education_document.reference.issue_date or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if has_recognition %}
+            <div class="{{ 'mt-3 pt-3 border-top' if (has_base_doc or has_reference) else '' }}">
+                <div class="form-check mb-2">
+                    {% if is_decided %}
+                    <i class="bi bi-{{ 'check-square text-success' if 'education_document_recognition' in applied_fields else 'square text-muted' }} me-2"></i><strong>Свідоцтво про визнання в Україні іноземного документа про освіту</strong>{{ applied_badge('education_document_recognition') }}
+                    {% else %}
+                    <input type="checkbox" name="apply_education_recognition" id="apply_education_recognition" class="form-check-input" checked>
+                    <label for="apply_education_recognition" class="form-check-label"><strong>Свідоцтво про визнання в Україні іноземного документа про освіту</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
+                    {% endif %}
+                </div>
+                <table class="table table-sm table-borderless mb-0">
+                    <tbody>
+                        <tr><th class="text-muted w-25">Номер свідоцтва</th><td>{{ submitted.education_document.recognition.certificate_number or '-' }}</td></tr>
+                        <tr><th class="text-muted">Орган, що видав</th><td>{{ submitted.education_document.recognition.issuer or '-' }}</td></tr>
+                        <tr><th class="text-muted">Дата видачі</th><td>{{ submitted.education_document.recognition.date or '-' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
         </div>
     </div>
     {% endif %}
 
     {% if 'military' in allowed_fields and submitted.get('military') %}
     <div class="card mb-3">
-        <div class="card-header">Військові дані</div>
+        <div class="card-header">Військові дані{{ applied_badge('military') }}</div>
         <div class="card-body">
             <div class="form-check mb-2">
+                {% if is_decided %}
+                <i class="bi bi-{{ 'check-square text-success' if 'military' in applied_fields else 'square text-muted' }} me-2"></i>Оновлено наявний запис або створено новий
+                {% else %}
                 <input type="checkbox" name="apply_military" id="apply_military" class="form-check-input" checked>
                 <label for="apply_military" class="form-check-label">Оновити наявний запис або створити новий</label>
+                {% endif %}
             </div>
             <table class="table table-sm table-borderless mb-2">
                 <tbody>
                     <tr><th class="text-muted w-25">Номер ДРПВР</th><td>{{ submitted.military.registration_number_of_the_DRPVR or '-' }}</td></tr>
                     <tr><th class="text-muted">Документ</th><td>{{ submitted.military.military_registration_document or '-' }}</td></tr>
+                    <tr><th class="text-muted">Виданий ВОД</th><td>{{ submitted.military.issued_VOD or '-' }}</td></tr>
+                    <tr><th class="text-muted">Номер ВОС</th><td>{{ submitted.military.military_accounting_specialty_number or '-' }}</td></tr>
                     <tr><th class="text-muted">Звання</th><td>{{ submitted.military.military_rank or '-' }}</td></tr>
+                    <tr><th class="text-muted">Адреса проживання</th><td>{{ submitted.military.address_of_residence or '-' }}</td></tr>
                 </tbody>
             </table>
             {% if military_scans %}
@@ -160,9 +245,12 @@
     </div>
     {% endif %}
 
+    {% if not is_decided %}
     <button type="submit" class="btn btn-success"><i class="bi bi-check-circle me-1"></i>Застосувати обране</button>
+    {% endif %}
 </form>
 
+{% if not is_decided %}
 <form method="post" class="mt-3">
     <input type="hidden" name="action" value="reject">
     <div class="card border-danger">
@@ -173,6 +261,7 @@
         </div>
     </div>
 </form>
+{% endif %}
 {% endif %}
 
 <form method="post" class="mt-3">

@@ -6,7 +6,7 @@ routes/admin/documents.py
 -> підтвердження) і паспортних даних (одноетапний), разом із
 допоміжними функціями розпізнавання Excel-комірок для імпорту.
 """
-from flask import render_template, request, redirect, url_for, flash, session, send_file
+from flask import render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from routes.db import get_db
 from routes.utils import log_action, permission_required, logger
 from routes.helpers import current_username, sort_ukrainian
@@ -23,11 +23,24 @@ import re
 import time
 from openpyxl import load_workbook
 from rapidfuzz import process, fuzz
-from deep_translator import GoogleTranslator
+import requests
+from routes.config import DEEPL_API_KEY
 
 ALLOWED_EXTENSIONS = {'xlsx'}
 
-translator = GoogleTranslator(source="auto", target="en")
+# DeepL - офіційний платний/безкоштовний API (ключ з .env, див.
+# routes/config.py DEEPL_API_KEY) замість GoogleTranslator/MyMemory -
+# ті були безкоштовними неофіційними сервісами, які агресивно блокували
+# за частотою запитів (TooManyRequests), тому відмовились від обох.
+#
+# Запит робимо напряму через requests, а не через бібліотеку
+# deep_translator.DeeplTranslator - вона досі авторизується старим
+# способом (auth_key у query-параметрах GET-запиту), який DeepL більше
+# не приймає: сервер у відповідь повертає 403 "Missing Authorization
+# header, expected 'Authorization: DeepL-Auth-Key <API key>'". Ключ при
+# цьому цілком робочий - перевірено напряму через curl з тим самим
+# ключем, спрацювало лише з заголовком Authorization.
+DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
 translation_cache = {}
 
 
@@ -510,6 +523,12 @@ def manage_passport_documents():
                     flash(f'Забагато файлів - максимум {MAX_FILES} на запис (вже є {existing_count}).', 'error')
                     return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
 
+                # "Дійсний до" стосується лише ID-картки (книжка в Україні
+                # безстрокова) - JS ховає поле для книжки, але сервер не
+                # повинен покладатись лише на це (форму можна надіслати і
+                # з вимкненим JS), тому підстраховуємось і тут.
+                valid_until = request.form.get('valid_until') or None if document_type == 'ID-картка' else None
+
                 cursor.execute("""
                     UPDATE passport_documents SET
                         student_id=?, document_type=?, series=?, number=?,
@@ -518,7 +537,7 @@ def manage_passport_documents():
                 """, (
                     student_id, document_type, request.form.get('series') or None, request.form.get('number'),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
-                    request.form.get('valid_until') or None, request.form.get('unique_number') or None,
+                    valid_until, request.form.get('unique_number') or None,
                     doc_id,
                 ))
                 db.commit()
@@ -552,6 +571,8 @@ def manage_passport_documents():
                 if len(new_scans) > MAX_FILES:
                     raise ValueError(f"Забагато файлів - максимум {MAX_FILES} на запис")
 
+                valid_until = request.form.get('valid_until') or None if document_type == 'ID-картка' else None
+
                 cursor.execute("""
                     INSERT INTO passport_documents (
                         student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
@@ -559,7 +580,7 @@ def manage_passport_documents():
                 """, (
                     student_id, document_type, request.form.get('series') or None, request.form.get('number'),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
-                    request.form.get('valid_until') or None, request.form.get('unique_number') or None,
+                    valid_until, request.form.get('unique_number') or None,
                 ))
                 passport_doc_id = cursor.lastrowid
                 db.commit()
@@ -645,6 +666,10 @@ def import_passport_documents():
                     issue_date = str(row[5]).strip().replace('-', '.') if len(row) > 5 and row[5] not in (None, '') else None
                     valid_until = str(row[6]).strip().replace('-', '.') if len(row) > 6 and row[6] not in (None, '') else None
                     unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
+                    # "Дійсний до" стосується лише ID-картки - якщо у файлі
+                    # випадково заповнено для книжки, ігноруємо значення.
+                    if document_type != 'ID-картка':
+                        valid_until = None
 
                     cursor.execute("""
                         INSERT INTO passport_documents (
@@ -711,18 +736,56 @@ def fuzzy_find_student(cursor, full_name, threshold=80):
 
 
 def translate_to_en(text):
-    """Перекладає текст на англійську через GoogleTranslator з кешуванням результатів (translation_cache), щоб не робити повторні запити до перекладача для однакового тексту."""
+    """
+    Перекладає текст на англійську через офіційний DeepL API (прямий
+    HTTP-запит - див. коментар біля DEEPL_API_URL вище, чому не через
+    бібліотеку deep_translator), з кешуванням результатів
+    (translation_cache), щоб не робити повторний запит до перекладача
+    для однакового тексту вдруге.
+
+    Якщо DEEPL_API_KEY не задано (routes/config.py вже попередив про
+    це в лозі при старті) або сам запит впав (напр. вичерпано місячну
+    квоту безкоштовного плану - 500 000 символів) - повертає порожній
+    рядок, щоб поле просто лишилось незаповненим і адмін вписав
+    переклад вручну, а не щоб застосунок падав.
+    """
     if not text:
         return ""
     if text in translation_cache:
         return translation_cache[text]
+    if not DEEPL_API_KEY:
+        return ""
+
     try:
-        result = translator.translate(text)
+        response = requests.post(
+            DEEPL_API_URL,
+            headers={"Authorization": f"DeepL-Auth-Key {DEEPL_API_KEY}"},
+            data={"text": text, "target_lang": "EN"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()["translations"][0]["text"]
         translation_cache[text] = result
         return result
     except Exception as e:
-        logger.warning(f"Помилка перекладу '{text}': {e}")
-        return text
+        logger.warning(f"Помилка перекладу DeepL '{text}': {e}")
+        return ""
+
+
+@admin_bp.route('/admin/translate_text', methods=['POST'])
+@permission_required('manage_education_documents')
+def translate_text_endpoint():
+    """
+    AJAX-ендпоінт для автозаповнення англійських полів у формі документа
+    про освіту (Тип документа/Назва закладу/Країна) - перевикористовує
+    той самий translate_to_en() з кешуванням, що й масовий імпорт, тому
+    однакові формулювання (напр. "Диплом молодшого спеціаліста") не
+    викликають DeepL повторно.
+    """
+    text = (request.get_json(silent=True) or {}).get('text', '').strip()
+    if not text:
+        return jsonify({'translation': ''})
+    return jsonify({'translation': translate_to_en(text)})
 
 
 def find_country(text):
