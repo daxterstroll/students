@@ -317,6 +317,8 @@ def manage_specialties():
             name_ua = (request.form.get('name_ua') or '').strip()
             short_name = (request.form.get('short_name') or '').strip() or None
             name_en = (request.form.get('name_en') or '').strip() or None
+            isced_f_ua = (request.form.get('isced_f_ua') or '').strip() or None
+            isced_f_en = (request.form.get('isced_f_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
 
             if not code or not name_ua or not field_code:
@@ -324,8 +326,8 @@ def manage_specialties():
             else:
                 try:
                     conn.execute(
-                        "INSERT INTO specialties (code, name_ua, short_name, name_en, knowledge_field_code, is_active, is_custom) VALUES (?, ?, ?, ?, ?, 1, 1)",
-                        (code, name_ua, short_name, name_en, field_code)
+                        "INSERT INTO specialties (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, knowledge_field_code, is_active, is_custom) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)",
+                        (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code)
                     )
                     conn.commit()
                     flash(f"Спеціальність «{code} {name_ua}» додано.", "success")
@@ -338,13 +340,15 @@ def manage_specialties():
             name_ua = (request.form.get('name_ua') or '').strip()
             short_name = (request.form.get('short_name') or '').strip() or None
             name_en = (request.form.get('name_en') or '').strip() or None
+            isced_f_ua = (request.form.get('isced_f_ua') or '').strip() or None
+            isced_f_en = (request.form.get('isced_f_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
             if not name_ua or not field_code:
                 flash("Заповніть назву і галузь знань.", "error")
             else:
                 conn.execute(
-                    "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, knowledge_field_code = ? WHERE code = ?",
-                    (name_ua, short_name, name_en, field_code, code)
+                    "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, isced_f_ua = ?, isced_f_en = ?, knowledge_field_code = ? WHERE code = ?",
+                    (name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code, code)
                 )
                 conn.commit()
                 flash("Спеціальність оновлено.", "success")
@@ -417,7 +421,8 @@ def manage_specialties():
         FROM knowledge_fields k ORDER BY k.code
     """).fetchall()
     specialties = conn.execute("""
-        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active, s.is_custom, k.code AS field_code, k.name_ua AS field_name,
+        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.isced_f_ua, s.isced_f_en, s.is_active, s.is_custom,
+               k.code AS field_code, k.name_ua AS field_name,
                (SELECT COUNT(*) FROM groups g WHERE g.specialty_code = s.code) AS groups_count
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         ORDER BY k.code, substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)

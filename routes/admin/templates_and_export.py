@@ -608,7 +608,7 @@ def generate_group_docs():
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form, g.start_year, g.program_credits,
                g.qualification_name, g.degree_level, g.specialty, g.educational_program, g.knowledge_area,
-               g.qualification_name_en, g.degree_level_en, g.specialty_en, g.educational_program_en, g.knowledge_area_en,
+               g.qualification_name_en, g.degree_level_en, g.specialty_en, g.isced_f_ua, g.isced_f_en, g.educational_program_en, g.knowledge_area_en,
                il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
                il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
                g.entry_requirements, g.entry_requirements_en,
