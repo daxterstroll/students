@@ -123,12 +123,15 @@ def manage_groups():
             # на сторінці "Спеціальності".
             specialty = None
             specialty_en = None
+            isced_f_ua = None
+            isced_f_en = None
             knowledge_area = None
             knowledge_area_en = None
             specialty_short_name = None
             if specialty_code:
                 cat_row = conn.execute("""
                     SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en, s.short_name AS specialty_short_name,
+                           s.isced_f_ua, s.isced_f_en,
                            k.code AS field_code, k.name_ua AS field_name, k.name_en AS field_name_en
                     FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
                     WHERE s.code = ?
@@ -136,6 +139,8 @@ def manage_groups():
                 if cat_row:
                     specialty = f"{specialty_code} {cat_row['specialty_name']}"
                     specialty_en = cat_row['specialty_name_en']
+                    isced_f_ua = cat_row['isced_f_ua']
+                    isced_f_en = cat_row['isced_f_en']
                     knowledge_area = f"{cat_row['field_code']} {cat_row['field_name']}"
                     knowledge_area_en = cat_row['field_name_en']
                     specialty_short_name = cat_row['specialty_short_name']
@@ -218,16 +223,16 @@ def manage_groups():
                             INSERT INTO groups (
                                 name, course, start_year, study_form, program_credits,
                                 qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
-                                qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
+                                qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                                 entry_requirements, entry_requirements_en,
                                 learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
                                 entry_requirements_reduced, entry_requirements_reduced_en,
                                 learning_outcomes_reduced, learning_outcomes_reduced_en,
                                 program_includes_reduced, program_includes_reduced_en
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
-                              qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
+                              qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
                               learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
                               entry_requirements_reduced, entry_requirements_reduced_en,
@@ -276,12 +281,15 @@ def manage_groups():
 
             specialty = None
             specialty_en = None
+            isced_f_ua = None
+            isced_f_en = None
             knowledge_area = None
             knowledge_area_en = None
             specialty_short_name = None
             if specialty_code:
                 cat_row = conn.execute("""
                     SELECT s.name_ua AS specialty_name, s.name_en AS specialty_name_en, s.short_name AS specialty_short_name,
+                           s.isced_f_ua, s.isced_f_en,
                            k.code AS field_code, k.name_ua AS field_name, k.name_en AS field_name_en
                     FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
                     WHERE s.code = ?
@@ -289,6 +297,8 @@ def manage_groups():
                 if cat_row:
                     specialty = f"{specialty_code} {cat_row['specialty_name']}"
                     specialty_en = cat_row['specialty_name_en']
+                    isced_f_ua = cat_row['isced_f_ua']
+                    isced_f_en = cat_row['isced_f_en']
                     knowledge_area = f"{cat_row['field_code']} {cat_row['field_name']}"
                     knowledge_area_en = cat_row['field_name_en']
                     specialty_short_name = cat_row['specialty_short_name']
@@ -362,7 +372,7 @@ def manage_groups():
                                 name=?, course=?, start_year=?, study_form=?, program_credits=?,
                                 qualification_name=?, degree_level=?, specialty=?, specialty_code=?,
                                 educational_program=?, knowledge_area=?,
-                                qualification_name_en=?, degree_level_en=?, specialty_en=?,
+                                qualification_name_en=?, degree_level_en=?, specialty_en=?, isced_f_ua=?, isced_f_en=?,
                                 educational_program_en=?, knowledge_area_en=?,
                                 entry_requirements=?, entry_requirements_en=?,
                                 learning_outcomes=?, learning_outcomes_en=?,
@@ -373,7 +383,7 @@ def manage_groups():
                             WHERE id=?
                         """, (name, course, start_year, study_form, program_credits,
                               qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
-                              qualification_name_en, degree_level_en, specialty_en, educational_program_en, knowledge_area_en,
+                              qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
                               learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
                               entry_requirements_reduced, entry_requirements_reduced_en,

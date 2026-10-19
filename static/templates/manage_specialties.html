@@ -91,7 +91,7 @@
                 </div>
                 <div class="col-md-3">
                     <label class="form-label small mb-1">Назва (англ.)</label>
-                    <input type="text" name="name_en" class="form-control form-control-sm" placeholder="напр. 0413 Management and administration">
+                    <input type="text" name="name_en" class="form-control form-control-sm" placeholder="напр. Computer Science">
                 </div>
                 <div class="col-md-2">
                     <label class="form-label small mb-1">Галузь знань</label>
@@ -100,6 +100,14 @@
                         <option value="{{ f.code }}">{{ f.code }} {{ f.name_ua }}</option>
                         {% endfor %}
                     </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">ISCED-F (укр.)</label>
+                    <input type="text" name="isced_f_ua" class="form-control form-control-sm" placeholder="напр. 0413 Управління та адміністрування">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">ISCED-F (англ.)</label>
+                    <input type="text" name="isced_f_en" class="form-control form-control-sm" placeholder="напр. 0413 Management and administration">
                 </div>
                 <div class="col-md-1">
                     <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
@@ -117,7 +125,8 @@
                             <th style="width:70px;">Код</th>
                             <th>Назва (укр.)</th>
                             <th style="width:80px;">Скор.</th>
-                            <th>Назва (англ. / ISCED-F)</th>
+                            <th>Назва (англ.)</th>
+                            <th>ISCED-F (укр. / англ.)</th>
                             <th>Галузь знань</th>
                             <th class="text-center" style="width:110px;">Актуальна</th>
                             <th class="text-end" style="width:160px;"></th>
@@ -133,6 +142,7 @@
                             </td>
                             <td class="font-monospace">{{ sp.short_name or '—' }}</td>
                             <td class="small text-muted">{{ sp.name_en or '—' }}</td>
+                            <td class="small text-muted">{{ sp.isced_f_ua or '—' }} / {{ sp.isced_f_en or '—' }}</td>
                             <td class="small">{{ sp.field_code }} {{ sp.field_name }}</td>
                             <td class="text-center">
                                 <form method="POST" class="d-inline">
@@ -147,7 +157,8 @@
                                 <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
                                         data-code="{{ sp.code }}" data-name="{{ sp.name_ua }}"
                                         data-short-name="{{ sp.short_name or '' }}"
-                                        data-name-en="{{ sp.name_en or '' }}" data-field="{{ sp.field_code }}">
+                                        data-name-en="{{ sp.name_en or '' }}" data-field="{{ sp.field_code }}"
+                                        data-isced-ua="{{ sp.isced_f_ua or '' }}" data-isced-en="{{ sp.isced_f_en or '' }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
                                 {% if sp.groups_count == 0 %}
@@ -197,8 +208,16 @@
                         <input type="text" name="short_name" id="editShortName" class="form-control">
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Назва (англ. / ISCED-F)</label>
-                        <input type="text" name="name_en" id="editNameEn" class="form-control" placeholder="напр. 0413 Management and administration">
+                        <label class="form-label">Назва (англ.)</label>
+                        <input type="text" name="name_en" id="editNameEn" class="form-control" placeholder="напр. Computer Science">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ISCED-F (укр.)</label>
+                        <input type="text" name="isced_f_ua" id="editIscedUa" class="form-control" placeholder="напр. 0413 Управління та адміністрування">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ISCED-F (англ.)</label>
+                        <input type="text" name="isced_f_en" id="editIscedEn" class="form-control" placeholder="напр. 0413 Management and administration">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Галузь знань</label>
@@ -263,6 +282,8 @@ window.addEventListener('load', function () {
             document.getElementById('editName').value = btn.dataset.name;
             document.getElementById('editShortName').value = btn.dataset.shortName;
             document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            document.getElementById('editIscedUa').value = btn.dataset.iscedUa;
+            document.getElementById('editIscedEn').value = btn.dataset.iscedEn;
             document.getElementById('editField').value = btn.dataset.field;
             specModal.show();
         });

@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	"knowledge_area_en"	TEXT NOT NULL,
 	"specialty"	TEXT NOT NULL,
 	"specialty_en"	TEXT NOT NULL,
+	"isced_f_ua"	TEXT,
+	"isced_f_en"	TEXT,
 	"specialty_code"	TEXT,
 	"educational_program"	TEXT NOT NULL,
 	"educational_program_en"	TEXT NOT NULL,
@@ -294,7 +296,9 @@ CREATE TABLE IF NOT EXISTS "specialties" (
     code TEXT PRIMARY KEY,      -- 'A1', 'D2', 'D3', 'F3' ... (літера галузі + номер)
     name_ua TEXT NOT NULL,
     short_name TEXT,            -- скорочена назва (укр.), напр. "КН" для "Комп'ютерні науки" - використовується для автоматичної назви групи
-    name_en TEXT,               -- код і назва відповідної деталізованої галузі ISCED-F 2013 з постанови, напр. "0413 Management and administration"
+    name_en TEXT,               -- англійський відповідник назви спеціальності
+    isced_f_ua TEXT,            -- код і назва відповідної деталізованої галузі ISCED-F 2013 з постанови (укр.), напр. "0413 Управління та адміністрування"
+    isced_f_en TEXT,            -- те саме англійською, напр. "0413 Management and administration"
     knowledge_field_code TEXT NOT NULL,
     is_active INTEGER NOT NULL DEFAULT 1,   -- чи актуальна для цього закладу (керується на сторінці "Спеціальності")
     is_custom INTEGER NOT NULL DEFAULT 0,   -- 1 = додано вручну адміністратором, не з офіційного переліку
@@ -710,6 +714,29 @@ def _add_column_if_missing(table, column, coltype):
         print(f"➕ Додано колонку {table}.{column} (міграція існуючої бази).")
 
 _add_column_if_missing('update_requests', 'applied_fields', 'TEXT')
+_add_column_if_missing('specialties', 'isced_f_ua', 'TEXT')
+_add_column_if_missing('specialties', 'isced_f_en', 'TEXT')
+_add_column_if_missing('groups', 'isced_f_ua', 'TEXT')
+_add_column_if_missing('groups', 'isced_f_en', 'TEXT')
+
+# groups.isced_f_ua/isced_f_en - це "знімок" з довідника spécialities на
+# момент створення/редагування групи (той самий принцип, що й для
+# specialty_en), тому групи, створені ДО появи цих колонок, лишаються з
+# NULL, навіть якщо в самій спеціальності ISCED-F вже заповнено - вони
+# просто ніколи не перезберігались після міграції. Одноразово
+# підтягуємо з довідника там, де ще порожньо, щоб не змушувати
+# адміністратора повторно зберігати кожну існуючу групу вручну.
+cur.execute("""
+    UPDATE groups SET
+        isced_f_ua = (SELECT s.isced_f_ua FROM specialties s WHERE s.code = groups.specialty_code),
+        isced_f_en = (SELECT s.isced_f_en FROM specialties s WHERE s.code = groups.specialty_code)
+    WHERE specialty_code IS NOT NULL
+      AND isced_f_ua IS NULL AND isced_f_en IS NULL
+      AND EXISTS (SELECT 1 FROM specialties s WHERE s.code = groups.specialty_code
+                  AND (s.isced_f_ua IS NOT NULL OR s.isced_f_en IS NOT NULL))
+""")
+if cur.rowcount:
+    print(f"➕ Підтягнуто ISCED-F з довідника для {cur.rowcount} вже існуючих груп.")
 
 conn.commit()
 conn.close()
