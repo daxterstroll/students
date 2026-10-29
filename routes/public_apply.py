@@ -2,59 +2,35 @@
 """
 Публічна анкета самореєстрації абітурієнта/студента - НЕ вимагає
 авторизації, доступна без сесії. Свідомо ІЗОЛЬОВАНА від решти
-застосунку:
-
-  - жодного імпорту з routes/admin.py чи routes/students.py - навіть
-    випадково неможливо викликати щось звідти;
-  - пише виключно в "карантинну" таблицю pending_students, яка не має
-    зовнішніх ключів на groups/students (крім resulting_student_id,
-    який проставляється вже ПІСЛЯ того, як адмін вручну підтвердив
-    заявку на окремій сторінці /admin/pending_students);
-  - тут немає жодного GET-маршруту, який читає чи показує вже подані
-    заявки - лише порожня форма і "дякуємо" після відправки.
-
-Захист від спаму - мінімальний і навмисно без капчі/токенів:
-прихований honeypot-інпут ("сайт"), який людина ніколи не бачить і не
-заповнює, а бот - як правило, заповнює. Такі заявки просто ігноруються
-(не зберігаються, але користувачу все одно показується "дякуємо", щоб
-бот не зрозумів, що його відсіяли).
-
-Файли (фото і скани документів) валідуються ДО будь-якого запису в
-БД - якщо файл поганий (завеликий, не той формат), у БД взагалі
-нічого не з'являється, форма просто повертається з поясненням помилки.
+застосунку.
 """
 import os
 import re
+import tempfile
 from datetime import datetime, date
 
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, jsonify
 from routes.db import get_db
-from routes.utils import generate_english_name, save_multiple_attachments
-from routes.photo import process_and_save_pending_photo
+from routes.utils import generate_english_name, save_multiple_attachments, logger, title_case_ukrainian
+from routes.photo import process_and_save_pending_photo, load_and_validate_image
+from routes.config import PROJECT_ROOT
 
 public_apply_bp = Blueprint('public_apply', __name__)
 
-# Скани документів - будь-який тип файлу, окрім фото, тут не потрібен:
-# або фотографія сторінки документа, або PDF.
 ALLOWED_SCAN_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.pdf'}
-MAX_SCAN_SIZE_BYTES = 15 * 1024 * 1024  # 15 МБ на файл
+MAX_SCAN_SIZE_BYTES = 15 * 1024 * 1024
 MAX_SCAN_FILES = 5
+MAX_PDF_SIZE_BYTES = 15 * 1024 * 1024
 
-# Гігієна вхідних даних - форма публічна й дивиться в інтернет, тому
-# "мінімум, без якого заявка не має сенсу" (перевірка обов'язкових
-# полів нижче) сама собою не рятує від абсурдних значень (2 роки,
-# 1850 рік, телефон "asdf"). Валідація серверна, не лише HTML5 -
-# HTML5-обмеження (type="date"/"tel") легко обійти прямим POST-запитом
-# повз браузер, тож єдина надійна перевірка - тут.
 MIN_APPLICANT_AGE_YEARS = 14
 MAX_APPLICANT_AGE_YEARS = 100
 PHONE_RE = re.compile(r'^(?:\+?380|0)\d{9}$')
 
+PENDING_PDFS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_pdfs')
+PENDING_STUDENTS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_students')
+
 
 def _validate_birth_date(ua_date_str):
-    """ua_date_str - вже сконвертована дата у форматі ДД.ММ.РРРР
-    (див. _iso_to_ua_date). Повертає None, якщо все гаразд, або текст
-    помилки."""
     try:
         d = datetime.strptime(ua_date_str, "%d.%m.%Y").date()
     except (ValueError, TypeError):
@@ -71,10 +47,6 @@ def _validate_birth_date(ua_date_str):
 
 
 def _validate_phone(value, label):
-    """value - сирий рядок з форми (ще без нормалізації). Повертає
-    None, якщо все гаразд (включно з порожнім - необов'язкові поля
-    штибу "резервний телефон" не повинні блокувати відправку), або
-    текст помилки."""
     if not value:
         return None
     digits = re.sub(r'[\s\-()]', '', value)
@@ -84,16 +56,13 @@ def _validate_phone(value, label):
 
 
 def _birth_date_bounds():
-    """min/max для <input type="date"> дати народження - клієнтська
-    підказка (браузер сам не дасть обрати дату поза межами), сервер
-    все одно перевіряє незалежно (_validate_birth_date вище)."""
     today = date.today()
 
     def _safe_date(year, month, day):
         try:
             return date(year, month, day)
         except ValueError:
-            return date(year, month, day - 1)  # 29 лютого у невисокосному році
+            return date(year, month, day - 1)
 
     return {
         'min_birth_date': _safe_date(today.year - MAX_APPLICANT_AGE_YEARS, today.month, today.day).isoformat(),
@@ -102,24 +71,15 @@ def _birth_date_bounds():
 
 
 def _iso_to_ua_date(value):
-    """<input type="date"> завжди повертає "РРРР-ММ-ДД" (стандарт
-    HTML5), а решта системи (students.birth_date, completion_date
-    тощо) скрізь зберігає дати як "ДД.ММ.РРРР". Без цієї конвертації
-    дата народження виглядала б неправильно скрізь, де вона потім
-    показується чи використовується (сортування, документи).
-    Повертає None, якщо value порожнє або не розпізнається."""
     if not value:
         return None
     try:
         return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%Y")
     except ValueError:
-        return value  # на випадок, якщо браузер із якоїсь причини надіслав інший формат - краще зберегти як є, ніж загубити
+        return value
 
 
 def _validate_scan_files(files, max_files, label):
-    """Спільна валідація для будь-якого набору сканів (документ про
-    освіту чи паспорт) - кількість, розширення, розмір кожного файлу.
-    Повертає None (усе гаразд) або текст помилки."""
     if len(files) > max_files:
         return f"Забагато файлів{label} (максимум {max_files})."
     for sf in files:
@@ -135,12 +95,138 @@ def _validate_scan_files(files, max_files, label):
     return None
 
 
+def _parse_pdf_ajax():
+    """AJAX-парсинг PDF. Викликається з apply() при action=parse_pdf."""
+    if (request.form.get('website') or '').strip():
+        return jsonify({'ok': False, 'error': 'spam'}), 400
+
+    file = request.files.get('pdf_file')
+    if not file or not file.filename:
+        return jsonify({'ok': False, 'error': 'Оберіть PDF-файл'}), 400
+
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'ok': False, 'error': 'Підтримуються лише PDF-файли'}), 400
+
+    pdf_bytes = file.read()
+    if len(pdf_bytes) > MAX_PDF_SIZE_BYTES:
+        return jsonify({
+            'ok': False,
+            'error': f'Файл завеликий (максимум {MAX_PDF_SIZE_BYTES // 1024 // 1024} МБ)',
+        }), 400
+
+    if not pdf_bytes.startswith(b'%PDF'):
+        return jsonify({'ok': False, 'error': 'Файл не є PDF'}), 400
+
+    try:
+        from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
+    except ImportError as e:
+        return jsonify({'ok': False, 'error': f'Парсер PDF недоступний: {e}'}), 500
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            tmp.write(pdf_bytes)
+            tmp_path = tmp.name
+        parsed = parse_reserve_plus_pdf(tmp_path)
+        photo_bytes = extract_photo_from_pdf(tmp_path)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'ok': False, 'error': f'Не вдалося розпізнати PDF: {e}'}), 400
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    try:
+        full_name = title_case_ukrainian((parsed.get('full_name') or '').strip())
+        name_parts = full_name.split()
+        last_name = name_parts[0] if len(name_parts) > 0 else ''
+        first_name = name_parts[1] if len(name_parts) > 1 else ''
+        middle_name = ' '.join(name_parts[2:]) if len(name_parts) > 2 else ''
+
+        birth_date_iso = ''
+        bd = (parsed.get('birth_date') or '').strip()
+        if bd:
+            try:
+                birth_date_iso = datetime.strptime(bd, '%d.%m.%Y').strftime('%Y-%m-%d')
+            except ValueError:
+                birth_date_iso = ''
+
+        phone_raw = (parsed.get('phone') or '').strip()
+        phone = phone_raw
+        if phone_raw:
+            digits = re.sub(r'[\s\-()]', '', phone_raw)
+            if len(digits) == 10 and digits.startswith('0'):
+                phone = '+38' + digits
+            elif len(digits) == 12 and digits.startswith('380'):
+                phone = '+' + digits
+            elif len(digits) == 13 and digits.startswith('+380'):
+                phone = digits
+
+        fields = {
+            'last_name_UA': last_name,
+            'first_name_UA': first_name,
+            'middle_name_UA': middle_name,
+            'birth_date': birth_date_iso,
+            'tax_id': parsed.get('tax_id') or '',
+            'phone': phone,
+            'email': parsed.get('email') or '',
+            'military_registration_number_drpvr': parsed.get('registry_number') or '',
+            'military_specialty_number': parsed.get('vos_code') or '',
+            'military_rank': parsed.get('military_rank') or '',
+            'military_address': parsed.get('address') or '',
+        }
+
+        photo_url = None
+        photo_path = None
+        photo_data_url = None
+        if photo_bytes:
+            try:
+                photo_path = process_and_save_pending_photo(photo_bytes)
+                photo_url = f'/static/{photo_path}'
+                import base64
+                abs_path = os.path.join(PROJECT_ROOT, 'static', photo_path)
+                with open(abs_path, 'rb') as fp:
+                    raw = fp.read()
+                photo_data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode('ascii')
+            except Exception:
+                import traceback
+                traceback.print_exc()
+
+        # Зберігаємо оригінальний PDF АБСОЛЮТНО (PROJECT_ROOT/static/...)
+        import uuid as _uuid
+        os.makedirs(PENDING_PDFS_DIR, exist_ok=True)
+        pdf_safe_name = f"{_uuid.uuid4().hex}.pdf"
+        pdf_abs_path = os.path.join(PENDING_PDFS_DIR, pdf_safe_name)
+        with open(pdf_abs_path, 'wb') as f:
+            f.write(pdf_bytes)
+        pdf_rel_path = f"uploads/pending_pdfs/{pdf_safe_name}"
+
+        logger.info(
+            f"[parse_pdf_apply] saved: abs={pdf_abs_path}, rel={pdf_rel_path}, "
+            f"exists={os.path.exists(pdf_abs_path)}"
+        )
+
+        return jsonify({
+            'ok': True,
+            'fields': fields,
+            'photo_url': photo_url,
+            'photo_path': photo_path,
+            'photo_data_url': photo_data_url,
+            'pdf_path': pdf_rel_path,
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'ok': False, 'error': f'Серверна помилка обробки PDF: {e}'}), 500
+
+
 @public_apply_bp.before_request
 def _limit_request_size():
-    """Груба відсічка занадто великих запитів (кілька фото/сканів одразу
-    можуть важити багато) - без цього хтось міг би закидати диск сервера
-    величезними файлами через публічну, неавторизовану форму."""
-    max_total = 80 * 1024 * 1024  # 80 МБ на весь запит (фото + до 5 сканів)
+    max_total = 80 * 1024 * 1024
     if request.content_length and request.content_length > max_total:
         return render_template(
             'public_apply.html',
@@ -154,9 +240,15 @@ def apply():
     if request.method == 'GET':
         return render_template('public_apply.html', **_birth_date_bounds())
 
-    # Honeypot: приховане поле, яке людина не бачить і не заповнює.
-    # Заповнене - майже напевно бот. Мовчки "приймаємо" (для бота),
-    # нічого не зберігаючи.
+    if request.form.get('action') == 'parse_pdf':
+        try:
+            return _parse_pdf_ajax()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({'ok': False, 'error': f'Критична серверна помилка: {e}'}), 500
+
+    # ── Звичайна обробка форми ──
     if (request.form.get('website') or '').strip():
         return render_template('public_apply_thanks.html')
 
@@ -168,9 +260,6 @@ def apply():
     birth_date = _iso_to_ua_date(f('birth_date'))
     phone = f('phone')
 
-    # Мінімум, без якого заявка не має сенсу. Решта полів - за
-    # бажанням, щоб не відлякувати заповнення з телефону: адмін потім
-    # сам зв'яжеться і доуточнить, якщо чогось бракує.
     if not last_name_ua or not first_name_ua or not birth_date or not phone:
         return render_template(
             'public_apply.html',
@@ -179,9 +268,6 @@ def apply():
             **_birth_date_bounds(),
         )
 
-    # Гігієна вхідних даних (див. коментар біля констант вище) - дата
-    # народження і формат телефонів. Помилка тут - одразу назад у
-    # форму з поясненням, ще до жодного запису у БД.
     validation_error = _validate_birth_date(birth_date)
     if not validation_error:
         validation_error = _validate_phone(phone, "Телефон")
@@ -190,20 +276,24 @@ def apply():
     if validation_error:
         return render_template('public_apply.html', error=validation_error, form=request.form, **_birth_date_bounds())
 
-    # ---- Валідація файлів ДО будь-якого запису в БД ----
     photo_file = request.files.get('photo')
     photo_bytes = None
+    prefilled_photo_path = (request.form.get('prefilled_photo_path') or '').strip()
+
     if photo_file and photo_file.filename:
         photo_bytes = photo_file.read()
         try:
-            # Лише перевіряємо валідність тут (формат/розмір) - саму
-            # обрізку й збереження на диск робимо вже після успішного
-            # запису анкети в БД, щоб не лишати "осиротілі" файли,
-            # якщо щось інше в запиті виявиться некоректним.
-            from routes.photo import load_and_validate_image
             load_and_validate_image(photo_bytes)
         except ValueError as e:
             return render_template('public_apply.html', error=f"Фото: {e}", form=request.form, **_birth_date_bounds())
+        prefilled_photo_path = ''
+    elif prefilled_photo_path:
+        if not prefilled_photo_path.startswith('uploads/pending_photos/'):
+            prefilled_photo_path = ''
+        else:
+            full = os.path.join(PROJECT_ROOT, 'static', prefilled_photo_path)
+            if not os.path.exists(full):
+                prefilled_photo_path = ''
 
     scan_files = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
     scan_error = _validate_scan_files(scan_files, MAX_SCAN_FILES, " документа про освіту")
@@ -220,17 +310,10 @@ def apply():
     if military_scan_error:
         return render_template('public_apply.html', error=military_scan_error, form=request.form, **_birth_date_bounds())
 
-    # "Видано за кордоном", "скорочена програма" і "перебуває на
-    # обліку" студент на публічній формі більше не позначає сам (ці
-    # нюанси визначає адмін під час обробки заявки, дивлячись у сам
-    # документ) - тому тут завжди 0, а не читання неіснуючих полів форми.
     is_foreign_document = 0
     reduced_program_claim = 0
     military_being_registered = 0
 
-    # Латиницею студент нічого не вводить - транслітерується
-    # автоматично з українського написання, той самий принцип, що й
-    # при ручному додаванні студента адміном (generate_english_name).
     last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
 
     document_date = _iso_to_ua_date(f('document_date'))
@@ -240,8 +323,6 @@ def apply():
     if passport_document_type not in ('Паспорт (книжка)', 'ID-картка'):
         passport_document_type = None
     passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
-    # "Дійсний до" стосується лише ID-картки - JS ховає поле для книжки,
-    # але форму теоретично можна надіслати і з вимкненим JS.
     passport_valid_until = _iso_to_ua_date(f('passport_valid_until')) if passport_document_type == 'ID-картка' else None
 
     conn = get_db()
@@ -279,21 +360,48 @@ def apply():
     ))
     pending_id = cur.lastrowid
 
-    # Фото - вже провалідоване вище, лишається обрізати по центру й
-    # зберегти (окрема "карантинна" папка, не та, де фото реальних
-    # студентів).
+    # ═══════════════════════════════════════════════════════════
+    # PDF «Резерв+» — обробляємо файл із поля pdf_file (єдиний шлях,
+    # без дублювання через prefilled_pdf_path). Поле в HTML
+    # прив'язане до форми через атрибут form="applyForm", тому при
+    # сабміті файл приходить сюди.
+    # ═══════════════════════════════════════════════════════════
+    pdf_file = request.files.get('pdf_file')
+    logger.info(
+        f"[apply] pdf_file: filename={getattr(pdf_file, 'filename', None)!r}"
+    )
+    if pdf_file and pdf_file.filename and pdf_file.filename.lower().endswith('.pdf'):
+        pdf_bytes = pdf_file.read()
+        logger.info(f"[apply] pdf_file size: {len(pdf_bytes)} bytes, "
+                    f"starts_with_pdf={pdf_bytes.startswith(b'%PDF')}")
+        if pdf_bytes.startswith(b'%PDF'):
+            import uuid as _uuid
+            os.makedirs(PENDING_STUDENTS_DIR, exist_ok=True)
+            safe_name = f"{_uuid.uuid4().hex}.pdf"
+            dest_pdf = os.path.join(PENDING_STUDENTS_DIR, safe_name)
+            with open(dest_pdf, 'wb') as fp:
+                fp.write(pdf_bytes)
+            rel_pdf = f"uploads/pending_students/{safe_name}"
+            conn.execute(
+                "INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_by) "
+                "VALUES (?, ?, ?, ?, ?)",
+                ('pending_student_military', pending_id, rel_pdf,
+                 pdf_file.filename or 'Резерв+.pdf', None),
+            )
+            logger.info(
+                f"[apply] PDF saved from form: {rel_pdf} ({len(pdf_bytes)} bytes), "
+                f"abs={dest_pdf}"
+            )
+
     if photo_bytes:
         try:
             photo_path = process_and_save_pending_photo(photo_bytes)
             conn.execute("UPDATE pending_students SET photo_path=? WHERE id=?", (photo_path, pending_id))
         except ValueError:
-            pass  # малоймовірно (уже провалідовано вище), але не рвати заявку через фото
+            pass
+    elif prefilled_photo_path:
+        conn.execute("UPDATE pending_students SET photo_path=? WHERE id=?", (prefilled_photo_path, pending_id))
 
-    # Скани документів - через ту саму спільну таблицю attachments, що
-    # й накази/заморозка тощо (routes/utils.save_multiple_attachments),
-    # прив'язані поки що до заявки. Документ про освіту і паспорт -
-    # РІЗНІ entity_type, щоб при підтвердженні знати, які скани куди
-    # переприв'язувати (до education_document чи до passport_document).
     if scan_files:
         save_multiple_attachments(conn, 'pending_student', pending_id, scan_files, 'pending_students')
     if passport_scan_files:

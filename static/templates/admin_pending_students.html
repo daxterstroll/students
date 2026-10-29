@@ -4,7 +4,7 @@
 {% block content %}
 <div class="container py-4">
 
-{{ ui.page_header('bi-person-plus', 'Заявки на реєстрацію', 'Заявки з публічної анкети самореєстрації (/apply)') }}
+{{ ui.page_header('bi-person-plus', 'Заявки на реєстрацію', 'Заявки з публічної анкети самореєстрації (/apply) — ручні та з автозаповненням з PDF «Резерв+»') }}
 
 <ul class="nav nav-tabs mb-3">
     <li class="nav-item">
@@ -35,32 +35,83 @@
                     <th>Подано</th>
                     <th>ПІБ</th>
                     <th>Дата народження</th>
-                    <th>Телефон</th>
+                    <th>Контакти</th>
+                    <th>РНОКПП</th>
+                    <th class="text-center">Джерело</th>
                     {% if status_filter != 'new' %}<th>Опрацював(ла)</th>{% endif %}
                     <th></th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in rows %}
+                {% set has_military = r.military_registration_number_drpvr or r.military_registration_document or r.military_rank %}
+                {% set has_military_pdf = r.has_military_scan %}
                 <tr>
-                    <td class="small text-muted">{{ r.created_at }}</td>
+                    <td class="small text-muted text-nowrap">{{ r.created_at }}</td>
                     <td>
-                        {{ r.last_name_UA }} {{ r.first_name_UA }} {{ r.middle_name_UA or '' }}
-                        {% if r.photo_path %}<i class="bi bi-image text-muted" title="Є фото"></i>{% endif %}
-                        {% if r.scans_count %}<i class="bi bi-paperclip text-muted" title="{{ r.scans_count }} скан(ів)"></i>{% endif %}
-                        {% if r.id in duplicates_by_id %}
-                        <span class="badge bg-danger-subtle text-danger-emphasis" title="Можливий дублікат">
-                            <i class="bi bi-exclamation-triangle"></i> дублікат?
-                        </span>
+                        <div class="fw-semibold">{{ r.last_name_UA }} {{ r.first_name_UA }} {{ r.middle_name_UA or '' }}</div>
+                        <div class="small mt-1">
+                            {% if r.photo_path %}
+                            <span class="badge bg-primary-subtle text-primary-emphasis me-1" title="Є фото">
+                                <i class="bi bi-image"></i>
+                                {% if r.photo_from_pdf %}PDF{% else %}фото{% endif %}
+                            </span>
+                            {% endif %}
+                            {% if r.scans_count %}
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis me-1" title="{{ r.scans_count }} скан(ів)">
+                                <i class="bi bi-paperclip"></i> {{ r.scans_count }}
+                            </span>
+                            {% endif %}
+                            {% if r.id in duplicates_by_id %}
+                            <span class="badge bg-danger-subtle text-danger-emphasis me-1" title="Можливий дублікат — у базі вже є студент з таким ПІБ і датою народження">
+                                <i class="bi bi-exclamation-triangle"></i> дублікат?
+                            </span>
+                            {% endif %}
+                            {% if r.reduced_program_claim %}
+                            <span class="badge bg-info-subtle text-info-emphasis me-1" title="Скорочена програма">
+                                <i class="bi bi-signpost-split"></i> скор.
+                            </span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="font-monospace small">{{ r.birth_date or '—' }}</td>
+                    <td class="small">
+                        {% if r.phone %}
+                        <div><i class="bi bi-telephone me-1 text-muted"></i>{{ r.phone }}</div>
                         {% endif %}
-                        {% if r.reduced_program_claim %}
-                        <span class="badge bg-info-subtle text-info-emphasis"><i class="bi bi-signpost-split"></i> скорочена?</span>
+                        {% if r.phone_backup %}
+                        <div class="text-muted"><i class="bi bi-telephone me-1"></i>{{ r.phone_backup }}</div>
+                        {% endif %}
+                        {% if r.email %}
+                        <div class="text-truncate" style="max-width: 200px;" title="{{ r.email }}">
+                            <i class="bi bi-envelope me-1 text-muted"></i>{{ r.email }}
+                        </div>
+                        {% endif %}
+                        {% if not r.phone and not r.email %}
+                        <span class="text-muted">—</span>
                         {% endif %}
                     </td>
-                    <td>{{ r.birth_date }}</td>
-                    <td>{{ r.phone }}</td>
-                    {% if status_filter != 'new' %}<td class="small">{{ r.reviewed_by }}, {{ r.reviewed_at }}</td>{% endif %}
-                    <td class="text-end">
+                    <td class="font-monospace small">{{ r.tax_id or '—' }}</td>
+                    <td class="text-center small">
+                        {% if has_military_pdf %}
+                        <span class="badge bg-warning text-dark" title="Завантажено PDF «Резерв+» — дані розпізнано автоматично">
+                            <i class="bi bi-file-earmark-pdf"></i> PDF
+                        </span>
+                        {% elif has_military %}
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis" title="Військові дані заповнено вручну">
+                            <i class="bi bi-shield"></i> вручну
+                        </span>
+                        {% else %}
+                        <span class="text-muted small">—</span>
+                        {% endif %}
+                    </td>
+                    {% if status_filter != 'new' %}
+                    <td class="small text-muted">
+                        <div>{{ r.reviewed_by or '—' }}</div>
+                        <div class="text-nowrap">{{ r.reviewed_at or '' }}</div>
+                    </td>
+                    {% endif %}
+                    <td class="text-end text-nowrap">
                         <a href="{{ url_for('admin.pending_student_review', pending_id=r.id) }}" class="btn btn-sm btn-primary">
                             <i class="bi bi-eye"></i> Переглянути
                         </a>

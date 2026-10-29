@@ -6,9 +6,6 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Анкета для зарахування — Європейський університет</title>
 
-<!-- Єдиний зовнішній ресурс - шрифт з Google Fonts. preconnect + display=swap
-     означає: текст одразу показується системним шрифтом, підмінюється на
-     Manrope щойно він довантажиться (без затримки рендеру сторінки). -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -21,6 +18,7 @@
     --brass:#c8a24a; --brass-lt:#e9cf8f; --brass-dark:#a5822f;
     --line:rgba(31,42,58,.13);
     --danger:#a23b2e; --danger-soft:rgba(162,59,46,.08); --danger-line:rgba(162,59,46,.28);
+    --success:#3f8a5b; --success-soft:rgba(63,138,91,.12);
     --shadow:0 24px 60px -20px rgba(14,27,44,.35), 0 6px 18px rgba(14,27,44,.07);
     --radius:20px;
 }
@@ -38,7 +36,6 @@ body{
     overflow-x:hidden;
 }
 
-/* Декоративна "шапка" університету */
 .hero{
     background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 60%, #1d3450 100%);
     color:#fff; text-align:center;
@@ -85,6 +82,60 @@ body{
 }
 .alert-error svg{ flex:0 0 auto; margin-top:.1rem; }
 
+/* === Секція швидкого заповнення з PDF === */
+.quick-fill-section{
+    background: linear-gradient(135deg, rgba(200,162,74,.14), rgba(200,162,74,.04));
+    border: 1.5px solid rgba(200,162,74,.4);
+    border-radius: 14px;
+    padding: 1.2rem 1.2rem 1.1rem;
+    margin-bottom: 1.8rem;
+}
+.quick-fill-header{
+    display: flex; align-items: center; gap: .55rem;
+    font-weight: 800; color: var(--ink); font-size: 1rem;
+    margin-bottom: .45rem;
+}
+.quick-fill-icon{ font-size: 1.25rem; }
+.quick-fill-desc{
+    font-size: .85rem; color: var(--muted); margin: 0 0 .9rem; line-height: 1.5;
+}
+.quick-fill-drop{
+    background: #fff;
+}
+.pdf-parse-status{
+    margin-top: .6rem;
+    font-size: .85rem;
+    padding: .5rem .8rem;
+    border-radius: 8px;
+    line-height: 1.4;
+}
+.pdf-parse-status--loading{ background: rgba(200,162,74,.15); color: #7a5a10; }
+.pdf-parse-status--success{ background: var(--success-soft); color: #2d6644; }
+.pdf-parse-status--error{ background: var(--danger-soft); color: #7a2b21; }
+.pdf-photo-preview{
+    margin-top: .8rem;
+    display: flex;
+    align-items: center;
+    gap: .8rem;
+    padding: .6rem .8rem;
+    background: var(--success-soft);
+    border: 1px solid rgba(63,138,91,.25);
+    border-radius: 10px;
+}
+.pdf-photo-label{
+    font-size: .8rem; font-weight: 700; color: #2d6644;
+    text-transform: uppercase; letter-spacing: .05em;
+}
+.pdf-photo-preview img{
+    width: 64px; height: 84px; object-fit: cover;
+    border-radius: 6px; border: 2px solid var(--brass);
+    background: #fff;
+}
+.pdf-photo-note{
+    font-size: .78rem; color: var(--muted);
+    flex: 1; line-height: 1.4;
+}
+
 /* Секції */
 .section{ margin-top:2.2rem; }
 .section:first-of-type{ margin-top:0; }
@@ -111,9 +162,12 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
     transition: border-color .15s ease, box-shadow .15s ease;
 }
 .f-control:focus{ outline:none; border-color:var(--brass); box-shadow:0 0 0 4px rgba(200,162,74,.18); }
+.f-control--filled{
+    background: #f6fbf7;
+    border-color: rgba(63,138,91,.4);
+}
 .f-hint{ font-size:.78rem; color:var(--muted); margin-top:.35rem; line-height:1.4; }
 
-/* Файлові поля - власна кнопка замість системної */
 .file-drop{
     display:flex; align-items:center; gap:.7rem; flex-wrap:wrap;
     border:1.5px dashed var(--line); border-radius:11px; padding:.7rem .9rem;
@@ -131,7 +185,6 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
 .file-btn:active{ transform:scale(.97); }
 .file-name{ font-size:.85rem; color:var(--muted); overflow-wrap:anywhere; }
 
-/* Чекбокс-перемикач */
 .toggle-row{
     display:flex; align-items:center; gap:.7rem; padding:.85rem 1rem;
     background:#fbf9f4; border:1.5px solid var(--line); border-radius:12px; cursor:pointer;
@@ -193,11 +246,42 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
 
             <div class="intro-note">Поля, позначені <span class="required-mark">*</span>, обов'язкові. Решту можна лишити порожньою — приймальна комісія зв'яжеться з вами, якщо знадобиться уточнення.</div>
 
-            <form method="POST" enctype="multipart/form-data" novalidate>
+            <!-- ═══════ ШВИДКЕ ЗАПОВНЕННЯ З PDF «РЕЗЕРВ+» ═══════ -->
+            <div class="quick-fill-section">
+                <div class="quick-fill-header">
+                    <span class="quick-fill-icon">⚡</span>
+                    <span>Швидке заповнення</span>
+                </div>
+                <p class="quick-fill-desc">
+                    Маєте PDF з «Резерв+»? Завантажте його — ми автоматично заповнимо
+                    ПІБ, дату народження, ІПН, телефон, email і військові дані,
+                    а також підтягнемо фото. Далі все можна відредагувати вручну.
+                </p>
+                <div class="file-drop quick-fill-drop">
+                    <label class="file-btn" for="pdf_file">📄 Завантажити PDF «Резерв+»</label>
+                    <span class="file-name" id="pdf_file_name">Файл не обрано</span>
+                    <input type="file" name="pdf_file" id="pdf_file" accept=".pdf,application/pdf" form="applyForm">
+                </div>
+                <div id="pdf_parse_status" class="pdf-parse-status" style="display:none;"></div>
+                <div id="pdf_photo_preview" class="pdf-photo-preview" style="display:none;">
+                    <div class="pdf-photo-label">Фото з PDF</div>
+                    <img id="pdf_photo_img" src="" alt="Фото з PDF">
+                    <div class="pdf-photo-note">
+                        Це фото буде використано, якщо ви не завантажите своє
+                        (нижче в розділі «Особисті дані»). Воно вже обрізане під 3×4.
+                    </div>
+                </div>
+            </div>
+
+            <form method="POST" enctype="multipart/form-data" novalidate id="applyForm">
                 <div class="hp-field" aria-hidden="true">
                     <label>Сайт</label>
                     <input type="text" name="website" tabindex="-1" autocomplete="off">
                 </div>
+
+                <!-- Приховане поле: шлях до фото, витягнутого з PDF -->
+                <input type="hidden" name="prefilled_photo_path" id="prefilled_photo_path" value="">
+                <input type="hidden" name="prefilled_pdf_path" id="prefilled_pdf_path" value="">
 
                 <!-- 1. Особисті дані -->
                 <div class="section">
@@ -232,7 +316,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                 <span class="file-name" id="photo_name">Файл не обрано</span>
                                 <input type="file" name="photo" id="photo" accept="image/*">
                             </div>
-                            <div class="f-hint">Це фото піде на студентський квиток — система сама обріже його під формат 3х4. Фотографуйтесь анфас, на світлому однотонному фоні, без головного убору й окулярів із затемненими лінзами.</div>
+                            <div class="f-hint">Це фото піде на студентський квиток — система сама обріже його під формат 3х4. Якщо ви не завантажите своє, буде використано фото з PDF «Резерв+» (див. блок вище).</div>
                         </div>
                     </div>
                 </div>
@@ -502,6 +586,151 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
     }
     document.getElementById('passport_document_type').addEventListener('change', syncPassportFields);
     syncPassportFields();
+
+    // ═══════════════════════════════════════════════════════════════
+    // АВТОЗАПОВНЕННЯ З PDF «РЕЗЕРВ+»
+    // ═══════════════════════════════════════════════════════════════
+    (function () {
+        const pdfInput = document.getElementById('pdf_file');
+        const pdfFileName = document.getElementById('pdf_file_name');
+        const statusEl = document.getElementById('pdf_parse_status');
+        const photoPreview = document.getElementById('pdf_photo_preview');
+        const photoImg = document.getElementById('pdf_photo_img');
+        const photoPathEl = document.getElementById('prefilled_photo_path');
+        const photoInput = document.getElementById('photo');
+
+        function setStatus(msg, type) {
+            statusEl.textContent = msg;
+            statusEl.className = 'pdf-parse-status pdf-parse-status--' + type;
+            statusEl.style.display = '';
+        }
+
+        function clearStatus() {
+            statusEl.style.display = 'none';
+            statusEl.textContent = '';
+        }
+
+        function fillField(name, value) {
+            const el = document.querySelector('[name="' + name + '"]');
+            if (!el || !value) return;
+            el.value = value;
+            if (el.classList.contains('f-control')) {
+                el.classList.add('f-control--filled');
+            }
+            if (name.startsWith('military_')) {
+                const cb = document.getElementById('hasMilitary');
+                if (cb && !cb.checked) {
+                    cb.checked = true;
+                    cb.dispatchEvent(new Event('change'));
+                }
+            }
+        }
+
+        pdfInput.addEventListener('change', function () {
+            const file = pdfInput.files[0];
+            clearStatus();
+
+            if (!file) {
+                pdfFileName.textContent = 'Файл не обрано';
+                return;
+            }
+
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                pdfFileName.textContent = file.name;
+                setStatus('Оберіть, будь ласка, файл формату PDF.', 'error');
+                return;
+            }
+
+            pdfFileName.textContent = file.name;
+            setStatus('Розпізнаємо PDF... зачекайте, це може тривати кілька секунд.', 'loading');
+
+            // ОДИН виклик FormData — без дублювання
+            const fd = new FormData();
+            fd.append('pdf_file', file);
+            fd.append('action', 'parse_pdf');
+
+            fetch('/apply', {
+                method: 'POST',
+                body: fd,
+            })
+            .then(async resp => {
+                const contentType = resp.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await resp.text();
+                    const preview = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 300);
+                    setStatus(
+                        'Сервер повернув помилку (HTTP ' + resp.status + '). ' +
+                        'Можливо, файл завеликий або nginx блокує запит. ' +
+                        'Фрагмент відповіді: «' + preview + '». Заповніть поля вручну.',
+                        'error'
+                    );
+                    return null;
+                }
+                return resp.json();
+            })
+            .then(resp => {
+                if (!resp) return;
+                if (!resp.ok) {
+                    setStatus('Не вдалося розпізнати PDF: ' + (resp.error || 'невідома помилка') +
+                              ' Ви можете заповнити поля вручну.', 'error');
+                    return;
+                }
+
+                const fields = resp.fields || {};
+                let filledCount = 0;
+                Object.keys(fields).forEach(name => {
+                    if (fields[name]) {
+                        fillField(name, fields[name]);
+                        filledCount++;
+                    }
+                });
+
+                if ((resp.photo_data_url || resp.photo_url) && resp.photo_path) {
+                    // Пріоритет — data URI (працює навіть якщо /static/
+                    // не проксується на цьому домені). URL /static/ —
+                    // лише як fallback, якщо base64 чомусь не прийшов.
+                    photoImg.src = resp.photo_data_url || (resp.photo_url + '?t=' + Date.now());
+                    photoPreview.style.display = '';
+                    photoPathEl.value = resp.photo_path;
+                } else {
+                    photoPreview.style.display = 'none';
+                    photoPathEl.value = '';
+                }
+
+                // Запам'ятовуємо шлях до PDF — при сабміті його буде
+                // прикріплено до заявки як скан-копію військового обліку.
+                if (resp.pdf_path) {
+                    document.getElementById('prefilled_pdf_path').value = resp.pdf_path;
+                }
+
+				if (filledCount > 0 || resp.photo_url || resp.photo_data_url) {
+                    setStatus(
+                        '✅ Заповнено ' + filledCount + ' полів' +
+                        ((resp.photo_url || resp.photo_data_url) ? ' + фото' : '') +
+                        ' з PDF. Перевірте дані та за потреби відредагуйте вручну.',
+                        'success'
+                    );
+                } else {
+                    setStatus(
+                        'PDF розпізнано, але корисних полів у ньому не знайдено. ' +
+                        'Заповніть форму вручну.',
+                        'error'
+                    );
+                }
+            })
+            .catch(err => {
+                setStatus('Помилка з\'єднання: ' + err.message + '. Заповніть поля вручну.', 'error');
+            });
+        });
+
+        // Якщо студент завантажив своє фото — ховаємо прев'ю з PDF
+        photoInput.addEventListener('change', function () {
+            if (photoInput.files && photoInput.files.length > 0) {
+                photoPreview.style.display = 'none';
+                photoPathEl.value = '';
+            }
+        });
+    })();
 </script>
 </body>
 </html>

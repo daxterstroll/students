@@ -362,6 +362,7 @@ CREATE TABLE IF NOT EXISTS "pending_students" (
     "first_name_ENG" TEXT,
     "birth_date" TEXT,
     "phone" TEXT,
+    "tax_id" TEXT,
     "phone_backup" TEXT,
     "email" TEXT,
     "document_type" TEXT,

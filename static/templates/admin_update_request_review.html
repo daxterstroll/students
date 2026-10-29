@@ -144,7 +144,7 @@
             {% if has_base_doc %}
             <div class="form-check mb-2">
                 {% if is_decided %}
-                <i class="bi bi-{{ 'check-square text-success' if 'education_document' in applied_fields else 'square text-muted' }} me-2"></i>Додано як новий запис (наявні документи не зачіпались){{ applied_badge('education_document') }}
+                <i class="bi bi-{{ 'check-square text-success' if 'education_document' in applied_fields else 'square text-muted' }} me-2"></i>Додано як новий запис{{ applied_badge('education_document') }}
                 {% else %}
                 <input type="checkbox" name="apply_education_document" id="apply_education_document" class="form-check-input" checked>
                 <label for="apply_education_document" class="form-check-label">Додати як новий запис (наявні документи не чіпає)</label>
@@ -192,10 +192,10 @@
             <div class="{{ 'mt-3 pt-3 border-top' if (has_base_doc or has_reference) else '' }}">
                 <div class="form-check mb-2">
                     {% if is_decided %}
-                    <i class="bi bi-{{ 'check-square text-success' if 'education_document_recognition' in applied_fields else 'square text-muted' }} me-2"></i><strong>Свідоцтво про визнання в Україні іноземного документа про освіту</strong>{{ applied_badge('education_document_recognition') }}
+                    <i class="bi bi-{{ 'check-square text-success' if 'education_document_recognition' in applied_fields else 'square text-muted' }} me-2"></i><strong>Свідоцтво про визнання</strong>{{ applied_badge('education_document_recognition') }}
                     {% else %}
                     <input type="checkbox" name="apply_education_recognition" id="apply_education_recognition" class="form-check-input" checked>
-                    <label for="apply_education_recognition" class="form-check-label"><strong>Свідоцтво про визнання в Україні іноземного документа про освіту</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
+                    <label for="apply_education_recognition" class="form-check-label"><strong>Свідоцтво про визнання</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
                     {% endif %}
                 </div>
                 <table class="table table-sm table-borderless mb-0">
@@ -212,32 +212,71 @@
     {% endif %}
 
     {% if 'military' in allowed_fields and submitted.get('military') %}
+    {% set m = submitted.military %}
+    {% set has_new_fields = m.get('status_badge') or m.get('tck_name') or m.get('vos_code')
+                           or m.get('vos_description') or m.get('registry_number')
+                           or m.get('deferral_type') or m.get('deferral_until')
+                           or m.get('vlk_decision') or m.get('vlk_date')
+                           or m.get('registration_category') or m.get('valid_until')
+                           or m.get('address_of_residence') %}
     <div class="card mb-3">
         <div class="card-header">Військові дані{{ applied_badge('military') }}</div>
         <div class="card-body">
             <div class="form-check mb-2">
                 {% if is_decided %}
-                <i class="bi bi-{{ 'check-square text-success' if 'military' in applied_fields else 'square text-muted' }} me-2"></i>Оновлено наявний запис або створено новий
+                <i class="bi bi-{{ 'check-square text-success' if 'military' in applied_fields else 'square text-muted' }} me-2"></i>Оновлено військові дані студента
                 {% else %}
                 <input type="checkbox" name="apply_military" id="apply_military" class="form-check-input" checked>
-                <label for="apply_military" class="form-check-label">Оновити наявний запис або створити новий</label>
+                <label for="apply_military" class="form-check-label">Оновити військові дані студента</label>
                 {% endif %}
             </div>
+
+            {% if has_new_fields %}
+            {# ── Нові поля з PDF «Резерв+» ── #}
+            <h6 class="text-muted small text-uppercase mt-3 mb-2">З PDF «Резерв+»</h6>
             <table class="table table-sm table-borderless mb-2">
                 <tbody>
-                    <tr><th class="text-muted w-25">Номер ДРПВР</th><td>{{ submitted.military.registration_number_of_the_DRPVR or '-' }}</td></tr>
-                    <tr><th class="text-muted">Документ</th><td>{{ submitted.military.military_registration_document or '-' }}</td></tr>
-                    <tr><th class="text-muted">Виданий ВОД</th><td>{{ submitted.military.issued_VOD or '-' }}</td></tr>
-                    <tr><th class="text-muted">Номер ВОС</th><td>{{ submitted.military.military_accounting_specialty_number or '-' }}</td></tr>
-                    <tr><th class="text-muted">Звання</th><td>{{ submitted.military.military_rank or '-' }}</td></tr>
-                    <tr><th class="text-muted">Адреса проживання</th><td>{{ submitted.military.address_of_residence or '-' }}</td></tr>
+                    {% if m.get('status_badge') %}<tr><th class="text-muted w-25">Статус</th><td>{{ m.status_badge }}</td></tr>{% endif %}
+                    {% if m.get('registration_category') %}<tr><th class="text-muted">Категорія обліку</th><td>{{ m.registration_category }}</td></tr>{% endif %}
+                    {% if m.get('valid_until') %}<tr><th class="text-muted">Дійсний до</th><td class="font-monospace">{{ m.valid_until }}</td></tr>{% endif %}
+                    {% if m.get('tck_name') %}<tr><th class="text-muted">ТЦК та СП</th><td>{{ m.tck_name }}</td></tr>{% endif %}
+                    {% if m.get('military_rank') %}<tr><th class="text-muted">Військове звання</th><td>{{ m.military_rank }}</td></tr>{% endif %}
+                    {% if m.get('registry_number') %}<tr><th class="text-muted">Номер у реєстрі «Оберіг»</th><td class="font-monospace">{{ m.registry_number }}</td></tr>{% endif %}
+                    {% if m.get('vos_code') %}<tr><th class="text-muted">Код ВОС</th><td class="font-monospace">{{ m.vos_code }}</td></tr>{% endif %}
+                    {% if m.get('vos_description') %}<tr><th class="text-muted">Опис ВОС</th><td>{{ m.vos_description }}</td></tr>{% endif %}
+                    {% if m.get('deferral_type') %}<tr><th class="text-muted">Тип відстрочки</th><td>{{ m.deferral_type }}</td></tr>{% endif %}
+                    {% if m.get('deferral_until') %}<tr><th class="text-muted">Відстрочка до</th><td>{{ m.deferral_until }}</td></tr>{% endif %}
+                    {% if m.get('vlk_decision') %}<tr><th class="text-muted">Постанова ВЛК</th><td>{{ m.vlk_decision }}</td></tr>{% endif %}
+                    {% if m.get('vlk_date') %}<tr><th class="text-muted">Дата ВЛК</th><td class="font-monospace">{{ m.vlk_date }}</td></tr>{% endif %}
+                    {% if m.get('address_of_residence') %}<tr><th class="text-muted">Адреса проживання</th><td>{{ m.address_of_residence }}</td></tr>{% endif %}
                 </tbody>
             </table>
+            {% endif %}
+
+            {% if m.get('registration_number_of_the_DRPVR') or m.get('military_registration_document')
+                  or m.get('issued_VOD') or m.get('military_accounting_specialty_number') %}
+            {# ── Старі поля (якщо студент ввів вручну) ── #}
+            <h6 class="text-muted small text-uppercase mt-3 mb-2">Старі поля (введено вручну)</h6>
+            <table class="table table-sm table-borderless mb-2">
+                <tbody>
+                    {% if m.get('registration_number_of_the_DRPVR') %}<tr><th class="text-muted w-25">Номер ДРПВР</th><td>{{ m.registration_number_of_the_DRPVR }}</td></tr>{% endif %}
+                    {% if m.get('military_registration_document') %}<tr><th class="text-muted">Документ</th><td>{{ m.military_registration_document }}</td></tr>{% endif %}
+                    {% if m.get('issued_VOD') %}<tr><th class="text-muted">Виданий ВОД</th><td class="font-monospace">{{ m.issued_VOD }}</td></tr>{% endif %}
+                    {% if m.get('military_accounting_specialty_number') %}<tr><th class="text-muted">Номер ВОС (старе)</th><td>{{ m.military_accounting_specialty_number }}</td></tr>{% endif %}
+                </tbody>
+            </table>
+            {% endif %}
+
             {% if military_scans %}
-            <div class="small text-muted mb-1">Скани:</div>
+            <div class="small text-muted mb-1 mt-3">Скановані копії (включно з PDF «Резерв+»):</div>
             {% for a in military_scans %}
             <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                {% if a.file_path.lower().endswith('.pdf') %}
+                <i class="bi bi-file-earmark-pdf"></i>
+                {% else %}
+                <i class="bi bi-file-earmark-image"></i>
+                {% endif %}
+                {{ a.original_name or ('файл ' ~ loop.index) }}
             </a>
             {% endfor %}
             {% endif %}
@@ -278,14 +317,13 @@
 <script>
 (function () {
     const cropperArea = document.getElementById('photoCropperArea');
+    if (!cropperArea) return;
     const cropperImg = document.getElementById('cropperImage');
     const saveBtn = document.getElementById('photoSaveBtn');
     const fileInput = document.getElementById('photoFileInput');
     const panelEl = document.getElementById('photoEditPanel');
     let cropper = null;
     let newFileSelected = false;
-
-    if (!cropperArea) return;
 
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     const MAX_SIZE_BYTES = 8 * 1024 * 1024;
@@ -300,8 +338,6 @@
         });
     }
 
-    // Кроппер ініціалізується одразу на вже наявному фото, щойно
-    // розгортається панель - без потреби спершу обирати файл.
     panelEl.addEventListener('shown.bs.collapse', function () {
         if (!cropper) initCropper();
     });

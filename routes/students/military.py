@@ -6,23 +6,25 @@ routes/students/military.py
   - перегляд/редагування вручну;
   - завантаження PDF з "Резерв+": сам PDF зберігається як скан-копія
     (entity_type='military'), а розпізнані дані показуються у preview;
-  - попередній перегляд змін (diff) ДВОХ типів:
-      * військові поля -> military;
-      * поля картки студента (дата народження, ІПН, адреса, телефон,
-        email) -> students;
-  - застосування змін до відповідних таблиць з фіксацією історії
-    в military_history (scope = 'military' або 'student');
-  - фото 3×4 з PDF: зберігаються два файли (raw + cropped), є кнопка
-    «Переобрізати» через Cropper.js — якщо автоматична обрізка не
-    підходить, адмін править вручну;
+  - попередній перегляд змін (diff) ДВОХ типів;
+  - застосування змін до відповідних таблиць з фіксацією історії;
+  - фото 3×4 з PDF;
+  - пакетний імпорт декількох PDF (студент визначається за ПІБ + датою
+    народження, з чекбоксами по кожному полю в preview);
   - скановані копії (до 5 файлів, разом з PDF).
+
+Тимчасові папки тепер усередині static/uploads/ (як і решта файлів):
+  - static/uploads/tmp_military_pdf/     (поточний PDF при парсингу)
+  - static/uploads/tmp_military_bulk/<token>/ (файли пакетного імпорту)
+Прямий доступ до них через /static/ заблокований в app.py.
 """
 
 from datetime import datetime
 import os
 import uuid
 import json
-import re
+import tempfile
+import shutil
 
 from flask import (
     render_template, request, redirect, url_for, session, flash,
@@ -34,7 +36,6 @@ from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
-
 from routes.utils import get_attachments, save_multiple_attachments
 from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
 from routes.photo import (
@@ -47,8 +48,16 @@ from routes.photo import (
     crop_and_resize,
     save_final_image,
 )
+from routes.config import PROJECT_ROOT
 
 MAX_FILES = 5
+
+# Тимчасові папки — тепер усередині static/uploads/, як і решта
+# файлів, щоб усе зберігалося в одному місці й не залежало від
+# робочої директорії процесу.
+TMP_MILITARY_PDF_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'tmp_military_pdf')
+TMP_MILITARY_BULK_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'tmp_military_bulk')
+
 
 # Військові поля (колонки в military).
 MILITARY_FIELDS = [
@@ -120,6 +129,21 @@ def _normalize_bool(value):
     return 0
 
 
+def _normalize_date(value):
+    """Приводить будь-який формат дати до DD.MM.YYYY для порівняння."""
+    if not value:
+        return ''
+    s = str(value).strip()
+    import re as _re
+    m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
+    if m:
+        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}"
+    m = _re.match(r'^(\d{2})/(\d{2})/(\d{4})$', s)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    return s
+
+
 def _collect_form_data(form):
     result = {}
     for key, _label in MILITARY_FIELDS + LEGACY_FIELDS:
@@ -144,25 +168,10 @@ def _current_student(conn, student_id):
     return dict(row) if row else None
 
 
-def _normalize_date(value):
-    """Приводить будь-який формат дати до DD.MM.YYYY для порівняння."""
-    if not value:
-        return ''
-    s = str(value).strip()
-    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
-    if m:
-        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}"
-    m = re.match(r'^(\d{2})/(\d{2})/(\d{4})$', s)
-    if m:
-        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-    return s
-
-
 def _build_diff(old, new, fields):
     """
     Diff з ігноруванням порожніх `new` (щоб імпорт PDF не стирав
-    існуючі дані, яких у PDF немає) і нормалізацією дат (щоб формат
-    DD.MM.YYYY vs YYYY-MM-DD не вважався зміною).
+    існуючі дані, яких у PDF немає) і нормалізацією дат.
     """
     old = old or {}
     diff = []
@@ -181,7 +190,6 @@ def _build_diff(old, new, fields):
             old_v = _normalize(old.get(key))
             new_v = _normalize(new.get(key))
 
-        # Порожнє нове значення — не зміна
         if not new_v:
             continue
 
@@ -189,6 +197,7 @@ def _build_diff(old, new, fields):
             diff.append({'field': key, 'label': label, 'old': old_v, 'new': new_v})
 
     return diff
+
 
 def _log_history(conn, student_id, username, source, scope, diff):
     for d in diff:
@@ -201,30 +210,20 @@ def _log_history(conn, student_id, username, source, scope, diff):
 
 
 def _save_military(conn, student_id, data, source, username):
-    """Записує військові поля (military) + фіксує зміни в історії."""
-    existing = conn.execute(
-        "SELECT * FROM military WHERE student_id = ?", (student_id,)
-    ).fetchone()
-    diff = _build_diff(
-        dict(existing) if existing else None, data,
-        MILITARY_FIELDS + LEGACY_FIELDS,
-    )
+    existing = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
+    diff = _build_diff(dict(existing) if existing else None, data, MILITARY_FIELDS + LEGACY_FIELDS)
 
     columns = list(data.keys())
     values = [data[c] for c in columns]
 
     if existing:
         set_clause = ', '.join(f"{c} = ?" for c in columns)
-        conn.execute(
-            f"UPDATE military SET {set_clause} WHERE student_id = ?",
-            values + [student_id],
-        )
+        conn.execute(f"UPDATE military SET {set_clause} WHERE student_id = ?", values + [student_id])
         military_id = existing['id']
     else:
         placeholders = ', '.join('?' for _ in columns)
         conn.execute(
-            f"INSERT INTO military (student_id, {', '.join(columns)}) "
-            f"VALUES (?, {placeholders})",
+            f"INSERT INTO military (student_id, {', '.join(columns)}) VALUES (?, {placeholders})",
             [student_id] + values,
         )
         military_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -235,12 +234,8 @@ def _save_military(conn, student_id, data, source, username):
 
 def _save_student_fields(conn, student_id, data, source, username):
     """
-    Записує поля картки студента (students) + фіксує зміни в історії.
-
-    ВАЖЛИВО: UPDATE будується ЛИШЕ за полями, які є в `data`. Раніше
-    він будувався за всіма STUDENT_FIELDS і відсутні поля писались як
-    '' — це затирало існуючі дані в БД (phone, email, tax_id,
-    address_of_residence), навіть якщо в diff їх не було.
+    Записує поля картки студента. UPDATE будується ЛИШЕ за полями,
+    які є в `data` — щоб не затирати відсутні поля.
     """
     existing = conn.execute(
         "SELECT birth_date, tax_id, address_of_residence, phone, email "
@@ -251,7 +246,6 @@ def _save_student_fields(conn, student_id, data, source, username):
     if not diff:
         return diff
 
-    # Ключове: тільки ті поля, що є в data
     columns = list(data.keys())
     set_clause = ', '.join(f"{c} = ?" for c in columns)
     values = [data[c] for c in columns]
@@ -261,11 +255,7 @@ def _save_student_fields(conn, student_id, data, source, username):
 
 
 def _ensure_military_record(conn, student_id):
-    """
-    Повертає id запису military для студента. Якщо запису немає —
-    створює порожній (щоб до нього можна було прив'язати attachments
-    ДО збереження розпізнаних даних).
-    """
+    """Повертає id запису military для студента. Створює порожній, якщо немає."""
     row = conn.execute("SELECT id FROM military WHERE student_id = ?", (student_id,)).fetchone()
     if row:
         return row['id']
@@ -275,12 +265,10 @@ def _ensure_military_record(conn, student_id):
 
 def _save_pdf_as_attachment(conn, student_id, pdf_bytes, original_filename, username):
     """
-    Зберігає PDF у static/uploads/military_records/ і реєструє його в
+    Зберігає PDF у static/uploads/military_records/ і реєструє в
     attachments з entity_type='military'. Повертає rel_path.
-    Використовує ту саму логіку, що й save_multiple_attachments, але
-    приймає байти (а не FileStorage).
     """
-    upload_dir = os.path.join('static', 'uploads', 'military_records')
+    upload_dir = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'military_records')
     os.makedirs(upload_dir, exist_ok=True)
 
     ext = os.path.splitext(original_filename)[1] or '.pdf'
@@ -307,12 +295,14 @@ def _save_pdf_as_attachment(conn, student_id, pdf_bytes, original_filename, user
 @students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
 @login_required('')
 def add_military(student_id):
+    """Сумісність зі старим кодом — редірект на military_data."""
     return redirect(url_for('students.military_data', student_id=student_id))
 
 
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
 @login_required('')
 def military_data(student_id):
+    """GET — форма + історія; POST — збереження вручну."""
     conn = get_db()
     student = _current_student(conn, student_id)
     if not student:
@@ -398,11 +388,9 @@ def military_upload_pdf(student_id):
         flash("Підтримуються лише PDF-файли", "error")
         return redirect(url_for('students.military_data', student_id=student_id))
 
-    # Читаємо байти один раз — щоб не залежати від seek() у FileStorage
     pdf_bytes = file.read()
     original_filename = secure_filename(file.filename) or 'upload.pdf'
 
-    # Перевірка ліміту сканів (5), враховуючи вже наявні + цей PDF
     conn = get_db()
     student = _current_student(conn, student_id)
     if not student:
@@ -418,16 +406,15 @@ def military_upload_pdf(student_id):
               f'Видаліть непотрібні скани перед завантаженням нового PDF.', 'error')
         return redirect(url_for('students.military_data', student_id=student_id))
 
-    # Тимчасовий файл для парсингу
-    tmp_dir = os.path.join(current_app.root_path, 'tmp_military_pdf')
-    os.makedirs(tmp_dir, exist_ok=True)
+    # Тимчасова папка — тепер усередині static/uploads/
+    os.makedirs(TMP_MILITARY_PDF_DIR, exist_ok=True)
     tmp_path = os.path.join(
-        tmp_dir, f"{student_id}_{int(datetime.now().timestamp())}_{original_filename}"
+        TMP_MILITARY_PDF_DIR,
+        f"{student_id}_{int(datetime.now().timestamp())}_{original_filename}"
     )
     with open(tmp_path, 'wb') as f:
         f.write(pdf_bytes)
 
-    # 1. Парсимо текстові поля
     try:
         parsed = parse_reserve_plus_pdf(tmp_path)
     except Exception as e:
@@ -440,20 +427,18 @@ def military_upload_pdf(student_id):
         flash(f"Не вдалося розпізнати PDF: {e}", "error")
         return redirect(url_for('students.military_data', student_id=student_id))
 
-    # 2. Витягуємо фото, ПОКИ файл ще на диску
     raw_photo_bytes = extract_photo_from_pdf(tmp_path)
     logger.info(
         f"PDF photo extract (student_id={student_id}): "
         f"{len(raw_photo_bytes) if raw_photo_bytes else 0} bytes"
     )
 
-    # 3. Видаляємо тимчасовий PDF
     try:
         os.remove(tmp_path)
     except OSError:
         pass
 
-    # 4. ЗБЕРІГАЄМО PDF ЯК СКАН-КОПІЮ (не видаляємо!)
+    # Зберігаємо PDF як скан-копію (не видаляємо!)
     try:
         saved_pdf_rel = _save_pdf_as_attachment(
             conn, student_id, pdf_bytes, original_filename, current_username()
@@ -463,10 +448,8 @@ def military_upload_pdf(student_id):
     except Exception as e:
         conn.rollback()
         logger.error(f"Не вдалося зберегти PDF як скан-копію (student_id={student_id}): {e}", exc_info=True)
-        # Не блокуємо подальший preview — просто попереджаємо
         flash(f"Увага: PDF не вдалося зберегти в сканах: {e}", "warning")
 
-    # 5. Військові поля
     new_military = {}
     for key, _label in MILITARY_FIELDS:
         if key == 'data_verified_on_time':
@@ -474,10 +457,8 @@ def military_upload_pdf(student_id):
         else:
             new_military[key] = _normalize(parsed.get(key))
 
-    # 6. Поля картки студента
     new_student = {key: _normalize(parsed.get(key)) for key, _label in STUDENT_FIELDS}
 
-    # 7. Фото → карантинна папка (два файли: raw + cropped)
     photo_rel_path = None
     raw_photo_path = None
     photo_preview_error = None
@@ -495,7 +476,6 @@ def military_upload_pdf(student_id):
 
     session[f'military_pdf_pending_raw_photo_{student_id}'] = raw_photo_path
 
-    # 8. Diff з поточними даними
     student = _current_student(conn, student_id)
     military = _current_military(conn, student_id)
     conn.close()
@@ -525,6 +505,7 @@ def military_upload_pdf(student_id):
 @students_bp.route('/students/<int:student_id>/military/recrop_pdf_photo', methods=['POST'])
 @login_required('')
 def military_pdf_recrop_photo(student_id):
+    """Ручна переобрізка фото з PDF (Cropper.js)."""
     raw_key = f'military_pdf_pending_raw_photo_{student_id}'
     cropped_key = f'military_pdf_pending_photo_{student_id}'
 
@@ -532,7 +513,7 @@ def military_pdf_recrop_photo(student_id):
     if not raw_path:
         return jsonify({'error': 'no_raw_photo'}), 400
 
-    raw_abs = os.path.join('static', raw_path)
+    raw_abs = os.path.join(PROJECT_ROOT, 'static', raw_path)
     if not os.path.exists(raw_abs):
         return jsonify({'error': 'raw_photo_missing'}), 404
 
@@ -570,6 +551,7 @@ def military_pdf_recrop_photo(student_id):
 @students_bp.route('/students/<int:student_id>/military/apply_pdf', methods=['POST'])
 @login_required('')
 def military_apply_pdf(student_id):
+    """Застосовує зміни з PDF."""
     mil_key = f'military_pdf_pending_military_{student_id}'
     stud_key = f'military_pdf_pending_student_{student_id}'
     photo_key = f'military_pdf_pending_photo_{student_id}'
@@ -617,7 +599,7 @@ def military_apply_pdf(student_id):
             )
 
         if pending_photo and apply_photo:
-            src_abs = os.path.join('static', pending_photo)
+            src_abs = os.path.join(PROJECT_ROOT, 'static', pending_photo)
             if os.path.exists(src_abs):
                 with open(src_abs, 'rb') as f:
                     raw = f.read()
@@ -649,10 +631,8 @@ def military_apply_pdf(student_id):
 
     conn.close()
 
-    # Прибираємо ТІЛЬКИ карантинні файли фото (raw + cropped).
-    # PDF не чіпаємо — він уже збережений як скан-копія.
     if pending_photo:
-        pending_abs = os.path.join('static', pending_photo)
+        pending_abs = os.path.join(PROJECT_ROOT, 'static', pending_photo)
         try:
             if os.path.exists(pending_abs):
                 os.remove(pending_abs)
@@ -661,7 +641,7 @@ def military_apply_pdf(student_id):
 
     raw_photo = session.get(raw_key)
     if raw_photo:
-        raw_abs = os.path.join('static', raw_photo)
+        raw_abs = os.path.join(PROJECT_ROOT, 'static', raw_photo)
         try:
             if os.path.exists(raw_abs):
                 os.remove(raw_abs)
@@ -698,7 +678,7 @@ def delete_military_attachment(student_id):
     attachment_id = request.form.get('attachment_id')
     att = conn.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
     if att:
-        att_path = os.path.join('static', att['file_path'])
+        att_path = os.path.join(PROJECT_ROOT, 'static', att['file_path'])
         if os.path.exists(att_path):
             os.remove(att_path)
         conn.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
@@ -720,7 +700,7 @@ def delete_military(student_id):
     military_row = conn.execute("SELECT id FROM military WHERE student_id = ?", (student_id,)).fetchone()
     if military_row:
         for att in get_attachments(conn, 'military', military_row['id']):
-            att_path = os.path.join('static', att['file_path'])
+            att_path = os.path.join(PROJECT_ROOT, 'static', att['file_path'])
             if os.path.exists(att_path):
                 os.remove(att_path)
         conn.execute("DELETE FROM attachments WHERE entity_type='military' AND entity_id=?", (military_row['id'],))
@@ -734,19 +714,16 @@ def delete_military(student_id):
         group_ids=[student_row['group_id']] if student_row else []
     )
     return redirect(url_for('students.student_list'))
-    
-    
-import tempfile
-import shutil
 
+
+# ============================================================
+# Пакетний імпорт PDF «Резерв+» (декілька файлів одразу)
+# ============================================================
 
 @students_bp.route('/admin/military/bulk_import_pdf', methods=['GET', 'POST'])
 @login_required('')
 def military_bulk_import_pdf():
-    """
-    Пакетний імпорт PDF «Резерв+» — декілька файлів одразу.
-    Студент визначається за ПІБ + датою народження.
-    """
+    """Пакетний імпорт PDF «Резерв+»."""
     if request.method == 'GET':
         return render_template('military_bulk_import_upload.html')
 
@@ -759,7 +736,8 @@ def military_bulk_import_pdf():
 
     conn = get_db()
     token = uuid.uuid4().hex
-    tmp_dir = os.path.join(current_app.root_path, 'tmp_military_bulk', token)
+    # Тимчасова папка — тепер усередині static/uploads/
+    tmp_dir = os.path.join(TMP_MILITARY_BULK_DIR, token)
     os.makedirs(tmp_dir, exist_ok=True)
 
     results = []
@@ -782,14 +760,13 @@ def military_bulk_import_pdf():
         }
         try:
             pdf_bytes = file.read()
-            # Зберігаємо оригінальний PDF для подальшого прикріплення
             pdf_name = f"pdf_{i}.pdf"
             pdf_disk_path = os.path.join(tmp_dir, pdf_name)
             with open(pdf_disk_path, 'wb') as f:
                 f.write(pdf_bytes)
-            result['pdf_saved_path'] = f"tmp_military_bulk/{token}/{pdf_name}"
+            # Шлях відносно PROJECT_ROOT (щоб потім легко знайти)
+            result['pdf_saved_path'] = f"static/uploads/tmp_military_bulk/{token}/{pdf_name}"
 
-            # Парсимо
             with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
                 tmp.write(pdf_bytes)
                 tmp_path = tmp.name
@@ -823,7 +800,6 @@ def military_bulk_import_pdf():
             first_name = name_parts[1]
             middle_name = ' '.join(name_parts[2:]) if len(name_parts) > 2 else ''
 
-            # Пошук студента
             student = conn.execute("""
                 SELECT id, last_name_UA, first_name_UA, middle_name_UA, birth_date, group_id
                 FROM students
@@ -859,7 +835,6 @@ def military_bulk_import_pdf():
             )
             result['student_group'] = student['group_id']
 
-            # Diff
             new_military = {}
             for key, _label in MILITARY_FIELDS:
                 if key == 'data_verified_on_time':
@@ -876,20 +851,17 @@ def military_bulk_import_pdf():
             result['new_military'] = new_military
             result['new_student'] = new_student
 
-            # Фото
             if photo_bytes:
                 try:
                     photo_rel = process_and_save_pending_photo_smart(photo_bytes)
-                    # photo_rel має вигляд 'uploads/pending_photos/xxx.jpg'
-                    # — переміщуємо його в tmp, щоб потім застосувати
-                    photo_src = os.path.join('static', photo_rel)
+                    photo_src = os.path.join(PROJECT_ROOT, 'static', photo_rel)
                     photo_dst_name = f"photo_{i}.jpg"
                     photo_dst = os.path.join(tmp_dir, photo_dst_name)
                     if os.path.exists(photo_src):
                         shutil.copy2(photo_src, photo_dst)
-                        os.remove(photo_src)  # прибираємо тимчасовий pending
+                        os.remove(photo_src)
                         result['has_photo'] = True
-                        result['photo_tmp_path'] = f"tmp_military_bulk/{token}/{photo_dst_name}"
+                        result['photo_tmp_path'] = f"static/uploads/tmp_military_bulk/{token}/{photo_dst_name}"
                 except Exception as e:
                     logger.warning(f"Фото не оброблено для {file.filename}: {e}")
 
@@ -901,7 +873,6 @@ def military_bulk_import_pdf():
 
     conn.close()
 
-    # Зберігаємо стан у JSON
     state_path = os.path.join(tmp_dir, 'state.json')
     with open(state_path, 'w', encoding='utf-8') as f:
         json.dump(results, f, ensure_ascii=False, default=str)
@@ -921,14 +892,8 @@ def military_bulk_import_pdf():
 @students_bp.route('/admin/military/bulk_import_pdf/<token>/apply', methods=['POST'])
 @login_required('')
 def military_bulk_import_apply(token):
-    """
-    Застосовує зміни з пакетного імпорту.
-
-    На кроці preview користувач може зняти чекбокси з окремих полів
-    (apply_mil_<idx>_<field>, apply_stud_<idx>_<field>) — тоді ці поля
-    НЕ застосовуються для відповідного студента.
-    """
-    tmp_dir = os.path.join(current_app.root_path, 'tmp_military_bulk', token)
+    """Застосовує зміни з пакетного імпорту (з чекбоксами по полях)."""
+    tmp_dir = os.path.join(TMP_MILITARY_BULK_DIR, token)
     state_path = os.path.join(tmp_dir, 'state.json')
 
     if not os.path.exists(state_path):
@@ -938,7 +903,6 @@ def military_bulk_import_apply(token):
     with open(state_path, encoding='utf-8') as f:
         results = json.load(f)
 
-    # Які рядки взагалі застосовувати
     apply_indices = set(int(x) for x in request.form.getlist('apply') if x.isdigit())
 
     conn = get_db()
@@ -951,11 +915,6 @@ def military_bulk_import_apply(token):
             continue
 
         try:
-            # ── 1. Які військові поля застосовувати? ──
-            # Чекбокс існує лише для полів, які Є в diff. Якщо поле є
-            # в new_military, але чекбокса немає в формі — це означає,
-            # що поле не змінювалось (його не було в diff) — його все
-            # одно НЕ треба перезаписувати.
             diff_mil_fields = {d['field'] for d in r.get('military_diff') or []}
             apply_mil_fields = set()
             for f in diff_mil_fields:
@@ -967,7 +926,6 @@ def military_bulk_import_apply(token):
                 if k in apply_mil_fields
             }
 
-            # ── 2. Які поля картки студента застосовувати? ──
             diff_stud_fields = {d['field'] for d in r.get('student_diff') or []}
             apply_stud_fields = set()
             for f in diff_stud_fields:
@@ -979,7 +937,6 @@ def military_bulk_import_apply(token):
                 if k in apply_stud_fields
             }
 
-            # ── 3. Застосовуємо військові поля ──
             mil_id = None
             mil_diff = []
             if mil_data:
@@ -988,13 +945,11 @@ def military_bulk_import_apply(token):
                     source='pdf_import', username=current_username(),
                 )
             else:
-                # mil_id потрібен для прикріплення PDF — беремо наявний
                 row = conn.execute(
                     "SELECT id FROM military WHERE student_id = ?", (r['student_id'],)
                 ).fetchone()
                 mil_id = row['id'] if row else _ensure_military_record(conn, r['student_id'])
 
-            # ── 4. Застосовуємо поля картки студента ──
             stud_diff = []
             if stud_data:
                 stud_diff = _save_student_fields(
@@ -1002,14 +957,10 @@ def military_bulk_import_apply(token):
                     source='pdf_import', username=current_username(),
                 )
 
-            # ── 5. Фото — окремий чекбокс ──
             apply_photo = request.form.get(f"apply_photo_{idx}") == '1'
             photo_saved = False
             if r.get('has_photo') and r.get('photo_tmp_path') and apply_photo:
-                photo_abs = os.path.join(
-                    current_app.root_path,
-                    r['photo_tmp_path'].replace('/', os.sep),
-                )
+                photo_abs = os.path.join(PROJECT_ROOT, r['photo_tmp_path'].replace('/', os.sep))
                 if os.path.exists(photo_abs):
                     with open(photo_abs, 'rb') as f:
                         raw = f.read()
@@ -1034,18 +985,14 @@ def military_bulk_import_apply(token):
                             f"Фото не оновлено для student_id={r['student_id']}: {e}"
                         )
 
-            # ── 6. PDF-скан — окремий чекбокс ──
             apply_pdf_scan = request.form.get(f"apply_pdf_scan_{idx}") == '1'
             pdf_attached = False
             if apply_pdf_scan and mil_id and r.get('pdf_saved_path'):
-                pdf_abs = os.path.join(
-                    current_app.root_path,
-                    r['pdf_saved_path'].replace('/', os.sep),
-                )
+                pdf_abs = os.path.join(PROJECT_ROOT, r['pdf_saved_path'].replace('/', os.sep))
                 if os.path.exists(pdf_abs):
                     existing = get_attachments(conn, 'military', mil_id)
                     if len(existing) < MAX_FILES:
-                        upload_dir = os.path.join('static', 'uploads', 'military_records')
+                        upload_dir = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'military_records')
                         os.makedirs(upload_dir, exist_ok=True)
                         safe_name = f"{uuid.uuid4().hex}.pdf"
                         dest = os.path.join(upload_dir, safe_name)
@@ -1078,7 +1025,6 @@ def military_bulk_import_apply(token):
 
     conn.close()
 
-    # Прибираємо тимчасові файли
     try:
         shutil.rmtree(tmp_dir, ignore_errors=True)
     except Exception:
