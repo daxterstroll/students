@@ -17,6 +17,7 @@
 import re
 from collections import defaultdict
 import pdfplumber
+from routes.utils import title_case_ukrainian
 
 GAP_THRESHOLD = 20
 DASH_VALUES = {'-', '—', ''}
@@ -152,7 +153,8 @@ def parse_reserve_plus_pdf(path):
     else:
         data['status_badge'] = ''
         name_lines = header_lines
-    data['full_name'] = ' '.join(name_lines).strip()
+
+    data['full_name'] = title_case_ukrainian(' '.join(name_lines).strip())
 
     # ── Дата народження / Дійсний до / РНОКПП ──
     vl, vm, vr = cols[anchor_idx + 1]

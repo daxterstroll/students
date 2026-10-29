@@ -18,6 +18,7 @@
     --brass:#c8a24a; --brass-lt:#e9cf8f; --brass-dark:#a5822f;
     --line:rgba(31,42,58,.13);
     --danger:#a23b2e; --danger-soft:rgba(162,59,46,.08); --danger-line:rgba(162,59,46,.28);
+    --success:#3f8a5b; --success-soft:rgba(63,138,91,.12);
     --shadow:0 24px 60px -20px rgba(14,27,44,.35), 0 6px 18px rgba(14,27,44,.07);
     --radius:20px;
 }
@@ -75,13 +76,14 @@ body{
 label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink-2); margin-bottom:.35rem; }
 .f-control{ width:100%; min-width:0; max-width:100%; padding:.68rem .9rem; font-size:.97rem; font-family:inherit; color:var(--ink-text); background:#fff; border:1.5px solid var(--line); border-radius:11px; transition: border-color .15s ease, box-shadow .15s ease; }
 .f-control:focus{ outline:none; border-color:var(--brass); box-shadow:0 0 0 4px rgba(200,162,74,.18); }
+.f-control--filled{ background: #f6fbf7; border-color: rgba(63,138,91,.4); }
 .f-hint{ font-size:.78rem; color:var(--muted); margin-top:.35rem; line-height:1.4; }
 
 .file-drop{ display:flex; align-items:center; gap:.7rem; flex-wrap:wrap; border:1.5px dashed var(--line); border-radius:11px; padding:.7rem .9rem; background:#fbf9f4; }
 .file-drop input[type=file]{ position:absolute; width:1px; height:1px; opacity:0; overflow:hidden; }
 .file-btn{ display:inline-flex; align-items:center; gap:.4rem; cursor:pointer; background:var(--ink); color:#fff; font-weight:700; font-size:.82rem; padding:.5rem .9rem; border-radius:8px; white-space:nowrap; }
 .file-name{ font-size:.85rem; color:var(--muted); overflow-wrap:anywhere; }
-.current-photo{ width:64px; height:85px; object-fit:cover; border-radius:8px; border:1.5px solid var(--line); flex:0 0 auto; }
+.current-photo{ width:64px; height:85px; object-fit:cover; border-radius:8px; border:1.5px solid var(--line); flex: 0 0 auto; }
 
 .submit-btn{ width:100%; margin-top:2.2rem; padding:1rem 1.2rem; border:none; border-radius:13px; font-family:inherit; font-size:1.02rem; font-weight:800; color:#241a06; cursor:pointer; background:linear-gradient(135deg, var(--brass-lt), var(--brass) 60%, var(--brass-dark)); box-shadow:0 10px 26px -6px rgba(200,162,74,.55); display:flex; align-items:center; justify-content:center; gap:.55rem; }
 .footnote{ text-align:center; font-size:.82rem; color:var(--muted); margin-top:1.4rem; padding:0 1rem; }
@@ -111,11 +113,33 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                 Вас, <strong>{{ student.last_name_UA }} {{ student.first_name_UA }}</strong>, попросили оновити частину даних. Заповніть лише те, що бачите нижче — решта картки не змінюється. Після відправки дані перевірить деканат, перш ніж вони потраплять у систему.
             </div>
 
-            <form method="POST" enctype="multipart/form-data" novalidate>
+            {# ═══════ ШВИДКЕ ЗАПОВНЕННЯ З PDF «РЕЗЕРВ+» ═══════ #}
+            {% if 'military' in allowed_fields %}
+            <div style="background: linear-gradient(135deg, rgba(200,162,74,.14), rgba(200,162,74,.04)); border: 1.5px solid rgba(200,162,74,.4); border-radius: 14px; padding: 1.2rem 1.2rem 1.1rem; margin-bottom: 1.8rem;">
+                <div style="display: flex; align-items: center; gap: .55rem; font-weight: 800; color: var(--ink); font-size: 1rem; margin-bottom: .45rem;">
+                    <span style="font-size: 1.25rem;">⚡</span>
+                    <span>Швидке заповнення</span>
+                </div>
+                <p style="font-size: .85rem; color: var(--muted); margin: 0 0 .9rem; line-height: 1.5;">
+                    Маєте PDF з «Резерв+»? Завантажте його — ми автоматично заповнимо
+                    військові дані, які ви бачите нижче. Далі все можна відредагувати вручну.
+                </p>
+                <div class="file-drop" style="background: #fff;">
+                    <label class="file-btn" for="pdf_file">📄 Завантажити PDF «Резерв+»</label>
+                    <span class="file-name" id="pdf_file_name">Файл не обрано</span>
+                    <input type="file" name="pdf_file" id="pdf_file" accept=".pdf,application/pdf" form="updateForm">
+                </div>
+                <div id="pdf_parse_status" style="margin-top: .6rem; font-size: .85rem; padding: .5rem .8rem; border-radius: 8px; line-height: 1.4; display:none;"></div>
+            </div>
+            {% endif %}
+
+            <form method="POST" enctype="multipart/form-data" novalidate id="updateForm">
                 <div class="hp-field" aria-hidden="true">
                     <label>Сайт</label>
                     <input type="text" name="website" tabindex="-1" autocomplete="off">
                 </div>
+
+                <input type="hidden" name="prefilled_pdf_path" id="prefilled_pdf_path" value="">
 
                 {% set n = [0] %}
 
@@ -295,6 +319,61 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                     <div class="section-head"><span class="section-num">{{ n[0] }}</span><span class="section-title">Військові дані</span></div>
                     <div class="grid">
                         <div class="col-12">
+                            <label class="f-label">Статус</label>
+                            <select name="military_status_badge" class="f-control">
+                                <option value="">— не вказано —</option>
+                                <option value="Військовозобов'язаний">Військовозобов'язаний</option>
+                                <option value="Призовник">Призовник</option>
+                                <option value="Резервіст">Резервіст</option>
+                                <option value="Невійськовозобов'язаний">Невійськовозобов'язаний</option>
+                                <option value="Знято з обліку">Знято з обліку</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дійсний до</label>
+                            <input type="text" name="military_valid_until" class="f-control" placeholder="ДД.ММ.РРРР">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Категорія обліку</label>
+                            <input type="text" name="military_registration_category" class="f-control">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">ТЦК та СП</label>
+                            <input type="text" name="military_tck_name" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Військове звання</label>
+                            <input type="text" name="military_rank" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Номер у реєстрі «Оберіг»</label>
+                            <input type="text" name="military_registry_number" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Код ВОС</label>
+                            <input type="text" name="military_vos_code" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Тип відстрочки</label>
+                            <input type="text" name="military_deferral_type" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Відстрочка до</label>
+                            <input type="text" name="military_deferral_until" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Постанова ВЛК</label>
+                            <input type="text" name="military_vlk_decision" class="f-control">
+                        </div>
+                        <div class="col-6">
+                            <label class="f-label">Дата ВЛК</label>
+                            <input type="text" name="military_vlk_date" class="f-control" placeholder="ДД.ММ.РРРР">
+                        </div>
+                        <div class="col-12">
+                            <label class="f-label">Опис ВОС</label>
+                            <input type="text" name="military_vos_description" class="f-control">
+                        </div>
+                        <div class="col-12">
                             <label class="f-label">Реєстраційний номер у ДРПВР</label>
                             <input type="text" name="military_registration_number_drpvr" class="f-control">
                         </div>
@@ -307,12 +386,8 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                             <input type="date" name="military_issued_vod" class="f-control">
                         </div>
                         <div class="col-6">
-                            <label class="f-label">Номер ВОС</label>
+                            <label class="f-label">Номер ВОС (старе поле)</label>
                             <input type="text" name="military_specialty_number" class="f-control">
-                        </div>
-                        <div class="col-12">
-                            <label class="f-label">Військове звання</label>
-                            <input type="text" name="military_rank" class="f-control">
                         </div>
                         <div class="col-12">
                             <label class="f-label">Адреса реєстрації/проживання</label>
@@ -372,6 +447,84 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
         passportType.addEventListener('change', syncPassportFields);
         syncPassportFields();
     }
+</script>
+
+<script>
+(function () {
+    const pdfInput = document.getElementById('pdf_file');
+    if (!pdfInput) return;
+    const pdfFileName = document.getElementById('pdf_file_name');
+    const statusEl = document.getElementById('pdf_parse_status');
+    const pdfPathEl = document.getElementById('prefilled_pdf_path');
+
+    function setStatus(msg, type) {
+        statusEl.textContent = msg;
+        statusEl.style.display = '';
+        statusEl.style.background = type === 'error'
+            ? 'rgba(162,59,46,.08)'
+            : type === 'success'
+                ? 'rgba(63,138,91,.12)'
+                : 'rgba(200,162,74,.15)';
+        statusEl.style.color = type === 'error'
+            ? '#7a2b21'
+            : type === 'success'
+                ? '#2d6644'
+                : '#7a5a10';
+    }
+
+    pdfInput.addEventListener('change', function () {
+        const file = pdfInput.files[0];
+        statusEl.style.display = 'none';
+        if (!file) { pdfFileName.textContent = 'Файл не обрано'; return; }
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+            pdfFileName.textContent = file.name;
+            setStatus('Оберіть, будь ласка, файл формату PDF.', 'error');
+            return;
+        }
+        pdfFileName.textContent = file.name;
+        setStatus('Розпізнаємо PDF... зачекайте.', 'loading');
+
+        const fd = new FormData();
+        fd.append('pdf_file', file);
+        fd.append('action', 'parse_pdf');
+
+        fetch(window.location.pathname, { method: 'POST', body: fd })
+            .then(async resp => {
+                const ct = resp.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) {
+                    const txt = await resp.text();
+                    const preview = txt.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 200);
+                    setStatus('Помилка сервера (HTTP ' + resp.status + '): ' + preview, 'error');
+                    return null;
+                }
+                return resp.json();
+            })
+            .then(resp => {
+                if (!resp) return;
+                if (!resp.ok) {
+                    setStatus('Не вдалося розпізнати PDF: ' + (resp.error || 'невідома помилка'), 'error');
+                    return;
+                }
+                let filled = 0;
+                const fields = resp.fields || {};
+                Object.keys(fields).forEach(name => {
+                    if (!fields[name]) return;
+                    const el = document.querySelector('[name="' + name + '"]');
+                    if (!el) return;
+                    el.value = fields[name];
+                    el.classList.add('f-control--filled');
+                    filled++;
+                });
+                if (resp.pdf_path) {
+                    pdfPathEl.value = resp.pdf_path;
+                }
+                setStatus('✅ Заповнено ' + filled + ' полів з PDF. Перевірте дані та за потреби відредагуйте.', 'success');
+            })
+            .catch(err => {
+                setStatus('Помилка з\'єднання: ' + err.message, 'error');
+            });
+    });
+})();
 </script>
 </body>
 </html>

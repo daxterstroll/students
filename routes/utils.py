@@ -44,6 +44,39 @@ def monthly_log_path(dt=None):
     dt = dt or datetime.now()
     return os.path.join(LOGS_DIR, f"app-{dt.strftime('%Y-%m')}.log")
 
+def title_case_ukrainian(text):
+    """
+    Нормалізує ПІБ до вигляду «Прізвище Ім'я По-батькові»
+    (перша літера кожного слова — велика, решта — маленькі).
+
+    Коректно обробляє:
+      - апострофи: В'ЯЧЕСЛАВ → В'ячеслав (після апострофа — маленька)
+      - дефіси: АННА-МАРІЯ → Анна-Марія (після дефіса — велика)
+    """
+    if not text:
+        return ''
+
+    def _cap_word(word):
+        if not word:
+            return word
+        result = []
+        cap_next = True
+        for ch in word:
+            if ch in ("'", '’', 'ʼ', '`'):
+                result.append(ch)
+                cap_next = False
+            elif ch == '-':
+                result.append(ch)
+                cap_next = True
+            elif cap_next:
+                result.append(ch.upper())
+                cap_next = False
+            else:
+                result.append(ch.lower())
+        return ''.join(result)
+
+    return ' '.join(_cap_word(w) for w in text.split())
+
 
 def _migrate_legacy_log():
     """
