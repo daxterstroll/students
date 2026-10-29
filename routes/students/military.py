@@ -21,6 +21,8 @@ routes/students/military.py
 from datetime import datetime
 import os
 import uuid
+import json
+import re
 
 from flask import (
     render_template, request, redirect, url_for, session, flash,
@@ -32,6 +34,7 @@ from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
+
 from routes.utils import get_attachments, save_multiple_attachments
 from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
 from routes.photo import (
@@ -141,25 +144,51 @@ def _current_student(conn, student_id):
     return dict(row) if row else None
 
 
+def _normalize_date(value):
+    """Приводить будь-який формат дати до DD.MM.YYYY для порівняння."""
+    if not value:
+        return ''
+    s = str(value).strip()
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
+    if m:
+        return f"{m.group(3)}.{m.group(2)}.{m.group(1)}"
+    m = re.match(r'^(\d{2})/(\d{2})/(\d{4})$', s)
+    if m:
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    return s
+
+
 def _build_diff(old, new, fields):
+    """
+    Diff з ігноруванням порожніх `new` (щоб імпорт PDF не стирав
+    існуючі дані, яких у PDF немає) і нормалізацією дат (щоб формат
+    DD.MM.YYYY vs YYYY-MM-DD не вважався зміною).
+    """
     old = old or {}
     diff = []
     for key, label in fields:
         if key == 'data_verified_on_time':
             old_v = _normalize_bool(old.get(key))
             new_v = _normalize_bool(new.get(key))
+            if old_v != new_v:
+                diff.append({'field': key, 'label': label, 'old': old_v, 'new': new_v})
+            continue
+
+        if 'date' in key:
+            old_v = _normalize_date(old.get(key))
+            new_v = _normalize_date(new.get(key))
         else:
             old_v = _normalize(old.get(key))
             new_v = _normalize(new.get(key))
-        if old_v != new_v:
-            diff.append({
-                'field': key,
-                'label': label,
-                'old': old_v,
-                'new': new_v,
-            })
-    return diff
 
+        # Порожнє нове значення — не зміна
+        if not new_v:
+            continue
+
+        if old_v != new_v:
+            diff.append({'field': key, 'label': label, 'old': old_v, 'new': new_v})
+
+    return diff
 
 def _log_history(conn, student_id, username, source, scope, diff):
     for d in diff:
@@ -172,20 +201,30 @@ def _log_history(conn, student_id, username, source, scope, diff):
 
 
 def _save_military(conn, student_id, data, source, username):
-    existing = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
-    diff = _build_diff(dict(existing) if existing else None, data, MILITARY_FIELDS + LEGACY_FIELDS)
+    """Записує військові поля (military) + фіксує зміни в історії."""
+    existing = conn.execute(
+        "SELECT * FROM military WHERE student_id = ?", (student_id,)
+    ).fetchone()
+    diff = _build_diff(
+        dict(existing) if existing else None, data,
+        MILITARY_FIELDS + LEGACY_FIELDS,
+    )
 
     columns = list(data.keys())
     values = [data[c] for c in columns]
 
     if existing:
         set_clause = ', '.join(f"{c} = ?" for c in columns)
-        conn.execute(f"UPDATE military SET {set_clause} WHERE student_id = ?", values + [student_id])
+        conn.execute(
+            f"UPDATE military SET {set_clause} WHERE student_id = ?",
+            values + [student_id],
+        )
         military_id = existing['id']
     else:
         placeholders = ', '.join('?' for _ in columns)
         conn.execute(
-            f"INSERT INTO military (student_id, {', '.join(columns)}) VALUES (?, {placeholders})",
+            f"INSERT INTO military (student_id, {', '.join(columns)}) "
+            f"VALUES (?, {placeholders})",
             [student_id] + values,
         )
         military_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -195,6 +234,14 @@ def _save_military(conn, student_id, data, source, username):
 
 
 def _save_student_fields(conn, student_id, data, source, username):
+    """
+    Записує поля картки студента (students) + фіксує зміни в історії.
+
+    ВАЖЛИВО: UPDATE будується ЛИШЕ за полями, які є в `data`. Раніше
+    він будувався за всіма STUDENT_FIELDS і відсутні поля писались як
+    '' — це затирало існуючі дані в БД (phone, email, tax_id,
+    address_of_residence), навіть якщо в diff їх не було.
+    """
     existing = conn.execute(
         "SELECT birth_date, tax_id, address_of_residence, phone, email "
         "FROM students WHERE id = ?",
@@ -203,8 +250,11 @@ def _save_student_fields(conn, student_id, data, source, username):
     diff = _build_diff(dict(existing) if existing else None, data, STUDENT_FIELDS)
     if not diff:
         return diff
-    set_clause = ', '.join(f"{c} = ?" for c in (k for k, _ in STUDENT_FIELDS))
-    values = [data.get(k, '') for k, _ in STUDENT_FIELDS]
+
+    # Ключове: тільки ті поля, що є в data
+    columns = list(data.keys())
+    set_clause = ', '.join(f"{c} = ?" for c in columns)
+    values = [data[c] for c in columns]
     conn.execute(f"UPDATE students SET {set_clause} WHERE id = ?", values + [student_id])
     _log_history(conn, student_id, username, source, 'student', diff)
     return diff
@@ -684,3 +734,359 @@ def delete_military(student_id):
         group_ids=[student_row['group_id']] if student_row else []
     )
     return redirect(url_for('students.student_list'))
+    
+    
+import tempfile
+import shutil
+
+
+@students_bp.route('/admin/military/bulk_import_pdf', methods=['GET', 'POST'])
+@login_required('')
+def military_bulk_import_pdf():
+    """
+    Пакетний імпорт PDF «Резерв+» — декілька файлів одразу.
+    Студент визначається за ПІБ + датою народження.
+    """
+    if request.method == 'GET':
+        return render_template('military_bulk_import_upload.html')
+
+    files = request.files.getlist('pdf_files')
+    files = [f for f in files if f and f.filename and f.filename.lower().endswith('.pdf')]
+
+    if not files:
+        flash("Оберіть хоча б один PDF-файл", "error")
+        return redirect(url_for('students.military_bulk_import_pdf'))
+
+    conn = get_db()
+    token = uuid.uuid4().hex
+    tmp_dir = os.path.join(current_app.root_path, 'tmp_military_bulk', token)
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    results = []
+
+    for i, file in enumerate(files):
+        result = {
+            'idx': i,
+            'filename': file.filename,
+            'student_id': None,
+            'student_name': None,
+            'student_group': None,
+            'error': None,
+            'military_diff': [],
+            'student_diff': [],
+            'new_military': None,
+            'new_student': None,
+            'has_photo': False,
+            'pdf_saved_path': None,
+            'photo_tmp_path': None,
+        }
+        try:
+            pdf_bytes = file.read()
+            # Зберігаємо оригінальний PDF для подальшого прикріплення
+            pdf_name = f"pdf_{i}.pdf"
+            pdf_disk_path = os.path.join(tmp_dir, pdf_name)
+            with open(pdf_disk_path, 'wb') as f:
+                f.write(pdf_bytes)
+            result['pdf_saved_path'] = f"tmp_military_bulk/{token}/{pdf_name}"
+
+            # Парсимо
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+                tmp.write(pdf_bytes)
+                tmp_path = tmp.name
+            try:
+                parsed = parse_reserve_plus_pdf(tmp_path)
+                photo_bytes = extract_photo_from_pdf(tmp_path)
+            finally:
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+            full_name = (parsed.get('full_name') or '').strip()
+            birth_date = (parsed.get('birth_date') or '').strip()
+
+            if not full_name:
+                result['error'] = "У PDF не знайдено ПІБ"
+                results.append(result)
+                continue
+            if not birth_date:
+                result['error'] = "У PDF не знайдено дату народження"
+                results.append(result)
+                continue
+
+            name_parts = full_name.split()
+            if len(name_parts) < 2:
+                result['error'] = f"Некоректний ПІБ: {full_name!r}"
+                results.append(result)
+                continue
+            last_name = name_parts[0]
+            first_name = name_parts[1]
+            middle_name = ' '.join(name_parts[2:]) if len(name_parts) > 2 else ''
+
+            # Пошук студента
+            student = conn.execute("""
+                SELECT id, last_name_UA, first_name_UA, middle_name_UA, birth_date, group_id
+                FROM students
+                WHERE LOWER_UA(TRIM(last_name_UA)) = LOWER_UA(?)
+                  AND LOWER_UA(TRIM(first_name_UA)) = LOWER_UA(?)
+                  AND LOWER_UA(TRIM(COALESCE(middle_name_UA, ''))) = LOWER_UA(?)
+                  AND TRIM(COALESCE(birth_date, '')) = ?
+                LIMIT 1
+            """, (last_name, first_name, middle_name, birth_date)).fetchone()
+
+            if not student:
+                student = conn.execute("""
+                    SELECT id, last_name_UA, first_name_UA, middle_name_UA, birth_date, group_id
+                    FROM students
+                    WHERE LOWER_UA(TRIM(last_name_UA)) = LOWER_UA(?)
+                      AND LOWER_UA(TRIM(first_name_UA)) = LOWER_UA(?)
+                      AND TRIM(COALESCE(birth_date, '')) = ?
+                    LIMIT 1
+                """, (last_name, first_name, birth_date)).fetchone()
+
+            if not student:
+                result['error'] = (
+                    f"Студента не знайдено: {last_name} {first_name} {middle_name}, "
+                    f"дата народження {birth_date}"
+                )
+                results.append(result)
+                continue
+
+            result['student_id'] = student['id']
+            result['student_name'] = (
+                f"{student['last_name_UA']} {student['first_name_UA']} "
+                f"{student['middle_name_UA'] or ''}".strip()
+            )
+            result['student_group'] = student['group_id']
+
+            # Diff
+            new_military = {}
+            for key, _label in MILITARY_FIELDS:
+                if key == 'data_verified_on_time':
+                    new_military[key] = 1 if parsed.get('data_verified_on_time') else 0
+                else:
+                    new_military[key] = _normalize(parsed.get(key))
+            new_student = {key: _normalize(parsed.get(key)) for key, _label in STUDENT_FIELDS}
+
+            military_row = _current_military(conn, student['id'])
+            student_row = _current_student(conn, student['id'])
+
+            result['military_diff'] = _build_diff(military_row, new_military, MILITARY_FIELDS)
+            result['student_diff'] = _build_diff(student_row, new_student, STUDENT_FIELDS)
+            result['new_military'] = new_military
+            result['new_student'] = new_student
+
+            # Фото
+            if photo_bytes:
+                try:
+                    photo_rel = process_and_save_pending_photo_smart(photo_bytes)
+                    # photo_rel має вигляд 'uploads/pending_photos/xxx.jpg'
+                    # — переміщуємо його в tmp, щоб потім застосувати
+                    photo_src = os.path.join('static', photo_rel)
+                    photo_dst_name = f"photo_{i}.jpg"
+                    photo_dst = os.path.join(tmp_dir, photo_dst_name)
+                    if os.path.exists(photo_src):
+                        shutil.copy2(photo_src, photo_dst)
+                        os.remove(photo_src)  # прибираємо тимчасовий pending
+                        result['has_photo'] = True
+                        result['photo_tmp_path'] = f"tmp_military_bulk/{token}/{photo_dst_name}"
+                except Exception as e:
+                    logger.warning(f"Фото не оброблено для {file.filename}: {e}")
+
+        except Exception as e:
+            logger.error(f"Помилка обробки {file.filename}: {e}", exc_info=True)
+            result['error'] = f"Помилка обробки: {e}"
+
+        results.append(result)
+
+    conn.close()
+
+    # Зберігаємо стан у JSON
+    state_path = os.path.join(tmp_dir, 'state.json')
+    with open(state_path, 'w', encoding='utf-8') as f:
+        json.dump(results, f, ensure_ascii=False, default=str)
+
+    session['military_bulk_token'] = token
+
+    return render_template(
+        'military_bulk_import_preview.html',
+        token=token,
+        results=results,
+        total=len(results),
+        success_count=sum(1 for r in results if not r['error']),
+        error_count=sum(1 for r in results if r['error']),
+    )
+
+
+@students_bp.route('/admin/military/bulk_import_pdf/<token>/apply', methods=['POST'])
+@login_required('')
+def military_bulk_import_apply(token):
+    """
+    Застосовує зміни з пакетного імпорту.
+
+    На кроці preview користувач може зняти чекбокси з окремих полів
+    (apply_mil_<idx>_<field>, apply_stud_<idx>_<field>) — тоді ці поля
+    НЕ застосовуються для відповідного студента.
+    """
+    tmp_dir = os.path.join(current_app.root_path, 'tmp_military_bulk', token)
+    state_path = os.path.join(tmp_dir, 'state.json')
+
+    if not os.path.exists(state_path):
+        flash("Сесія імпорту не знайдена або застаріла", "warning")
+        return redirect(url_for('students.military_bulk_import_pdf'))
+
+    with open(state_path, encoding='utf-8') as f:
+        results = json.load(f)
+
+    # Які рядки взагалі застосовувати
+    apply_indices = set(int(x) for x in request.form.getlist('apply') if x.isdigit())
+
+    conn = get_db()
+    applied = 0
+    errors = 0
+
+    for r in results:
+        idx = r.get('idx', -1)
+        if r.get('error') or idx not in apply_indices or not r.get('student_id'):
+            continue
+
+        try:
+            # ── 1. Які військові поля застосовувати? ──
+            # Чекбокс існує лише для полів, які Є в diff. Якщо поле є
+            # в new_military, але чекбокса немає в формі — це означає,
+            # що поле не змінювалось (його не було в diff) — його все
+            # одно НЕ треба перезаписувати.
+            diff_mil_fields = {d['field'] for d in r.get('military_diff') or []}
+            apply_mil_fields = set()
+            for f in diff_mil_fields:
+                if request.form.get(f"apply_mil_{idx}_{f}") == '1':
+                    apply_mil_fields.add(f)
+
+            mil_data = {
+                k: v for k, v in (r.get('new_military') or {}).items()
+                if k in apply_mil_fields
+            }
+
+            # ── 2. Які поля картки студента застосовувати? ──
+            diff_stud_fields = {d['field'] for d in r.get('student_diff') or []}
+            apply_stud_fields = set()
+            for f in diff_stud_fields:
+                if request.form.get(f"apply_stud_{idx}_{f}") == '1':
+                    apply_stud_fields.add(f)
+
+            stud_data = {
+                k: v for k, v in (r.get('new_student') or {}).items()
+                if k in apply_stud_fields
+            }
+
+            # ── 3. Застосовуємо військові поля ──
+            mil_id = None
+            mil_diff = []
+            if mil_data:
+                mil_id, mil_diff = _save_military(
+                    conn, r['student_id'], mil_data,
+                    source='pdf_import', username=current_username(),
+                )
+            else:
+                # mil_id потрібен для прикріплення PDF — беремо наявний
+                row = conn.execute(
+                    "SELECT id FROM military WHERE student_id = ?", (r['student_id'],)
+                ).fetchone()
+                mil_id = row['id'] if row else _ensure_military_record(conn, r['student_id'])
+
+            # ── 4. Застосовуємо поля картки студента ──
+            stud_diff = []
+            if stud_data:
+                stud_diff = _save_student_fields(
+                    conn, r['student_id'], stud_data,
+                    source='pdf_import', username=current_username(),
+                )
+
+            # ── 5. Фото — окремий чекбокс ──
+            apply_photo = request.form.get(f"apply_photo_{idx}") == '1'
+            photo_saved = False
+            if r.get('has_photo') and r.get('photo_tmp_path') and apply_photo:
+                photo_abs = os.path.join(
+                    current_app.root_path,
+                    r['photo_tmp_path'].replace('/', os.sep),
+                )
+                if os.path.exists(photo_abs):
+                    with open(photo_abs, 'rb') as f:
+                        raw = f.read()
+                    try:
+                        img = load_and_validate_image(raw)
+                        crop = auto_center_crop_box(img.width, img.height)
+                        final_img = crop_and_resize(img, crop)
+                        new_rel = save_final_image(final_img, r['student_id'])
+                        conn.execute(
+                            "UPDATE students SET photo = ? WHERE id = ?",
+                            (new_rel, r['student_id']),
+                        )
+                        _log_history(
+                            conn, r['student_id'], current_username(),
+                            'pdf_import', 'student',
+                            [{'field': 'photo', 'label': 'Фото 3×4',
+                              'old': '', 'new': new_rel}],
+                        )
+                        photo_saved = True
+                    except ValueError as e:
+                        logger.warning(
+                            f"Фото не оновлено для student_id={r['student_id']}: {e}"
+                        )
+
+            # ── 6. PDF-скан — окремий чекбокс ──
+            apply_pdf_scan = request.form.get(f"apply_pdf_scan_{idx}") == '1'
+            pdf_attached = False
+            if apply_pdf_scan and mil_id and r.get('pdf_saved_path'):
+                pdf_abs = os.path.join(
+                    current_app.root_path,
+                    r['pdf_saved_path'].replace('/', os.sep),
+                )
+                if os.path.exists(pdf_abs):
+                    existing = get_attachments(conn, 'military', mil_id)
+                    if len(existing) < MAX_FILES:
+                        upload_dir = os.path.join('static', 'uploads', 'military_records')
+                        os.makedirs(upload_dir, exist_ok=True)
+                        safe_name = f"{uuid.uuid4().hex}.pdf"
+                        dest = os.path.join(upload_dir, safe_name)
+                        shutil.copy2(pdf_abs, dest)
+                        rel = f"uploads/military_records/{safe_name}"
+                        conn.execute(
+                            "INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_by) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            ('military', mil_id, rel, r['filename'], current_username())
+                        )
+                        pdf_attached = True
+
+            conn.commit()
+            applied += 1
+
+            log_action(
+                current_username(),
+                f"пакетний імпорт PDF: {r['student_name']} (ID {r['student_id']})",
+                details=(
+                    f"військових: {len(mil_diff)}, картки: {len(stud_diff)}, "
+                    f"фото: {'так' if photo_saved else 'ні'}, "
+                    f"PDF-скан: {'так' if pdf_attached else 'ні'}, "
+                    f"файл: {r['filename']}"
+                ),
+            )
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Помилка застосування {r['filename']}: {e}", exc_info=True)
+            errors += 1
+
+    conn.close()
+
+    # Прибираємо тимчасові файли
+    try:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    except Exception:
+        pass
+    session.pop('military_bulk_token', None)
+
+    flash(
+        f"Застосовано: {applied}. Помилок: {errors}.",
+        'success' if errors == 0 else 'warning',
+    )
+    return redirect(url_for('students.military_bulk_import_pdf'))
