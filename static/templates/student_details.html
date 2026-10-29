@@ -2,12 +2,6 @@
 {% import '_macros.html' as ui %}
 {% block title %}Інформація про студента {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}{% endblock %}
 
-{# Jinja's `default('-')` only catches undefined variables, not real NULL
-   values coming from the database (those render as the literal text
-   "None"), so a dedicated macro is used everywhere instead: shows the
-   value as-is, or a muted "Інформація відсутня" placeholder when it's
-   empty. text-muted already has a dark-theme override in main.css, so
-   this reads correctly in both themes without extra CSS here. #}
 {% macro val(v) -%}
 {%- if v -%}{{ v }}{%- else -%}<span class="text-muted fst-italic">Інформація відсутня</span>{%- endif -%}
 {%- endmacro %}
@@ -54,7 +48,7 @@
         </div>
     </div>
 
-    <div class="d-flex justify-content-between mb-4">
+    <div class="d-flex justify-content-between mb-4 flex-wrap gap-2">
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-2"></i>До списку
         </a>
@@ -213,19 +207,24 @@
                     </div>
                 </div>
 
-                <!-- Військові дані -->
+                <!-- Військові дані (структура «Резерв+») -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#militaryCollapse">
                             <i class="bi bi-shield-check me-3 fs-4" style="color: var(--brass);"></i>Військові дані
+                            {% if military %}
+                                {% if military.status_badge %}
+                                <span class="badge bg-secondary ms-2">{{ military.status_badge }}</span>
+                                {% endif %}
+                            {% endif %}
                         </button>
                     </h2>
                     <div id="militaryCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3">
+                            <div class="d-flex justify-content-end mb-3 flex-wrap gap-2">
                                 {% if military %}
                                     <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-pencil me-1"></i>Редагувати
+                                        <i class="bi bi-pencil me-1"></i>Редагувати військові дані
                                     </a>
                                 {% else %}
                                     <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-success">
@@ -233,61 +232,334 @@
                                     </a>
                                 {% endif %}
                             </div>
+
                             {% if military %}
-                                <div class="row g-3">
+                                {# ── Група 1: Статус ── #}
+                                {% if military.status_badge or military.registration_category or military.valid_until or military.formed_at %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-2">
+                                    <i class="bi bi-person-badge me-1"></i>Статус
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.status_badge %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Реєстраційний номер ЄДРПВР</div>
-                                        <div>{{ val(military.registration_number_of_the_DRPVR) }}</div>
+                                        <div class="text-muted small">Статус</div>
+                                        <div>
+                                            <span class="badge bg-warning text-dark">{{ military.status_badge }}</span>
+                                        </div>
                                     </div>
+                                    {% endif %}
+                                    {% if military.registration_category %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Військово-обліковий документ</div>
-                                        <div>{{ val(military.military_registration_document) }}</div>
+                                        <div class="text-muted small">Категорія обліку</div>
+                                        <div>{{ military.registration_category }}</div>
                                     </div>
+                                    {% endif %}
+                                    {% if military.valid_until %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Виданий ВОД</div>
-                                        <div>{{ val(military.issued_VOD) }}</div>
+                                        <div class="text-muted small">Дійсний до</div>
+                                        <div class="font-monospace">{{ military.valid_until }}</div>
                                     </div>
+                                    {% endif %}
+                                    {% if military.formed_at %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Номер військово-облікової спеціальності</div>
-                                        <div>{{ val(military.military_accounting_specialty_number) }}</div>
+                                        <div class="text-muted small">Документ сформовано</div>
+                                        <div class="font-monospace">{{ military.formed_at }}</div>
                                     </div>
+                                    {% endif %}
+                                    {% if military.removal_basis %}
+                                    <div class="col-12">
+                                        <div class="text-muted small">Підстава зняття / виключення</div>
+                                        <div>{{ military.removal_basis }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 2: ТЦК і звання ── #}
+                                {% if military.tck_name or military.military_rank or military.registry_number or military.vos_code or military.vos_description %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-building me-1"></i>ТЦК та військова спеціальність
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.tck_name %}
+                                    <div class="col-12">
+                                        <div class="text-muted small">ТЦК та СП</div>
+                                        <div>{{ military.tck_name }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.military_rank %}
                                     <div class="col-sm-6">
                                         <div class="text-muted small">Військове звання</div>
-                                        <div>{{ val(military.military_rank) }}</div>
+                                        <div>{{ military.military_rank }}</div>
                                     </div>
-
-                                    <div class="col-12"><hr class="my-1"></div>
-
+                                    {% endif %}
+                                    {% if military.registry_number %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Зміна облікових данних</div>
-                                        <div>{{ val(military.change_credentials) }}</div>
+                                        <div class="text-muted small">Номер у реєстрі «Оберіг»</div>
+                                        <div class="font-monospace">{{ military.registry_number }}</div>
                                     </div>
+                                    {% endif %}
+                                    {% if military.vos_code %}
                                     <div class="col-sm-6">
-                                        <div class="text-muted small">Підстава для зміни облікових даних</div>
-                                        <div>{{ val(military.reason_for_changing_credentials) }}</div>
+                                        <div class="text-muted small">Код ВОС</div>
+                                        <div class="font-monospace">{{ military.vos_code }}</div>
                                     </div>
-
-                                    <div class="col-12"><hr class="my-1"></div>
-
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Перебування на військовому обліку</div>
-                                        <div>{{ val(military.being_on_military_registration) }}</div>
+                                    {% endif %}
+                                    {% if military.vos_description %}
+                                    <div class="col-12">
+                                        <div class="text-muted small">Опис ВОС</div>
+                                        <div>{{ military.vos_description }}</div>
                                     </div>
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Адреса місця проживання</div>
-                                        <div>{{ val(military.address_of_residence) }}</div>
-                                    </div>
+                                    {% endif %}
                                 </div>
+                                {% endif %}
+
+                                {# ── Група 3: Відстрочка ── #}
+                                {% if military.deferral_type or military.deferral_until %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-calendar-check me-1"></i>Відстрочка
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.deferral_type %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Тип відстрочки</div>
+                                        <div>{{ military.deferral_type }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.deferral_until %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Відстрочка до</div>
+                                        <div class="font-monospace">{{ military.deferral_until }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 4: ВЛК / інвалідність ── #}
+                                {% if military.vlk_decision or military.vlk_date or military.disability_group or military.disability_valid_until or military.disability_reason %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-heart-pulse me-1"></i>ВЛК та інвалідність
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.vlk_decision %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Постанова ВЛК</div>
+                                        <div>{{ military.vlk_decision }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.vlk_date %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Дата ВЛК</div>
+                                        <div class="font-monospace">{{ military.vlk_date }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.disability_group %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Група інвалідності</div>
+                                        <div>{{ military.disability_group }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.disability_valid_until %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Дійсна до</div>
+                                        <div class="font-monospace">{{ military.disability_valid_until }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.disability_reason %}
+                                    <div class="col-12">
+                                        <div class="text-muted small">Причина інвалідності</div>
+                                        <div>{{ military.disability_reason }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 5: Поліція ── #}
+                                {% if military.police_reason or military.police_date %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-shield-exclamation me-1"></i>Звернення до Нацполіції
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.police_reason %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Причина звернення</div>
+                                        <div>{{ military.police_reason }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.police_date %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Дата звернення</div>
+                                        <div class="font-monospace">{{ military.police_date }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 6: Контакти (те, що в military, а не в student) ── #}
+                                {% if military.phone or military.email %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-telephone me-1"></i>Контакти з документа
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.phone %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Телефон (з PDF)</div>
+                                        <div>{{ military.phone }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.email %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Email (з PDF)</div>
+                                        <div>{{ military.email }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 7: Дата уточнення ── #}
+                                {% if military.data_update_date or military.data_verified_on_time %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-check2-circle me-1"></i>Дані уточнено
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.data_update_date %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Дата уточнення</div>
+                                        <div class="font-monospace">{{ military.data_update_date }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.data_verified_on_time %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Вчасно</div>
+                                        <div>
+                                            <span class="badge bg-success"><i class="bi bi-check2"></i> так</span>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Група 8: Легасі-поля (старі, не з PDF) ── #}
+                                {% if military.military_registration_document or military.issued_VOD or military.military_accounting_specialty_number or military.change_credentials or military.reason_for_changing_credentials or military.being_on_military_registration %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-archive me-1"></i>Додаткові поля (старі)
+                                </h6>
+                                <div class="row g-3 mb-3">
+                                    {% if military.military_registration_document %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Військово-обліковий документ</div>
+                                        <div>{{ military.military_registration_document }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.issued_VOD %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Виданий ВОД</div>
+                                        <div class="font-monospace">{{ military.issued_VOD }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.military_accounting_specialty_number %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Номер ВОС (старе)</div>
+                                        <div>{{ military.military_accounting_specialty_number }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.change_credentials %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Зміна облікових даних</div>
+                                        <div>{{ military.change_credentials }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.reason_for_changing_credentials %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Підстава для зміни</div>
+                                        <div>{{ military.reason_for_changing_credentials }}</div>
+                                    </div>
+                                    {% endif %}
+                                    {% if military.being_on_military_registration %}
+                                    <div class="col-sm-6">
+                                        <div class="text-muted small">Перебування на обліку</div>
+                                        <div>{{ military.being_on_military_registration }}</div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+
+                                {# ── Скановані копії (включно з PDF «Резерв+») ── #}
                                 {% if military_attachments %}
-                                <div class="mt-2">
-                                    <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-paperclip me-1"></i>Скановані копії
+                                </h6>
+                                <div class="mb-3">
                                     {% for a in military_attachments %}
-                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank"
+                                       class="btn btn-sm btn-outline-secondary me-1 mb-1"
+                                       title="{{ a.original_name or ('файл ' ~ loop.index) }}">
+                                        {% if a.file_path and a.file_path.lower().endswith('.pdf') %}
+                                        <i class="bi bi-file-earmark-pdf"></i>
+                                        {% else %}
+                                        <i class="bi bi-file-earmark-image"></i>
+                                        {% endif %}
+                                        {{ a.original_name or ('файл ' ~ loop.index) }}
                                     </a>
                                     {% endfor %}
                                 </div>
                                 {% endif %}
+
+                                {# ── Останні зміни (скорочено) ── #}
+                                {% if military_history %}
+                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+                                    <i class="bi bi-clock-history me-1"></i>Останні зміни
+                                </h6>
+                                <div class="table-responsive mb-3">
+                                    <table class="table table-sm mb-0">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th style="width:130px;">Коли</th>
+                                                <th style="width:100px;">Хто</th>
+                                                <th style="width:80px;">Джерело</th>
+                                                <th style="width:90px;">Розділ</th>
+                                                <th>Поле / зміна</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for h in military_history[:5] %}
+                                            <tr>
+                                                <td class="small text-muted font-monospace">{{ h.changed_at }}</td>
+                                                <td class="small">{{ h.changed_by or '—' }}</td>
+                                                <td>
+                                                    {% if h.source == 'pdf_import' %}
+                                                    <span class="badge bg-primary"><i class="bi bi-file-earmark-pdf"></i></span>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">вручну</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    {% if h.scope == 'student' %}
+                                                    <span class="badge bg-info text-dark">студент</span>
+                                                    {% else %}
+                                                    <span class="badge bg-warning text-dark">військ.</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td class="small">
+                                                    <strong>{{ field_label(h.field_name, h.scope or 'military') }}:</strong>
+                                                    <span class="text-danger">{{ h.old_value or '—' }}</span>
+                                                    <i class="bi bi-arrow-right mx-1"></i>
+                                                    <span class="text-success">{{ h.new_value or '—' }}</span>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                {% if military_history|length > 5 %}
+                                <div class="text-end mb-3">
+                                    <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="small">
+                                        Показати всі {{ military_history|length }} змін →
+                                    </a>
+                                </div>
+                                {% endif %}
+                                {% endif %}
+
                             {% else %}
                                 <p class="text-muted text-center py-4">Військові дані відсутні</p>
                             {% endif %}
@@ -383,12 +655,12 @@
                     </h2>
                     <div id="educationDocsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-							<div class="d-flex justify-content-end mb-3">
-								<a href="{{ url_for('admin.manage_education_documents', student_id=student.id) }}" 
-								   class="btn btn-sm btn-primary">
-									<i class="bi bi-pencil me-1"></i>Керувати документами
-								</a>
-							</div>
+                            <div class="d-flex justify-content-end mb-3">
+                                <a href="{{ url_for('admin.manage_education_documents', student_id=student.id) }}"
+                                   class="btn btn-sm btn-primary">
+                                    <i class="bi bi-pencil me-1"></i>Керувати документами
+                                </a>
+                            </div>
                             {% if education_docs %}
                                 {% for doc in education_docs %}
                                     <div class="border rounded-3 p-4 mb-4">
@@ -506,8 +778,8 @@
                         </div>
                     </div>
                 </div>
-				
-				<!-- Періоди навчання -->
+
+                <!-- Періоди навчання -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#studyPeriodsCollapse">
@@ -568,7 +840,7 @@
     }
     .accordion-button:focus { box-shadow: none; }
 
-    /* ===== Оцінки (Оцінки/Практики/Курсові/Атестації) ===== */
+    /* ===== Оцінки ===== */
     .grade-pill {
         display: inline-block;
         padding: 3px 10px;
@@ -622,10 +894,6 @@
     }
     .photo-frame--header .photo-frame__placeholder { font-size: 2rem; color: var(--brass-semi); }
 
-    /* Кнопки на фото - позиціоновані поверх нижнього краю рамки,
-       колір використовує стандартні класи Bootstrap (btn-outline-primary/
-       btn-outline-danger) - та сама поведінка кольору при наведенні,
-       що й у кнопки "Редагувати". */
     .photo-frame-wrap { position: relative; width: 96px; }
     .photo-corner-btn {
         position: absolute;
@@ -659,7 +927,6 @@
             </div>
 
             <div class="modal-body p-4">
-
                 <div id="photoStep1">
                     <label for="photoFileInput" class="photo-dropzone">
                         <i class="bi bi-cloud-arrow-up-fill"></i>
@@ -676,7 +943,6 @@
                         <img id="cropperImage" src="">
                     </div>
                 </div>
-
             </div>
             <div class="modal-footer" style="border: none; background: var(--paper-2);">
                 <button type="button" id="photoBackBtn" class="btn btn-outline-secondary d-none">
@@ -745,7 +1011,7 @@
     let cropper = null;
 
     const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-    const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8 МБ
+    const MAX_SIZE_BYTES = 8 * 1024 * 1024;
 
     function showStep1() {
         step1.classList.remove('d-none');
@@ -815,7 +1081,7 @@
 
     saveBtn.addEventListener('click', function () {
         if (!cropper) return;
-        const data = cropper.getData(true); // true = округлені координати
+        const data = cropper.getData(true);
         const formData = new FormData();
         formData.append('photo_file', fileInput.files[0]);
         formData.append('crop_x', data.x);
@@ -844,7 +1110,6 @@
         });
     });
 
-    // Скидаємо модальне вікно до початкового стану при закритті
     document.getElementById('photoUploadModal').addEventListener('hidden.bs.modal', function () {
         showStep1();
         nextBtn.disabled = true;
