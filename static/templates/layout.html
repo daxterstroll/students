@@ -43,7 +43,7 @@
         {% set perms = session.get('permissions', []) %}
 
         <!-- === Імпорт === -->
-        {% if is_admin or 'import_from_excel' in perms or 'import_subjects' in perms or 'import_education_docs' in perms %}
+        {% if is_admin or 'import_from_excel' in perms or 'import_subjects' in perms or 'import_education_docs' in perms or 'manage_students' in perms %}
         <li class="nav-item dropdown d-none d-lg-block">
             <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
                 <i class="bi bi-cloud-arrow-up-fill"></i> Імпорт
@@ -55,6 +55,9 @@
                 </a></li>
                 {% endif %}
                 {% if is_admin or 'manage_students' in perms %}
+                <li><a class="dropdown-item" href="{{ url_for('students.military_bulk_import_pdf') }}">
+                    <i class="bi bi-file-earmark-pdf"></i> PDF «Резерв+» (пакетно)
+                </a></li>
                 <li><a class="dropdown-item" href="{{ url_for('photo_bulk.bulk_upload') }}">
                     <i class="bi bi-images"></i> Фото студентів (масово)
                 </a></li>
@@ -208,6 +211,7 @@
             <a href="{{ url_for('students.import_from_excel') }}" class="admin-link d-block"><i class="bi bi-person-add"></i> Студенти + військові</a>
             {% endif %}
             {% if is_admin or 'manage_students' in perms %}
+            <a href="{{ url_for('students.military_bulk_import_pdf') }}" class="admin-link d-block"><i class="bi bi-file-earmark-pdf"></i> PDF «Резерв+» (пакетно)</a>
             <a href="{{ url_for('photo_bulk.bulk_upload') }}" class="admin-link d-block"><i class="bi bi-images"></i> Фото студентів (масово)</a>
             {% endif %}
             {% if is_admin or 'import_subjects' in perms %}

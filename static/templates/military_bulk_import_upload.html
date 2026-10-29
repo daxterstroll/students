@@ -1,0 +1,35 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Пакетний імпорт PDF «Резерв+»{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-pdf-fill', 'Пакетний імпорт PDF «Резерв+»',
+        'Декілька файлів одразу — студент визначається за ПІБ і датою народження') }}
+
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i>
+        Система розпізнає кожен PDF, знаходить студента за <strong>ПІБ + дата народження</strong>
+        і показує, що саме зміниться. Нічого не зберігається без вашого підтвердження.
+        Фото з PDF також підтягується.
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label class="form-label" for="pdf_files">Оберіть PDF-файли (можна декілька)</label>
+                    <input type="file" name="pdf_files" id="pdf_files" class="form-control"
+                           accept="application/pdf,.pdf" multiple required>
+                    <div class="form-text">Кожен файл обробляється окремо. Невідповідності (студента не знайдено) показуються у preview.</div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload me-1"></i> Розпізнати файли
+                </button>
+                <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Скасувати</a>
+            </form>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

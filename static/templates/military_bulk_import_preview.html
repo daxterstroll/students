@@ -1,0 +1,201 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перегляд пакетного імпорту{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-pdf', 'Перегляд пакетного імпорту PDF',
+        'Файлів: ' ~ total ~ ' · успішно: ' ~ success_count ~ ' · з помилками: ' ~ error_count) }}
+
+    {% if error_count %}
+    <div class="alert alert-warning small">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        {{ error_count }} файл(ів) не вдалося обробити — деталі у таблиці нижче.
+    </div>
+    {% endif %}
+
+    <div class="alert alert-light border small">
+        <i class="bi bi-info-circle me-1"></i>
+        <strong>Позначені рядки</strong> буде застосовано. Всередині рядка можна
+        <strong>зняти чекбокси з окремих полів</strong>, щоб не перезаписувати їх
+        для цього студента.
+    </div>
+
+    <form method="POST" action="{{ url_for('students.military_bulk_import_apply', token=token) }}"
+          onsubmit="return confirm('Застосувати вибрані зміни?');">
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">Обрати всі</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">Зняти всі</button>
+                </div>
+                <span class="small text-muted">Позначені рядки буде застосовано</span>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:40px;"></th>
+                            <th>Файл</th>
+                            <th>Студент</th>
+                            <th class="text-center">Військові зміни</th>
+                            <th class="text-center">Картка студента</th>
+                            <th class="text-center">Фото / PDF</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in results %}
+                        <tr class="{% if r.error %}table-danger{% endif %}">
+                            <td>
+                                {% if not r.error %}
+                                <input type="checkbox" class="form-check-input apply-checkbox"
+                                       name="apply" value="{{ r.idx }}" checked>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ r.filename }}</td>
+                            <td>
+                                {% if r.student_name %}
+                                    <strong>{{ r.student_name }}</strong>
+                                    {% if r.student_id %}<br><span class="text-muted small">ID {{ r.student_id }}</span>{% endif %}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if r.military_diff %}
+                                    <span class="badge bg-warning text-dark">{{ r.military_diff|length }}</span>
+                                {% else %}
+                                    <span class="text-muted small">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if r.student_diff %}
+                                    <span class="badge bg-info text-dark">{{ r.student_diff|length }}</span>
+                                {% else %}
+                                    <span class="text-muted small">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if not r.error %}
+                                <div class="d-flex flex-column gap-1 align-items-center">
+                                    {% if r.has_photo %}
+                                    <label class="small" title="Оновити фото студента">
+                                        <input type="checkbox" class="form-check-input"
+                                               name="apply_photo_{{ r.idx }}" value="1" checked>
+                                        📷 фото
+                                    </label>
+                                    {% endif %}
+                                    <label class="small" title="Прикріпити PDF як скан-копію">
+                                        <input type="checkbox" class="form-check-input"
+                                               name="apply_pdf_scan_{{ r.idx }}" value="1" checked>
+                                        📄 PDF
+                                    </label>
+                                </div>
+                                {% else %}
+                                    <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if r.error %}
+                                    <span class="text-danger small">{{ r.error }}</span>
+                                {% else %}
+                                    <span class="badge bg-success">OK</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% if r.military_diff or r.student_diff %}
+                        <tr>
+                            <td></td>
+                            <td colspan="6" class="small">
+                                <details>
+                                    <summary class="text-muted" style="cursor:pointer;">
+                                        Показати / змінити зміни
+                                    </summary>
+
+                                    {% if r.military_diff %}
+                                    <div class="mt-2">
+                                        <strong>Військові дані:</strong>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-2"
+                                                onclick="toggleFields('mil_{{ r.idx }}', true)">Усі</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                                                onclick="toggleFields('mil_{{ r.idx }}', false)">Жодного</button>
+                                    </div>
+                                    <ul class="mb-0">
+                                        {% for d in r.military_diff %}
+                                        <li>
+                                            <label class="d-flex align-items-center gap-2 py-1">
+                                                <input type="checkbox"
+                                                       class="form-check-input field-checkbox mil_{{ r.idx }}"
+                                                       name="apply_mil_{{ r.idx }}_{{ d.field }}"
+                                                       value="1" checked>
+                                                <span>
+                                                    <strong>{{ d.label }}</strong>:
+                                                    <span class="text-danger">{{ d.old or '—' }}</span>
+                                                    <i class="bi bi-arrow-right mx-1"></i>
+                                                    <span class="text-success">{{ d.new or '—' }}</span>
+                                                </span>
+                                            </label>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% endif %}
+
+                                    {% if r.student_diff %}
+                                    <div class="mt-2">
+                                        <strong>Картка студента:</strong>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0 ms-2"
+                                                onclick="toggleFields('stud_{{ r.idx }}', true)">Усі</button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary py-0"
+                                                onclick="toggleFields('stud_{{ r.idx }}', false)">Жодного</button>
+                                    </div>
+                                    <ul class="mb-0">
+                                        {% for d in r.student_diff %}
+                                        <li>
+                                            <label class="d-flex align-items-center gap-2 py-1">
+                                                <input type="checkbox"
+                                                       class="form-check-input field-checkbox stud_{{ r.idx }}"
+                                                       name="apply_stud_{{ r.idx }}_{{ d.field }}"
+                                                       value="1" checked>
+                                                <span>
+                                                    <strong>{{ d.label }}</strong>:
+                                                    <span class="text-danger">{{ d.old or '—' }}</span>
+                                                    <i class="bi bi-arrow-right mx-1"></i>
+                                                    <span class="text-success">{{ d.new or '—' }}</span>
+                                                </span>
+                                            </label>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% endif %}
+
+                                </details>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-circle me-2"></i>Застосувати вибрані ({{ success_count }})
+        </button>
+        <a href="{{ url_for('students.military_bulk_import_pdf') }}" class="btn btn-outline-secondary">
+            Скасувати
+        </a>
+    </form>
+
+</div>
+
+<script>
+function toggleAll(state) {
+    document.querySelectorAll('.apply-checkbox').forEach(cb => cb.checked = state);
+}
+function toggleFields(prefix, state) {
+    document.querySelectorAll('.field-checkbox.' + prefix).forEach(cb => cb.checked = state);
+}
+</script>
+{% endblock %}
