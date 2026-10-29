@@ -1,0 +1,339 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перегляд змін з PDF{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-file-earmark-pdf', 'Перегляд змін з PDF «Резерв+»',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA) }}
+
+    <div class="alert alert-info d-flex align-items-start gap-2">
+        <i class="bi bi-info-circle-fill fs-5 mt-1"></i>
+        <div>
+            Нижче — <strong>лише поля, які зміняться</strong>. Нічого ще не збережено.
+            Військові поля буде застосовано завжди; поля картки студента й фото —
+            лише те, що ви позначите галочками.
+        </div>
+    </div>
+
+    {% if not military_diff and not student_diff and not pending_photo_path %}
+    <div class="card mb-4">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-check2-circle display-4 text-success"></i>
+            <h5 class="mt-3">Змін немає</h5>
+            <p class="text-muted mb-0">Дані з PDF повністю збігаються з поточними в системі.</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <form method="POST" action="{{ url_for('students.military_apply_pdf', student_id=student.id) }}"
+          onsubmit="return confirm('Застосувати зміни до військових даних і (позначених) полів картки студента?');">
+
+        {# ── Блок 1: військові поля ── #}
+        {% if military_diff %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <i class="bi bi-shield-shaded me-2"></i>
+                    Військові дані — буде змінено:
+                    <span class="badge bg-warning text-dark">{{ military_diff|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:220px;">Поле</th>
+                                <th style="width:40%;">Було</th>
+                                <th style="width:40%;">Стане</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in military_diff %}
+                            <tr>
+                                <td class="fw-semibold">{{ d.label }}</td>
+                                <td class="text-danger">
+                                    {% if d.old %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.old }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                                <td class="text-success">
+                                    {% if d.new %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.new }}</span>{% else %}<span class="text-muted fst-italic">— буде очищено —</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Блок 2: поля картки студента ── #}
+        {% if student_diff %}
+        <div class="card mb-4 border-info">
+            <div class="card-header bg-info-subtle">
+                <h6 class="mb-0">
+                    <i class="bi bi-person-vcard me-2"></i>
+                    Дані картки студента — відрізняються від PDF:
+                    <span class="badge bg-info text-dark">{{ student_diff|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-3">
+                    Ці поля належать картці студента (не військовому обліку).
+                    Позначте ті, які хочете оновити з PDF — непозначені залишаться як є.
+                </p>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:50px;" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="applyAllStudentFields"
+                                           title="Позначити всі / зняти всі">
+                                </th>
+                                <th style="width:200px;">Поле</th>
+                                <th style="width:35%;">Було (у картці)</th>
+                                <th style="width:35%;">Стане (з PDF)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in student_diff %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input apply-student-field"
+                                           name="apply_student_field" value="{{ d.field }}" checked>
+                                </td>
+                                <td class="fw-semibold">{{ d.label }}</td>
+                                <td class="text-danger">
+                                    {% if d.old %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.old }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                                <td class="text-success">
+                                    {% if d.new %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.new }}</span>{% else %}<span class="text-muted fst-italic">— буде очищено —</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# ── Блок 3: фото ── #}
+        {% if pending_photo_path %}
+        <div class="card mb-4 border-warning">
+            <div class="card-header bg-warning-subtle">
+                <h6 class="mb-0">
+                    <i class="bi bi-camera me-2"></i>
+                    Фото 3×4 — знайдено в PDF
+                </h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-3">
+                    Фото обрізане автоматично. Якщо обрізка неточна —
+                    натисніть «Переобрізати» і виділіть потрібну область вручну.
+                </p>
+                <div class="row g-3 align-items-center">
+                    <div class="col-6 col-md-4 text-center">
+                        <div class="small text-muted mb-1">Поточне фото</div>
+                        {% if student.photo %}
+                            <img src="{{ url_for('static', filename=student.photo) }}"
+                                 class="rounded border" style="width:120px; height:160px; object-fit:cover;">
+                        {% else %}
+                            <div class="d-flex align-items-center justify-content-center border rounded bg-light"
+                                 style="width:120px; height:160px; margin:0 auto;">
+                                <span class="text-muted small">немає</span>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-6 col-md-4 text-center">
+                        <div class="small text-muted mb-1">З PDF</div>
+                        <img id="pdfPhotoPreview"
+                             src="{{ url_for('static', filename=pending_photo_path) }}"
+                             class="rounded border border-warning"
+                             style="width:120px; height:160px; object-fit:cover;">
+
+                        {% if raw_photo_path %}
+                        <div class="mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                    data-bs-toggle="modal" data-bs-target="#recropModal">
+                                <i class="bi bi-crop me-1"></i>Переобрізати
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <div class="form-check">
+                            <input type="checkbox" name="apply_photo" id="apply_photo"
+                                   class="form-check-input" value="1" checked>
+                            <label for="apply_photo" class="form-check-label fw-semibold">
+                                Замінити фото студента цим
+                            </label>
+                        </div>
+                        {% if student.photo %}
+                        <div class="form-text">Поточне фото буде перезаписано.</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if photo_error %}
+        <div class="alert alert-warning small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Фото з PDF знайдено, але обробити не вдалося: {{ photo_error }}
+        </div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap gap-2">
+            {% if military_diff or student_diff or pending_photo_path %}
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-circle me-2"></i>Застосувати зміни
+            </button>
+            {% endif %}
+            <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-x-circle me-2"></i>Скасувати
+            </a>
+        </div>
+    </form>
+
+    {# ── Повний вміст розпізнаного PDF ── #}
+    <details class="mt-4">
+        <summary class="text-muted small" style="cursor:pointer;">
+            <i class="bi bi-eye me-1"></i>Показати всі розпізнані поля з PDF
+        </summary>
+        <div class="card mt-2">
+            <div class="card-body p-0">
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        {% for key, label in military_fields %}
+                        <tr>
+                            <th class="w-50 text-muted fw-normal small">{{ label }}</th>
+                            <td class="small">
+                                {% set v = new_military.get(key) %}
+                                {% if key == 'data_verified_on_time' %}{{ 'так' if v else 'ні' }}
+                                {% elif v %}{{ v }}
+                                {% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="table-light"><th colspan="2" class="small">Поля картки студента</th></tr>
+                        {% for key, label in [('birth_date','Дата народження'), ('tax_id','ІПН'), ('address_of_residence','Адреса'), ('phone','Телефон'), ('email','Email')] %}
+                        <tr>
+                            <th class="w-50 text-muted fw-normal small">{{ label }}</th>
+                            <td class="small">
+                                {% set v = new_student.get(key) %}
+                                {% if v %}{{ v }}{% else %}<span class="text-muted">—</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </details>
+
+</div>
+
+{% if raw_photo_path %}
+{# ── Модальне вікно ручної переобрізки ── #}
+<div class="modal fade" id="recropModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-crop me-2"></i>Обрізка фото 3×4</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted">
+                    Виділіть область, яка має стати фото на документ. Система
+                    автоматично приведе виділення до пропорцій 3:4.
+                </p>
+                <div style="max-height: 60vh; overflow: hidden; background:#222;">
+                    <img id="recropImage"
+                         src="{{ url_for('static', filename=raw_photo_path) }}"
+                         style="max-width: 100%; display:block;">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" id="recropSaveBtn" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>Застосувати
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+(function () {
+    const modalEl = document.getElementById('recropModal');
+    const imgEl = document.getElementById('recropImage');
+    const saveBtn = document.getElementById('recropSaveBtn');
+    let cropper = null;
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+        if (cropper) cropper.destroy();
+        cropper = new Cropper(imgEl, {
+            aspectRatio: 3 / 4,
+            viewMode: 1,
+            autoCropArea: 0.9,
+            background: false,
+        });
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', function () {
+        if (cropper) { cropper.destroy(); cropper = null; }
+    });
+
+    saveBtn.addEventListener('click', function () {
+        if (!cropper) return;
+        const data = cropper.getData(true);
+        const formData = new FormData();
+        formData.append('crop_x', data.x);
+        formData.append('crop_y', data.y);
+        formData.append('crop_w', data.width);
+        formData.append('crop_h', data.height);
+
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
+
+        fetch("{{ url_for('students.military_pdf_recrop_photo', student_id=student.id) }}", {
+            method: 'POST',
+            body: formData,
+        })
+        .then(r => r.json())
+        .then(resp => {
+            if (resp.ok) {
+                const preview = document.getElementById('pdfPhotoPreview');
+                if (preview) preview.src = resp.preview_url;
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+            } else {
+                alert('Не вдалося зберегти обрізку: ' + (resp.error || 'невідома помилка'));
+            }
+        })
+        .catch(() => alert('Не вдалося зберегти обрізку. Спробуйте ще раз.'))
+        .finally(() => {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle me-1"></i>Застосувати';
+        });
+    });
+})();
+</script>
+{% endif %}
+
+<script>
+    const master = document.getElementById('applyAllStudentFields');
+    if (master) {
+        master.addEventListener('change', function () {
+            document.querySelectorAll('.apply-student-field').forEach(cb => {
+                cb.checked = master.checked;
+            });
+        });
+    }
+</script>
+{% endblock %}

@@ -18,3 +18,6 @@ PyJWT
 requests 
 python-dotenv
 Pillow
+pdfplumber
+PyMuPDF
+opencv-python-headless

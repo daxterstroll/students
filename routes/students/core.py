@@ -42,30 +42,127 @@ UPDATE_REQUEST_FIELD_LABELS = {
     'military': "Військові дані (окремий розділ)",
 }
 
+# --------------------------------------------------------------------
+# Військові поля — розрахунок заповненості ЗАЛЕЖНО ВІД СТАТУСУ
+# --------------------------------------------------------------------
+# «Ядро» — є в БУДЬ-ЯКОМУ PDF «Резерв+», незалежно від категорії
+# (призовник, військовозобов'язаний, знято з обліку, резервіст).
+MILITARY_COMMON_FIELDS = [
+    'status_badge',
+    'valid_until',
+    'registration_category',
+    'tck_name',
+    'registry_number',
+    'data_update_date',
+    # data_verified_on_time рахується окремо (0/1)
+]
+
+# Специфічні для статусу поля. Якщо статус не в списку — вважаємо,
+# що обов'язкові лише «ядро» + ВЛК (як у призовника).
+MILITARY_STATUS_FIELDS = {
+    "Військовозобов'язаний": [
+        'military_rank', 'vos_code', 'vos_description',
+        'deferral_type', 'deferral_until',
+        'vlk_decision', 'vlk_date',
+    ],
+    "Військовозобов’язаний": [
+        'military_rank', 'vos_code', 'vos_description',
+        'deferral_type', 'deferral_until',
+        'vlk_decision', 'vlk_date',
+    ],
+    'Призовник': [
+        'vlk_decision', 'vlk_date',
+    ],
+    'Резервіст': [
+        'military_rank', 'vos_code', 'vos_description',
+        'deferral_type', 'deferral_until',
+        'vlk_decision', 'vlk_date',
+    ],
+    "Невійськовозобов'язаний": [
+        'vlk_decision', 'vlk_date',
+    ],
+    "Невійськовозобов’язаний": [
+        'vlk_decision', 'vlk_date',
+    ],
+    'Знято з обліку': [
+        'removal_basis',
+    ],
+}
+
+# Поля, які можуть бути відсутні у PDF («—») — їх не додаємо в
+# обов'язкові, якщо в конкретного студента там порожньо.
+_OPTIONAL_IF_EMPTY = {
+    'deferral_type', 'deferral_until',      # немає відстрочки — не вимагаємо
+    'vlk_decision', 'vlk_date',             # немає ВЛК — не вимагаємо
+    'removal_basis',                        # не знято — не вимагаємо
+    'police_reason', 'police_date',         # не звертався до поліції
+    'disability_group', 'disability_valid_until', 'disability_reason',
+}
+
+
+def _is_field_applicable(field, military_row):
+    """
+    Повертає True, якщо поле має бути заповнене для цього студента.
+    Для полів зі списку _OPTIONAL_IF_EMPTY — перевіряємо, чи в БД
+    вже щось є (якщо порожньо/«—» — не вимагаємо).
+    """
+    if military_row is None:
+        return False
+    value = military_row.get(field)
+    if field in _OPTIONAL_IF_EMPTY:
+        return bool(value) and str(value).strip() not in ('', '—', '-')
+    return True
+
+
+def _get_applicable_military_fields(status_badge, military_row):
+    """Повертає список полів military, які мають бути заповнені для цього студента."""
+    fields = list(MILITARY_COMMON_FIELDS)
+    status = (status_badge or '').strip()
+    status_fields = MILITARY_STATUS_FIELDS.get(status, ['vlk_decision', 'vlk_date'])
+    for f in status_fields:
+        if _is_field_applicable(f, military_row):
+            fields.append(f)
+    return fields
+
+
+def _compute_military_completeness(military_row):
+    """
+    Повертає (filled, total) для одного запису military з урахуванням
+    статусу. Якщо military_row is None — (0, len(common)+1).
+    """
+    if not military_row:
+        return 0, len(MILITARY_COMMON_FIELDS) + 1
+    applicable = _get_applicable_military_fields(
+        military_row.get('status_badge'), military_row
+    )
+    filled = sum(
+        1 for f in applicable
+        if military_row.get(f) and str(military_row.get(f)).strip()
+    )
+    if military_row.get('data_verified_on_time'):
+        filled += 1
+    total = len(applicable) + 1
+    return filled, total
+
 
 @students_bp.route('/faq')
 @login_required('')
 def faq():
-    """Довідка (FAQ): опис усіх сторінок системи, які дані куди вносити, і покрокова інструкція заповнення додатка до диплома."""
+    """Довідка (FAQ)."""
     return render_template('faq.html')
 
 
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
 def student_list():
-    """Головна сторінка списку студентів: пошук, фільтр по групі, пагінація, сортування (в т.ч. українська колація для ПІБ), а також обмеження видимості для не-адмінів лише їхніми групами. Для кожного студента одразу рахує заповненість особистих даних, військового обліку, оцінок та активностей (для індикаторів прогресу в UI)."""
+    """Головна сторінка списку студентів."""
     search = request.args.get('search', '')
     group_id = request.args.get('group_id', type=int)
     degree_level = request.args.get('degree_level', '')
     study_form = request.args.get('study_form', '')
     course = request.args.get('course', type=int)
     license_id = request.args.get('license_id', type=int)
-    reduced = request.args.get('reduced', '')  # '' = всі, '1' = лише скорочена, '0' = лише повна
-    # Навмисно рядки '1'/'' а не bool: url_for() в пагінації/сортуванні
-    # підставляє ці значення назад у GET-параметри, а str(True)/str(False)
-    # ("True"/"False") не збігається з перевіркою `== '1'` на наступному
-    # запиті - перемикач виглядав би скинутим після переходу на сторінку.
-    # Порожній і непорожній рядок однаково коректно працюють в {% if %}.
+    reduced = request.args.get('reduced', '')
     include_frozen = '1' if request.args.get('include_frozen') == '1' else ''
     include_archived = '1' if request.args.get('include_archived') == '1' else ''
     page = max(1, request.args.get('page', 1, type=int))
@@ -92,18 +189,36 @@ def student_list():
         "SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)
     ).fetchall()]
 
+    # ── SELECT з усіма новими військовими полями ──
     base_query = """
         SELECT s.*,
                m.id AS has_military,
-               m.registration_number_of_the_DRPVR,
+               m.status_badge,
+               m.valid_until,
+               m.registration_category,
+               m.removal_basis,
+               m.tck_name,
+               m.military_rank,
+               m.registry_number,
+               m.vos_code,
+               m.vos_description,
+               m.deferral_type,
+               m.deferral_until,
+               m.police_reason,
+               m.police_date,
+               m.vlk_decision,
+               m.vlk_date,
+               m.disability_group,
+               m.disability_valid_until,
+               m.disability_reason,
+               m.data_verified_on_time,
+               m.data_update_date,
                m.military_registration_document,
                m.issued_VOD,
                m.military_accounting_specialty_number,
-               m.military_rank,
                m.change_credentials,
                m.reason_for_changing_credentials,
                m.being_on_military_registration,
-               m.address_of_residence,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form,
                g.program_credits,
@@ -130,9 +245,6 @@ def student_list():
     """
     count_query = "SELECT COUNT(*) FROM students s LEFT JOIN groups g ON s.group_id = g.id"
     where_clauses = []
-    # За замовчуванням - лише активні студенти (не заморожені й не в
-    # архіві). Перемикачі на сторінці ДОДАЮТЬ ці категорії до
-    # результатів пошуку, а не замінюють ними звичайний список.
     if not include_archived:
         where_clauses.append("s.archived = FALSE")
     if not include_frozen:
@@ -160,8 +272,6 @@ def student_list():
         params.append(license_id)
 
     if reduced == '1':
-        # Та сама умова, що й у is_student_on_reduced_program(): вступ
-        # з визнанням частини кредитів (менше за кредити групи).
         where_clauses.append("s.program_credits_override IS NOT NULL AND s.program_credits_override < g.program_credits")
     elif reduced == '0':
         where_clauses.append("(s.program_credits_override IS NULL OR s.program_credits_override >= g.program_credits)")
@@ -176,27 +286,14 @@ def student_list():
             return render_template(
                 'students.html',
                 students=[],
-                search=search,
-                group_id=group_id,
-                groups=[],
-                groups_by_degree={},
-                degree_level=degree_level,
-                degree_levels_available=[],
-                study_form=study_form,
-                study_forms_available=[],
-                course=course,
-                courses_available=[],
-                license_id=license_id,
-                licenses_available=[],
-                reduced=reduced,
-                include_frozen=include_frozen,
-                include_archived=include_archived,
-                page=page,
-                per_page=per_page,
-                total_pages=0,
-                total_students=0,
-                sort_by=sort_by,
-                sort_order=sort_order
+                search=search, group_id=group_id, groups=[], groups_by_degree={},
+                degree_level=degree_level, degree_levels_available=[],
+                study_form=study_form, study_forms_available=[],
+                course=course, courses_available=[],
+                license_id=license_id, licenses_available=[],
+                reduced=reduced, include_frozen=include_frozen, include_archived=include_archived,
+                page=page, per_page=per_page, total_pages=0, total_students=0,
+                sort_by=sort_by, sort_order=sort_order
             )
 
     if role != 'admin' and group_id and group_id not in group_ids:
@@ -205,11 +302,6 @@ def student_list():
         return redirect(url_for('students.student_list'))
 
     if search:
-        # Розбиваємо на окремі слова, щоб пошук працював незалежно від
-        # порядку (напр. "Іван Петренко" і "Петренко Іван" - обидва
-        # знаходять того самого студента) - кожне слово має збігтися
-        # хоч з одним із трьох полів ПІБ. LOWER_UA() замість звичайного
-        # LOWER(), бо стандартна LOWER() в SQLite не розуміє кирилицю.
         for word in search.split():
             where_clauses.append(
                 "(LOWER_UA(s.last_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.first_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.middle_name_UA) LIKE LOWER_UA(?))"
@@ -239,21 +331,11 @@ def student_list():
 
     students_with_filled_fields = []
     student_fields = ['last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code', 'tax_id', 'phone', 'email']
-    military_fields = [
-        'registration_number_of_the_DRPVR', 'military_registration_document', 'issued_VOD',
-        'military_accounting_specialty_number', 'military_rank', 'change_credentials',
-        'reason_for_changing_credentials', 'being_on_military_registration', 'address_of_residence'
-    ]
     student_total_fields = len(student_fields)
-    military_total_fields = len(military_fields)
 
     for student in students:
         student_dict = dict(student)
 
-        # Статус для бейджа в списку - лише коли показуємо
-        # заморожених/архівних поряд зі звичайними (перемикачі
-        # include_frozen/include_archived), інакше в списку й так лише
-        # активні, бейдж не потрібен.
         if student_dict.get('frozen_record_id'):
             student_dict['status'] = 'frozen'
         elif student_dict.get('archived'):
@@ -266,13 +348,23 @@ def student_list():
         student_dict['total_fields'] = student_total_fields
         student_dict['has_photo'] = bool(student_dict.get('photo'))
 
+        # ── Заповненість військових даних (залежно від статусу) ──
+        military_row_for_calc = student_dict if student_dict.get('has_military') else None
+        mil_filled, mil_total = _compute_military_completeness(military_row_for_calc)
+        student_dict['military_filled_fields'] = mil_filled
+        student_dict['military_total_fields'] = mil_total
+        # Чи є PDF «Резерв+» серед сканів?
         if student_dict.get('has_military'):
-            military_filled_fields = sum(1 for field in military_fields if student_dict.get(field) and str(student_dict.get(field)).strip())
-            student_dict['military_filled_fields'] = military_filled_fields
-            student_dict['military_total_fields'] = military_total_fields
+            pdf_row = conn.execute(
+                "SELECT 1 FROM attachments "
+                "WHERE entity_type='military' AND entity_id=? "
+                "AND (original_name LIKE '%.pdf' OR file_path LIKE '%.pdf') "
+                "LIMIT 1",
+                (student_dict['has_military'],)
+            ).fetchone()
+            student_dict['military_has_pdf'] = pdf_row is not None
         else:
-            student_dict['military_filled_fields'] = 0
-            student_dict['military_total_fields'] = military_total_fields
+            student_dict['military_has_pdf'] = False
 
         is_reduced = bool(student_dict['group_id']) and is_student_on_reduced_program(conn, student_dict['id'], student_dict['group_id'])
         subjects_query = "SELECT id FROM subjects WHERE group_id = ?" + program_track_condition(is_reduced)
@@ -307,9 +399,6 @@ def student_list():
         student_dict['activities_total_fields'] = activities_total
         student_dict['activities_fill_percentage'] = (activities_filled / activities_total * 100) if activities_total > 0 else 0
 
-        # Паспортні дані - найновіший запис студента. Набір обов'язкових
-        # полів залежить від типу документа (серія - лише для книжки,
-        # дійсний до і запис у ЄДДР - лише для ID-картки).
         passport_doc = conn.execute("""
             SELECT document_type, series, number, issued_by, issue_date, valid_until, unique_number
             FROM passport_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1
@@ -328,9 +417,6 @@ def student_list():
             student_dict['passport_filled_fields'] = 0
             student_dict['passport_total_fields'] = 0
 
-        # Документ про освіту - найновіший запис студента (основні поля
-        # обома мовами; блок іноземного документа - довідка/визнання -
-        # сюди не входить, бо стосується не всіх студентів).
         edu_doc = conn.execute("""
             SELECT document_type, document_type_en, document_number, institution_name,
                    institution_name_en, country, country_en, completion_date
@@ -357,9 +443,6 @@ def student_list():
         ORDER BY start_year DESC, name COLLATE UKRAINIAN
     """).fetchall()
 
-    # Порядок ступенів для угруповання в пошуковому списку груп - той
-    # самий принцип, що й скрізь по системі (за id в каталозі
-    # degree_levels: молодший бакалавр -> бакалавр -> магістр -> ...).
     degree_order = {
         row['id_name']: row['ord']
         for row in conn.execute("SELECT name_ua AS id_name, id AS ord FROM degree_levels").fetchall()
@@ -372,9 +455,6 @@ def student_list():
         for d in sorted(groups_by_degree_raw.keys(), key=lambda d: (degree_order.get(d, 999), d))
     }
 
-    # Списки значень для випадних фільтрів - лише ті, що реально
-    # трапляються серед активних груп/студентів, а не весь можливий
-    # каталог (немає сенсу пропонувати фільтр, який нічого не поверне).
     degree_levels_available = sorted(
         {g['degree_level'] for g in groups if g['degree_level']},
         key=lambda d: (degree_order.get(d, 999), d)
@@ -392,34 +472,23 @@ def student_list():
     return render_template(
         'students.html',
         students=students_with_filled_fields,
-        search=search,
-        group_id=group_id,
-        groups=groups,
+        search=search, group_id=group_id, groups=groups,
         groups_by_degree=groups_by_degree,
-        degree_level=degree_level,
-        degree_levels_available=degree_levels_available,
-        study_form=study_form,
-        study_forms_available=study_forms_available,
-        course=course,
-        courses_available=courses_available,
-        license_id=license_id,
-        licenses_available=licenses_available,
-        reduced=reduced,
-        include_frozen=include_frozen,
-        include_archived=include_archived,
-        page=page,
-        per_page=per_page,
-        total_pages=total_pages,
-        total_students=total_students,
-        sort_by=sort_by,
-        sort_order=sort_order
+        degree_level=degree_level, degree_levels_available=degree_levels_available,
+        study_form=study_form, study_forms_available=study_forms_available,
+        course=course, courses_available=courses_available,
+        license_id=license_id, licenses_available=licenses_available,
+        reduced=reduced, include_frozen=include_frozen, include_archived=include_archived,
+        page=page, per_page=per_page,
+        total_pages=total_pages, total_students=total_students,
+        sort_by=sort_by, sort_order=sort_order
     )
 
 
 @students_bp.route('/students/<int:student_id>')
 @login_required('')
 def student_details(student_id):
-    """Картка студента: особисті дані, військовий облік, оцінки з предметів/практик/курсових/атестацій, документи про освіту та періоди навчання."""
+    """Картка студента."""
     conn = get_db()
     student = conn.execute("""
         SELECT s.*, g.program_credits, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
@@ -435,7 +504,6 @@ def student_details(student_id):
         flash("Студента не знайдено")
         return redirect(url_for('students.student_list'))
 
-    # Один виклик log_action замість двох
     log_action(
         current_username(),
         f"переглянув картку студента: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
@@ -445,6 +513,23 @@ def student_details(student_id):
 
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
     military_attachments = get_attachments(conn, 'military', military['id']) if military else []
+    # Останні 5 змін військових даних
+    military_history = conn.execute(
+        """SELECT changed_at, changed_by, source, scope, field_name, old_value, new_value
+           FROM military_history
+           WHERE student_id = ?
+           ORDER BY changed_at DESC, id DESC
+           LIMIT 5""",
+        (student_id,),
+    ).fetchall()
+
+    def _field_label(name, scope='military'):
+        from routes.students.military import MILITARY_FIELDS, LEGACY_FIELDS, STUDENT_FIELDS
+        src = (MILITARY_FIELDS + LEGACY_FIELDS) if scope == 'military' else STUDENT_FIELDS
+        for key, label in src:
+            if key == name:
+                return label
+        return name
 
     is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
 
@@ -517,9 +602,6 @@ def student_details(student_id):
     for d in education_docs:
         d['attachments'] = get_attachments(conn, 'education_document', d['id'])
 
-    # Файли, прикріплені до самого студента без прив'язки до
-    # конкретного документа (напр. зі сканів заявки на реєстрацію,
-    # якщо там не було вказано вид документа).
     student_attachments = get_attachments(conn, 'student', student_id)
 
     passport_docs = conn.execute(
@@ -546,6 +628,8 @@ def student_details(student_id):
         student=student_dict,
         military=military_dict,
         military_attachments=military_attachments,
+        military_history=military_history,
+        field_label=_field_label,
         subject_grades=subject_grades,
         practice_data=practice_data,
         coursework_data=coursework_data,
@@ -560,7 +644,7 @@ def student_details(student_id):
 @students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
 @permission_required('study_periods')
 def manage_study_periods(student_id):
-    """CRUD-сторінка періодів навчання (філія, дати, примітка) конкретного студента."""
+    """CRUD-сторінка періодів навчання конкретного студента."""
     db = get_db()
     cursor = db.cursor()
 
@@ -654,7 +738,7 @@ def manage_study_periods(student_id):
 @students_bp.route('/students/add', methods=['GET', 'POST'])
 @login_required('')
 def add_student():
-    """Форма додавання нового студента (особисті дані + прив'язка до групи)."""
+    """Форма додавання нового студента."""
     conn = get_db()
     role = session.get('role')
     group_ids = session.get('group_ids', [])
@@ -706,12 +790,6 @@ def add_student():
         middle_name_ua = request.form.get('middle_name_UA', '')
         last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
 
-        # ВИПРАВЛЕНО: раніше issued_VOD валідувався ПІСЛЯ INSERT+commit
-        # студента. Якщо формат дати видачі ВОД був невірний, форма
-        # знову показувалась як помилка (нібито нічого не збереглось),
-        # але студент вже був у базі - повторна відправка форми
-        # створювала ДУБЛІКАТ студента. Тепер усі перевірки формату дат
-        # виконуються до того, як щось записується в БД.
         issued_VOD_raw = request.form.get('issued_VOD', '').strip()
         issued_VOD = None
         if issued_VOD_raw:
@@ -728,45 +806,40 @@ def add_student():
         phone = (request.form.get('phone') or '').strip() or None
         phone_backup = (request.form.get('phone_backup') or '').strip() or None
         email = (request.form.get('email') or '').strip() or None
+        address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
 
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
                 last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, tax_id, license_id,
-                phone, phone_backup, email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                phone, phone_backup, email, address_of_residence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
               birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
-              license_id, phone, phone_backup, email))
+              license_id, phone, phone_backup, email, address_of_residence))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         military_fields_list = [
-            'military_registration_document', 'registration_number_of_the_DRPVR',
-            'military_accounting_specialty_number', 'military_rank', 'change_credentials',
-            'reason_for_changing_credentials', 'being_on_military_registration', 'address_of_residence'
+            'status_badge', 'valid_until', 'registration_category', 'removal_basis',
+            'tck_name', 'military_rank', 'registry_number', 'vos_code', 'vos_description',
+            'deferral_type', 'deferral_until', 'police_reason', 'police_date',
+            'vlk_decision', 'vlk_date', 'disability_group', 'disability_valid_until',
+            'disability_reason',
+            'military_registration_document', 'issued_VOD',
+            'military_accounting_specialty_number', 'change_credentials',
+            'reason_for_changing_credentials', 'being_on_military_registration',
         ]
-        has_military = any(request.form.get(f) for f in military_fields_list)
+        has_military = any((request.form.get(f) or '').strip() for f in military_fields_list)
         if has_military:
-            conn.execute("""
-                INSERT INTO military (
-                    student_id, registration_number_of_the_DRPVR, military_registration_document,
-                    issued_VOD, military_accounting_specialty_number, military_rank,
-                    change_credentials, reason_for_changing_credentials,
-                    being_on_military_registration, address_of_residence
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                student_id,
-                request.form.get('registration_number_of_the_DRPVR'),
-                request.form.get('military_registration_document'),
-                issued_VOD,
-                request.form.get('military_accounting_specialty_number'),
-                request.form.get('military_rank'),
-                request.form.get('change_credentials'),
-                request.form.get('reason_for_changing_credentials'),
-                request.form.get('being_on_military_registration'),
-                request.form.get('address_of_residence')
-            ))
+            data = {f: (request.form.get(f) or '').strip() or None for f in military_fields_list}
+            data['issued_VOD'] = issued_VOD
+            columns = ['student_id'] + list(data.keys())
+            placeholders = ', '.join('?' for _ in columns)
+            conn.execute(
+                f"INSERT INTO military ({', '.join(columns)}) VALUES ({placeholders})",
+                [student_id] + list(data.values())
+            )
             conn.commit()
 
         log_action(
@@ -785,19 +858,7 @@ def add_student():
 @students_bp.route('/students/<int:student_id>/photo', methods=['GET', 'POST'])
 @login_required('')
 def upload_photo(student_id):
-    """
-    Завантаження/заміна фото студента (POST). GET на цей самий маршрут
-    (наприклад, випадковий перехід за старим посиланням чи кнопка
-    "Назад" у браузері після POST) не є помилкою користувача - замість
-    "голої" 405 просто повертаємо на картку студента.
-
-    POST приймає:
-      - photo_file: оригінальний файл зображення
-      - crop_x, crop_y, crop_w, crop_h: прямокутник обрізки в пікселях
-        оригінального зображення (координати від Cropper.js на клієнті)
-    Результат - завжди фото 3х4 (600x800 px), збережене як
-    static/uploads/photos/student_<id>.jpg, шлях записується в БД.
-    """
+    """Завантаження/заміна фото студента (POST)."""
     if request.method == 'GET':
         return redirect(url_for('students.student_details', student_id=student_id))
 
@@ -862,7 +923,7 @@ def upload_photo(student_id):
 @students_bp.route('/students/<int:student_id>/photo/delete', methods=['POST'])
 @login_required('')
 def delete_photo(student_id):
-    """Видаляє фото студента (файл з диска + очищення поля в БД)."""
+    """Видаляє фото студента."""
     conn = get_db()
     role = session.get('role')
     group_ids = session.get('group_ids', [])
@@ -899,13 +960,7 @@ def delete_photo(student_id):
 @students_bp.route('/students/<int:student_id>/freeze', methods=['POST'])
 @permission_required('manage_students')
 def freeze_student(student_id):
-    """
-    Самостійне заморожування одного студента будь-коли посеред
-    навчального року (академічна відпустка, тимчасова заборгованість
-    тощо) - не прив'язане до масового переведення на курс чи випуску.
-    Студент переходить у "Заморожені студенти", group_id очищається,
-    order_id лишається NULL (немає масового наказу, лише сама причина).
-    """
+    """Самостійне заморожування одного студента."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     reason = (request.form.get('reason') or '').strip()
@@ -1041,6 +1096,7 @@ def edit_student(student_id):
             phone = (request.form.get('phone') or '').strip() or None
             phone_backup = (request.form.get('phone_backup') or '').strip() or None
             email = (request.form.get('email') or '').strip() or None
+            address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
             program_credits_override_raw = request.form.get('program_credits_override', '').strip()
             if program_credits_override_raw:
                 try:
@@ -1056,7 +1112,7 @@ def edit_student(student_id):
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
                     group_id=?, edebo_code=?, tax_id=?, license_id=?, program_credits_override=?,
-                    phone=?, phone_backup=?, email=?
+                    phone=?, phone_backup=?, email=?, address_of_residence=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
@@ -1064,7 +1120,7 @@ def edit_student(student_id):
                 request.form.get('first_name_ENG'), birth_date,
                 group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
                 license_id, program_credits_override,
-                phone, phone_backup, email, student_id
+                phone, phone_backup, email, address_of_residence, student_id
             ))
             conn.commit()
 
@@ -1085,7 +1141,7 @@ def edit_student(student_id):
 @students_bp.route('/students/<int:student_id>/delete')
 @permission_required('manage_students')
 def delete_student(student_id):
-    """Видаляє студента разом з усіма пов'язаними записами (military, grades, activity_grades, education_documents, diplomas)."""
+    """Видаляє студента разом з усіма пов'язаними записами."""
     conn = get_db()
     student = conn.execute(
         "SELECT last_name_UA, first_name_UA, middle_name_UA, group_id, photo FROM students WHERE id = ?", (student_id,)
@@ -1097,18 +1153,8 @@ def delete_student(student_id):
         return redirect(url_for('students.student_list'))
 
     try:
-        # Якщо студента створено підтвердженням заявки з публічної
-        # анкети (routes/public_apply.py), заявка досі посилається на
-        # нього через resulting_student_id - без цього рядка видалення
-        # студента впало б з помилкою зовнішнього ключа. Саму заявку
-        # (історію) не чіпаємо, лише прибираємо посилання на студента,
-        # якого більше не існує.
         conn.execute("UPDATE pending_students SET resulting_student_id = NULL WHERE resulting_student_id = ?", (student_id,))
 
-        # Файли (скани документів про освіту й паспорта + загальні
-        # вкладення студента + фото) з диска - інакше самі записи
-        # прибрались би разом з education_documents/passport_documents/
-        # students, а файли лишились би сміттям.
         doc_ids = [r[0] for r in conn.execute("SELECT id FROM education_documents WHERE student_id = ?", (student_id,)).fetchall()]
         passport_ids = [r[0] for r in conn.execute("SELECT id FROM passport_documents WHERE student_id = ?", (student_id,)).fetchall()]
         all_attachments = list(get_attachments(conn, 'student', student_id))
@@ -1128,8 +1174,6 @@ def delete_student(student_id):
             placeholders = ','.join('?' for _ in passport_ids)
             conn.execute(f"DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id IN ({placeholders})", passport_ids)
 
-        # Файл-підстава заморожування (frozen_students.document_file) -
-        # окрема колонка, не через загальну таблицю attachments.
         for row in conn.execute("SELECT document_file FROM frozen_students WHERE student_id = ? AND document_file IS NOT NULL", (student_id,)).fetchall():
             doc_path = os.path.join('static', row[0])
             if os.path.exists(doc_path):
@@ -1145,12 +1189,6 @@ def delete_student(student_id):
             WHERE education_doc_id IN (SELECT id FROM education_documents WHERE student_id = ?)
         """, (student_id,))
         conn.execute("DELETE FROM education_documents WHERE student_id = ?", (student_id,))
-        # НОВЕ: passport_documents, frozen_students, expulsion_order_students,
-        # license_transfer_order_students - ці чотири таблиці теж мають
-        # FOREIGN KEY на students(id) без ON DELETE CASCADE, але раніше
-        # тут не видалялись - звідси й "FOREIGN KEY constraint failed"
-        # при спробі видалити студента, який мав паспортні дані (чи
-        # колись був заморожений/відрахований/переведений між ліцензіями).
         conn.execute("DELETE FROM passport_documents WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM frozen_students WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM expulsion_order_students WHERE student_id = ?", (student_id,))
@@ -1166,7 +1204,7 @@ def delete_student(student_id):
             current_username(),
             f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
-            details="каскадне видалення: military, grades, activity_grades, education_documents, passport_documents, "
+            details="каскадне видалення: military, military_history, grades, activity_grades, education_documents, passport_documents, "
                     "frozen_students, expulsion_order_students, license_transfer_order_students, diplomas, вкладення, фото"
         )
     except Exception as e:
@@ -1182,14 +1220,7 @@ def delete_student(student_id):
 @students_bp.route('/students/<int:student_id>/generate_update_link', methods=['GET', 'POST'])
 @permission_required('manage_students')
 def generate_update_link(student_id):
-    """
-    Створює токен-посилання, яке можна надіслати студенту самостійно
-    (поза системою - месенджером, поштою), щоб він оновив ЛИШЕ обрані
-    адміном поля (routes/public_update.py - окрема ізольована сторінка
-    без входу в систему). Діє 1 добу або до першого заповнення - що
-    настане раніше. Заповнене студентом лягає на модерацію
-    (admin.update_requests), тут нічого одразу не змінюється.
-    """
+    """Створює токен-посилання для оновлення даних студентом."""
     conn = get_db()
     student = conn.execute(
         "SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE id = ?", (student_id,)
@@ -1229,14 +1260,10 @@ def generate_update_link(student_id):
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
 def generate(student_id):
-    """Генерує .docx-документ для одного студента за обраним шаблоном і відкриває його для перегляду/редагування в ONLYOFFICE перед завантаженням (routes/office_editor.py)."""
+    """Генерує .docx-документ для одного студента за обраним шаблоном."""
     if request.method == 'POST':
         selected_template = request.form.get('template', 'template.docx')
 
-        # Захист: навіть якщо форму підмінили вручну (наприклад, надіслали
-        # POST-запит напряму), забороняємо шаблони, позначені "тільки для
-        # адміністратора" (routes.utils.get_templates_with_metadata),
-        # для не-адміністраторів.
         allowed_paths = {t['path'] for t in get_templates_with_metadata(is_admin=session.get('is_admin', False))}
         if selected_template not in allowed_paths:
             flash("У вас немає прав для генерації цього документа", "danger")
@@ -1305,9 +1332,6 @@ def generate(student_id):
 
         display_name = f"{student_name_part}.docx"
         doc_id = office_editor.create_editing_session(output_path, display_name, session['user_id'])
-        # Переглянути і за потреби відредагувати документ у браузері
-        # перед завантаженням (ONLYOFFICE), замість негайного скачування
-        # "наосліп".
         return redirect(url_for('office.edit', doc_id=doc_id))
 
     available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))

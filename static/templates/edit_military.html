@@ -4,57 +4,157 @@
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-shield-shaded', 'Військові дані студента', None) }}
+    {{ ui.page_header(
+        'bi-shield-shaded',
+        'Військові дані студента',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')
+    ) }}
 
-    <div class="card">
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До списку студентів
+        </a>
+        <a href="{{ url_for('students.student_details', student_id=student.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-person-vcard me-1"></i> Картка студента
+        </a>
+    </div>
+
+    {# ── Блок завантаження PDF "Резерв+" ── #}
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-primary-subtle">
+            <h6 class="mb-0"><i class="bi bi-file-earmark-pdf me-2"></i>Завантажити PDF з «Резерв+»</h6>
+        </div>
         <div class="card-body">
-            <form method="POST" enctype="multipart/form-data">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
-                        <input type="text" name="registration_number_of_the_DRPVR" class="form-control" value="{{ military.registration_number_of_the_DRPVR or '' if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Військово-обліковий документ</label>
-                        <input type="text" name="military_registration_document" class="form-control" value="{{ military.military_registration_document if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Виданий ВОД</label>
-                        <input type="text" name="issued_VOD" placeholder="ДД.ММ.РРРР" class="form-control" value="{{ military.issued_VOD if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Номер військово-облікової спеціальності</label>
-                        <input type="text" name="military_accounting_specialty_number" class="form-control" value="{{ military.military_accounting_specialty_number if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Військове звання</label>
-                        <input type="text" name="military_rank" class="form-control" value="{{ military.military_rank or '' if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Зміна облікових данних</label>
-                        <input type="text" name="change_credentials" class="form-control" value="{{ military.change_credentials or '' if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Підстава для зміни облікових даних</label>
-                        <input type="text" name="reason_for_changing_credentials" class="form-control" value="{{ military.reason_for_changing_credentials or '' if military }}">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Перебування на військовому обліку</label>
-                        <input type="text" name="being_on_military_registration" class="form-control" value="{{ military.being_on_military_registration if military }}">
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">Адреса місця проживання</label>
-                        <input type="text" name="address_of_residence" class="form-control" value="{{ military.address_of_residence if military }}">
-                    </div>
+            <p class="small text-muted mb-2">
+                Система розпізнає дані й <strong>покаже, що саме зміниться</strong> — нічого не зберігається без вашого підтвердження.
+                Завантажений PDF автоматично потрапляє до <strong>сканованих копій</strong> унизу сторінки.
+                Якщо в PDF є дата народження / ІПН / адреса / телефон / email, які відрізняються
+                від картки студента — вони з'являться на кроці підтвердження окремим блоком.
+                Фото 3×4 можна буде замінити (з можливістю ручної переобрізки).
+            </p>
+            <form method="POST" action="{{ url_for('students.military_upload_pdf', student_id=student.id) }}"
+                  enctype="multipart/form-data" class="row g-2 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label small mb-1" for="pdf_file">Файл PDF</label>
+                    <input type="file" name="pdf_file" id="pdf_file" class="form-control"
+                           accept="application/pdf,.pdf" required>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-upload me-1"></i> Розпізнати та переглянути зміни
+                    </button>
+                </div>
+            </form>
+            {% if military_attachments|length >= max_files %}
+            <div class="alert alert-warning small mt-3 mb-0">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                Досягнуто ліміт сканованих копій ({{ max_files }}). Видаліть непотрібні скани,
+                щоб мати змогу завантажити новий PDF.
+            </div>
+            {% endif %}
+        </div>
+    </div>
 
-                    <div class="col-12 border-top pt-3">
-                        <label class="form-label">Скановані копії ({{ military_attachments|length }}/{{ max_files }})</label>
+    {# ── Форма військових даних ── #}
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0"><i class="bi bi-pencil-square me-2"></i>Дані військового обліку (ручне редагування)</h6>
+            {% if military %}
+            <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                <i class="bi bi-database me-1"></i>запис ID {{ military.id }}
+            </span>
+            {% else %}
+            <span class="badge bg-info-subtle text-info-emphasis">
+                <i class="bi bi-plus-circle me-1"></i>запису ще немає — буде створено при збереженні
+            </span>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <div class="alert alert-light border small mb-3">
+                <i class="bi bi-info-circle me-1"></i>
+                Дата народження, ідентифікаційний код, адреса проживання, телефон і email редагуються
+                на сторінці
+                <a href="{{ url_for('students.edit_student', student_id=student.id) }}">«Редагувати студента»</a> —
+                це поля картки студента, а не військового обліку. Фото — на
+                <a href="{{ url_for('students.student_details', student_id=student.id) }}">картці студента</a>.
+            </div>
+
+            <form method="POST" action="{{ url_for('students.military_data', student_id=student.id) }}"
+                  enctype="multipart/form-data">
+                <div class="row g-3">
+                    {# ── Поля з PDF «Резерв+» ── #}
+                    {% for key, label in military_fields %}
+                    {% set val = military[key] if military else '' %}
+                    {% if key == 'data_verified_on_time' %}
+                    <div class="col-md-6">
+                        <div class="form-check mt-4">
+                            <input type="checkbox" name="{{ key }}" id="f_{{ key }}" class="form-check-input"
+                                   {% if val %}checked{% endif %}>
+                            <label for="f_{{ key }}" class="form-check-label">{{ label }}</label>
+                        </div>
+                    </div>
+                    {% elif key == 'vos_description' %}
+                    <div class="col-12">
+                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
+                        <textarea name="{{ key }}" id="f_{{ key }}" class="form-control" rows="2">{{ val or '' }}</textarea>
+                    </div>
+                    {% elif key == 'status_badge' %}
+                    <div class="col-md-6">
+                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
+                        <select name="{{ key }}" id="f_{{ key }}" class="form-select">
+                            <option value="" {% if not val %}selected{% endif %}>— не вказано —</option>
+                            <option value="Військовозобов'язаний" {% if val == "Військовозобов'язаний" %}selected{% endif %}>Військовозобов'язаний</option>
+                            <option value="Призовник" {% if val == 'Призовник' %}selected{% endif %}>Призовник</option>
+                            <option value="Резервіст" {% if val == 'Резервіст' %}selected{% endif %}>Резервіст</option>
+                            <option value="Невійськовозобов'язаний" {% if val == "Невійськовозобов'язаний" %}selected{% endif %}>Невійськовозобов'язаний</option>
+                            {% if val and val not in ["Військовозобов'язаний", 'Призовник', 'Резервіст', "Невійськовозобов'язаний"] %}
+                            <option value="{{ val }}" selected>{{ val }}</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                    {% else %}
+                    <div class="col-md-6">
+                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
+                        <input type="text" name="{{ key }}" id="f_{{ key }}" class="form-control" value="{{ val or '' }}">
+                    </div>
+                    {% endif %}
+                    {% endfor %}
+
+                    {# ── Додаткові (легасі) поля, які вже не приходять з PDF ── #}
+                    <div class="col-12 mt-3 pt-3 border-top">
+                        <h6 class="text-muted small text-uppercase mb-3">
+                            <i class="bi bi-archive me-1"></i>Додаткові поля (не з PDF «Резерв+»)
+                        </h6>
+                    </div>
+                    {% for key, label in legacy_fields %}
+                    {% set val = military[key] if military else '' %}
+                    <div class="col-md-6">
+                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
+                        <input type="text" name="{{ key }}" id="f_{{ key }}" class="form-control" value="{{ val or '' }}">
+                    </div>
+                    {% endfor %}
+
+                    {# ── Скановані копії ── #}
+                    <div class="col-12 border-top pt-3 mt-3">
+                        <h6 class="text-muted small text-uppercase mb-2">
+                            <i class="bi bi-paperclip me-1"></i>Скановані копії
+                            <span class="badge bg-secondary">{{ military_attachments|length }}/{{ max_files }}</span>
+                        </h6>
+
                         {% if military_attachments %}
                         <div class="mb-2">
                             {% for a in military_attachments %}
                             <span class="badge bg-secondary d-inline-flex align-items-center gap-1 me-1 mb-1 p-2">
-                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="text-white text-decoration-none">
-                                    <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank"
+                                   class="text-white text-decoration-none"
+                                   title="{{ a.original_name or ('файл ' ~ loop.index) }}">
+                                    {% if a.file_path and a.file_path.lower().endswith('.pdf') %}
+                                    <i class="bi bi-file-earmark-pdf"></i>
+                                    {% else %}
+                                    <i class="bi bi-file-earmark-image"></i>
+                                    {% endif %}
+                                    {{ a.original_name or ('файл ' ~ loop.index) }}
                                 </a>
                                 <button type="button" class="btn-close btn-close-white" style="font-size:.6rem;"
                                         title="Видалити файл" onclick="deleteMilitaryAttachment({{ a.id }})"></button>
@@ -64,18 +164,39 @@
                         {% else %}
                         <div class="small text-muted mb-2">Немає доданих сканів.</div>
                         {% endif %}
+
                         {% if military_attachments|length < max_files %}
-                        <input type="file" name="military_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
-                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files - military_attachments|length }} ще.</div>
+                        <input type="file" name="military_scans" class="form-control form-control-sm"
+                               accept="image/*,.pdf" multiple>
+                        <div class="form-text">
+                            Можна кілька файлів (фото сторінок або PDF), не більше
+                            {{ max_files - military_attachments|length }} ще.
+                            Завантажені через блок вище PDF-файли «Резерв+» автоматично
+                            з'являються тут.
+                        </div>
+                        {% else %}
+                        <div class="small text-muted">
+                            Ліміт {{ max_files }} файлів вичерпано. Видаліть непотрібні скани,
+                            щоб додати нові.
+                        </div>
                         {% endif %}
                     </div>
 
-                    <div class="col-12 d-flex flex-wrap gap-2 pt-2">
-                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
-                        <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-2"></i>Назад</a>
+                    {# ── Кнопки ── #}
+                    <div class="col-12 d-flex flex-wrap gap-2 pt-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save me-2"></i>Зберегти
+                        </button>
+                        <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-2"></i>Назад
+                        </a>
                         {% if session.get('is_admin') or 'manage_students' in session.get('permissions', []) %}
                             {% if military %}
-                            <a href="{{ url_for('students.delete_military', student_id=student_id) }}" class="btn btn-outline-danger ms-auto" onclick="return confirm('Ви впевнені, що хочете видалити військові дані?')"><i class="bi bi-trash3 me-2"></i>Видалити</a>
+                            <a href="{{ url_for('students.delete_military', student_id=student.id) }}"
+                               class="btn btn-outline-danger ms-auto"
+                               onclick="return confirm('Видалити військові дані? Історія змін і скановані копії будуть видалені.');">
+                                <i class="bi bi-trash3 me-2"></i>Видалити запис
+                            </a>
                             {% endif %}
                         {% endif %}
                     </div>
@@ -84,13 +205,88 @@
         </div>
     </div>
 
+    {# ── Історія змін ── #}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <h6 class="mb-0"><i class="bi bi-clock-history me-2"></i>Історія змін військових даних</h6>
+            {% if history %}
+            <span class="badge bg-secondary">{{ history|length }} записів</span>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            {% if history %}
+            <div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th style="width:150px;">Коли</th>
+                            <th style="width:130px;">Хто</th>
+                            <th style="width:90px;">Джерело</th>
+                            <th style="width:100px;">Розділ</th>
+                            <th style="width:200px;">Поле</th>
+                            <th>Було</th>
+                            <th>Стало</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for h in history %}
+                        <tr>
+                            <td class="small text-muted font-monospace">{{ h.changed_at }}</td>
+                            <td class="small">{{ h.changed_by or '—' }}</td>
+                            <td>
+                                {% if h.source == 'pdf_import' %}
+                                <span class="badge bg-primary">
+                                    <i class="bi bi-file-earmark-pdf"></i> PDF
+                                </span>
+                                {% else %}
+                                <span class="badge bg-secondary">вручну</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if h.scope == 'student' %}
+                                <span class="badge bg-info text-dark">студент</span>
+                                {% else %}
+                                <span class="badge bg-warning text-dark">військ.</span>
+                                {% endif %}
+                            </td>
+                            <td class="small"><strong>{{ field_label(h.field_name, h.scope or 'military') }}</strong></td>
+                            <td class="small text-danger">
+                                {% if h.old_value %}
+                                    <span style="white-space:pre-wrap; word-break:break-word;">{{ h.old_value }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="small text-success">
+                                {% if h.new_value %}
+                                    <span style="white-space:pre-wrap; word-break:break-word;">{{ h.new_value }}</span>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state py-4">
+                <i class="bi bi-clock-history"></i>
+                <p class="mb-0">Історія змін поки порожня — тут з'являться всі зміни,
+                    зроблені вручну або через імпорт PDF.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
 </div>
+
 <script>
     function deleteMilitaryAttachment(attachmentId) {
-        if (!confirm('Видалити цей файл?')) return;
+        if (!confirm('Видалити цей файл? Дію не можна скасувати.')) return;
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = "{{ url_for('students.delete_military_attachment', student_id=student_id) }}";
+        form.action = "{{ url_for('students.delete_military_attachment', student_id=student.id) }}";
         form.innerHTML = '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
         document.body.appendChild(form);
         form.submit();
