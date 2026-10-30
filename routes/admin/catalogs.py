@@ -482,13 +482,14 @@ def manage_degree_levels():
         elif action == 'add':
             name_ua = (request.form.get('name_ua') or '').strip()
             name_en = (request.form.get('name_en') or '').strip() or None
+            name_suffix = (request.form.get('name_suffix') or '').strip() or None
             if not name_ua:
                 flash("Заповніть назву ступеня.", "error")
             else:
                 try:
                     conn.execute(
-                        "INSERT INTO degree_levels (name_ua, name_en, is_active) VALUES (?, ?, 1)",
-                        (name_ua, name_en)
+                        "INSERT INTO degree_levels (name_ua, name_en, is_active, name_suffix) VALUES (?, ?, 1, ?)",
+                        (name_ua, name_en, name_suffix)
                     )
                     conn.commit()
                     flash(f"Ступінь «{name_ua}» додано.", "success")
@@ -500,13 +501,14 @@ def manage_degree_levels():
             level_id = request.form.get('id')
             name_ua = (request.form.get('name_ua') or '').strip()
             name_en = (request.form.get('name_en') or '').strip() or None
+            name_suffix = (request.form.get('name_suffix') or '').strip() or None
             if not name_ua:
                 flash("Заповніть назву ступеня.", "error")
             else:
                 try:
                     conn.execute(
-                        "UPDATE degree_levels SET name_ua = ?, name_en = ? WHERE id = ?",
-                        (name_ua, name_en, level_id)
+                        "UPDATE degree_levels SET name_ua = ?, name_en = ?, name_suffix = ? WHERE id = ?",
+                        (name_ua, name_en, name_suffix, level_id)
                     )
                     conn.commit()
                     flash("Ступінь оновлено.", "success")
@@ -529,7 +531,7 @@ def manage_degree_levels():
                 log_action(current_username(), f"видалив ступінь: {row['name_ua'] if row else ''}")
 
     degree_levels = conn.execute("""
-        SELECT d.id, d.name_ua, d.name_en, d.is_active,
+        SELECT d.id, d.name_ua, d.name_en, d.is_active, d.name_suffix,
                (SELECT COUNT(*) FROM groups g WHERE g.degree_level = d.name_ua) AS groups_count
         FROM degree_levels d ORDER BY d.id
     """).fetchall()

@@ -59,7 +59,25 @@ def compute_current_course(start_year, degree_level, program_credits):
     course = current_year - start_year + 1
     return max(1, min(course, total_years))
 
+def build_group_name(conn, specialty_short_name, degree_level, study_form, course):
+    """Формує назву групи: {скорочена_спец}{суфікс_ступеня}{суфікс_форми}-{курс}."""
+    if not specialty_short_name:
+        return None
 
+    suffix = ''
+    if degree_level:
+        row = conn.execute(
+            "SELECT name_suffix FROM degree_levels WHERE name_ua = ?",
+            (degree_level,)
+        ).fetchone()
+        if row and row['name_suffix']:
+            suffix = row['name_suffix']
+
+    if study_form == 'Заочна':
+        suffix += 'з'
+
+    return f"{specialty_short_name}{suffix}-{course}"
+    
 # Фіксовані пари УКР->EN (значень лише кілька, тому окремої таблиці в
 # базі не потрібно, на відміну від спеціальностей) - джерело істини
 # для полів "Ступінь"/"Найменування та статус закладу", щоб форма не
@@ -186,12 +204,7 @@ def manage_groups():
             # (напр. "КНм-1" денна магістратура, "КНмз-1" заочна
             # магістратура) - той самий принцип, що вже застосований
             # для форми навчання.
-            name_short = specialty_short_name
-            if name_short and degree_level == 'Магістр':
-                name_short += 'м'
-            if name_short and study_form == 'Заочна':
-                name_short += 'з' 
-            name = f"{name_short}-{course}" if name_short else None
+            name = build_group_name(conn, specialty_short_name, degree_level, study_form, course)
 
             required_fields = [start_year, study_form, program_credits]
             if not all(required_fields):
@@ -332,12 +345,7 @@ def manage_groups():
             # (напр. "КНм-1" денна магістратура, "КНмз-1" заочна
             # магістратура) - той самий принцип, що вже застосований
             # для форми навчання.
-            name_short = specialty_short_name
-            if name_short and degree_level == 'Магістр':
-                name_short += 'м'
-            if name_short and study_form == 'Заочна':
-                name_short += 'з' 
-            name = f"{name_short}-{course}" if name_short and course else None
+            name = build_group_name(conn, specialty_short_name, degree_level, study_form, course)
 
             required_fields = [group_id, start_year, study_form, program_credits, course]
             if not all(required_fields):
@@ -550,7 +558,7 @@ def manage_groups():
     # Каталог ступенів для випадаючого списку "Ступінь" - та сама
     # логіка "активний/неактивний", що й у спеціальностей.
     degree_levels = conn.execute("""
-        SELECT id, name_ua, name_en, is_active FROM degree_levels ORDER BY is_active DESC, id
+        SELECT id, name_ua, name_suffix, name_en, is_active FROM degree_levels ORDER BY is_active DESC, id
     """).fetchall()
 
     # Освітні програми (спеціальність + рік вступу -> назва) - для
