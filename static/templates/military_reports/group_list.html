@@ -1,0 +1,667 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}{{ label }} — Військовий облік{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+        <button type="button" id="btnExportDodatok5"
+                class="btn btn-sm btn-success"
+                data-export-url="{{ url_for('military_reports.export_dodatok_5', category=category) }}"
+                title="Завантажити цей список у форматі Excel (.xlsx)">
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Згенерувати .xlsx (Додаток 5)
+        </button>
+    </div>
+
+    {{ ui.page_header('bi-shield-fill-check', label, subtitle) }}
+
+    {# ── Перемикач дати складання ── #}
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <strong class="small text-uppercase" style="letter-spacing:.06em; color: var(--muted);">
+                        Дата складання:
+                    </strong>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeAnnual"
+                               value="annual" {% if report_mode == 'annual' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeAnnual">
+                            <i class="bi bi-calendar-check me-1"></i>
+                            Щорічний ({{ dates_formatted.annual }})
+                        </label>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeCurrent"
+                               value="current" {% if report_mode == 'current' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeCurrent">
+                            <i class="bi bi-calendar-day me-1"></i>
+                            На сьогодні ({{ dates_formatted.current }})
+                        </label>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeCustom"
+                               value="custom" {% if report_mode == 'custom' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeCustom">
+                            <i class="bi bi-calendar-range me-1"></i>
+                            Довільна:
+                        </label>
+                    </div>
+                    <input type="text" id="customDateInput" class="form-control form-control-sm d-inline-block"
+                           style="max-width: 140px;" placeholder="ДД.ММ.РРРР"
+                           value="{{ report_date_custom }}"
+                           {% if report_mode != 'custom' %}disabled{% endif %}>
+                </div>
+                <div class="col-auto ms-auto">
+                    <span class="badge bg-secondary">
+                        У документі: станом на <span id="displayDate">{{ report_date_ua }}</span>
+                    </span>
+                </div>
+            </div>
+            <div class="small text-muted mt-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Згідно з п. 40 Порядку — щороку до <strong>25 січня</strong>
+                (станом на <strong>01 січня</strong>) звіт підписується керівником
+                і реєструється в службі діловодства.
+            </div>
+        </div>
+    </div>
+
+    {# ── Фільтри ── #}
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="GET" id="filterForm" class="row g-2 align-items-end">
+                <input type="hidden" name="report_mode" id="hiddenReportMode" value="{{ report_mode }}">
+                <input type="hidden" name="report_date" id="hiddenReportDate" value="{{ report_date_custom }}">
+
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Пошук по ПІБ</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" class="form-control"
+                               placeholder="Прізвище, ім'я…" value="{{ search }}">
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Група</label>
+                    <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі групи</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>
+                            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">ТЦК</label>
+                    <select name="tck" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі ТЦК</option>
+                        {% for t in tck_offices %}
+                        <option value="{{ t.name_ua }}" {% if t.name_ua == tck_filter %}selected{% endif %}>
+                            {{ t.name_ua }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">На сторінці</label>
+                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for n in [20, 50, 100, 200, 500] %}
+                        <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 d-flex align-items-center flex-wrap gap-3">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
+                               id="showAllLicensesCheck"
+                               {% if show_all_licenses %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="showAllLicensesCheck"
+                               title="За Постановою №812 за замовчуванням показуються лише студенти базової ліцензії">
+                            <i class="bi bi-star text-warning"></i>
+                            Показати всі ліцензії
+                            <span class="text-muted">(зараз: {{ base_license_label }})</span>
+                        </label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="include_frozen" value="1"
+                               id="includeFrozenCheck"
+                               {% if include_frozen %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="includeFrozenCheck">
+                            <i class="bi bi-snow text-info"></i>
+                            Показати заморожених
+                        </label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="include_dismissed" value="1"
+                               id="includeDismissedCheck"
+                               {% if include_dismissed %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="includeDismissedCheck"
+                               title="За приміткою до Списків (№812) — відраховані зберігаються в списках до кінця поточного року">
+                            <i class="bi bi-box-arrow-right text-warning"></i>
+                            Показати відрахованих цього року
+                        </label>
+                    </div>
+                    <a href="{{ url_for('military_reports.group_list', category=category, report_mode=report_mode, report_date=report_date_custom) }}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i> Очистити фільтри
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Таблиця ── #}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong>СПИСОК</strong> персонального військового обліку<br>
+                <span class="text-muted small">{{ subtitle }}</span><br>
+                <strong>станом на <span id="headerDate">{{ report_date_ua }}</span></strong>
+            </div>
+            <div class="count-pill">
+                <i class="bi bi-people"></i>{{ total }} осіб
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if rows %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center" style="width:40px;">№</th>
+                            <th>ПІБ</th>
+                            <th>Дата народж.</th>
+                            <th>Звання</th>
+                            <th>ВОС</th>
+                            <th>ТЦК</th>
+                            <th>РНОКПП</th>
+                            <th class="text-center">Статус</th>
+                            <th class="text-end" style="width:110px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr data-student-id="{{ r.id }}">
+                            <td class="text-center font-monospace">{{ range_start + loop.index0 }}</td>
+                            <td>
+                                <a href="{{ url_for('students.student_details', student_id=r.id) }}"
+                                   class="text-decoration-none">
+                                    {{ r.last_name_UA }} {{ r.first_name_UA }}
+                                    {{ r.middle_name_UA or '' }}
+                                </a>
+                                {% if r.gender == 'F' %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-1" title="Жінка">
+                                    <i class="bi bi-gender-female"></i>
+                                </span>
+                                {% endif %}
+                                {% if r.frozen_id %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                                      title="Заморожений — не входить у звіт: {{ r.frozen_reason or 'без причини' }}">
+                                    <i class="bi bi-snow"></i> заморожений
+                                </span>
+                                {% endif %}
+                                {% if r.note_18 == 'Звільнено з роботи, завершено навчання (відраховано)' %}
+                                <span class="badge bg-warning text-dark ms-1"
+                                      title="Відраховано {{ r.dismissed_at or '' }} — зберігається в списку до кінця {{ report_year }} року">
+                                    <i class="bi bi-box-arrow-right"></i> відраховано
+                                </span>
+                                {% elif r.note_18 == 'Військовослужбовець' %}
+                                <span class="badge bg-info text-dark ms-1">
+                                    <i class="bi bi-shield-fill"></i> військовослужбовець
+                                </span>
+                                {% endif %}
+                                {% if not r.license_id %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                                      title="Не вказано ліцензію вступу — заповніть в картці студента">
+                                    <i class="bi bi-exclamation-triangle"></i> без ліцензії
+                                </span>
+                                {% elif show_all_licenses and r.license_id != base_license_id %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
+                                      title="Студент не належить до базової ліцензії">
+                                    {{ r.license_short_name_ua or '—' }}
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="font-monospace small">{{ r.birth_date or '—' }}</td>
+                            <td>
+                                {% if r.military_rank %}
+                                    {{ r.military_rank }}
+                                {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis"
+                                          title="Звання не вказано — категорія може бути визначена неправильно">
+                                        <i class="bi bi-exclamation-triangle"></i> не вказано
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="font-monospace small">
+                                {% if r.vos_code %}
+                                    {{ r.vos_code }}
+                                {% else %}
+                                    <span class="text-danger small" title="ВОС не заповнено">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if r.tck_name %}
+                                    {{ r.tck_name }}
+                                {% else %}
+                                    <span class="text-danger small" title="ТЦК не заповнено">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-monospace small">{{ r.tax_id or '—' }}</td>
+                            <td class="text-center small">
+                                {% if r.status_badge %}
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                        {{ r.status_badge }}
+                                    </span>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-primary js-quick-edit"
+                                        data-student-id="{{ r.id }}" title="Швидке редагування">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <a href="{{ url_for('students.military_data', student_id=r.id) }}"
+                                   class="btn btn-sm btn-outline-secondary" title="Повне редагування">
+                                    <i class="bi bi-arrow-right"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                У цій категорії немає студентів
+            </div>
+            {% endif %}
+        </div>
+
+        {# ── Пагінація ── #}
+        {% if total_pages > 1 %}
+        <div class="card-footer d-flex flex-column align-items-center gap-2 py-3">
+            {% set prev_url = url_for('military_reports.group_list', category=category,
+                                       page=page-1, per_page=per_page, search=search,
+                                       group_id=group_id, tck=tck_filter,
+                                       include_frozen=('1' if include_frozen else '0'),
+                                       include_dismissed=('1' if include_dismissed else '0'),
+                                       show_all_licenses=('1' if show_all_licenses else '0'),
+                                       report_mode=report_mode, report_date=report_date_custom) %}
+            {% set next_url = url_for('military_reports.group_list', category=category,
+                                       page=page+1, per_page=per_page, search=search,
+                                       group_id=group_id, tck=tck_filter,
+                                       include_frozen=('1' if include_frozen else '0'),
+                                       include_dismissed=('1' if include_dismissed else '0'),
+                                       show_all_licenses=('1' if show_all_licenses else '0'),
+                                       report_mode=report_mode, report_date=report_date_custom) %}
+            <div class="d-flex align-items-center gap-2">
+                {% if page > 1 %}
+                <a href="{{ prev_url }}" class="btn btn-sm btn-outline-secondary" title="Попередня">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled">
+                    <i class="bi bi-chevron-left"></i>
+                </span>
+                {% endif %}
+
+                <form method="GET" class="d-flex align-items-center gap-1">
+                    {% for k, v in {'search': search, 'group_id': group_id or '',
+                                    'tck': tck_filter, 'per_page': per_page,
+                                    'report_mode': report_mode,
+                                    'report_date': report_date_custom,
+                                    'include_frozen': '1' if include_frozen else '',
+                                    'include_dismissed': '1' if include_dismissed else '',
+                                    'show_all_licenses': '1' if show_all_licenses else ''}.items() %}
+                    <input type="hidden" name="{{ k }}" value="{{ v }}">
+                    {% endfor %}
+                    <select name="page" class="form-select form-select-sm" style="width:auto;"
+                            onchange="this.form.submit()">
+                        {% for p in range(1, total_pages + 1) %}
+                        <option value="{{ p }}" {% if p == page %}selected{% endif %}>
+                            Стор. {{ p }} з {{ total_pages }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+
+                {% if page < total_pages %}
+                <a href="{{ next_url }}" class="btn btn-sm btn-outline-secondary" title="Наступна">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled">
+                    <i class="bi bi-chevron-right"></i>
+                </span>
+                {% endif %}
+            </div>
+            <div class="small text-muted">
+                Показано {{ range_start }}–{{ range_end }} з {{ total }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   Модалка швидкого редагування
+   ═══════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="quickEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="quickEditForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil me-2"></i>Швидке редагування
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="qeStudentId">
+                    <p class="text-muted small mb-3" id="qeStudentName"></p>
+
+                    <div class="mb-3">
+                        <label class="form-label small">Військове звання</label>
+                        <input type="text" class="form-control form-control-sm" id="qeRank"
+                               placeholder="напр. солдат">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small">Категорія (override)</label>
+                        <select class="form-select form-select-sm" id="qeCategory">
+                            <option value="">Авто (за званням)</option>
+                            <option value="officer">Офіцер</option>
+                            <option value="rank">Рядовий / сержант / старшина</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small">Код ВОС</label>
+                        <input type="text" class="form-control form-control-sm" id="qeVos"
+                               placeholder="напр. 956647">
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label small">ТЦК та СП</label>
+                        <select class="form-select form-select-sm" id="qeTckSelect">
+                            <option value="">— не вказано —</option>
+                            {% for t in tck_offices %}
+                            <option value="{{ t.name_ua }}">{{ t.name_ua }}</option>
+                            {% endfor %}
+                            <option value="__custom__">— Інше (ввести вручну) —</option>
+                        </select>
+                        <input type="text" class="form-control form-control-sm mt-2 d-none" id="qeTckCustom"
+                               placeholder="Введіть назву ТЦК">
+                    </div>
+
+                    <div class="mb-0">
+                        <label class="form-label small">Реєстраційний номер (ЄДР)</label>
+                        <input type="text" class="form-control form-control-sm" id="qeRegistry"
+                               placeholder="напр. 050620249340681900008">
+                    </div>
+					<div class="mb-3 mt-3 pt-3 border-top">
+                        <label class="form-label small">
+                            Примітка (графа 18)
+                            <span class="text-muted" style="font-size:.75rem;">
+                                — Постанова №812
+                            </span>
+                        </label>
+                        <select class="form-select form-select-sm" id="qeNote18">
+                            <option value="">— немає (на обліку) —</option>
+                            <option value="Виключено з військового обліку за віком">
+                                Виключено з військового обліку за віком
+                            </option>
+                            <option value="Звільнено з роботи, завершено навчання (відраховано)">
+                                Звільнено з роботи, завершено навчання (відраховано)
+                            </option>
+                            <option value="Військовослужбовець">
+                                Військовослужбовець
+                            </option>
+                        </select>
+                        <div class="small text-muted mt-1">
+                            <i class="bi bi-info-circle"></i>
+                            Виключені з обліку не потрапляють у Додаток 5.
+                        </div>
+                    </div>
+
+                    <div class="mb-0 d-none" id="qeMobilizedDateBlock">
+                        <label class="form-label small">Дата мобілізації</label>
+                        <input type="text" class="form-control form-control-sm" id="qeMobilizedDate"
+                               placeholder="ДД.ММ.РРРР">
+                    </div>
+                </div>
+                <div class="modal-footer d-flex justify-content-between">
+                    <a href="#" id="qeFullEditLink" class="small">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Повне редагування в картці
+                    </a>
+                    <div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                data-bs-dismiss="modal">Скасувати</button>
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+// ═══════════════════════════════════════════════════════════════
+// Дані рядків — для модалки
+// ═══════════════════════════════════════════════════════════════
+const ROWS = {{ rows_json | tojson }};
+const ROWS_BY_ID = {};
+ROWS.forEach(r => { ROWS_BY_ID[r.id] = r; });
+
+// ═══════════════════════════════════════════════════════════════
+// Перемикач дати складання
+// ═══════════════════════════════════════════════════════════════
+(function () {
+    const annualStr  = "{{ dates_formatted.annual }}";
+    const currentStr = "{{ dates_formatted.current }}";
+    const radios = document.querySelectorAll('input[name="rmode"]');
+    const customInput = document.getElementById('customDateInput');
+    const displayDate = document.getElementById('displayDate');
+    const headerDate  = document.getElementById('headerDate');
+    const hiddenMode = document.getElementById('hiddenReportMode');
+    const hiddenDate = document.getElementById('hiddenReportDate');
+
+    function updateDateDisplay() {
+        const mode = document.querySelector('input[name="rmode"]:checked').value;
+        let shown = '';
+        if (mode === 'annual') shown = annualStr;
+        else if (mode === 'current') shown = currentStr;
+        else shown = customInput.value || '—';
+
+        displayDate.textContent = shown;
+        headerDate.textContent = shown;
+        hiddenMode.value = mode;
+        hiddenDate.value = mode === 'custom' ? customInput.value : '';
+        customInput.disabled = (mode !== 'custom');
+    }
+
+    radios.forEach(r => r.addEventListener('change', updateDateDisplay));
+    customInput.addEventListener('input', updateDateDisplay);
+    updateDateDisplay();
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// Модалка швидкого редагування
+// ═══════════════════════════════════════════════════════════════
+(function () {
+    const modalEl = document.getElementById('quickEditModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const form = document.getElementById('quickEditForm');
+    const tckSelect = document.getElementById('qeTckSelect');
+    const tckCustom = document.getElementById('qeTckCustom');
+
+    const qeNote18 = document.getElementById('qeNote18');
+    const qeMobilizedDateBlock = document.getElementById('qeMobilizedDateBlock');
+    const qeMobilizedDate = document.getElementById('qeMobilizedDate');
+
+    function syncNote18Visibility() {
+        if (qeNote18.value === 'Військовослужбовець') {
+            qeMobilizedDateBlock.classList.remove('d-none');
+        } else {
+            qeMobilizedDateBlock.classList.add('d-none');
+            qeMobilizedDate.value = '';
+        }
+    }
+
+    qeNote18.addEventListener('change', syncNote18Visibility);
+
+    function openFor(studentId) {
+        const r = ROWS_BY_ID[studentId];
+        if (!r) return;
+
+        document.getElementById('qeStudentId').value = r.id;
+        document.getElementById('qeStudentName').textContent = r.full_name;
+        document.getElementById('qeRank').value = r.military_rank || '';
+        document.getElementById('qeCategory').value = r.category_override || '';
+        document.getElementById('qeVos').value = r.vos_code || '';
+        document.getElementById('qeRegistry').value = r.registry_number || '';
+        qeNote18.value = r.note_18 || '';
+        qeMobilizedDate.value = r.mobilized_date || '';
+        syncNote18Visibility();
+        document.getElementById('qeFullEditLink').href =
+            '/students/' + r.id + '/military';
+
+        // ТЦК
+        if (!r.tck_name) {
+            tckSelect.value = '';
+            tckCustom.classList.add('d-none');
+            tckCustom.value = '';
+        } else if (r.tck_in_catalog) {
+            tckSelect.value = r.tck_name;
+            tckCustom.classList.add('d-none');
+            tckCustom.value = '';
+        } else {
+            tckSelect.value = '__custom__';
+            tckCustom.classList.remove('d-none');
+            tckCustom.value = r.tck_name;
+        }
+
+        modal.show();
+    }
+
+    document.querySelectorAll('.js-quick-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            openFor(parseInt(btn.dataset.studentId, 10));
+        });
+    });
+
+    tckSelect.addEventListener('change', () => {
+        if (tckSelect.value === '__custom__') {
+            tckCustom.classList.remove('d-none');
+            tckCustom.focus();
+        } else {
+            tckCustom.classList.add('d-none');
+            tckCustom.value = '';
+        }
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const studentId = document.getElementById('qeStudentId').value;
+        let tckValue = tckSelect.value;
+        if (tckValue === '__custom__') tckValue = tckCustom.value.trim();
+
+        const payload = {
+            military_rank:     document.getElementById('qeRank').value,
+            category_override: document.getElementById('qeCategory').value,
+            vos_code:          document.getElementById('qeVos').value,
+            tck_name:          tckValue,
+            registry_number:   document.getElementById('qeRegistry').value,
+            note_18:           qeNote18.value || null,
+            mobilized_date:    qeMobilizedDate.value || null,
+        };
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalHtml = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо…';
+
+        try {
+            const resp = await fetch(
+                '/admin/military_reports/student/' + studentId + '/quick_edit',
+                {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(payload),
+                }
+            );
+            const data = await resp.json();
+            if (!data.ok) {
+                alert('Помилка: ' + (data.error || 'невідома'));
+                return;
+            }
+            modal.hide();
+            // Перезавантажуємо сторінку, щоб оновились лічильники і
+            // перерахувались категорії (студент міг перейти в іншу групу)
+            window.location.reload();
+        } catch (err) {
+            alert('Помилка з\'єднання: ' + err.message);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalHtml;
+        }
+    });
+})();
+});
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnExport = document.getElementById('btnExportDodatok5');
+    if (!btnExport) return;
+
+    const annualStr = "{{ dates_formatted.annual }}";
+    const currentStr = "{{ dates_formatted.current }}";
+
+    btnExport.addEventListener('click', function () {
+        // Зчитуємо ПОТОЧНІ значення полів, навіть якщо «Застосувати» не натискали
+        const mode = document.querySelector('input[name="rmode"]:checked').value;
+        const customInput = document.getElementById('customDateInput');
+        const showAllCheck = document.getElementById('showAllLicensesCheck');
+
+        const params = new URLSearchParams();
+        params.set('report_mode', mode);
+
+        if (mode === 'custom' && customInput && customInput.value.trim()) {
+            params.set('report_date', customInput.value.trim());
+        }
+        if (showAllCheck && showAllCheck.checked) {
+            params.set('show_all_licenses', '1');
+        }
+
+        window.location.href = btnExport.dataset.exportUrl + '?' + params.toString();
+    });
+});
+</script>
+{% endblock %}

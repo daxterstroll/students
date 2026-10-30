@@ -1,0 +1,351 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Додаток 12 — Відомість оперативного обліку{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+        <button type="button" id="btnExportDodatok12"
+                class="btn btn-sm btn-success"
+                data-export-url="{{ url_for('military_reports.export_dodatok_12') }}"
+                title="Завантажити відомість у форматі Excel (.xlsx)">
+            <i class="bi bi-file-earmark-excel me-1"></i>
+            Згенерувати .xlsx (Додаток 12)
+        </button>
+    </div>
+
+    {{ ui.page_header(
+        'bi-bar-chart-fill',
+        'Відомість оперативного обліку (Додаток 12)',
+        'Зведена статистика по призовниках, військовозобов\'язаних та резервістах'
+    ) }}
+
+    {# ── Перемикач дати ── #}
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <strong class="small text-uppercase" style="letter-spacing:.06em; color: var(--muted);">
+                        Станом на:
+                    </strong>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeAnnual"
+                               value="annual" {% if report_mode == 'annual' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeAnnual">
+                            <i class="bi bi-calendar-check me-1"></i>
+                            Щорічна ({{ dates_formatted.annual }})
+                        </label>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeCurrent"
+                               value="current" {% if report_mode == 'current' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeCurrent">
+                            <i class="bi bi-calendar-day me-1"></i>
+                            На сьогодні ({{ dates_formatted.current }})
+                        </label>
+                    </div>
+                </div>
+                <div class="col-auto">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="rmode" id="rmodeCustom"
+                               value="custom" {% if report_mode == 'custom' %}checked{% endif %}>
+                        <label class="form-check-label" for="rmodeCustom">
+                            <i class="bi bi-calendar-range me-1"></i>
+                            Довільна:
+                        </label>
+                    </div>
+                    <input type="text" id="customDateInput" class="form-control form-control-sm d-inline-block"
+                           style="max-width: 140px;" placeholder="ДД.ММ.РРРР"
+                           value="{{ report_date_custom }}"
+                           {% if report_mode != 'custom' %}disabled{% endif %}>
+                </div>
+                <div class="col-auto ms-auto">
+                    <button type="button" class="btn btn-sm btn-primary"
+                            onclick="applyDate()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Застосувати
+                    </button>
+                </div>
+            </div>
+
+            {# Перемикач ліцензії (Постанова №812) #}
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mt-3 pt-3 border-top">
+                <div class="small">
+                    <span class="badge bg-warning-subtle text-warning-emphasis">
+                        <i class="bi bi-star-fill me-1"></i>
+                        Ліцензія: {{ base_license_label }}
+                    </span>
+                </div>
+                <form method="GET" class="d-inline m-0">
+                    <input type="hidden" name="report_mode" value="{{ report_mode }}">
+                    {% if report_mode == 'custom' %}
+                    <input type="hidden" name="report_date" value="{{ report_date_custom }}">
+                    {% endif %}
+                    <div class="form-check form-check-inline mb-0">
+                        <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
+                               id="showAllLicensesSum"
+                               {% if show_all_licenses %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="showAllLicensesSum">
+                            Показати всі ліцензії
+                        </label>
+                    </div>
+                </form>
+            </div>
+
+            {# Попередження про поточний стан #}
+            <div class="alert alert-light border small mb-0 mt-3">
+                <i class="bi bi-info-circle me-1"></i>
+                <strong>Цифри відображають поточний стан БД</strong>
+                на момент відкриття сторінки. Обрана дата використовується тільки
+                для визначення року в полях «Зараховано/Відраховано з 1 січня {рік}»
+                і для шапки згенерованого .xlsx. Історичних зрізів на довільну
+                минулу дату система поки не має.
+            </div>
+        </div>
+    </div>
+
+    {# ── Таблиця ── #}
+    <div class="card">
+        <div class="card-header">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <strong>ВІДОМІСТЬ</strong><br>
+                    оперативного обліку призовників, військовозобов'язаних та резервістів<br>
+                    <span class="text-muted small">у Приватному вищому навчальному закладі «Європейський університет»</span>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <strong>станом на {{ report_date_ua }}</strong>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-bordered mb-0 align-middle summary-table">
+                    <thead class="table-dark">
+                        <tr>
+                            <th class="text-center" style="width:60px;">№</th>
+                            <th>Найменування групи</th>
+                            <th class="text-center" style="width:80px;">Усього</th>
+                            <th class="text-center" style="width:110px;">
+                                Мають мобіліз. розпорядження
+                                <i class="bi bi-info-circle small" title="Поле ще не заповнюється (немає відповідного поля в БД)"></i>
+                            </th>
+                            <th class="text-center" style="width:90px;">
+                                Заброньовані
+                                <i class="bi bi-info-circle small" title="Поле ще не заповнюється (немає відповідного поля в БД)"></i>
+                            </th>
+                            <th class="text-center" style="width:120px;">
+                                Не заброньовані та не мають моб.розпоряджень
+                                <i class="bi bi-info-circle small" title="Поле ще не заповнюється (немає відповідного поля в БД)"></i>
+                            </th>
+                            <th class="text-center" style="width:120px;">
+                                З 1 січня {{ report_year }} р. зараховано на навчання
+                            </th>
+                            <th class="text-center" style="width:120px;">
+                                З 1 січня {{ report_year }} р. відраховано з навчання
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr {% if r.bold %}class="fw-bold table-light"{% endif %}>
+                            <td class="text-center font-monospace">{{ r.num }}</td>
+                            <td>
+                                {% if r.num == '1.1' or r.num == '1.2' or r.num == '1.3' %}
+                                    <span class="ps-3">{{ r.name }}</span>
+                                {% else %}
+                                    {{ r.name }}
+                                {% endif %}
+                            </td>
+                            <td class="text-center fs-6">{{ r.total }}</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center">{{ r.enrolled }}</td>
+                            <td class="text-center">{{ r.expelled }}</td>
+                        </tr>
+                        {% endfor %}
+						                        {# ── Нові рядки 3/4/5 (Постанова №812, графа 18) ── #}
+                        <tr class="table-secondary">
+                            <td class="text-center font-monospace">3.</td>
+                            <td>
+                                Виключено з військового обліку за віком
+                            </td>
+                            <td class="text-center fs-6">{{ excluded_by_age }}</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                        </tr>
+                        <tr class="table-warning">
+                            <td class="text-center font-monospace">4.</td>
+                            <td>
+                                Звільнено з роботи, завершено навчання (відраховано)
+                                <span class="small text-muted">
+                                    — за {{ report_year }} рік
+                                </span>
+                            </td>
+                            <td class="text-center fs-6">{{ dismissed_this_year }}</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                        </tr>
+                        <tr class="table-info">
+                            <td class="text-center font-monospace">5.</td>
+                            <td>Військовослужбовці (мобілізовані)</td>
+                            <td class="text-center fs-6">{{ mobilized }}</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                        </tr>
+                    </tbody>
+                    <tfoot class="table-light fw-bold">
+                        <tr>
+                            <td colspan="2" class="text-end">Разом (рядки 1 + 2):</td>
+                            <td class="text-center fs-6">{{ total_all }}</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center">{{ enrolled_total }}</td>
+                            <td class="text-center">{{ expelled_total }}</td>
+                        </tr>
+                        <tr class="table-secondary">
+                            <td colspan="2" class="text-end">Разом вибулих (рядки 3 + 4 + 5):</td>
+                            <td class="text-center fs-6">
+                                {{ excluded_by_age + dismissed_this_year + mobilized }}
+                            </td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                        </tr>
+                    </tfoot>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center text-muted">—</td>
+                            <td class="text-center">{{ enrolled_total }}</td>
+                            <td class="text-center">{{ expelled_total }}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <div class="card-footer small text-muted d-flex flex-wrap gap-4">
+            <span>
+                <i class="bi bi-shield me-1"></i>
+                Військовозобов'язані: <strong>{{ mobilized_total }}</strong>
+            </span>
+            <span>
+                <i class="bi bi-person-badge me-1"></i>
+                Призовники: <strong>{{ conscripts_total }}</strong>
+            </span>
+            <span class="text-dark">
+                <i class="bi bi-people me-1"></i>
+                На обліку: <strong>{{ total_all }}</strong>
+            </span>
+            <span class="text-secondary">
+                <i class="bi bi-box-arrow-right me-1"></i>
+                Вибуло: <strong>{{ excluded_by_age + dismissed_this_year + mobilized }}</strong>
+            </span>
+        </div>
+    </div>
+
+    {# ── Підпис (як у документі) ── #}
+    <div class="card mt-3">
+        <div class="card-body small">
+            <div class="row">
+                <div class="col-md-6">
+                    <p class="mb-1"><strong>Особа, відповідальна за ведення військового обліку:</strong></p>
+                    <p class="mb-0 text-muted">Оксана ГОЛОВКО / Юлія БЕРЕЗНЮК</p>
+                </div>
+                <div class="col-md-6 mt-3 mt-md-0">
+                    <p class="mb-1"><strong>Ректор:</strong></p>
+                    <p class="mb-0 text-muted">Олена ТИМОШЕНКО</p>
+                </div>
+            </div>
+            <div class="alert alert-light border small mt-3 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Роздрукований документ підписується керівником і особою, відповідальною
+                за ведення військового обліку, та реєструється в службі діловодства
+                (п. 40 Порядку, затвердженого Постановою КМУ №916 від 30.07.2025).
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+.summary-table thead th {
+    vertical-align: middle;
+    font-size: .8rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+.summary-table td { vertical-align: middle; }
+</style>
+
+<script>
+function applyDate() {
+    const mode = document.querySelector('input[name="rmode"]:checked').value;
+    const custom = document.getElementById('customDateInput').value;
+    const sal = document.getElementById('showAllLicensesSum');
+    const params = new URLSearchParams();
+    params.set('report_mode', mode);
+    if (mode === 'custom' && custom) params.set('report_date', custom);
+    if (sal && sal.checked) params.set('show_all_licenses', '1');
+    window.location.href = window.location.pathname + '?' + params.toString();
+}
+
+// Перемикання поля custom date
+(function () {
+    const customInput = document.getElementById('customDateInput');
+    document.querySelectorAll('input[name="rmode"]').forEach(r => {
+        r.addEventListener('change', () => {
+            customInput.disabled = (r.value !== 'custom' || !r.checked);
+            if (r.value === 'custom' && r.checked) customInput.focus();
+        });
+    });
+})();
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnExport = document.getElementById('btnExportDodatok12');
+    if (!btnExport) return;
+
+    btnExport.addEventListener('click', function () {
+        const mode = document.querySelector('input[name="rmode"]:checked').value;
+        const customInput = document.getElementById('customDateInput');
+        const showAllCheck = document.getElementById('showAllLicensesSum');
+
+        const params = new URLSearchParams();
+        params.set('report_mode', mode);
+
+        if (mode === 'custom' && customInput && customInput.value.trim()) {
+            params.set('report_date', customInput.value.trim());
+        }
+        if (showAllCheck && showAllCheck.checked) {
+            params.set('show_all_licenses', '1');
+        }
+
+        window.location.href = btnExport.dataset.exportUrl + '?' + params.toString();
+    });
+});
+</script>
+
+{% endblock %}

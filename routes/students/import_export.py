@@ -9,6 +9,7 @@ from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
+from routes.gender import detect_gender_from_middle_name
 import sqlite3
 from routes.utils import generate_english_name
 from werkzeug.utils import secure_filename
@@ -17,23 +18,44 @@ import openpyxl
 import os
 
 
+def _normalize_gender(raw):
+    """
+    Нормалізує значення колонки «Стать» з Excel до 'M'/'F' або None.
+
+    Приймає: 'M', 'F', 'Ч', 'Ж', 'ч', 'ж', 'чоловіча', 'жіноча',
+             'male', 'female', 'm', 'f' (без урахування регістру).
+    Порожнє/невідоме → None (тоді визначається за по батькові).
+    """
+    if raw is None:
+        return None
+    v = str(raw).strip().lower()
+    if not v:
+        return None
+    if v in ('m', 'ч', 'чоловіча', 'чоловік', 'male', 'man'):
+        return 'M'
+    if v in ('f', 'ж', 'жіноча', 'жінка', 'female', 'woman'):
+        return 'F'
+    return None
+
+
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
 @permission_required('import_from_excel')
 def import_from_excel():
     """
     Імпорт студентів з Excel-файлу.
 
-    Колонки (A→J, 0-базовий індекс):
-        0 A  group_id                  (обов.)
-        1 B  ПІБ повністю (3 слова)    (обов.)
-        2 C  birth_date                (обов.)
-        3 D  edebo_code
-        4 E  license (short_name_ua)
-        5 F  program_credits_override
-        6 G  phone (основний[, резервний])
-        7 H  email
-        8 I  tax_id                    (РНОКПП)
-        9 J  address_of_residence
+    Колонки (A→K, 0-базовий індекс):
+        0  A  group_id                  (обов.)
+        1  B  ПІБ повністю (3 слова)    (обов.)
+        2  C  birth_date                (обов.)
+        3  D  edebo_code
+        4  E  license (short_name_ua)
+        5  F  program_credits_override
+        6  G  phone (основний[, резервний])
+        7  H  email
+        8  I  tax_id                    (РНОКПП)
+        9  J  address_of_residence
+        10 K  gender                    (M/F/Ч/Ж; порожнє → авто за по батькові)
 
     last_name_ENG / first_name_ENG НЕ читаються з файлу - генеруються
     автоматично через generate_english_name() (транслітерація КМУ №55-2010).
@@ -58,6 +80,8 @@ def import_from_excel():
         conn = get_db()
         inserted = 0
         skipped = 0
+        gender_auto = 0     # скільком стать визначено автоматично
+        gender_missing = 0  # у скількох не вдалося (немає по батькові)
 
         role = session.get('role')
         user_group_ids = session.get('group_ids', [])
@@ -100,10 +124,7 @@ def import_from_excel():
                     birth_date_raw = row[2]
                     edebo_code = row[3] if len(row) > 3 and row[3] else ''
 
-                    # Ліцензія вступу (колонка E, необов'язкова) - за
-                    # короткою назвою з каталогу ("Київська", "Львівська"
-                    # тощо, без регістру). Не знайдено - лишаємо
-                    # порожнім і попереджаємо, рядок все одно імпортується.
+                    # Ліцензія вступу (колонка E, необов'язкова)
                     license_id = None
                     if len(row) > 4 and row[4] not in (None, ''):
                         license_key = str(row[4]).strip().lower()
@@ -111,10 +132,7 @@ def import_from_excel():
                         if license_id is None:
                             flash(f"⚠️ Рядок {i}: ліцензію '{row[4]}' не знайдено в каталозі - поле пропущено, студент імпортований без неї")
 
-                    # Кредити скороченої програми (колонка F, необов'язкова) -
-                    # вступ з визнанням частини кредитів попереднього
-                    # диплома. Порожнє/некоректне значення = звичайний
-                    # студент за програмою групи, рядок все одно імпортується.
+                    # Кредити скороченої програми (колонка F, необов'язкова)
                     program_credits_override = None
                     if len(row) > 5 and row[5] not in (None, ''):
                         try:
@@ -123,10 +141,7 @@ def import_from_excel():
                             flash(f"⚠️ Рядок {i}: некоректне значення кредитів скороченої програми '{row[5]}' - поле пропущено, студент імпортований без нього")
 
                     # Телефон (колонка G, необов'язкова) - основний і
-                    # резервний номер через кому, напр.
-                    # "+380991234567, +380991234568". Другий номер
-                    # необов'язковий; якщо коми немає - записується
-                    # лише основний.
+                    # резервний номер через кому.
                     phone = None
                     phone_backup = None
                     if len(row) > 6 and row[6] not in (None, ''):
@@ -136,15 +151,18 @@ def import_from_excel():
                         if len(phone_parts) > 1:
                             phone_backup = phone_parts[1]
 
-                    # Email (колонка H, необов'язкова).
+                    # Email (колонка H, необов'язкова)
                     email = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
 
-                    # Ідентифікаційний код / РНОКПП (колонка I, необов'язкова).
-                    # Зберігаємо як рядок, щоб не втратити провідні нулі.
+                    # Ідентифікаційний код / РНОКПП (колонка I, необов'язкова)
                     tax_id = str(row[8]).strip() if len(row) > 8 and row[8] not in (None, '') else None
 
-                    # Адреса проживання (колонка J, необов'язкова).
+                    # Адреса проживання (колонка J, необов'язкова)
                     address_of_residence = str(row[9]).strip() if len(row) > 9 and row[9] not in (None, '') else None
+
+                    # Стать (колонка K, необов'язкова) — нормалізуємо або
+                    # визначаємо за по батькові нижче
+                    gender = _normalize_gender(row[10]) if len(row) > 10 else None
 
                     if not full_name:
                         continue
@@ -168,6 +186,14 @@ def import_from_excel():
                         continue
                     last_name, first_name, middle_name = name_parts
 
+                    # Якщо стать не вказана в Excel — визначаємо за по батькові
+                    if gender is None:
+                        gender = detect_gender_from_middle_name(middle_name)
+                        if gender is None:
+                            gender_missing += 1
+                        else:
+                            gender_auto += 1
+
                     if isinstance(birth_date_raw, datetime):
                         birth_date = birth_date_raw.strftime("%d.%m.%Y")
                     else:
@@ -190,13 +216,13 @@ def import_from_excel():
                             last_name_UA, first_name_UA, middle_name_UA,
                             last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code,
                             license_id, program_credits_override, phone, phone_backup, email,
-                            tax_id, address_of_residence
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            tax_id, address_of_residence, gender
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         last_name, first_name, middle_name,
                         last_name_eng, first_name_eng, birth_date, group_id, edebo_code,
                         license_id, program_credits_override, phone, phone_backup, email,
-                        tax_id, address_of_residence,
+                        tax_id, address_of_residence, gender,
                     ))
 
                     inserted += 1
@@ -219,9 +245,22 @@ def import_from_excel():
         log_action(
             current_username(),
             f"імпорт студентів з Excel: додано {inserted}, пропущено {skipped}",
-            details=f"файл: {filename}"
+            details=f"файл: {filename}, стать авто: {gender_auto}, без статі: {gender_missing}"
         )
-        flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}")
+
+        # Підсумкове повідомлення з деталями по статі
+        summary = f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}"
+        if gender_auto:
+            summary += f", стать визначено автоматично: {gender_auto}"
+        if gender_missing:
+            summary += f", без статі: {gender_missing} (заповніть вручну)"
+        flash(summary)
+
+        if gender_missing:
+            flash(f"⚠️ {gender_missing} студентів без по батькові — стать не визначена. "
+                  f"Знайдіть їх через фільтр у списку студентів (або в картці кожного) та заповніть вручну.",
+                  "warning")
+
         return redirect(url_for('students.student_list'))
 
     return render_template('import_excel.html')

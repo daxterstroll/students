@@ -16,6 +16,7 @@ from routes.office_editor import office_bp
 from routes.import_grades import import_grades_bp
 from routes.analytics import analytics_bp
 from routes.photo_bulk import photo_bulk_bp
+from routes.military_reports import military_reports_bp
 from routes.public_apply import public_apply_bp
 from routes.public_update import public_update_bp
 from routes.utils import logger
@@ -148,6 +149,7 @@ app.register_blueprint(office_bp)
 app.register_blueprint(import_grades_bp)
 app.register_blueprint(analytics_bp)
 app.register_blueprint(photo_bulk_bp)
+app.register_blueprint(military_reports_bp)
 app.register_blueprint(public_apply_bp)
 app.register_blueprint(public_update_bp)
 app.jinja_env.filters['format_grade'] = format_grade

@@ -19,6 +19,7 @@ from routes.utils import (
 from routes.gen_docx import gen_doc
 from routes import office_editor
 from routes.config import PUBLIC_APPLY_BASE_URL
+from routes.gender import detect_gender_from_middle_name
 from datetime import datetime, timedelta
 import os
 import uuid
@@ -792,6 +793,13 @@ def add_student():
         middle_name_ua = request.form.get('middle_name_UA', '')
         last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
 
+        # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
+        gender_form = (request.form.get('gender') or 'auto').strip()
+        if gender_form in ('M', 'F'):
+            gender = gender_form
+        else:
+            gender = detect_gender_from_middle_name(middle_name_ua)
+
         issued_VOD_raw = request.form.get('issued_VOD', '').strip()
         issued_VOD = None
         if issued_VOD_raw:
@@ -814,11 +822,11 @@ def add_student():
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
                 last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, tax_id, license_id,
-                phone, phone_backup, email, address_of_residence
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                phone, phone_backup, email, address_of_residence, gender
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
               birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
-              license_id, phone, phone_backup, email, address_of_residence))
+              license_id, phone, phone_backup, email, address_of_residence, gender))
         conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
@@ -1109,12 +1117,20 @@ def edit_student(student_id):
                     return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
             else:
                 program_credits_override = None
+                        # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
+            gender_form = (request.form.get('gender') or 'auto').strip()
+            middle_name_form = request.form.get('middle_name_UA') or ''
+            if gender_form in ('M', 'F'):
+                gender = gender_form
+            else:
+                gender = detect_gender_from_middle_name(middle_name_form)
+
             conn.execute("""
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
                     group_id=?, edebo_code=?, tax_id=?, license_id=?, program_credits_override=?,
-                    phone=?, phone_backup=?, email=?, address_of_residence=?
+                    phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
@@ -1122,7 +1138,7 @@ def edit_student(student_id):
                 request.form.get('first_name_ENG'), birth_date,
                 group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
                 license_id, program_credits_override,
-                phone, phone_backup, email, address_of_residence, student_id
+                phone, phone_backup, email, address_of_residence, gender, student_id
             ))
             conn.commit()
 

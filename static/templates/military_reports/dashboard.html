@@ -1,0 +1,295 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Військовий облік — Додаток 5{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header(
+        'bi-shield-fill-check',
+        'Військовий облік студентів',
+        'Персональний облік за Порядком №1487 (Постанова КМУ №916 від 30.07.2025 в редакції №812 від 10.06.2026)'
+    ) }}
+
+    {# ── Бейдж дедлайну + стан підготовки ── #}
+    <div class="row g-3 mb-4">
+        <div class="col-md-4">
+            <div class="card border-warning h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-start gap-3">
+                        <i class="bi bi-clock-history fs-2" style="color: var(--brass);"></i>
+                        <div>
+                            <h6 class="mb-1">Щорічна здача звіту</h6>
+                            <div class="small text-muted mb-2">
+                                За п. 40 Порядку — до <strong>25 січня</strong> щороку,
+                                станом на <strong>01 січня</strong> поточного року.
+                            </div>
+                            <div class="fw-semibold">
+                                Наступний дедлайн: {{ dates_formatted.next_deadline }}
+                            </div>
+                            <div class="small text-muted">
+                                Звіт за {{ dates.annual.year }} рік (станом на {{ dates_formatted.annual }})
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card border-info h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-start gap-3">
+                        <i class="bi bi-check2-square fs-2" style="color: #4a6ea8;"></i>
+                        <div>
+                            <h6 class="mb-1">Звіряння з ТЦК</h6>
+                            <div class="small text-muted mb-2">
+                                За Постановою №812 — до <strong>1 грудня</strong> щороку.
+                                Звіряння списків з Єдиним реєстром «Оберіг».
+                            </div>
+                            <div class="fw-semibold">
+                                Дедлайн: {{ dates_formatted.reconciliation_deadline }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="mb-2">Стан підготовки щорічного звіту {{ dates.annual.year }}</h6>
+                    <div class="small">
+                        {% for rtype, rlabel in report_types %}
+                        {% set gen = last_generations.get(rtype) %}
+                        <div class="d-flex justify-content-between align-items-center py-1 border-bottom">
+                            <span>
+                                {% if gen %}
+                                    <i class="bi bi-check-circle-fill text-success me-1"></i>
+                                {% else %}
+                                    <i class="bi bi-circle text-muted me-1"></i>
+                                {% endif %}
+                                {{ rlabel }}
+                            </span>
+                            <span class="text-muted">
+                                {% if gen %}
+                                    {{ gen.generated_at[:10] }}
+                                    {% if gen.rows_count %}({{ gen.rows_count }} осіб){% endif %}
+                                {% else %}
+                                    не згенеровано
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Перемикач ліцензії (Постанова №812) ── #}
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+        <h5 class="section-title mb-0">Групи персонального обліку</h5>
+        <div class="d-flex align-items-center gap-2 small">
+            <span class="badge bg-warning-subtle text-warning-emphasis"
+                  title="За Постановою №812 військовий облік ведеться для базової ліцензії">
+                <i class="bi bi-star-fill me-1"></i>
+                Ліцензія: {{ base_license_label }}
+            </span>
+            <form method="GET" class="d-inline m-0">
+                <div class="form-check form-check-inline mb-0">
+                    <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
+                           id="showAllLicensesDash"
+                           {% if show_all_licenses %}checked{% endif %}
+                           onchange="this.form.submit()">
+                    <label class="form-check-label small" for="showAllLicensesDash">
+                        Показати всі ліцензії
+                    </label>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-lg">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <i class="bi bi-people-fill fs-1 text-primary"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ total_students }}</div>
+                    <div class="text-muted">Всього студентів</div>
+                    <div class="small text-muted mt-1" title="Всі активні студенти: не в архіві, не відраховані, не заморожені">
+                        охоплено дашбордом
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-6 col-lg">
+            <a href="{{ url_for('military_reports.group_list', category='officers') }}"
+               class="card text-decoration-none h-100 hover-lift">
+                <div class="card-body text-center">
+                    <i class="bi bi-award-fill fs-1" style="color: var(--brass);"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ counts.officers }}</div>
+                    <div class="text-muted">Офіцери</div>
+                    <div class="small text-muted mt-1">офіцерський склад</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg">
+            <a href="{{ url_for('military_reports.group_list', category='rank') }}"
+               class="card text-decoration-none h-100 hover-lift">
+                <div class="card-body text-center">
+                    <i class="bi bi-person-fill fs-1" style="color: var(--brass);"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ counts.rank }}</div>
+                    <div class="text-muted">Рядові</div>
+                    <div class="small text-muted mt-1">рядовий / сержантський склад</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg">
+            <a href="{{ url_for('military_reports.group_list', category='women') }}"
+               class="card text-decoration-none h-100 hover-lift">
+                <div class="card-body text-center">
+                    <i class="bi bi-gender-female fs-1" style="color: var(--brass);"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ counts.women }}</div>
+                    <div class="text-muted">Жінки</div>
+                    <div class="small text-muted mt-1">окремий список</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-sm-6 col-lg">
+            <a href="{{ url_for('military_reports.group_list', category='conscripts') }}"
+               class="card text-decoration-none h-100 hover-lift">
+                <div class="card-body text-center">
+                    <i class="bi bi-person-badge fs-1" style="color: var(--brass);"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ counts.conscripts }}</div>
+                    <div class="text-muted">Призовники</div>
+                    <div class="small text-muted mt-1">до призову</div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    {# ── Нові лічильники: вибулі за графою 18 (Постанова №812) ── #}
+    <h5 class="section-title mb-3">Вибулі з обліку (графа 18)</h5>
+    <div class="row g-3 mb-4">
+        <div class="col-sm-4">
+            <div class="card text-center border-secondary h-100">
+                <div class="card-body py-3">
+                    <i class="bi bi-hourglass-split fs-3 text-secondary"></i>
+                    <div class="fs-4 fw-bold mt-1">{{ counts.excluded_by_age }}</div>
+                    <div class="small text-muted">Виключено за віком</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center border-warning h-100">
+                <div class="card-body py-3">
+                    <i class="bi bi-box-arrow-right fs-3 text-warning"></i>
+                    <div class="fs-4 fw-bold mt-1">{{ counts.dismissed_this_year }}</div>
+                    <div class="small text-muted">Відраховано {{ dates.annual.year }}</div>
+                    <div class="small text-muted" style="font-size:.7rem;"
+                         title="Зберігаються в списках до кінця поточного календарного року (примітка до Списків №812)">
+                        до кінця {{ dates.annual.year }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card text-center border-info h-100">
+                <div class="card-body py-3">
+                    <i class="bi bi-shield-fill fs-3 text-info"></i>
+                    <div class="fs-4 fw-bold mt-1">{{ counts.mobilized }}</div>
+                    <div class="small text-muted">Мобілізовано</div>
+                    <div class="small text-muted" style="font-size:.7rem;">
+                        військовослужбовці
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Проблемні + швидкі посилання ── #}
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Потребують уваги</h6>
+                </div>
+                <div class="card-body">
+                    {% if frozen_count %}
+                    <div class="alert alert-light border py-2 px-3 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2 small">
+                        <span>
+                            <i class="bi bi-snow text-info me-1"></i>
+                            <strong>{{ frozen_count }}</strong> заморожених студентів — не входять у звіт
+                        </span>
+                        <a href="{{ url_for('admin.frozen_students') }}" class="text-decoration-none">
+                            Переглянути →
+                        </a>
+                    </div>
+                    {% endif %}
+                    {% set total_issues = issues.no_tck + issues.no_vos + issues.no_category + issues.no_gender + issues.no_military %}
+                    {% if total_issues == 0 %}
+                        <div class="text-success text-center py-3">
+                            <i class="bi bi-check-circle-fill fs-2 d-block mb-2"></i>
+                            Усі дані заповнені — можна генерувати звіт
+                        </div>
+                    {% else %}
+                        <ul class="list-unstyled mb-3">
+                            {% if issues.no_military %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-secondary me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_military }}</strong> студентів без запису військового обліку
+                            </li>
+                            {% endif %}
+                            {% if issues.no_gender %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-danger me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_gender }}</strong> студентів без визначеної статі
+                            </li>
+                            {% endif %}
+                            {% if issues.no_category %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_category }}</strong> студентів з невизначеним званням
+                                (категорія не визначена)
+                            </li>
+                            {% endif %}
+                            {% if issues.no_tck %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_tck }}</strong> студентів без ТЦК
+                            </li>
+                            {% endif %}
+                            {% if issues.no_vos %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_vos }}</strong> студентів без ВОС
+                            </li>
+                            {% endif %}
+                        </ul>
+                        <a href="{{ url_for('military_reports.issues_list') }}" class="btn btn-sm btn-outline-warning">
+                            <i class="bi bi-list-check me-1"></i>Переглянути проблемних
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h6 class="mb-0"><i class="bi bi-grid me-2"></i>Додатково</h6>
+                </div>
+                <div class="card-body d-flex flex-column gap-2">
+                    <a href="{{ url_for('military_reports.summary') }}" class="btn btn-outline-primary text-start">
+                        <i class="bi bi-bar-chart-fill me-2"></i>
+                        <strong>Додаток 12</strong> — відомість оперативного обліку
+                    </a>
+                    <a href="{{ url_for('military_reports.tck_offices') }}" class="btn btn-outline-secondary text-start">
+                        <i class="bi bi-building me-2"></i>
+                        <strong>Довідник ТЦК</strong>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

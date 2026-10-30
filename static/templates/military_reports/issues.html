@@ -1,0 +1,271 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Проблемні записи — Військовий облік{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-exclamation-triangle-fill',
+        'Проблемні записи',
+        'Студенти з неповними військовими даними, які заважають генерації Додатка 5'
+    ) }}
+
+    {# ── Чекбокси проблем ── #}
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="GET" id="filterForm">
+                <div class="d-flex align-items-center flex-wrap gap-3 mb-3">
+                    <span class="small text-uppercase fw-bold" style="letter-spacing:.06em; color: var(--muted);">
+                        <i class="bi bi-funnel"></i> Показати проблеми:
+                    </span>
+
+                    {% for key, label in issue_labels.items() %}
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox"
+                               name="issue_{{ key }}" value="1"
+                               id="issue_{{ key }}"
+                               {% if key in enabled_issues %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="issue_{{ key }}">
+                            {{ label }}
+                            {% if issue_counts[key] %}
+                            <span class="badge bg-danger ms-1">{{ issue_counts[key] }}</span>
+                            {% endif %}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="row g-2 align-items-end pt-3 border-top">
+                    <div class="col-md-5">
+                        <label class="form-label small mb-1">Пошук по ПІБ</label>
+                        <div class="input-group input-group-sm">
+                            <input type="text" name="search" class="form-control"
+                                   placeholder="Прізвище, ім'я…" value="{{ search }}">
+                            <button type="submit" class="btn btn-outline-secondary">
+                                <i class="bi bi-search"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Група</label>
+                        <select name="group_id" class="form-select form-select-sm"
+                                onchange="this.form.submit()">
+                            <option value="">Всі групи</option>
+                            {% for g in groups %}
+                            <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>
+                                {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-3">
+                        <label class="form-label small mb-1">На сторінці</label>
+                        <select name="per_page" class="form-select form-select-sm"
+                                onchange="this.form.submit()">
+                            {% for n in [20, 50, 100, 200, 500] %}
+                            <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center flex-wrap gap-3 mt-2">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox"
+                               name="include_frozen" value="1"
+                               id="includeFrozenCheck"
+                               {% if include_frozen %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="includeFrozenCheck">
+                            <i class="bi bi-snow text-info"></i> Показати заморожених
+                        </label>
+                    </div>
+                    <a href="{{ url_for('military_reports.issues_list') }}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-circle me-1"></i> Скинути все
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Таблиця ── #}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span>
+                <strong>Знайдено {{ total }}</strong> студентів з проблемами
+            </span>
+            <span class="count-pill">
+                <i class="bi bi-exclamation-triangle"></i>
+                {{ issue_counts.values() | sum }} всього проблем
+            </span>
+        </div>
+        <div class="card-body p-0">
+            {% if rows %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center" style="width:40px;">№</th>
+                            <th>ПІБ</th>
+                            <th>Група</th>
+                            <th>Проблеми</th>
+                            <th class="text-end" style="width:130px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td class="text-center font-monospace">{{ range_start + loop.index0 }}</td>
+                            <td>
+                                <a href="{{ url_for('students.student_details', student_id=r.id) }}"
+                                   class="text-decoration-none">
+                                    {{ r.last_name_UA }} {{ r.first_name_UA }}
+                                    {{ r.middle_name_UA or '' }}
+                                </a>
+                                {% if r.gender == 'F' %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-1">
+                                    <i class="bi bi-gender-female"></i>
+                                </span>
+                                {% endif %}
+                                {% if r.frozen_id %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1">
+                                    <i class="bi bi-snow"></i> заморожений
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ r.group_name or '—' }}</td>
+                            <td>
+                                {% for p in r.problems %}
+                                    {% if p == 'no_military' %}
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis me-1 mb-1">
+                                        <i class="bi bi-x-circle"></i> {{ issue_labels[p] }}
+                                    </span>
+                                    {% elif p == 'no_gender' %}
+                                    <span class="badge bg-danger-subtle text-danger-emphasis me-1 mb-1">
+                                        <i class="bi bi-gender-ambiguous"></i> {{ issue_labels[p] }}
+                                    </span>
+                                    {% elif p == 'no_category' %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
+                                        <i class="bi bi-question-circle"></i> {{ issue_labels[p] }}
+                                    </span>
+                                    {% elif p == 'no_tck' %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
+                                        <i class="bi bi-building"></i> {{ issue_labels[p] }}
+                                    </span>
+                                    {% elif p == 'no_vos' %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
+                                        <i class="bi bi-hash"></i> {{ issue_labels[p] }}
+                                    </span>
+                                    {% endif %}
+                                {% endfor %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                {% if 'no_military' in r.problems %}
+                                {# Немає запису — треба спершу створити #}
+                                <a href="{{ url_for('students.add_military', student_id=r.id) }}"
+                                   class="btn btn-sm btn-success"
+                                   title="Створити запис військового обліку">
+                                    <i class="bi bi-plus-circle"></i> Додати
+                                </a>
+                                {% else %}
+                                <a href="{{ url_for('students.military_data', student_id=r.id) }}"
+                                   class="btn btn-sm btn-primary"
+                                   title="Редагувати військові дані">
+                                    <i class="bi bi-pencil"></i> Виправити
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-check-circle-fill fs-1 d-block mb-2 text-success"></i>
+                <h5>Проблем не знайдено</h5>
+                <p class="mb-0">
+                    {% if enabled_issues|length < issue_labels|length %}
+                        За увімкненими фільтрами проблем немає.
+                        <a href="{{ url_for('military_reports.issues_list') }}">Показати всі категорії</a>
+                    {% else %}
+                        Усі активні студенти мають повні військові дані — можна генерувати звіт.
+                    {% endif %}
+                </p>
+            </div>
+            {% endif %}
+        </div>
+
+        {# ── Пагінація ── #}
+        {% if total_pages > 1 %}
+        <div class="card-footer d-flex flex-column align-items-center gap-2 py-3">
+            {% set base_params = {
+                'search': search,
+                'group_id': group_id or '',
+                'per_page': per_page,
+                'include_frozen': '1' if include_frozen else '',
+            } %}
+            {% for key in issue_labels %}
+                {% if key in enabled_issues %}
+                    {% set _ = base_params.update({'issue_' ~ key: '1'}) %}
+                {% endif %}
+            {% endfor %}
+
+            {% set prev_url = url_for('military_reports.issues_list', page=page-1, **base_params) %}
+            {% set next_url = url_for('military_reports.issues_list', page=page+1, **base_params) %}
+
+            <div class="d-flex align-items-center gap-2">
+                {% if page > 1 %}
+                <a href="{{ prev_url }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled">
+                    <i class="bi bi-chevron-left"></i>
+                </span>
+                {% endif %}
+
+                <form method="GET" class="d-flex align-items-center gap-1">
+                    {% for k, v in base_params.items() %}
+                    <input type="hidden" name="{{ k }}" value="{{ v }}">
+                    {% endfor %}
+                    <select name="page" class="form-select form-select-sm" style="width:auto;"
+                            onchange="this.form.submit()">
+                        {% for p in range(1, total_pages + 1) %}
+                        <option value="{{ p }}" {% if p == page %}selected{% endif %}>
+                            Стор. {{ p }} з {{ total_pages }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+
+                {% if page < total_pages %}
+                <a href="{{ next_url }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+                {% else %}
+                <span class="btn btn-sm btn-outline-secondary disabled">
+                    <i class="bi bi-chevron-right"></i>
+                </span>
+                {% endif %}
+            </div>
+            <div class="small text-muted">
+                Показано {{ range_start }}–{{ range_end }} з {{ total }}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

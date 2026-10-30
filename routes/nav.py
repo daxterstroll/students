@@ -29,7 +29,7 @@ NAV_SECTIONS = [
         'icon': 'bi-cloud-arrow-up-fill',
         'items': [
             {'perm': 'import_from_excel', 'url': 'students.import_from_excel',
-             'icon': 'bi-person-add', 'label': 'Студенти + військові дані'},
+             'icon': 'bi-person-add', 'label': 'Студенти'},
             {'perm': 'manage_students', 'url': 'students.military_bulk_import_pdf',
              'icon': 'bi-file-earmark-pdf', 'label': 'PDF «Резерв+» (пакетно)'},
             {'perm': 'manage_students', 'url': 'photo_bulk.bulk_upload',
@@ -58,6 +58,8 @@ NAV_SECTIONS = [
             {'perm': 'manage_students', 'url': 'admin.update_requests',
              'icon': 'bi-link-45deg', 'label': 'Заявки на оновлення даних',
              'badge_key': 'nav_pending_updates'},
+            {'perm': 'manage_military_reports', 'url': 'military_reports.dashboard',
+             'icon': 'bi-shield-fill-check', 'label': 'Військовий облік (Додаток 5)'},
             {'perm': 'manage_groups', 'url': 'admin.manage_groups',
              'icon': 'bi-person-rolodex', 'label': 'Групи'},
             {'perm': 'manage_courses', 'url': 'admin.courses',

@@ -46,7 +46,8 @@ PERMISSIONS = [
     'manage_licenses',
     'manage_license_transfer',
     'license_report',
-    'manage_pending_students'
+    'manage_pending_students',
+    'manage_military_reports'
 ]
 
 
@@ -198,6 +199,7 @@ def manage_users():
             'manage_license_transfer': 'Перевести між ліцензіями',
             'license_report': 'Звіт по ліцензіях',
             'manage_pending_students': 'Заявки на реєстрацію (публічна анкета)',
+            'manage_military_reports': 'Військовий облік (Додаток 5)',
         }
 
         if request.method == 'POST':

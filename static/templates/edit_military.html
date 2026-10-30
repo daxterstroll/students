@@ -114,6 +114,47 @@
                             {% endif %}
                         </select>
                     </div>
+                    {% elif key == 'note_18' %}
+                    <div class="col-md-6">
+                        <label class="form-label" for="f_{{ key }}">
+                            {{ label }}
+                            <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
+                                  style="font-size:.65rem; font-weight:600;">
+                                №812
+                            </span>
+                        </label>
+                        <select name="{{ key }}" id="f_{{ key }}" class="form-select">
+                            <option value="" {% if not val %}selected{% endif %}>— немає (на обліку) —</option>
+                            <option value="Виключено з військового обліку за віком"
+                                    {% if val == 'Виключено з військового обліку за віком' %}selected{% endif %}>
+                                Виключено з військового обліку за віком
+                            </option>
+                            <option value="Звільнено з роботи, завершено навчання (відраховано)"
+                                    {% if val == 'Звільнено з роботи, завершено навчання (відраховано)' %}selected{% endif %}>
+                                Звільнено з роботи, завершено навчання (відраховано)
+                            </option>
+                            <option value="Військовослужбовець"
+                                    {% if val == 'Військовослужбовець' %}selected{% endif %}>
+                                Військовослужбовець
+                            </option>
+                        </select>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Виключені з обліку не потрапляють у Додаток 5,
+                            але показуються в Додатку 12 окремим рядком.
+                        </div>
+                    </div>
+                    {% elif key == 'mobilized_date' %}
+                    <div class="col-md-6" id="f_mobilized_date_wrap"
+                         {% if not military or military.note_18 != 'Військовослужбовець' %}style="display:none;"{% endif %}>
+                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
+                        <input type="text" name="{{ key }}" id="f_{{ key }}" class="form-control"
+                               placeholder="ДД.ММ.РРРР" value="{{ val or '' }}">
+                        <div class="form-text">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Дата, з якої студент призваний на військову службу (для графи 18 Додатка 5).
+                        </div>
+                    </div>
                     {% else %}
                     <div class="col-md-6">
                         <label class="form-label" for="f_{{ key }}">{{ label }}</label>
@@ -292,5 +333,28 @@
         document.body.appendChild(form);
         form.submit();
     }
+
+    // ── Показ поля «Дата мобілізації» лише для note_18 = 'Військовослужбовець' ──
+    (function () {
+        const noteSelect = document.getElementById('f_note_18');
+        const mobWrap = document.getElementById('f_mobilized_date_wrap');
+        if (!noteSelect || !mobWrap) return;
+
+        function sync() {
+            if (noteSelect.value === 'Військовослужбовець') {
+                mobWrap.style.display = '';
+            } else {
+                mobWrap.style.display = 'none';
+                const inp = mobWrap.querySelector('input');
+                if (inp) inp.value = '';
+            }
+        }
+        noteSelect.addEventListener('change', sync);
+        // На завантаженні — вже встановлено через серверний {% if %},
+        // але на всяк випадок синхронізуємо ще раз, без очищення:
+        if (noteSelect.value !== 'Військовослужбовець') {
+            mobWrap.style.display = 'none';
+        }
+    })();
 </script>
 {% endblock %}

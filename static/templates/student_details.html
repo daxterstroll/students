@@ -120,9 +120,15 @@
                             <div class="text-muted small">Ліцензія вступу</div>
                             <div>{{ val(student.license_short_name_ua or student.license_name_ua) }}</div>
                         </div>
-
+                        <div class="col-6">
+                            <div class="text-muted small">Стать</div>
+                            <div>
+                                {% if student.gender == 'M' %}Чоловіча
+                                {% elif student.gender == 'F' %}Жіноча
+                                {% else %}<span class="text-danger">Не визначено</span>{% endif %}
+                            </div>
+                        </div>
                         <div class="col-12"><hr class="my-1"></div>
-
                         <div class="col-6">
                             <div class="text-muted small">Телефон</div>
                             <div>{{ val(student.phone) }}</div>
