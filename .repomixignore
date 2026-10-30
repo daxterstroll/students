@@ -1,1 +1,2 @@
-static/style/
+**/static/style/**
+static/style/**
