@@ -14,6 +14,9 @@ from routes.db import get_db
 from routes.utils import generate_english_name, save_multiple_attachments, logger, title_case_ukrainian
 from routes.photo import process_and_save_pending_photo, load_and_validate_image
 from routes.config import PROJECT_ROOT
+from routes.passport_types import (
+    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, passport_template_context,
+)
 
 public_apply_bp = Blueprint('public_apply', __name__)
 
@@ -29,6 +32,10 @@ PHONE_RE = re.compile(r'^(?:\+?380|0)\d{9}$')
 PENDING_PDFS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_pdfs')
 PENDING_STUDENTS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_students')
 
+@public_apply_bp.context_processor
+def _inject_passport_types():
+    """Додає passport_types/... у ВСІ render_template цього блюпринта."""
+    return passport_template_context()
 
 def _validate_birth_date(ua_date_str):
     try:
@@ -320,10 +327,10 @@ def apply():
     military_issued_vod = _iso_to_ua_date(f('military_issued_vod'))
 
     passport_document_type = f('passport_document_type')
-    if passport_document_type not in ('Паспорт (книжка)', 'ID-картка'):
+    if passport_document_type not in PASSPORT_TYPES:
         passport_document_type = None
     passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
-    passport_valid_until = _iso_to_ua_date(f('passport_valid_until')) if passport_document_type == 'ID-картка' else None
+    passport_valid_until = _iso_to_ua_date(f('passport_valid_until')) if passport_document_type in PASSPORT_TYPES_ID_STYLE else None
 
     conn = get_db()
     cur = conn.execute("""

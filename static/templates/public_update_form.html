@@ -188,10 +188,11 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                     <div class="grid">
                         <div class="col-12">
                             <label class="f-label">Тип документа</label>
-                            <select name="passport_document_type" id="passport_document_type" class="f-control">
-                                <option value="Паспорт (книжка)">Паспорт (книжка)</option>
-                                <option value="ID-картка">ID-картка</option>
-                            </select>
+							<select name="passport_document_type" id="passport_document_type" class="f-control">
+								{% for t in passport_types %}
+								<option value="{{ t }}" {% if t == passport_type_default %}selected{% endif %}>{{ t }}</option>
+								{% endfor %}
+							</select>
                         </div>
                         <div class="col-6" id="passport_series_wrap">
                             <label class="f-label">Серія (лише для книжки)</label>
@@ -431,10 +432,11 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
     bindFileLabel('document_scans', 'document_scans_name');
     bindFileLabel('military_scans', 'military_scans_name');
 
-    const passportType = document.getElementById('passport_document_type');
-    if (passportType) {
-        function syncPassportFields() {
-            const isIdCard = passportType.value === 'ID-картка';
+	const PASSPORT_TYPES_ID_STYLE = {{ passport_types_id_style | tojson }};
+	const passportType = document.getElementById('passport_document_type');
+	if (passportType) {
+		function syncPassportFields() {
+			const isIdCard = PASSPORT_TYPES_ID_STYLE.includes(passportType.value);
             document.getElementById('passport_series_wrap').style.display = isIdCard ? 'none' : '';
             document.getElementById('passport_unique_wrap').style.display = isIdCard ? '' : 'none';
             const validUntilWrap = document.getElementById('passport_valid_until_wrap');

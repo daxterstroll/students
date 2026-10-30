@@ -27,6 +27,8 @@ from flask import Blueprint, render_template, session, request
 from routes.db import get_db
 from routes.utils import permission_required
 from datetime import datetime
+from routes.passport_types import PASSPORT_TYPES_ID_STYLE
+
 
 analytics_bp = Blueprint('analytics', __name__)
 
@@ -348,7 +350,7 @@ def dashboard():
         passport = passport_by_student.get(st['id'])
         if passport:
             has_passport_cnt += 1
-            passport_fields = PASSPORT_FIELDS_ID_CARD if passport.get('document_type') == 'ID-картка' else PASSPORT_FIELDS_BOOK
+            passport_fields = PASSPORT_FIELDS_ID_CARD if passport.get('document_type') in PASSPORT_TYPES_ID_STYLE else PASSPORT_FIELDS_BOOK
             passport_filled = sum(1 for f in passport_fields if passport.get(f) and str(passport.get(f)).strip())
             passport_pcts.append(passport_filled / len(passport_fields) * 100)
 

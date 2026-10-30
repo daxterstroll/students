@@ -25,6 +25,10 @@ from openpyxl import load_workbook
 from rapidfuzz import process, fuzz
 import requests
 from routes.config import DEEPL_API_KEY
+from routes.passport_types import (
+    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
+    normalize_passport_type, passport_template_context,
+)
 
 ALLOWED_EXTENSIONS = {'xlsx'}
 
@@ -512,7 +516,7 @@ def manage_passport_documents():
                 else:
                     student_id = existing[0]
 
-                if document_type not in ('Паспорт (книжка)', 'ID-картка'):
+                if document_type not in PASSPORT_TYPES:
                     raise ValueError("Невірний тип документа")
 
                 existing_count = cursor.execute(
@@ -527,7 +531,7 @@ def manage_passport_documents():
                 # безстрокова) - JS ховає поле для книжки, але сервер не
                 # повинен покладатись лише на це (форму можна надіслати і
                 # з вимкненим JS), тому підстраховуємось і тут.
-                valid_until = request.form.get('valid_until') or None if document_type == 'ID-картка' else None
+                valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
 
                 cursor.execute("""
                     UPDATE passport_documents SET
@@ -564,14 +568,14 @@ def manage_passport_documents():
             try:
                 if not student_id:
                     raise ValueError("Не обрано студента")
-                if document_type not in ('Паспорт (книжка)', 'ID-картка'):
+                if document_type not in PASSPORT_TYPES:
                     raise ValueError("Невірний тип документа")
 
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
                 if len(new_scans) > MAX_FILES:
                     raise ValueError(f"Забагато файлів - максимум {MAX_FILES} на запис")
 
-                valid_until = request.form.get('valid_until') or None if document_type == 'ID-картка' else None
+                valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
 
                 cursor.execute("""
                     INSERT INTO passport_documents (
@@ -609,6 +613,7 @@ def manage_passport_documents():
         student=student,
         student_doc_id=student_doc_id,
         max_files=MAX_FILES,
+        **passport_template_context(),
     )
 
 
@@ -650,8 +655,11 @@ def import_passport_documents():
                         flash(f"❗ Рядок {i}: не заповнено ПІБ, тип документа чи номер - пропущено")
                         skipped += 1
                         continue
-                    if document_type not in ('Паспорт (книжка)', 'ID-картка'):
-                        flash(f"❗ Рядок {i}: невідомий тип документа '{document_type}' (очікується 'Паспорт (книжка)' або 'ID-картка') - пропущено")
+                    if document_type not in PASSPORT_TYPES:
+                        flash(
+                            f"❗ Рядок {i}: невідомий тип документа '{document_type}'. "
+                            f"Очікується один з: {'; '.join(PASSPORT_TYPES)}. - пропущено"
+                        )
                         skipped += 1
                         continue
 
@@ -668,7 +676,7 @@ def import_passport_documents():
                     unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
                     # "Дійсний до" стосується лише ID-картки - якщо у файлі
                     # випадково заповнено для книжки, ігноруємо значення.
-                    if document_type != 'ID-картка':
+                    if document_type not in PASSPORT_TYPES_ID_STYLE:
                         valid_until = None
 
                     cursor.execute("""
@@ -701,7 +709,7 @@ def import_passport_documents():
 
         return redirect(url_for('admin.import_passport_documents'))
 
-    return render_template('import_passport_documents.html')
+    return render_template('import_passport_documents.html', **passport_template_context())
 
 
 def save_preview_to_file(preview):

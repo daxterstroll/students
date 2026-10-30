@@ -70,7 +70,12 @@ CREATE TABLE IF NOT EXISTS "courseworks" (
 CREATE TABLE IF NOT EXISTS "passport_documents" (
 	"id"	INTEGER,
 	"student_id"	INTEGER NOT NULL,
-	"document_type"	TEXT NOT NULL CHECK("document_type" IN ('Паспорт (книжка)', 'ID-картка')),
+	"document_type"	TEXT NOT NULL CHECK("document_type" IN (
+		'Свідоцтво про народження',
+		'Паспорт громадянина України',
+		'Паспорт громадянина України з безконтактним електронним носієм',
+		'Паспорт громадянина України, що не містить безконтактного електронного носія'
+	)),
 	"series"	TEXT,
 	"number"	TEXT NOT NULL,
 	"issued_by"	TEXT,

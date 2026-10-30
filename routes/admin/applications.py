@@ -16,6 +16,10 @@ from routes.utils import get_attachments, save_multiple_attachments, generate_en
 from routes.admin.documents import translate_to_en
 from datetime import datetime
 import json
+from routes.passport_types import (
+    PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
+    normalize_passport_type, passport_template_context,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -413,7 +417,7 @@ def pending_student_review(pending_id):
                 'military_change_credentials', 'military_change_reason',
             ]
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
-            if values.get('passport_document_type') != 'ID-картка':
+            if values.get('passport_document_type') not in PASSPORT_TYPES_ID_STYLE:
                 values['passport_valid_until'] = None
 
             if not values['last_name_UA'] or not values['first_name_UA'] or not values['birth_date']:
@@ -563,7 +567,9 @@ def pending_student_review(pending_id):
                         student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, row['passport_document_type'] or 'Паспорт (книжка)', row['passport_series'],
+                    student_id,
+                    normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
+                    row['passport_series'],
                     row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
                     row['passport_valid_until'], row['passport_unique_number'],
                 ))
@@ -780,7 +786,9 @@ def pending_student_review(pending_id):
                         student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    existing_id, row['passport_document_type'] or 'Паспорт (книжка)', row['passport_series'],
+                    existing_id,
+                    normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
+                    row['passport_series'],
                     row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
                     row['passport_valid_until'], row['passport_unique_number'],
                 ))
@@ -892,7 +900,8 @@ def pending_student_review(pending_id):
         'admin_pending_student_review.html',
         row=row, groups=groups, licenses=licenses, existing_student=existing_student,
         scans=scans, passport_scans=passport_scans, military_scans=military_scans,
-    )
+        **passport_template_context(),
+    )   
 
 
 @admin_bp.route('/admin/pending_students/<int:pending_id>/photo', methods=['POST'])
@@ -1154,7 +1163,8 @@ def update_request_review(request_id):
                     INSERT INTO passport_documents (student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, p.get('document_type') or 'Паспорт (книжка)',
+                    student_id,
+                    normalize_passport_type(p.get('document_type')) or PASSPORT_TYPE_DEFAULT,
                     p.get('series'), p.get('number'), p.get('issued_by'),
                     p.get('issue_date'), p.get('valid_until'), p.get('unique_number')
                 ))
