@@ -6,11 +6,16 @@
     <title>{% block title %}База даних студентів Львівської філії ПВНЗ "Європейський університет"{% endblock %}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='style/images/favicon.png') }}" type="image/png">
 
+    {# Preconnect — ускоряет установку соединения с Google Fonts,
+       откуда fonts.css тянет Manrope/Lora/JetBrains Mono. #}
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
     <link href="{{ url_for('static', filename='style/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.1/bootstrap-icons.css') }}" rel="stylesheet">
-	<link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
-
+    <link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style/css/main.css') }}" rel="stylesheet">
+
     <script>
         /* Застосовуємо збережену тему ДО відображення сторінки, щоб
            уникнути "спалаху" світлої теми при перезавантаженні. */
@@ -24,287 +29,191 @@
 </head>
 <body>
 
-{% if request.endpoint != 'auth.login' %}
-<nav class="navbar navbar-expand-lg navbar-dark fixed-top" id="mainNav">
+{% if session.get('user_id') %}
+
+{# Skip-link — невидимый по умолчанию, появляется при Tab-фокусе.
+   Критически важен для скринридеров и навигации с клавиатуры. #}
+<a href="#main-content" class="visually-hidden-focusable">Перейти до вмісту</a>
+
+<nav class="navbar navbar-expand-lg navbar-dark fixed-top" id="mainNav" aria-label="Головна навігація">
     <div class="container-fluid">
         <a class="navbar-brand" href="{{ url_for('students.student_list') }}">
-            <i class="bi bi-mortarboard-fill"></i>
+            <i class="bi bi-mortarboard-fill" aria-hidden="true"></i>
             <span>База даних</span>
         </a>
 
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
-            <i class="bi bi-list"></i>
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar"
+                aria-label="Відкрити меню" aria-controls="mainNavbar" aria-expanded="false">
+            <i class="bi bi-list" aria-hidden="true"></i>
         </button>
 
-<div class="collapse navbar-collapse" id="mainNavbar">
-    <ul class="navbar-nav me-auto">
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <ul class="navbar-nav me-auto">
 
-        {% set is_admin = session.get('is_admin', False) %}
-        {% set perms = session.get('permissions', []) %}
+                {# ==================================================
+                   ДЕСКТОПНА ВЕРСІЯ — рендериться з nav_sections
+                   ================================================== #}
+                {% for section in nav_sections %}
+                    {% if section.type == 'dropdown' %}
+                        {# Збираємо лише видимі пункти + роздільники #}
+                        {% set visible_items = [] %}
+                        {% for item in section['items'] %}
+                            {% if item.get('divider') %}
+                                {% set _ = visible_items.append(item) %}
+                            {% elif has_perm(item.perm) %}
+                                {% set _ = visible_items.append(item) %}
+                            {% endif %}
+                        {% endfor %}
+                        {# Показуємо dropdown, лише якщо є хоч один реальний пункт #}
+                        {% set real_items = visible_items | rejectattr('divider', 'defined') | list %}
+                        {% set real_items = visible_items | selectattr('perm', 'defined') | list %}
+                        {% if real_items %}
+                        <li class="nav-item dropdown d-none d-lg-block">
+                            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
+                                <i class="bi {{ section.icon }}" aria-hidden="true"></i> {{ section.label }}
+                                {# Підсумковий бейдж у самому заголовку dropdown #}
+                                {% set header_badges = [] %}
+                                {% for item in visible_items %}
+                                    {% if item.get('badge_key') and has_perm(item.get('perm')) and nav_badges[item.badge_key] %}
+                                        {% set _ = header_badges.append(nav_badges[item.badge_key]) %}
+                                    {% endif %}
+                                {% endfor %}
+                                {% if header_badges %}
+                                <span class="badge bg-danger ms-1">{{ header_badges | sum }}</span>
+                                {% endif %}
+                            </a>
+                            <ul class="dropdown-menu dropdown-menu-dark">
+                                {% for item in visible_items %}
+                                    {% if item.get('divider') %}
+                                    <li><hr class="divider"></li>
+                                    {% elif has_perm(item.perm) %}
+                                    <li>
+                                        <a class="dropdown-item" href="{{ url_for(item.url) }}">
+                                            <i class="bi {{ item.icon }}" aria-hidden="true"></i> {{ item.label }}
+                                            {% if item.get('badge_key') and nav_badges[item.badge_key] %}
+                                            <span class="badge bg-danger ms-1">{{ nav_badges[item.badge_key] }}</span>
+                                            {% endif %}
+                                        </a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+                            </ul>
+                        </li>
+                        {% endif %}
 
-        <!-- === Імпорт === -->
-        {% if is_admin or 'import_from_excel' in perms or 'import_subjects' in perms or 'import_education_docs' in perms or 'manage_students' in perms %}
-        <li class="nav-item dropdown d-none d-lg-block">
-            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
-                <i class="bi bi-cloud-arrow-up-fill"></i> Імпорт
-            </a>
-            <ul class="dropdown-menu dropdown-menu-dark">
-                {% if is_admin or 'import_from_excel' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('students.import_from_excel') }}">
-                    <i class="bi bi-person-add"></i> Студенти + військові дані
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'manage_students' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('students.military_bulk_import_pdf') }}">
-                    <i class="bi bi-file-earmark-pdf"></i> PDF «Резерв+» (пакетно)
-                </a></li>
-                <li><a class="dropdown-item" href="{{ url_for('photo_bulk.bulk_upload') }}">
-                    <i class="bi bi-images"></i> Фото студентів (масово)
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'import_subjects' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.import_subjects') }}">
-                    <i class="bi bi-journal-plus"></i> Предмети
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'import_grades' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('import_grades.upload') }}">
-                    <i class="bi bi-card-checklist"></i> Оцінки (зведена відомість)
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'import_education_docs' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.import_docs_preview') }}">
-                    <i class="bi bi-file-earmark-arrow-up"></i> Документи студентів
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'import_passport_documents' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.import_passport_documents') }}">
-                    <i class="bi bi-person-vcard"></i> Паспортні дані
-                </a></li>
-                {% endif %}
+                    {% elif section.type == 'link' %}
+                        {% if has_perm(section.perm) %}
+                        <li class="nav-item d-none d-lg-block">
+                            <a class="nav-link" href="{{ url_for(section.url) }}">
+                                <i class="bi {{ section.icon }}" aria-hidden="true"></i> {{ section.label }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endif %}
+                {% endfor %}
+
+                {# ==================================================
+                   МОБІЛЬНА ВЕРСІЯ — той самий nav_sections, плоский
+                   список із заголовками-секціями (без dropdown)
+                   ================================================== #}
+                <div class="d-lg-none mt-2">
+                    {% for section in nav_sections %}
+                        {% if section.type == 'dropdown' %}
+                            {% set visible_items = [] %}
+                            {% for item in section['items'] %}
+                                {% if item.get('divider') %}
+                                    {# Роздільники в плоскому мобільному списку не потрібні #}
+                                {% elif has_perm(item.perm) %}
+                                    {% set _ = visible_items.append(item) %}
+                                {% endif %}
+                            {% endfor %}
+                            {% if visible_items %}
+                            <div class="admin-section-title">{{ section.label }}</div>
+                            {% for item in visible_items %}
+                            <a href="{{ url_for(item.url) }}" class="admin-link d-block">
+                                <i class="bi {{ item.icon }}" aria-hidden="true"></i> {{ item.label }}
+                                {% if item.get('badge_key') and nav_badges[item.badge_key] %}
+                                <span class="badge bg-danger ms-1">{{ nav_badges[item.badge_key] }}</span>
+                                {% endif %}
+                            </a>
+                            {% endfor %}
+                            {% endif %}
+
+                        {% elif section.type == 'link' %}
+                            {% if has_perm(section.perm) %}
+                            <a href="{{ url_for(section.url) }}" class="admin-link d-block">
+                                <i class="bi {{ section.icon }}" aria-hidden="true"></i> {{ section.label }}
+                            </a>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+
             </ul>
-        </li>
-        {% endif %}
 
-        <!-- === Адміністрування (2 меню) === -->
-        {% if is_admin or perms %}
-        {% if is_admin or 'manage_groups' in perms or 'manage_subjects' in perms or 'manage_activities' in perms or 'manage_education_documents' in perms or 'manage_passport_documents' in perms or 'manage_diplomas' in perms or 'study_periods' in perms or 'manage_courses' in perms or 'manage_frozen_students' in perms or 'manage_expulsion' in perms or 'archive' in perms or 'manage_pending_students' in perms or 'manage_students' in perms %}
-        <li class="nav-item dropdown d-none d-lg-block">
-            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
-                <i class="bi bi-mortarboard-fill"></i> Навчальний процес
-                {% set total_pending = (nav_pending_applications or 0) + (nav_pending_updates or 0) %}
-                {% if total_pending %}<span class="badge bg-danger ms-1">{{ total_pending }}</span>{% endif %}
-            </a>
-            <ul class="dropdown-menu dropdown-menu-dark">
-                {% if is_admin or 'manage_pending_students' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.pending_students') }}"><i class="bi bi-person-plus"></i> Заявки на реєстрацію
-                    {% if nav_pending_applications %}<span class="badge bg-danger ms-1">{{ nav_pending_applications }}</span>{% endif %}
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'manage_students' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.update_requests') }}"><i class="bi bi-link-45deg"></i> Заявки на оновлення даних
-                    {% if nav_pending_updates %}<span class="badge bg-danger ms-1">{{ nav_pending_updates }}</span>{% endif %}
-                </a></li>
-                {% endif %}
-                {% if is_admin or 'manage_groups' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_groups') }}"><i class="bi bi-person-rolodex"></i> Групи</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_courses' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.courses') }}"><i class="bi bi-kanban"></i> Курси</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_subjects' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_subjects') }}"><i class="bi bi-journal"></i> Предмети</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_activities' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_activities') }}"><i class="bi bi-journal-bookmark-fill"></i> Практика / атестація / курсові</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_education_documents' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_education_documents') }}"><i class="bi bi-file-earmark-text"></i> Документи освіти</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_passport_documents' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_passport_documents') }}"><i class="bi bi-person-vcard"></i> Паспортні дані</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_diplomas' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_diplomas') }}"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a></li>
-                {% endif %}
-                {% if is_admin or 'study_periods' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_study_periods_bulk_assign') }}"><i class="bi bi-calendar2-date"></i> Періоди навчання</a></li>
-                {% endif %}
-                <hr class="divider">
-                {% if is_admin or 'manage_frozen_students' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.frozen_students') }}"><i class="bi bi-snow"></i> Заморожені студенти</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_expulsion' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.expulsion') }}"><i class="bi bi-person-x"></i> Наказ про відрахування</a></li>
-                {% endif %}
-                {% if is_admin or 'archive' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.archive') }}"><i class="bi bi-archive"></i> Архів груп</a></li>
-                {% endif %}
-            </ul>
-        </li>
-        {% endif %}
+            {# ==================================================
+               КОРИСТУВАЧ / ТЕМА / ВИХІД
+               ================================================== #}
+            {% set role_label = 'Адміністратор' if session.get('is_admin') else 'Працівник' %}
 
-        {% if is_admin or 'manage_specialties' in perms or 'manage_degree_levels' in perms or 'manage_licenses' in perms or 'manage_educational_programs' in perms or 'manage_qualification_names' in perms or 'manage_accreditations' in perms or 'manage_users' in perms or 'view_logs' in perms or 'analytics' in perms or 'manage_templates' in perms or 'license_report' in perms %}
-        <li class="nav-item dropdown d-none d-lg-block">
-            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown">
-                <i class="bi bi-diagram-3-fill"></i> Довідники та система
-            </a>
-            <ul class="dropdown-menu dropdown-menu-dark">
-                {% if is_admin or 'manage_specialties' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_specialties') }}"><i class="bi bi-diagram-3"></i> Спеціальності</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_degree_levels' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_degree_levels') }}"><i class="bi bi-mortarboard"></i> Ступені</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_educational_programs' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_educational_programs') }}"><i class="bi bi-journal-bookmark"></i> Освітня програма</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_qualification_names' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_qualification_names') }}"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_licenses' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_licenses') }}"><i class="bi bi-award"></i> Ліцензії</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_accreditations' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_accreditations') }}"><i class="bi bi-award"></i> Акредитації</a></li>
-                {% endif %}
-                <hr class="divider">
-                {% if is_admin or 'manage_users' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_users') }}"><i class="bi bi-people"></i> Користувачі та права</a></li>
-                {% endif %}
-                {% if is_admin or 'manage_templates' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.manage_templates') }}"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a></li>
-                {% endif %}
-                {% if is_admin or 'license_report' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.license_report') }}"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a></li>
-                {% endif %}
-                {% if is_admin or 'analytics' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('analytics.dashboard') }}"><i class="bi bi-graph-up"></i> Аналітика</a></li>
-                {% endif %}
-                {% if is_admin or 'view_logs' in perms %}
-                <li><a class="dropdown-item" href="{{ url_for('admin.view_logs') }}"><i class="bi bi-file-earmark-binary"></i> Логування</a></li>
-                {% endif %}
-            </ul>
-        </li>
-        {% endif %}
-
-                {% if is_admin or 'group_export' in perms %}
-<li class="nav-item d-none d-lg-block">
-        <a class="nav-link" href="{{ url_for('admin.group_export') }}">
-            <i class="bi bi-file-zip"></i> Масова генерація документів
-        </a>
-    </li>
-<li class="nav-item d-none d-lg-block">
-        <a class="nav-link" href="{{ url_for('admin.export_photos') }}">
-            <i class="bi bi-images"></i> Фото студентів
-        </a>
-    </li>
-                {% endif %}
-
-        <!-- Мобільна версія адмін-меню -->
-        <div class="d-lg-none mt-2">
-		{% if is_admin or 'group_export' in perms %}<a href="{{ url_for('admin.group_export') }}" class="admin-link d-block"><i class="bi bi-file-zip"></i> Масова генерація</a>{% endif %}
-		{% if is_admin or 'group_export' in perms %}<a href="{{ url_for('admin.export_photos') }}" class="admin-link d-block"><i class="bi bi-images"></i> Фото студентів</a>{% endif %}
-
-            <div class="admin-section-title">Імпорт</div>
-            {% if is_admin or 'import_from_excel' in perms %}
-            <a href="{{ url_for('students.import_from_excel') }}" class="admin-link d-block"><i class="bi bi-person-add"></i> Студенти + військові</a>
-            {% endif %}
-            {% if is_admin or 'manage_students' in perms %}
-            <a href="{{ url_for('students.military_bulk_import_pdf') }}" class="admin-link d-block"><i class="bi bi-file-earmark-pdf"></i> PDF «Резерв+» (пакетно)</a>
-            <a href="{{ url_for('photo_bulk.bulk_upload') }}" class="admin-link d-block"><i class="bi bi-images"></i> Фото студентів (масово)</a>
-            {% endif %}
-            {% if is_admin or 'import_subjects' in perms %}
-            <a href="{{ url_for('admin.import_subjects') }}" class="admin-link d-block"><i class="bi bi-journal-plus"></i> Предмети</a>
-            {% endif %}
-            {% if is_admin or 'import_grades' in perms %}
-            <a href="{{ url_for('import_grades.upload') }}" class="admin-link d-block"><i class="bi bi-card-checklist"></i> Оцінки (зведена відомість)</a>
-            {% endif %}
-            {% if is_admin or 'import_education_docs' in perms %}
-            <a href="{{ url_for('admin.import_docs_preview') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Документи студентів</a>
-            {% endif %}
-
-            <div class="admin-section-title">Адміністрування</div>
-            {% if is_admin or 'manage_users' in perms %}<a href="{{ url_for('admin.manage_users') }}" class="admin-link d-block"><i class="bi bi-people"></i> Користувачі та права</a>{% endif %}
-            {% if is_admin or 'view_logs' in perms %}<a href="{{ url_for('admin.view_logs') }}" class="admin-link d-block"><i class="bi bi-file-earmark-binary"></i> Логування</a>{% endif %}
-            {% if is_admin or 'analytics' in perms %}<a href="{{ url_for('analytics.dashboard') }}" class="admin-link d-block"><i class="bi bi-graph-up"></i> Аналітика</a>{% endif %}
-            {% if is_admin or 'manage_templates' in perms %}<a href="{{ url_for('admin.manage_templates') }}" class="admin-link d-block"><i class="bi bi-file-earmark-arrow-up"></i> Шаблони документів</a>{% endif %}
-
-            <div class="admin-section-title">Довідники</div>
-            {% if is_admin or 'manage_subjects' in perms %}<a href="{{ url_for('admin.manage_subjects') }}" class="admin-link d-block"><i class="bi bi-journal"></i> Предмети</a>{% endif %}
-			{% if is_admin or 'manage_activities' in perms %}<a href="{{ url_for('admin.manage_activities') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark-fill"></i> Практика / атестація / курсові</a>{% endif %}
-            {% if is_admin or 'manage_education_documents' in perms %}<a href="{{ url_for('admin.manage_education_documents') }}" class="admin-link d-block"><i class="bi bi-file-earmark-text"></i> Документи освіти</a>{% endif %}
-            {% if is_admin or 'manage_passport_documents' in perms %}<a href="{{ url_for('admin.manage_passport_documents') }}" class="admin-link d-block"><i class="bi bi-person-vcard"></i> Паспортні дані</a>{% endif %}
-            {% if is_admin or 'study_periods' in perms %}<a href="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="admin-link d-block"><i class="bi bi-calendar2-date"></i> Періоди навчання</a>{% endif %}
-            {% if is_admin or 'manage_accreditations' in perms %}<a href="{{ url_for('admin.manage_accreditations') }}" class="admin-link d-block"><i class="bi bi-award"></i> Акредитації</a>{% endif %}
-            {% if is_admin or 'manage_pending_students' in perms %}<a href="{{ url_for('admin.pending_students') }}" class="admin-link d-block"><i class="bi bi-person-plus"></i> Заявки на реєстрацію{% if nav_pending_applications %} <span class="badge bg-danger">{{ nav_pending_applications }}</span>{% endif %}</a>{% endif %}
-            {% if is_admin or 'manage_students' in perms %}<a href="{{ url_for('admin.update_requests') }}" class="admin-link d-block"><i class="bi bi-link-45deg"></i> Заявки на оновлення даних{% if nav_pending_updates %} <span class="badge bg-danger">{{ nav_pending_updates }}</span>{% endif %}</a>{% endif %}
-            {% if is_admin or 'manage_groups' in perms %}<a href="{{ url_for('admin.manage_groups') }}" class="admin-link d-block"><i class="bi bi-person-rolodex"></i> Групи</a>{% endif %}
-            {% if is_admin or 'manage_specialties' in perms %}<a href="{{ url_for('admin.manage_specialties') }}" class="admin-link d-block"><i class="bi bi-diagram-3"></i> Спеціальності</a>{% endif %}
-            {% if is_admin or 'manage_degree_levels' in perms %}<a href="{{ url_for('admin.manage_degree_levels') }}" class="admin-link d-block"><i class="bi bi-mortarboard"></i> Ступені</a>{% endif %}
-            {% if is_admin or 'manage_licenses' in perms %}<a href="{{ url_for('admin.manage_licenses') }}" class="admin-link d-block"><i class="bi bi-award"></i> Ліцензії</a>{% endif %}
-            {% if is_admin or 'license_report' in perms %}<a href="{{ url_for('admin.license_report') }}" class="admin-link d-block"><i class="bi bi-list-check"></i> Звіт по ліцензіях</a>{% endif %}
-            {% if is_admin or 'manage_educational_programs' in perms %}<a href="{{ url_for('admin.manage_educational_programs') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Освітня програма</a>{% endif %}
-            {% if is_admin or 'manage_qualification_names' in perms %}<a href="{{ url_for('admin.manage_qualification_names') }}" class="admin-link d-block"><i class="bi bi-mortarboard-fill"></i> Назва кваліфікації</a>{% endif %}
-            {% if is_admin or 'manage_courses' in perms %}<a href="{{ url_for('admin.courses') }}" class="admin-link d-block"><i class="bi bi-kanban"></i> Курси</a>{% endif %}
-            {% if is_admin or 'manage_frozen_students' in perms %}<a href="{{ url_for('admin.frozen_students') }}" class="admin-link d-block"><i class="bi bi-snow"></i> Заморожені студенти</a>{% endif %}
-            {% if is_admin or 'manage_expulsion' in perms %}<a href="{{ url_for('admin.expulsion') }}" class="admin-link d-block"><i class="bi bi-person-x"></i> Наказ про відрахування</a>{% endif %}
-            {% if is_admin or 'archive' in perms %}<a href="{{ url_for('admin.archive') }}" class="admin-link d-block"><i class="bi bi-archive"></i> Архів груп</a>{% endif %}
-            {% if is_admin or 'manage_diplomas' in perms %}<a href="{{ url_for('admin.manage_diplomas') }}" class="admin-link d-block"><i class="bi bi-journal-bookmark"></i> Номери диплому / додатку</a>{% endif %}
-            </div>
-        {% endif %}
-
-    </ul>
-            {% if session.get('user_id') %}
-            <!-- Десктоп -->
+            {# Десктоп #}
             <div class="d-none d-lg-flex align-items-center">
-                <button type="button" id="themeToggleDesktop" class="theme-toggle-btn btn btn-sm me-2" title="Перемкнути тему">
-                    <i class="bi bi-moon-stars"></i>
+                <button type="button" id="themeToggleDesktop" class="theme-toggle-btn btn btn-sm me-2"
+                        title="Перемкнути тему" aria-label="Перемкнути тему">
+                    <i class="bi bi-moon-stars" aria-hidden="true"></i>
                 </button>
                 <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm me-2" title="Довідка">
-                    <i class="bi bi-question-circle me-1"></i>Довідка
+                    <i class="bi bi-question-circle me-1" aria-hidden="true"></i>Довідка
                 </a>
                 <span class="badge user-badge me-3">
-                    <i class="bi bi-person-badge me-1"></i>{{ session.get('role') }}
+                    <i class="bi bi-person-badge me-1" aria-hidden="true"></i>{{ session.get('username', 'user') }} · {{ role_label }}
                 </span>
                 <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm logout-btn">
-                    <i class="bi bi-box-arrow-right me-1"></i>Вийти
+                    <i class="bi bi-box-arrow-right me-1" aria-hidden="true"></i>Вийти
                 </a>
             </div>
 
-            <!-- Мобільна -->
+            {# Мобільна #}
             <div class="d-lg-none mt-3 user-info-mobile">
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <span class="badge user-badge">
-                        <i class="bi bi-person-badge me-1"></i>{{ session.get('role') }}
+                        <i class="bi bi-person-badge me-1" aria-hidden="true"></i>{{ session.get('username', 'user') }} · {{ role_label }}
                     </span>
                     <div class="d-flex gap-2">
-                        <button type="button" id="themeToggleMobile" class="theme-toggle-btn btn btn-sm" title="Перемкнути тему">
-                            <i class="bi bi-moon-stars"></i>
+                        <button type="button" id="themeToggleMobile" class="theme-toggle-btn btn btn-sm"
+                                title="Перемкнути тему" aria-label="Перемкнути тему">
+                            <i class="bi bi-moon-stars" aria-hidden="true"></i>
                         </button>
                         <a href="{{ url_for('students.faq') }}" class="btn btn-outline-light btn-sm">
-                            <i class="bi bi-question-circle me-1"></i>Довідка
+                            <i class="bi bi-question-circle me-1" aria-hidden="true"></i>Довідка
                         </a>
                         <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-light btn-sm logout-btn">
-                            <i class="bi bi-box-arrow-right me-1"></i>Вийти
+                            <i class="bi bi-box-arrow-right me-1" aria-hidden="true"></i>Вийти
                         </a>
                     </div>
                 </div>
             </div>
-            {% endif %}
 
         </div>
     </div>
 </nav>
 {% endif %}
 
-<main class="container py-3">
+{#
+   Контейнер контенту — керується блоком main_class.
+   За замовчуванням "container py-3" — як і було раніше (шоб не зламати
+   жоден з ~70 наявних шаблонів, які самі мають усередині свій container).
+   Окрема сторінка може перевизначити:
+     - {% block main_class %}py-3{% endblock %}            → без зовнішнього container
+     - {% block main_class %}container-fluid py-3{% endblock %} → на всю ширину
+   #}
+<main id="main-content" class="{% block main_class %}container py-3{% endblock %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
     {% for category, message in messages %}
     <div class="alert alert-{{ category|default('info') }} alert-dismissible fade show" role="alert">
         {{ message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрити"></button>
     </div>
     {% endfor %}
     {% endif %}
@@ -317,6 +226,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
+    // ── Плавне закриття мобільного меню при кліку на пункт ──
     document.querySelectorAll('#mainNavbar .nav-link, #mainNavbar .admin-link, #mainNavbar .dropdown-item, #mainNavbar .logout-btn')
         .forEach(link => {
             link.addEventListener('click', () => {
@@ -326,7 +236,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-    // navbar shadow on scroll
+    // ── Тінь навбара при скролі ──
     const nav = document.getElementById('mainNav');
     if (nav) {
         window.addEventListener('scroll', () => {
@@ -334,7 +244,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // animate Bootstrap dropdown open/close (desktop)
+    // ── Анімація відкриття/закриття dropdown ──
     document.querySelectorAll('.nav-item.dropdown').forEach(item => {
         const menu = item.querySelector('.dropdown-menu');
         if (!menu) return;
@@ -342,22 +252,23 @@ document.addEventListener('DOMContentLoaded', () => {
         item.addEventListener('hide.bs.dropdown', () => menu.classList.remove('show'));
     });
 });
+
 document.addEventListener('DOMContentLoaded', () => {
-    // Переносимо всі модальні вікна напряму в <body>,
-    // щоб уникнути проблем з z-index/overflow усередині акордеонів і таблиць
+    // Переносимо всі модальні вікна напряму в <body> — щоб уникнути
+    // проблем із z-index/overflow усередині акордеонів і таблиць.
     document.querySelectorAll('.modal').forEach(modal => {
         if (modal.parentElement !== document.body) {
             document.body.appendChild(modal);
         }
     });
 
-    // Перемикач темної теми - стан зберігається в localStorage,
-    // тому лишається однаковим між сторінками й після перезавантаження
-    // (застосовується ще до відображення сторінки - див. <script> у <head>).
+    // ── Перемикач темної теми ──
     function applyThemeIcon() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        document.querySelectorAll('.theme-toggle-btn i').forEach(icon => {
-            icon.className = isDark ? 'bi bi-sun' : 'bi bi-moon-stars';
+        document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+            const icon = btn.querySelector('i');
+            if (icon) icon.className = isDark ? 'bi bi-sun' : 'bi bi-moon-stars';
+            btn.setAttribute('aria-label', isDark ? 'Увімкнути світлу тему' : 'Увімкнути темну тему');
         });
     }
     function toggleTheme() {

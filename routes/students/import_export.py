@@ -20,7 +20,30 @@ import os
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
 @permission_required('import_from_excel')
 def import_from_excel():
-    """Імпорт студентів з Excel-файлу."""
+    """
+    Імпорт студентів з Excel-файлу.
+
+    Колонки (A→J, 0-базовий індекс):
+        0 A  group_id                  (обов.)
+        1 B  ПІБ повністю (3 слова)    (обов.)
+        2 C  birth_date                (обов.)
+        3 D  edebo_code
+        4 E  license (short_name_ua)
+        5 F  program_credits_override
+        6 G  phone (основний[, резервний])
+        7 H  email
+        8 I  tax_id                    (РНОКПП)
+        9 J  address_of_residence
+
+    last_name_ENG / first_name_ENG НЕ читаються з файлу - генеруються
+    автоматично через generate_english_name() (транслітерація КМУ №55-2010).
+    id / archived / photo теж не імпортуються: id автоінкрементний,
+    archived = FALSE, photo = NULL за замовчуванням.
+
+    Військові дані з Excel більше НЕ імпортуються - вони заповнюються
+    вручну на картці студента або через PDF «Резерв+» (сторінка
+    «Військові дані» або пакетний імпорт PDF).
+    """
     if request.method == 'POST':
         file = request.files.get('excel_file')
         if not file or not file.filename.endswith('.xlsx'):
@@ -99,25 +122,29 @@ def import_from_excel():
                         except (ValueError, TypeError):
                             flash(f"⚠️ Рядок {i}: некоректне значення кредитів скороченої програми '{row[5]}' - поле пропущено, студент імпортований без нього")
 
-                    raw_military = list(row[6:15]) if len(row) > 6 else []
-                    military_data = raw_military + [None] * max(0, 9 - len(raw_military))
-
-                    # Телефон (колонка P, необов'язкова) - основний і
+                    # Телефон (колонка G, необов'язкова) - основний і
                     # резервний номер через кому, напр.
                     # "+380991234567, +380991234568". Другий номер
                     # необов'язковий; якщо коми немає - записується
                     # лише основний.
                     phone = None
                     phone_backup = None
-                    if len(row) > 15 and row[15] not in (None, ''):
-                        phone_parts = [p.strip() for p in str(row[15]).split(',') if p.strip()]
+                    if len(row) > 6 and row[6] not in (None, ''):
+                        phone_parts = [p.strip() for p in str(row[6]).split(',') if p.strip()]
                         if phone_parts:
                             phone = phone_parts[0]
                         if len(phone_parts) > 1:
                             phone_backup = phone_parts[1]
 
-                    # Email (колонка Q, необов'язкова).
-                    email = str(row[16]).strip() if len(row) > 16 and row[16] not in (None, '') else None
+                    # Email (колонка H, необов'язкова).
+                    email = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
+
+                    # Ідентифікаційний код / РНОКПП (колонка I, необов'язкова).
+                    # Зберігаємо як рядок, щоб не втратити провідні нулі.
+                    tax_id = str(row[8]).strip() if len(row) > 8 and row[8] not in (None, '') else None
+
+                    # Адреса проживання (колонка J, необов'язкова).
+                    address_of_residence = str(row[9]).strip() if len(row) > 9 and row[9] not in (None, '') else None
 
                     if not full_name:
                         continue
@@ -154,43 +181,23 @@ def import_from_excel():
                         skipped += 1
                         continue
 
+                    # Автоматична генерація англійських ПІБ (КМУ №55-2010) -
+                    # з Excel ці поля НЕ читаються.
                     last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
 
                     conn.execute("""
                         INSERT INTO students (
                             last_name_UA, first_name_UA, middle_name_UA,
                             last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code,
-                            license_id, program_credits_override, phone, phone_backup, email
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (last_name, first_name, middle_name, last_name_eng, first_name_eng,
-                          birth_date, group_id, edebo_code, license_id, program_credits_override,
-                          phone, phone_backup, email))
-                    student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-
-                    if any(military_data):
-                        issued_VOD_raw = military_data[2]
-                        if isinstance(issued_VOD_raw, datetime):
-                            issued_VOD = issued_VOD_raw.strftime("%d.%m.%Y")
-                        elif isinstance(issued_VOD_raw, str):
-                            issued_VOD = issued_VOD_raw.strip().replace('-', '.')
-                            try:
-                                datetime.strptime(issued_VOD, "%d.%m.%Y")
-                            except ValueError:
-                                issued_VOD = ''
-                        else:
-                            issued_VOD = ''
-
-                        conn.execute("""
-                            INSERT INTO military (
-                                student_id, registration_number_of_the_DRPVR,
-                                military_registration_document, issued_VOD,
-                                military_accounting_specialty_number, military_rank,
-                                change_credentials, reason_for_changing_credentials,
-                                being_on_military_registration, address_of_residence
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (student_id, military_data[0], military_data[1], issued_VOD,
-                              military_data[3], military_data[4], military_data[5],
-                              military_data[6], military_data[7], military_data[8]))
+                            license_id, program_credits_override, phone, phone_backup, email,
+                            tax_id, address_of_residence
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        last_name, first_name, middle_name,
+                        last_name_eng, first_name_eng, birth_date, group_id, edebo_code,
+                        license_id, program_credits_override, phone, phone_backup, email,
+                        tax_id, address_of_residence,
+                    ))
 
                     inserted += 1
 
