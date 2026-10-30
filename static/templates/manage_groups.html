@@ -56,12 +56,16 @@
             </div>
             <div class="col-md-6">
                 <label for="degree_level" class="form-label">Ступінь</label>
-                <select name="degree_level" id="degree_level" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', ''); fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
-                    <option value="" disabled selected>— оберіть зі списку —</option>
-                    {% for d in degree_levels if d.is_active %}
-                    <option value="{{ d.name_ua }}" data-en="{{ d.name_en or '' }}">{{ d.name_ua }}</option>
-                    {% endfor %}
-                </select>
+				<select name="degree_level" id="degree_level" class="form-select" required onchange="fillPairedDerived(this, 'degree_level_en', ''); fillGroupName(''); fillEducationalProgram(''); fillQualificationName('')">
+					<option value="" disabled selected>— оберіть зі списку —</option>
+					{% for level in degree_levels %}
+						{% if level.is_active %}
+							<option value="{{ level.name_ua }}"
+									data-en="{{ level.name_en or '' }}"
+									data-suffix="{{ level.name_suffix or '' }}">{{ level.name_ua }}</option>
+						{% endif %}
+					{% endfor %}
+				</select>
             </div>
             <div class="col-md-6">
                 <label for="degree_level_en" class="form-label">Degree Level (EN)</label>
@@ -747,9 +751,13 @@ function fillGroupName(suffix) {
     const degreeLevelSelectForName = document.getElementById('degree_level' + suffix);
     const degreeLevelForName = degreeLevelSelectForName ? degreeLevelSelectForName.value : '';
 
-    let effectiveShortName = shortName;
-    if (effectiveShortName && degreeLevelForName === 'Магістр') effectiveShortName += 'м';
-    if (effectiveShortName && studyForm === 'Заочна') effectiveShortName += 'з';
+	let effectiveShortName = shortName;
+	if (effectiveShortName && degreeLevelSelectForName) {
+		const degOpt = degreeLevelSelectForName.options[degreeLevelSelectForName.selectedIndex];
+		const degreeSuffix = (degOpt && degOpt.dataset.suffix) || '';
+		if (degreeSuffix) effectiveShortName += degreeSuffix;
+	}
+	if (effectiveShortName && studyForm === 'Заочна') effectiveShortName += 'з';
 
     if (effectiveShortName && course) {
         nameField.value = effectiveShortName + '-' + course;
