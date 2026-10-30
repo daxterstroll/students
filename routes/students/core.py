@@ -24,6 +24,7 @@ import os
 import uuid
 import secrets
 import json
+from routes.passport_types import PASSPORT_TYPES_ID_STYLE, passport_template_context
 
 UPDATE_REQUEST_FIELD_LABELS = {
     'last_name_UA': "Прізвище (українською)",
@@ -406,7 +407,7 @@ def student_list():
         student_dict['has_passport'] = passport_doc is not None
         if passport_doc:
             pd = dict(passport_doc)
-            if pd.get('document_type') == 'ID-картка':
+            if pd.get('document_type') in PASSPORT_TYPES_ID_STYLE:
                 passport_fields = ['document_type', 'number', 'issued_by', 'issue_date', 'valid_until', 'unique_number']
             else:
                 passport_fields = ['document_type', 'series', 'number', 'issued_by', 'issue_date']
@@ -637,7 +638,8 @@ def student_details(student_id):
         education_docs=education_docs,
         student_attachments=student_attachments,
         passport_docs=passport_docs,
-        study_periods=study_periods
+        study_periods=study_periods,
+        **passport_template_context(),
     )
 
 

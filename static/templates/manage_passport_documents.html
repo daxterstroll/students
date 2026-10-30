@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-person-vcard-fill', 'Паспортні дані', 'Паспорт (книжка) або ID-картка студентів, до ' ~ max_files ~ ' сканів на запис') }}
+    {{ ui.page_header('bi-person-vcard-fill', 'Паспортні дані', 'Паспорти, ID-картки та свідоцтва про народження студентів, до ' ~ max_files ~ ' сканів на запис') }}
 
     {% if student %}
         <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
@@ -61,13 +61,14 @@
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label for="document_type" class="form-label">Тип документа</label>
-                        <select name="document_type" id="document_type" class="form-select" required>
-                            <option value="Паспорт (книжка)">Паспорт (книжка)</option>
-                            <option value="ID-картка">ID-картка</option>
-                        </select>
+						<select name="document_type" id="document_type" class="form-select" required>
+							{% for t in passport_types %}
+							<option value="{{ t }}" {% if t == passport_type_default %}selected{% endif %}>{{ t }}</option>
+							{% endfor %}
+						</select>
                     </div>
                     <div class="col-md-6" id="series_wrap">
-                        <label for="series" class="form-label">Серія (лише для книжки)</label>
+                        <label for="series" class="form-label">Серія (для документів книжкового типу)</label>
                         <input type="text" name="series" id="series" class="form-control" placeholder="Напр., АА">
                     </div>
                     <div class="col-md-12">
@@ -79,7 +80,7 @@
                         <input type="text" name="issued_by" id="issued_by" class="form-control" placeholder="Напр., Шевченківським РУ ГУ ДМС України">
                     </div>
                     <div class="col-md-6" id="unique_number_wrap">
-                        <label for="unique_number" class="form-label">Номер запису в ЄДДР (для ID-картки)</label>
+                        <label for="unique_number" class="form-label">Номер запису в ЄДДР (для ID-типу)</label>
                         <input type="text" name="unique_number" id="unique_number" class="form-control">
                     </div>
                     <div class="col-md-6">
@@ -87,7 +88,7 @@
                         <input type="text" name="issue_date" id="issue_date" class="form-control" placeholder="Напр., 19.06.2020">
                     </div>
                     <div class="col-md-6" id="valid_until_wrap">
-                        <label for="valid_until" class="form-label">Дійсний до (для ID-картки)</label>
+                        <label for="valid_until" class="form-label">Дійсний до (для ID-типу)</label>
                         <input type="text" name="valid_until" id="valid_until" class="form-control" placeholder="Напр., 19.06.2030">
                     </div>
                     <div class="col-md-12">
@@ -209,13 +210,14 @@
                                                                 <div class="row g-3">
                                                                     <div class="col-md-6">
                                                                         <label class="form-label">Тип документа</label>
-                                                                        <select name="document_type" class="form-select edit-doctype">
-                                                                            <option value="Паспорт (книжка)" {% if doc.document_type == 'Паспорт (книжка)' %}selected{% endif %}>Паспорт (книжка)</option>
-                                                                            <option value="ID-картка" {% if doc.document_type == 'ID-картка' %}selected{% endif %}>ID-картка</option>
-                                                                        </select>
+																		<select name="document_type" class="form-select edit-doctype">
+																			{% for t in passport_types %}
+																			<option value="{{ t }}" {% if doc.document_type == t %}selected{% endif %}>{{ t }}</option>
+																			{% endfor %}
+																		</select>
                                                                     </div>
                                                                     <div class="col-md-6 edit-series-wrap">
-                                                                        <label class="form-label">Серія (лише для книжки)</label>
+                                                                        <label class="form-label">Серія (для документів книжкового типу)</label>
                                                                         <input type="text" name="series" class="form-control" value="{{ doc.series or '' }}">
                                                                     </div>
                                                                     <div class="col-md-12">
@@ -303,9 +305,7 @@
 </style>
 
 <script>
-    // Переносимо вибір студента з picker-select (без name) у справжнє
-    // приховане поле student_id форми додавання - щоб на сервер завжди
-    // йшло рівно одне значення student_id.
+    // ── Перенос выбора студента с picker-select в hidden-поле формы ──
     (function () {
         var picker = document.getElementById('student_id_select');
         var hidden = document.getElementById('hidden_student_id');
@@ -314,62 +314,74 @@
         }
     })();
 
+    // ── Управление видимостью полей в зависимости от типа паспорта ──
+    const PASSPORT_TYPES_ID_STYLE = {{ passport_types_id_style | tojson }};
+    function isIdStyle(value) {
+        return PASSPORT_TYPES_ID_STYLE.includes(value);
+    }
+
     function syncSeriesVisibility(selectEl, wrapEl) {
-        wrapEl.style.display = (selectEl.value === 'ID-картка') ? 'none' : '';
+        wrapEl.style.display = isIdStyle(selectEl.value) ? 'none' : '';
     }
     function syncUniqueNumberVisibility(selectEl, wrapEl) {
-        wrapEl.style.display = (selectEl.value === 'ID-картка') ? '' : 'none';
+        wrapEl.style.display = isIdStyle(selectEl.value) ? '' : 'none';
     }
-    // "Дійсний до" стосується лише ID-картки (книжка в Україні безстрокова) -
-    // той самий патерн, що й для серії/номера ЄДДР вище. При перемиканні
-    // назад на книжку поле ще й очищається, щоб стара дата не "просочилась"
-    // у запис книжки, якщо адмін її випадково не прибере сам.
     function syncValidUntilVisibility(selectEl, wrapEl) {
-        const isBook = selectEl.value !== 'ID-картка';
-        wrapEl.style.display = isBook ? 'none' : '';
-        if (isBook) {
+        const isBookStyle = !isIdStyle(selectEl.value);
+        wrapEl.style.display = isBookStyle ? 'none' : '';
+        if (isBookStyle) {
             const input = wrapEl.querySelector('input');
             if (input) input.value = '';
         }
     }
-    document.getElementById('document_type').addEventListener('change', function () {
-        syncSeriesVisibility(this, document.getElementById('series_wrap'));
-        syncUniqueNumberVisibility(this, document.getElementById('unique_number_wrap'));
-        syncValidUntilVisibility(this, document.getElementById('valid_until_wrap'));
-    });
-    syncSeriesVisibility(document.getElementById('document_type'), document.getElementById('series_wrap'));
-    syncUniqueNumberVisibility(document.getElementById('document_type'), document.getElementById('unique_number_wrap'));
-    syncValidUntilVisibility(document.getElementById('document_type'), document.getElementById('valid_until_wrap'));
 
+    // Форма добавления
+    const addDoctypeSelect = document.getElementById('document_type');
+    const seriesWrapAdd = document.getElementById('series_wrap');
+    const uniqueWrapAdd = document.getElementById('unique_number_wrap');
+    const validUntilWrapAdd = document.getElementById('valid_until_wrap');
+
+    addDoctypeSelect.addEventListener('change', function () {
+        syncSeriesVisibility(this, seriesWrapAdd);
+        syncUniqueNumberVisibility(this, uniqueWrapAdd);
+        syncValidUntilVisibility(this, validUntilWrapAdd);
+    });
+    syncSeriesVisibility(addDoctypeSelect, seriesWrapAdd);
+    syncUniqueNumberVisibility(addDoctypeSelect, uniqueWrapAdd);
+    syncValidUntilVisibility(addDoctypeSelect, validUntilWrapAdd);
+
+    // Все модальные окна редактирования
     document.querySelectorAll('.edit-doctype').forEach(function (sel) {
         const seriesWrap = sel.closest('.row').querySelector('.edit-series-wrap');
         const uniqueWrap = sel.closest('.row').querySelector('.edit-unique-wrap');
         const validUntilWrap = sel.closest('.row').querySelector('.edit-valid-until-wrap');
+
         sel.addEventListener('change', function () {
             syncSeriesVisibility(this, seriesWrap);
             syncUniqueNumberVisibility(this, uniqueWrap);
             syncValidUntilVisibility(this, validUntilWrap);
         });
-        syncSeriesVisibility(sel, seriesWrap);
-        syncUniqueNumberVisibility(sel, uniqueWrap);
-        // На завантаженні НЕ ховаємо й НЕ очищаємо наявне значення для
-        // книжки - якщо старий запис уже мав дійсний до (дані, внесені
-        // до цього правила), адмін побачить і зможе прибрати свідомо,
-        // а не втратить непомітно при відкритті картки на редагування.
-        if (validUntilWrap) validUntilWrap.style.display = (sel.value === 'ID-картка') ? '' : 'none';
+
+        // Инициализация без очистки - чтобы не затирать существующее
+        // значение valid_until при первом открытии модалки.
+        seriesWrap.style.display = isIdStyle(sel.value) ? 'none' : '';
+        uniqueWrap.style.display = isIdStyle(sel.value) ? '' : 'none';
+        validUntilWrap.style.display = isIdStyle(sel.value) ? '' : 'none';
     });
 
+    // ── Submit формы добавления ──
     document.getElementById('addDocumentForm').addEventListener('submit', function (e) {
         const studentSelect = document.getElementById('student_id_select');
         const hiddenInput = document.getElementById('hidden_student_id');
         if (studentSelect && studentSelect.value) {
             hiddenInput.value = studentSelect.value;
-        } else if (!document.getElementById('hidden_student_id').value) {
+        } else if (!hiddenInput.value) {
             e.preventDefault();
             alert('Будь ласка, оберіть групу та студента');
         }
     });
 
+    // ── Автопереход от карточки студента (?student_id=…) ──
     window.addEventListener('load', function () {
         {% if student %}
             const targetStudentId = {{ student.id }};
@@ -385,10 +397,6 @@
                     const row = document.querySelector('tr[data-student-id="' + targetStudentId + '"]');
                     if (row) {
                         row.classList.add('table-warning');
-                        // Клас сам по собі іноді не перебиває кешовані/
-                        // успадковані стилі Bootstrap (світлий
-                        // --bs-table-bg у темній темі) - inline-стиль
-                        // через JS гарантовано виграє завжди.
                         if (document.documentElement.getAttribute('data-theme') === 'dark') {
                             row.querySelectorAll('td, th').forEach(function (cell) {
                                 cell.style.setProperty('background-color', 'rgba(200,162,74,.22)', 'important');
@@ -405,7 +413,10 @@
                 if (sel) { sel.value = targetStudentId; }
                 if (hiddenInput) { hiddenInput.value = targetStudentId; }
                 const formCard = document.getElementById('addDocumentForm');
-                if (formCard) { formCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); formCard.classList.add('border', 'border-primary', 'rounded-3', 'p-3'); }
+                if (formCard) {
+                    formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    formCard.classList.add('border', 'border-primary', 'rounded-3', 'p-3');
+                }
             }
         {% endif %}
     });
@@ -421,4 +432,6 @@
         form.submit();
     }
 </script>
+
+
 {% endblock %}

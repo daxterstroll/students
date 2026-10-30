@@ -48,7 +48,7 @@
                             <td class="text-center fw-bold">B</td>
                             <td>Тип документа</td>
                             <td class="text-center"><span class="badge bg-danger">Так</span></td>
-                            <td><code>Паспорт (книжка)</code> або <code>ID-картка</code> — точно так</td>
+                            <td>Точно одне з: {% for t in passport_types %}<code>{{ t }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</td>
                         </tr>
                         <tr>
                             <td class="text-center fw-bold">C</td>

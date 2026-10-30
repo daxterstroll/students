@@ -13,8 +13,14 @@ from routes.db import get_db
 from routes.utils import save_multiple_attachments, logger
 from routes.photo import process_and_save_pending_photo
 from routes.config import PROJECT_ROOT
+from routes.passport_types import (
+    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, passport_template_context,
+)
 
 public_update_bp = Blueprint('public_update', __name__)
+@public_update_bp.context_processor
+def _inject_passport_types():
+    return passport_template_context()
 
 ALLOWED_SCAN_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.pdf'}
 MAX_SCAN_SIZE_BYTES = 15 * 1024 * 1024
@@ -278,14 +284,14 @@ def update_info(token):
                 error=err, form=request.form,
             )
         if any([f('passport_number'), f('passport_document_type')]):
-            passport_doc_type = f('passport_document_type') if f('passport_document_type') in ('Паспорт (книжка)', 'ID-картка') else None
+            passport_doc_type = f('passport_document_type') if f('passport_document_type') in PASSPORT_TYPES else None
             submitted['passport'] = {
                 'document_type': passport_doc_type,
                 'series': f('passport_series'),
                 'number': f('passport_number'),
                 'issued_by': f('passport_issued_by'),
                 'issue_date': _iso_to_ua_date(f('passport_issue_date')),
-                'valid_until': _iso_to_ua_date(f('passport_valid_until')) if passport_doc_type == 'ID-картка' else None,
+                'valid_until': _iso_to_ua_date(f('passport_valid_until')) if passport_doc_type in PASSPORT_TYPES_ID_STYLE else None,
                 'unique_number': f('passport_unique_number'),
             }
 
