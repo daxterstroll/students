@@ -15,9 +15,17 @@
 
     <div class="alert alert-light border small">
         <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
-        Ліцензія - властивість конкретного студента, а не групи: в одній групі можуть навчатись студенти, які вступили за різними ліцензіями.
+        Ліцензія — властивість конкретного студента, а не групи: в одній групі можуть навчатись студенти, які вступили за різними ліцензіями.
         Вимикайте перемикачем ті, що вже не актуальні - вони зникнуть зі списку вибору при додаванні студента, але наявні студенти з цією ліцензією продовжать працювати без змін.
         Переведення студентів між ліцензіями - на окремій сторінці «Перевести між ліцензіями» (з наказом).
+        <hr class="my-2">
+        <strong><i class="bi bi-star-fill me-1 text-info"></i>Базова ліцензія</strong> —
+        це ліцензія закладу, для якого ведеться військовий облік
+        (модуль «Військовий облік», Постанова №812). Може бути рівно одна.
+        На дашборді, у списках груп і в Додатку 12 за замовчуванням показуються
+        <strong>тільки студенти базової ліцензії</strong> (плюс студенти без ліцензії — з бейджем «без ліцензії»,
+        щоб їх не загубити). Решта ліцензій доступна через чекбокс «Показати всі ліцензії».
+        Зараз базова: <strong>{{ (licenses|selectattr('is_base')|map(attribute='short_name_ua')|first) or 'не призначена' }}</strong>.
     </div>
 
     <div class="card mb-4">
@@ -57,14 +65,28 @@
                             <th>Коротка назва</th>
                             <th>Повна назва (укр.)</th>
                             <th>Повна назва (англ.)</th>
-                            <th class="text-center" style="width:110px;">Актуальна</th>
+                            <th class="text-center" style="width:110px;" title="Актуальна для вибору при додаванні студента">
+                                Актуальна
+                            </th>
+                            <th class="text-center" style="width:120px;" title="Базова ліцензія — для якої ведеться військовий облік (Постанова №812)">
+                                Базова
+                            </th>
                             <th class="text-end" style="width:160px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for l in licenses %}
-                        <tr class="{% if not l.is_active %}text-muted{% endif %}">
-                            <td class="fw-semibold">{{ l.short_name_ua or '—' }}</td>
+                        <tr class="{% if not l.is_active %}text-muted{% endif %}{% if l.is_base %} license-base-row{% endif %}">
+                            <td class="fw-semibold">
+                                {{ l.short_name_ua or '—' }}
+                                {% if l.is_base %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                                      style="font-size:.65rem;"
+                                      title="Базова ліцензія для військового обліку (Постанова №812)">
+                                    <i class="bi bi-star-fill"></i> для військ. обліку
+                                </span>
+                                {% endif %}
+                            </td>
                             <td class="small">{{ l.name_ua }}</td>
                             <td class="small text-muted">{{ l.name_en or '—' }}</td>
                             <td class="text-center">
@@ -75,6 +97,24 @@
                                         {{ 'так' if l.is_active else 'ні' }}
                                     </button>
                                 </form>
+                            </td>
+                            <td class="text-center">
+                                {% if l.is_base %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis"
+                                      title="Ця ліцензія зараз базова">
+                                    <i class="bi bi-star-fill"></i> базова
+                                </span>
+                                {% else %}
+                                <form method="POST" class="d-inline"
+                                      onsubmit="return confirm('Призначити «{{ l.short_name_ua or l.name_ua }}» базовою ліцензією?\n\nДашборд, списки груп і Додаток 12 за замовчуванням показуватимуть тільки студентів цієї ліцензії (плюс студентів без ліцензії).');">
+                                    <input type="hidden" name="action" value="set_base">
+                                    <input type="hidden" name="id" value="{{ l.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning"
+                                            title="Зробити базовою">
+                                        <i class="bi bi-star"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
                             </td>
                             <td class="text-end">
                                 <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
@@ -140,6 +180,25 @@
         </div>
     </div>
 </div>
+
+<style>
+    /* Виділення базової ліцензії — золотистий акцент сайту.
+       Використовує CSS-змінні --brass / --brass-soft, які однаково
+       виглядають в обох темах (у main.css для --brass-soft є окреме
+       перевизначення для html[data-theme="dark"]). */
+    tr.license-base-row > td {
+        background-color: var(--brass-soft) !important;
+        border-top: 1px solid var(--brass-semi) !important;
+        border-bottom: 1px solid var(--brass-semi) !important;
+    }
+    tr.license-base-row > td:first-child {
+        border-left: 4px solid var(--brass) !important;
+    }
+    tr.license-base-row:hover > td {
+        background-color: var(--brass-soft) !important;
+        filter: brightness(1.05);
+    }
+</style>
 
 <script>
 window.addEventListener('load', function () {

@@ -457,7 +457,28 @@ def manage_degree_levels():
                     current_username(),
                     f"{'увімкнув' if row['is_active'] else 'вимкнув'} ступінь: {row['name_ua']}"
                 )
-
+        elif action == 'set_base':
+            license_id = request.form.get('id')
+            row = conn.execute(
+                "SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?",
+                (license_id,),
+            ).fetchone()
+            if row:
+                # Знімаємо базову з усіх, призначаємо на вибрану
+                conn.execute("UPDATE institution_licenses SET is_base = 0 WHERE is_base = 1")
+                conn.execute(
+                    "UPDATE institution_licenses SET is_base = 1 WHERE id = ?",
+                    (license_id,),
+                )
+                conn.commit()
+                label = row['short_name_ua'] or row['name_ua']
+                flash(f"Базову ліцензію змінено на «{label}». "
+                      f"Дашборд, списки груп і Додаток 12 тепер за замовчуванням "
+                      f"показують студентів цієї ліцензії.", 'success')
+                log_action(current_username(),
+                           f"призначив базову ліцензію: {label} (ID {license_id})")
+            else:
+                flash("Ліцензію не знайдено", 'error')
         elif action == 'add':
             name_ua = (request.form.get('name_ua') or '').strip()
             name_en = (request.form.get('name_en') or '').strip() or None
@@ -588,9 +609,11 @@ def manage_licenses():
                 log_action(current_username(), f"видалив ліцензію: {row['short_name_ua'] or row['name_ua'] if row else ''}")
 
     licenses = conn.execute("""
-        SELECT l.id, l.name_ua, l.short_name_ua, l.name_en, l.short_name_en, l.is_active,
+        SELECT l.id, l.name_ua, l.short_name_ua, l.name_en, l.short_name_en,
+               l.is_active, l.is_base,
                (SELECT COUNT(*) FROM students s WHERE s.license_id = l.id) AS students_count
-        FROM institution_licenses l ORDER BY l.id
+        FROM institution_licenses l
+        ORDER BY l.is_base DESC, l.id
     """).fetchall()
     conn.close()
 

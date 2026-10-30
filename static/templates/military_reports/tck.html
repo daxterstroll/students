@@ -1,0 +1,735 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Довідник ТЦК{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-building',
+        'Довідник ТЦК',
+        'Територіальні центри комплектування та соціальної підтримки'
+    ) }}
+
+    {# ── Статистика ── #}
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold">{{ stats.total }}</div>
+                    <div class="small text-muted">усього</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-success">{{ stats.active }}</div>
+                    <div class="small text-muted">активних</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-secondary">{{ stats.inactive }}</div>
+                    <div class="small text-muted">неактивних</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-primary">{{ stats.in_use }}</div>
+                    <div class="small text-muted">використовується</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Блок «ТЦК, яких немає в довіднику» ── #}
+    {% if unknown_tck %}
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning-subtle">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    ТЦК, яких немає в довіднику:
+                    <strong>{{ stats.unknown_count }}</strong>
+                    <span class="text-muted">({{ stats.unknown_students }} студентів)</span>
+                </h6>
+                <form method="POST" class="m-0"
+                      onsubmit="return confirm('Додати всі {{ stats.unknown_count }} невідомих ТЦК у довідник? Варіанти написання НЕ об\'єднуватимуться — це можна буде зробити пізніше вручну.');">
+                    <input type="hidden" name="action" value="add_all_unknown">
+                    <button type="submit" class="btn btn-sm btn-warning">
+                        <i class="bi bi-plus-circle-fill me-1"></i>Додати всі в довідник
+                    </button>
+                </form>
+            </div>
+        </div>
+        <div class="card-body">
+            <p class="small text-muted mb-3">
+                Ці назви ТЦК уже вказані у студентів, але відсутні в довіднику.
+                Через це їх неможливо обрати з випадаючого списку в модалці
+                швидкого редагування, і вони не рахуються в колонці
+                «Використовується» біля ТЦК нижче.
+            </p>
+
+            <div class="table-responsive">
+                <table class="table table-sm table-borderless mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Назва (як у студентів)</th>
+                            <th class="text-center" style="width:90px;">Студентів</th>
+                            <th class="text-center" style="width:120px;">Варіантів</th>
+                            <th class="text-end" style="width:260px;">Дія</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for u in unknown_tck %}
+                        <tr>
+                            <td>
+                                <strong>{{ u.canonical_name }}</strong>
+                                {% if u.variants_count > 1 %}
+                                <div class="small text-muted mt-1">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    Варіанти: <span class="font-monospace">{{ u.variants }}</span>
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ u.students_count }}</span>
+                            </td>
+                            <td class="text-center">
+                                {% if u.variants_count > 1 %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis">
+                                    {{ u.variants_count }} написань
+                                </span>
+                                {% else %}
+                                <span class="text-muted small">1</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <form method="POST" class="d-inline-flex align-items-center gap-2">
+                                    <input type="hidden" name="action" value="add_unknown">
+                                    <input type="hidden" name="name_ua" value="{{ u.canonical_name }}">
+
+                                    {% if u.variants_count > 1 %}
+                                    <div class="form-check form-check-inline small m-0">
+                                        <input type="checkbox" name="cascade" value="1"
+                                               class="form-check-input"
+                                               id="cas_{{ loop.index }}">
+                                        <label for="cas_{{ loop.index }}" class="form-check-label"
+                                               title="Усі {{ u.variants_count }} варіантів написання стануть однією назвою «{{ u.canonical_name }}»">
+                                            об'єднати {{ u.variants_count }}
+                                        </label>
+                                    </div>
+                                    {% endif %}
+
+                                    <button type="submit" class="btn btn-sm btn-primary"
+                                            title="Додати «{{ u.canonical_name }}» у довідник">
+                                        <i class="bi bi-plus-circle"></i> Додати
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-success small mb-4">
+        <i class="bi bi-check-circle-fill me-1"></i>
+        Усі назви ТЦК, які використовуються у студентів, присутні в довіднику.
+    </div>
+    {% endif %}
+
+    {# ── Форма додавання ── #}
+    <div class="card mb-4">
+        <div class="card-header">
+            <h6 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Додати ТЦК вручну</h6>
+        </div>
+        <div class="card-body">
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">Назва <span class="text-danger">*</span></label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm"
+                           placeholder="напр. Львівський РТЦК та СП" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Адреса</label>
+                    <input type="text" name="address" class="form-control form-control-sm"
+                           placeholder="вул. Дорошенка, 9а, м. Жовква, 80300">
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Фільтри ── #}
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form method="GET" class="row g-2 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" name="search" class="form-control"
+                               placeholder="Пошук за назвою або адресою…"
+                               value="{{ search }}">
+                        {% if search %}
+                        <a href="{{ url_for('military_reports.tck_offices', show=show) }}"
+                           class="btn btn-outline-secondary" title="Очистити">
+                            <i class="bi bi-x-circle"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="btn-group btn-group-sm w-100" role="group">
+                        <a href="{{ url_for('military_reports.tck_offices', show='all', search=search) }}"
+                           class="btn btn-outline-secondary {% if show == 'all' %}active{% endif %}">
+                            Усі
+                        </a>
+                        <a href="{{ url_for('military_reports.tck_offices', show='active', search=search) }}"
+                           class="btn btn-outline-secondary {% if show == 'active' %}active{% endif %}">
+                            Активні
+                        </a>
+                        <a href="{{ url_for('military_reports.tck_offices', show='inactive', search=search) }}"
+                           class="btn btn-outline-secondary {% if show == 'inactive' %}active{% endif %}">
+                            Неактивні
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-3 text-md-end">
+                    <span class="badge bg-secondary">
+                        Знайдено: {{ rows|length }}
+                    </span>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Таблиця ── #}
+    <div class="card">
+        <div class="card-body p-0">
+            {% if rows %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:40px;" class="text-center">ID</th>
+                            <th>Назва</th>
+                            <th>Адреса</th>
+                            <th class="text-center" style="width:130px;">Використовується</th>
+                            <th class="text-center" style="width:100px;">Активний</th>
+                            <th class="text-end" style="width:130px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr class="{% if not r.is_active %}text-muted{% endif %}">
+                            <td class="text-center font-monospace small">{{ r.id }}</td>
+                            <td>
+                                <strong>{{ r.name_ua }}</strong>
+                            </td>
+                            <td class="small">{{ r.address or '—' }}</td>
+                            <td class="text-center">
+                                {% if r.students_count_active %}
+                                <button type="button"
+                                        class="badge bg-primary-subtle text-primary-emphasis border-0 js-show-students"
+                                        data-tck-id="{{ r.id }}"
+                                        title="Показати {{ r.students_count_active }} активних студентів">
+                                    <i class="bi bi-people"></i> {{ r.students_count_active }}
+                                </button>
+                                {% if r.students_count_archived or r.students_count_frozen or r.students_count_note18 %}
+                                <div class="small text-muted mt-1" style="font-size:.7rem;"
+                                     title="Архівних: {{ r.students_count_archived }}, заморожених: {{ r.students_count_frozen }}, вибулих (гр.18): {{ r.students_count_note18 }}">
+                                    {% if r.students_count_archived %}+{{ r.students_count_archived }} арх.{% endif %}
+                                    {% if r.students_count_archived and (r.students_count_frozen or r.students_count_note18) %}·{% endif %}
+                                    {% if r.students_count_frozen %}+{{ r.students_count_frozen }} замор.{% endif %}
+                                    {% if r.students_count_frozen and r.students_count_note18 %}·{% endif %}
+                                    {% if r.students_count_note18 %}+{{ r.students_count_note18 }} виб.{% endif %}
+                                </div>
+                                {% endif %}
+                                {% else %}
+                                {% if r.students_count_all %}
+                                <button type="button"
+                                        class="badge bg-warning-subtle text-warning-emphasis border-0 js-show-students"
+                                        data-tck-id="{{ r.id }}"
+                                        title="0 активних, але є {{ r.students_count_all }} архівних/заморожених">
+                                    <i class="bi bi-archive"></i> 0
+                                </button>
+                                <div class="small text-muted mt-1" style="font-size:.7rem;">
+                                    {{ r.students_count_all }} в архіві/замор.
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">0</span>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle">
+                                    <input type="hidden" name="id" value="{{ r.id }}">
+                                    <button type="submit"
+                                            class="btn btn-sm {% if r.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}"
+                                            title="{{ 'Деактивувати' if r.is_active else 'Активувати' }}">
+                                        {% if r.is_active %}
+                                        <i class="bi bi-check-circle-fill"></i>
+                                        {% else %}
+                                        <i class="bi bi-circle"></i>
+                                        {% endif %}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary js-edit-btn"
+                                        data-id="{{ r.id }}"
+                                        data-name="{{ r.name_ua }}"
+                                        data-address="{{ r.address or '' }}"
+                                        data-count="{{ r.students_count_all }}"
+                                        title="Редагувати">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if r.students_count_all == 0 %}
+                                <form method="POST" class="d-inline"
+                                      onsubmit="return confirm('Видалити ТЦК «{{ r.name_ua }}» з довідника?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ r.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"
+                                            title="Видалити">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        disabled
+                                        title="Використовується: {{ r.students_count_active }} активних{% if r.students_count_archived %}, {{ r.students_count_archived }} архівних{% endif %}{% if r.students_count_frozen %}, {{ r.students_count_frozen }} заморожених{% endif %} — видалення заборонено">
+                                    <i class="bi bi-lock"></i>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-building fs-1 d-block mb-2"></i>
+                {% if search or show != 'all' %}
+                    За обраними фільтрами ТЦК не знайдено
+                {% else %}
+                    Довідник порожній
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   Модалка редагування ТЦК
+   ═══════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="editModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="editForm">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" id="editId">
+                <input type="hidden" name="old_name_ua" id="editOldName">
+
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-pencil me-2"></i>Редагувати ТЦК
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label small">Назва <span class="text-danger">*</span></label>
+                        <input type="text" name="name_ua" id="editName"
+                               class="form-control form-control-sm" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small">Адреса</label>
+                        <input type="text" name="address" id="editAddress"
+                               class="form-control form-control-sm">
+                    </div>
+
+                    <div id="cascadeBlock" class="d-none">
+                        <div class="alert alert-warning small mb-2">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Цей ТЦК використовується у
+                            <strong id="cascadeCount">0</strong> студентів
+                            (включно з архівними та замороженими).
+                            Якщо ви змінюєте <strong>назву</strong> (не лише адресу) —
+                            у цих студентів залишиться стара назва ТЦК,
+                            і в звітах вона розійдеться з довідником.
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" name="cascade" value="1"
+                                   id="cascadeCheckbox" class="form-check-input">
+                            <label for="cascadeCheckbox" class="form-check-label small">
+                                Оновити назву ТЦК у <strong>всіх</strong> цих студентів
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-save me-1"></i>Зберегти
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   Модалка «Студенти цього ТЦК»
+   ═══════════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="studentsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-people me-2"></i>
+                    Студенти ТЦК: <span id="modalTckName" class="text-muted">…</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+
+            <div class="modal-body p-0">
+                <div id="studentsModalLoading" class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <div class="small text-muted mt-2">Завантаження…</div>
+                </div>
+
+                <div id="studentsModalError"
+                     class="p-4 text-center text-danger d-none"></div>
+
+                <div id="studentsModalContent" class="d-none">
+                    <div class="px-3 py-2 border-bottom">
+                        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                            <div class="small">
+                                <strong id="modalCountsLabel">Завантаження…</strong>
+                                <div class="text-muted small" id="modalTckAddress"></div>
+                            </div>
+                            <input type="text" id="modalSearchInput"
+                                   class="form-control form-control-sm"
+                                   placeholder="Пошук по ПІБ…"
+                                   style="max-width: 220px;">
+                        </div>
+                        <div class="d-flex align-items-center gap-3 flex-wrap small">
+                            <span class="text-muted">Показати:</span>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="chkArchived">
+                                <label class="form-check-label" for="chkArchived">
+                                    <i class="bi bi-archive text-secondary me-1"></i>Архівних
+                                </label>
+                            </div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="chkFrozen">
+                                <label class="form-check-label" for="chkFrozen">
+                                    <i class="bi bi-snow text-info me-1"></i>Заморожених
+                                </label>
+                            </div>
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" id="chkDismissed">
+                                <label class="form-check-label" for="chkDismissed">
+                                    <i class="bi bi-box-arrow-right text-warning me-1"></i>Вибулих (гр.18)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive" style="max-height: 62vh;">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th class="text-center" style="width:40px;">№</th>
+                                    <th>ПІБ</th>
+                                    <th>Дата народж.</th>
+                                    <th>Категорія</th>
+                                    <th>Звання</th>
+                                    <th>ВОС</th>
+                                    <th>Група</th>
+                                    <th class="text-end" style="width:80px;">Дії</th>
+                                </tr>
+                            </thead>
+                            <tbody id="studentsModalTbody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="px-3 py-2 small text-muted border-top">
+                        <i class="bi bi-info-circle me-1"></i>
+                        За замовчуванням показані лише активні студенти.
+                        Архівні та заморожені — за чекбоксами вище.
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   JS для обох модалок
+   ═══════════════════════════════════════════════════════════════ #}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // ── Модалка «Редагувати ТЦК» ─────────────────────────────
+    const editModalEl = document.getElementById('editModal');
+    if (editModalEl) {
+        const editModal = new bootstrap.Modal(editModalEl);
+        const nameInput = document.getElementById('editName');
+        const oldNameInput = document.getElementById('editOldName');
+        const cascadeBlock = document.getElementById('cascadeBlock');
+        const cascadeCheckbox = document.getElementById('cascadeCheckbox');
+        const cascadeCount = document.getElementById('cascadeCount');
+
+        document.querySelectorAll('.js-edit-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('editId').value = btn.dataset.id;
+                nameInput.value = btn.dataset.name;
+                oldNameInput.value = btn.dataset.name;
+                document.getElementById('editAddress').value = btn.dataset.address;
+
+                const count = parseInt(btn.dataset.count, 10) || 0;
+                cascadeCount.textContent = count;
+                cascadeCheckbox.checked = false;
+
+                if (count > 0) {
+                    cascadeBlock.classList.remove('d-none');
+                } else {
+                    cascadeBlock.classList.add('d-none');
+                }
+
+                editModal.show();
+            });
+        });
+
+        nameInput.addEventListener('input', () => {
+            if (cascadeBlock.classList.contains('d-none')) return;
+            const changed = nameInput.value.trim() !== oldNameInput.value.trim();
+            cascadeBlock.querySelector('.alert').style.opacity = changed ? '1' : '.5';
+        });
+    }
+
+    // ── Модалка «Студенти цього ТЦК» ─────────────────────────
+    const studentsModalEl = document.getElementById('studentsModal');
+    if (!studentsModalEl) return;
+
+    const studentsModal = new bootstrap.Modal(studentsModalEl);
+    const elName    = document.getElementById('modalTckName');
+    const elAddress = document.getElementById('modalTckAddress');
+    const elLoading = document.getElementById('studentsModalLoading');
+    const elError   = document.getElementById('studentsModalError');
+    const elContent = document.getElementById('studentsModalContent');
+    const elTbody   = document.getElementById('studentsModalTbody');
+    const elSearch  = document.getElementById('modalSearchInput');
+    const elCounts  = document.getElementById('modalCountsLabel');
+    const chkArchived = document.getElementById('chkArchived');
+    const chkFrozen = document.getElementById('chkFrozen');
+
+    let currentStudents = [];
+    let currentTckId = null;
+
+    const CATEGORY_BADGES = {
+        'officers':   'bg-warning-subtle text-warning-emphasis',
+        'rank':       'bg-primary-subtle text-primary-emphasis',
+        'women':      'bg-info-subtle text-info-emphasis',
+        'conscripts': 'bg-success-subtle text-success-emphasis',
+    };
+
+    function escapeHtml(str) {
+        if (str == null) return '';
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function renderRows(filter) {
+        const q = (filter || '').trim().toLowerCase();
+        const filtered = q
+            ? currentStudents.filter(s => s.full_name.toLowerCase().includes(q))
+            : currentStudents;
+
+        if (!filtered.length) {
+            elTbody.innerHTML =
+                '<tr><td colspan="8" class="text-center text-muted py-3">' +
+                (currentStudents.length
+                    ? 'Нічого не знайдено за пошуком'
+                    : 'Студентів за обраними фільтрами немає') +
+                '</td></tr>';
+            return;
+        }
+
+        elTbody.innerHTML = filtered.map((s, i) => {
+            const badges = [];
+            if (s.is_frozen) {
+                badges.push('<span class="badge bg-warning text-dark ms-1">' +
+                            '❄ заморожений</span>');
+            }
+            if (s.is_archived) {
+                badges.push('<span class="badge bg-secondary ms-1">архів</span>');
+            }
+            if (s.is_excluded) {
+                badges.push('<span class="badge bg-dark ms-1">' +
+                            escapeHtml(s.status) + '</span>');
+            }
+            if (s.note_18 === 'Звільнено з роботи, завершено навчання (відраховано)') {
+                badges.push('<span class="badge bg-warning text-dark ms-1">' +
+                            'відраховано</span>');
+            } else if (s.note_18 === 'Виключено з військового обліку за віком') {
+                badges.push('<span class="badge bg-secondary ms-1">' +
+                            'за віком</span>');
+            } else if (s.note_18 === 'Військовослужбовець') {
+                badges.push('<span class="badge bg-info text-dark ms-1">' +
+                            'військовослужбовець</span>');
+            }
+            const badgesHtml = badges.join('');
+
+            const catClass = CATEGORY_BADGES[s.category_key] || 'bg-secondary';
+            const catHtml = s.category_key
+                ? '<span class="badge ' + catClass + '">' +
+                  escapeHtml(s.category) + '</span>'
+                : '<span class="text-muted small">—</span>';
+
+            let rowClass = '';
+            if (s.is_frozen) rowClass = ' class="table-warning"';
+            else if (s.is_archived) rowClass = ' class="table-secondary"';
+
+            return '<tr' + rowClass + '>' +
+                '<td class="text-center font-monospace small">' + (i + 1) + '</td>' +
+                '<td>' +
+                    '<a href="/students/' + s.id + '" class="text-decoration-none">' +
+                        escapeHtml(s.full_name) +
+                    '</a>' + badgesHtml +
+                '</td>' +
+                '<td class="font-monospace small">' +
+                    (escapeHtml(s.birth_date) || '—') +
+                '</td>' +
+                '<td>' + catHtml + '</td>' +
+                '<td class="small">' + (escapeHtml(s.rank) || '—') + '</td>' +
+                '<td class="font-monospace small">' +
+                    (escapeHtml(s.vos) || '—') +
+                '</td>' +
+                '<td class="small">' + (escapeHtml(s.group) || '—') + '</td>' +
+                '<td class="text-end">' +
+                    '<a href="/students/' + s.id + '/military" ' +
+                       'class="btn btn-sm btn-outline-primary" ' +
+                       'title="Редагувати військові дані">' +
+                        '<i class="bi bi-pencil"></i>' +
+                    '</a>' +
+                '</td>' +
+            '</tr>';
+        }).join('');
+    }
+
+    const chkDismissed = document.getElementById('chkDismissed');
+
+    async function loadStudents(tckId) {
+        const params = new URLSearchParams();
+        if (chkArchived.checked) params.set('include_archived', '1');
+        if (chkFrozen.checked) params.set('include_frozen', '1');
+        if (chkDismissed.checked) params.set('include_dismissed', '1');
+        const url = '/admin/military_reports/tck/' + tckId + '/students'
+                    + (params.toString() ? '?' + params.toString() : '');
+
+        elLoading.classList.remove('d-none');
+        elError.classList.add('d-none');
+        elError.textContent = '';
+        elContent.classList.add('d-none');
+        elTbody.innerHTML = '';
+
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            if (!data.ok) throw new Error(data.error || 'невідома помилка');
+
+            currentStudents = data.students || [];
+            elName.textContent = data.tck_name;
+            elAddress.textContent = data.tck_address || '';
+
+            const c = data.counts || {};
+            const parts = [];
+            if (c.total_active) parts.push(c.total_active + ' актив.');
+            if (c.total_archived) parts.push(c.total_archived + ' арх.');
+            if (c.total_frozen) parts.push(c.total_frozen + ' замор.');
+
+            const shown = data.shown || 0;
+            const totalAll = c.total_all || 0;
+            let label = 'Показано: <strong>' + shown + '</strong> з ' + totalAll;
+            if (parts.length > 1) {
+                label += ' <span class="text-muted">(' + parts.join(', ') + ')</span>';
+            }
+            elCounts.innerHTML = label;
+
+            elLoading.classList.add('d-none');
+            elContent.classList.remove('d-none');
+            renderRows(elSearch.value);
+        } catch (err) {
+            elLoading.classList.add('d-none');
+            elError.textContent = 'Помилка: ' + err.message;
+            elError.classList.remove('d-none');
+        }
+    }
+
+    document.querySelectorAll('.js-show-students').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentTckId = btn.dataset.tckId;
+            elName.textContent = '…';
+            elAddress.textContent = '';
+            elCounts.textContent = 'Завантаження…';
+            elSearch.value = '';
+            chkArchived.checked = false;
+            chkFrozen.checked = false;
+            chkDismissed.checked = false;
+            studentsModal.show();
+            loadStudents(currentTckId);
+        });
+    });
+
+    chkArchived.addEventListener('change', () => {
+        if (currentTckId) loadStudents(currentTckId);
+    });
+    chkFrozen.addEventListener('change', () => {
+        if (currentTckId) loadStudents(currentTckId);
+    });
+    chkDismissed.addEventListener('change', () => {
+        if (currentTckId) loadStudents(currentTckId);
+    });
+
+    elSearch.addEventListener('input', () => renderRows(elSearch.value));
+});
+</script>
+
+{% endblock %}

@@ -82,6 +82,9 @@ MILITARY_FIELDS = [
     ('formed_at', 'Документ сформовано'),
     ('data_verified_on_time', 'Дані уточнено вчасно'),
     ('data_update_date', 'Дата уточнення даних'),
+    # Постанова КМУ №812 від 10.06.2026 — графа 18 «Примітка»
+    ('note_18', 'Примітка (графа 18)'),
+    ('mobilized_date', 'Дата мобілізації'),
 ]
 
 # Поля картки студента, які беремо з PDF. У military їх НЕМАЄ.
@@ -145,10 +148,30 @@ def _normalize_date(value):
 
 
 def _collect_form_data(form):
+    # Імпорт усередині функції — щоб не було циклічної залежності
+    # між routes.students.military і routes.military_reports.
+    from routes.military_reports import NOTE_18_LABELS
+
     result = {}
     for key, _label in MILITARY_FIELDS + LEGACY_FIELDS:
         if key == 'data_verified_on_time':
             result[key] = 1 if form.get(key) in ('on', '1', 'true', 'yes') else 0
+        elif key == 'note_18':
+            # Валідація: дозволяємо лише 3 канонічні значення або None
+            val = _normalize(form.get(key))
+            result[key] = val if val in NOTE_18_LABELS else None
+        elif key == 'mobilized_date':
+            # Валідація формату ДД.ММ.РРРР (якщо заповнено)
+            val = _normalize(form.get(key))
+            if val:
+                try:
+                    from datetime import datetime as _dt
+                    _dt.strptime(val, '%d.%m.%Y')
+                    result[key] = val
+                except (ValueError, TypeError):
+                    result[key] = ''
+            else:
+                result[key] = ''
         else:
             result[key] = _normalize(form.get(key))
     return result
@@ -210,6 +233,8 @@ def _log_history(conn, student_id, username, source, scope, diff):
 
 
 def _save_military(conn, student_id, data, source, username):
+    from routes.military_reports import NOTE_DISMISSED
+
     existing = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
     diff = _build_diff(dict(existing) if existing else None, data, MILITARY_FIELDS + LEGACY_FIELDS)
 
@@ -227,6 +252,16 @@ def _save_military(conn, student_id, data, source, username):
             [student_id] + values,
         )
         military_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    # Синхронізація students.dismissed_at з note_18 (Постанова №812):
+    # якщо позначка «Звільнено (відраховано)» — ставимо дату відрахування
+    # (тільки якщо ще не встановлена; існуючу не перезаписуємо —
+    # її міг встановити expulsion_confirm з точнішою датою наказу).
+    if data.get('note_18') == NOTE_DISMISSED:
+        conn.execute("""
+            UPDATE students SET dismissed_at = COALESCE(dismissed_at, date('now'))
+            WHERE id = ?
+        """, (student_id,))
 
     _log_history(conn, student_id, username, source, 'military', diff)
     return military_id, diff

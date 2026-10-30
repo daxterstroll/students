@@ -1,7 +1,7 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Імпорт студентів з Excel{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
@@ -31,6 +31,7 @@
         <ul class="list-unstyled small mb-0">
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбиває ПІБ на прізвище, ім'я та по батькові</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Автоматично транслітерує прізвище та ім'я англійською (КМУ №55-2010)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає стать — з колонки K або автоматично за по батькові</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Перевіряє групу — пропускає рядок якщо група не існує або недоступна</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Пропускає дублікати (ПІБ + дата народження)</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Зіставляє ліцензію вступу з каталогом за короткою назвою — необов'язкова колонка E</li>
@@ -140,6 +141,12 @@
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
                 <td><code>м. Львів, вул. Шевченка 1, кв. 5</code></td>
               </tr>
+              <tr>
+                <td class="text-center fw-bold">K</td>
+                <td>Стать</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>Ч</code>/<code>Ж</code>/<code>M</code>/<code>F</code> — або порожньо (тоді визначиться автоматично за по батькові: <code>-івна</code>/<code>-ївна</code> → жіноча)</td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -153,6 +160,13 @@
           <li>Студент з таким самим ПІБ і датою народження вже є в базі</li>
           <li>Рядок містить менше 4 заповнених колонок</li>
         </ul>
+
+        <div class="alert alert-info small mt-3 mb-0">
+          <i class="bi bi-lightbulb me-1"></i>
+          <strong>Порада по колонці «Стать»:</strong> можна залишити порожньою для всіх —
+          система сама визначить за по батькові. Якщо в когось по батькові відсутнє
+          (іноземці, неповні дані) — впишіть вручну <code>Ч</code> або <code>Ж</code>.
+        </div>
       </div>
     </div>
   </div>

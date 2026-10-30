@@ -1,7 +1,7 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Додати студента{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
@@ -22,7 +22,16 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">По батькові</label>
-                        <input type="text" name="middle_name_UA" class="form-control" value="{{ request.form.middle_name_UA or '' }}">
+                        <input type="text" name="middle_name_UA" id="middleNameInput" class="form-control" value="{{ request.form.middle_name_UA or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Стать</label>
+                        <select name="gender" id="genderSelect" class="form-select">
+                            <option value="auto" selected>Авто (визначити за по батькові)</option>
+                            <option value="M">Чоловіча</option>
+                            <option value="F">Жіноча</option>
+                        </select>
+                        <div class="form-text" id="genderHint">Поки обрано «Авто» — стать визначиться автоматично за по батькові.</div>
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Код картки фізичної особи в ЄДЕБО</label>
@@ -120,4 +129,38 @@
     </div>
 
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const middleInput = document.getElementById('middleNameInput');
+    const genderSelect = document.getElementById('genderSelect');
+    const hint = document.getElementById('genderHint');
+
+    if (!middleInput || !genderSelect || !hint) return;
+
+    const FEMALE_SUFFIXES = ['івна', 'ївна', 'овна', 'евна', 'євна', 'ична'];
+
+    function updateHint() {
+        if (genderSelect.value !== 'auto') {
+            hint.textContent = 'Стать задана вручну.';
+            hint.className = 'form-text';
+            return;
+        }
+        const val = middleInput.value.trim().toLowerCase().replace(/[’ʼ‘]/g, "'");
+        if (!val) {
+            hint.textContent = 'По батькові порожнє — стать не визначиться, оберіть вручну.';
+            hint.className = 'form-text text-warning';
+            return;
+        }
+        const isFemale = FEMALE_SUFFIXES.some(suf => val.endsWith(suf));
+        hint.textContent = 'Буде визначено: ' + (isFemale ? 'Жіноча' : 'Чоловіча');
+        hint.className = 'form-text text-success';
+    }
+
+    middleInput.addEventListener('input', updateHint);
+    genderSelect.addEventListener('change', updateHint);
+    updateHint();
+});
+</script>
+
 {% endblock %}
