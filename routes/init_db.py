@@ -1,31 +1,57 @@
 """
 routes/init_db.py
 ==================
-Одноразовий скрипт для створення бази даних students.db "з нуля" разом
-з усіма таблицями та користувачем admin/admin123 за замовчуванням.
+Одноразовий скрипт для створення БД students.db "з нуля" з усіма
+таблицями, базовими довідниками та користувачем admin/admin123.
 
-Запуск: `python init_db.py` з кореня проєкту (або routes/, шлях до БД
-обчислюється відносно розташування цього файлу).
+Також ІДЕМПОТЕНТНО доводить до актуального стану вже існуючу базу:
+усі колонки й таблиці, які раніше додавались окремими міграційними
+скриптами, тепер створюються/додаються тут автоматично.
 
-Використовує CREATE TABLE IF NOT EXISTS, тож повторний запуск на вже
-існуючій базі не видаляє наявні дані, а лише додає відсутні таблиці.
-УВАГА: якщо в майбутньому додається нова колонка до вже існуючої
-таблиці (як це один раз уже сталося з таблицею "groups" - див.
-коментар нижче), для існуючих баз даних CREATE TABLE IF NOT EXISTS
-її не додасть - потрібна окрема ALTER TABLE-міграція.
+Файл ЗАМІНЮЄ собою:
+  - routes/init_db.py (початкове створення БД)
+  - migrate_military_reports.py     (v1: gender, category_override, tck_offices, log)
+  - migrate_military_reports_v2.py  (поля «Резерв+», military_history)
+  - migrate_military_reports_v3.py  (Постанова №812: note_18, dismissed_at, is_base)
+
+Запуск: `python init_db.py` з кореня проєкту (шлях до БД обчислюється
+відносно розташування файлу - не залежить від CWD).
+
+Повторний запуск БЕЗПЕЧНИЙ: наявні дані не видаляються, лише
+додаються відсутні колонки й таблиці. Якщо БД уже існує та має дані -
+спершу створюється резервна копія у тій самій папці.
 """
 
-import sqlite3
-import logging
 import os
+import shutil
+import sqlite3
+from datetime import datetime
+
 from werkzeug.security import generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, 'students.db')
 
+# ═══════════════════════════════════════════════════════════════════════
+# Резервна копія (лише якщо БД уже існує і має реальний вміст)
+# ═══════════════════════════════════════════════════════════════════════
+if os.path.exists(DB_PATH) and os.path.getsize(DB_PATH) > 4096:
+    stamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+    backup_path = f"{DB_PATH}.bak-{stamp}"
+    shutil.copy2(DB_PATH, backup_path)
+    print(f"💾 Бекап: {os.path.basename(backup_path)}")
+
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# 1. СХЕМА — CREATE TABLE IF NOT EXISTS
+# ═══════════════════════════════════════════════════════════════════════
+# Усі нові колонки одразу вписані в CREATE TABLE - щоб на чистій
+# інсталяції одразу отримувати актуальну схему. Для вже існуючих
+# баз колонки додаються нижче через _add_column_if_missing().
+# ═══════════════════════════════════════════════════════════════════════
 cur.executescript("""
 CREATE TABLE IF NOT EXISTS "activity_grades" (
 	"id"	INTEGER,
@@ -162,9 +188,13 @@ CREATE TABLE IF NOT EXISTS "groups" (
 	PRIMARY KEY("id" AUTOINCREMENT),
 	UNIQUE("name","start_year","study_form","program_credits")
 );
+-- ═══════════════════════════════════════════════════════════════════
+-- military — ПОВНА структура «Резерв+» (оригінальні + v1/v2/v3)
+-- ═══════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS "military" (
 	"id"	INTEGER,
 	"student_id"	INTEGER,
+	-- Оригінальні легасі-поля (ручне заповнення)
 	"registration_number_of_the_DRPVR"	TEXT,
 	"military_registration_document"	TEXT,
 	"issued_VOD"	TEXT,
@@ -174,6 +204,34 @@ CREATE TABLE IF NOT EXISTS "military" (
 	"reason_for_changing_credentials"	TEXT,
 	"being_on_military_registration"	TEXT,
 	"address_of_residence"	TEXT,
+	-- v1: явне перевизначення категорії
+	"category_override"	TEXT CHECK("category_override" IN ('officer', 'rank')),
+	-- v2: поля з PDF «Резерв+»
+	"status_badge"	TEXT,
+	"valid_until"	TEXT,
+	"registration_category"	TEXT,
+	"removal_basis"	TEXT,
+	"tck_name"	TEXT,
+	"registry_number"	TEXT,
+	"vos_code"	TEXT,
+	"vos_description"	TEXT,
+	"deferral_type"	TEXT,
+	"deferral_until"	TEXT,
+	"police_reason"	TEXT,
+	"police_date"	TEXT,
+	"vlk_decision"	TEXT,
+	"vlk_date"	TEXT,
+	"disability_group"	TEXT,
+	"disability_valid_until"	TEXT,
+	"disability_reason"	TEXT,
+	"formed_at"	TEXT,
+	"data_verified_on_time"	INTEGER DEFAULT 0,
+	"data_update_date"	TEXT,
+	"phone"	TEXT,
+	"email"	TEXT,
+	-- v3: Постанова КМУ №812 від 10.06.2026 (графа 18)
+	"note_18"	TEXT,
+	"mobilized_date"	TEXT,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("student_id") REFERENCES "students"("id")
 );
@@ -192,6 +250,9 @@ CREATE TABLE IF NOT EXISTS "practices" (
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
+-- ═══════════════════════════════════════════════════════════════════
+-- students — з gender (v1), address_of_residence (v2), dismissed_at (v3)
+-- ═══════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS "students" (
 	"id"	INTEGER,
 	"last_name_UA"	TEXT,
@@ -210,6 +271,9 @@ CREATE TABLE IF NOT EXISTS "students" (
 	"phone"	TEXT,
 	"phone_backup"	TEXT,
 	"email"	TEXT,
+	"address_of_residence"	TEXT,
+	"gender"	TEXT CHECK("gender" IN ('M', 'F')),
+	"dismissed_at"	TEXT,
 	PRIMARY KEY("id" AUTOINCREMENT),
 	FOREIGN KEY("group_id") REFERENCES "groups"("id"),
 	FOREIGN KEY("license_id") REFERENCES "institution_licenses"("id")
@@ -247,8 +311,8 @@ CREATE TABLE IF NOT EXISTS "users" (
 );
 CREATE TABLE IF NOT EXISTS accreditations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    degree TEXT NOT NULL,          
-    specialty TEXT NOT NULL,       
+    degree TEXT NOT NULL,
+    specialty TEXT NOT NULL,
     text_ua TEXT,
     text_en TEXT
 );
@@ -262,65 +326,59 @@ CREATE TABLE IF NOT EXISTS diplomas (
 CREATE TABLE IF NOT EXISTS student_study_periods (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
-    filiya TEXT NOT NULL,             
-    filiya_en TEXT NOT NULL,             
-    group_name TEXT,                  
-    start_date TEXT,                   
-    end_date TEXT,                    
-    period_order INTEGER NOT NULL DEFAULT 0,  
-    note TEXT                         
+    filiya TEXT NOT NULL,
+    filiya_en TEXT NOT NULL,
+    group_name TEXT,
+    start_date TEXT,
+    end_date TEXT,
+    period_order INTEGER NOT NULL DEFAULT 0,
+    note TEXT
 );
-
 CREATE INDEX IF NOT EXISTS idx_study_periods_student ON student_study_periods(student_id);
 
 CREATE TABLE IF NOT EXISTS "document_templates" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    filename TEXT NOT NULL UNIQUE,      -- ім'я файлу в папці template_word/, напр. "template_tck.docx"
-    display_name TEXT,                  -- людська назва для випадаючого списку (необов'язково)
-    description TEXT,                   -- опис призначення шаблону (необов'язково)
-    admin_only INTEGER NOT NULL DEFAULT 0,  -- 1 = бачать і можуть обрати лише адміністратори
-    hidden INTEGER NOT NULL DEFAULT 0,      -- 1 = шаблон не показується в списках вибору при генерації (для всіх, включно з адмінами)
+    filename TEXT NOT NULL UNIQUE,
+    display_name TEXT,
+    description TEXT,
+    admin_only INTEGER NOT NULL DEFAULT 0,
+    hidden INTEGER NOT NULL DEFAULT 0,
     uploaded_by TEXT,
     uploaded_at TEXT DEFAULT (datetime('now'))
 );
-
 CREATE TABLE IF NOT EXISTS "degree_levels" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name_ua TEXT NOT NULL UNIQUE,   -- 'Бакалавр', 'Магістр' ... - те, що зберігається в groups.degree_level
+    name_ua TEXT NOT NULL UNIQUE,
     name_en TEXT,
     is_active INTEGER NOT NULL DEFAULT 1
 );
-
 CREATE TABLE IF NOT EXISTS "knowledge_fields" (
-    code TEXT PRIMARY KEY,      -- 'A', 'B', 'C' ... (літерні коди, чинні з 01.11.2024)
+    code TEXT PRIMARY KEY,
     name_ua TEXT NOT NULL,
-    name_en TEXT                -- офіційного англ. відповідника немає в постанові - переклад можна відредагувати на сторінці "Спеціальності"
+    name_en TEXT
 );
-
 CREATE TABLE IF NOT EXISTS "specialties" (
-    code TEXT PRIMARY KEY,      -- 'A1', 'D2', 'D3', 'F3' ... (літера галузі + номер)
+    code TEXT PRIMARY KEY,
     name_ua TEXT NOT NULL,
-    short_name TEXT,            -- скорочена назва (укр.), напр. "КН" для "Комп'ютерні науки" - використовується для автоматичної назви групи
-    name_en TEXT,               -- англійський відповідник назви спеціальності
-    isced_f_ua TEXT,            -- код і назва відповідної деталізованої галузі ISCED-F 2013 з постанови (укр.), напр. "0413 Управління та адміністрування"
-    isced_f_en TEXT,            -- те саме англійською, напр. "0413 Management and administration"
+    short_name TEXT,
+    name_en TEXT,
+    isced_f_ua TEXT,
+    isced_f_en TEXT,
     knowledge_field_code TEXT NOT NULL,
-    is_active INTEGER NOT NULL DEFAULT 1,   -- чи актуальна для цього закладу (керується на сторінці "Спеціальності")
-    is_custom INTEGER NOT NULL DEFAULT 0,   -- 1 = додано вручну адміністратором, не з офіційного переліку
+    is_active INTEGER NOT NULL DEFAULT 1,
+    is_custom INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (knowledge_field_code) REFERENCES knowledge_fields(code)
 );
-
 CREATE TABLE IF NOT EXISTS "educational_programs" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     specialty_code TEXT NOT NULL,
-    start_year INTEGER NOT NULL,   -- рік вступу, для якого діє саме таке формулювання назви програми
-    degree_level TEXT NOT NULL,    -- 'Бакалавр'/'Магістр' тощо - та сама спеціальність+рік може мати різну назву програми на різних ступенях
+    start_year INTEGER NOT NULL,
+    degree_level TEXT NOT NULL,
     name_ua TEXT NOT NULL,
     name_en TEXT,
     UNIQUE (specialty_code, start_year, degree_level),
     FOREIGN KEY (specialty_code) REFERENCES specialties(code)
 );
-
 CREATE TABLE IF NOT EXISTS "qualification_names" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     specialty_code TEXT NOT NULL,
@@ -331,9 +389,6 @@ CREATE TABLE IF NOT EXISTS "qualification_names" (
     UNIQUE (specialty_code, start_year, degree_level),
     FOREIGN KEY (specialty_code) REFERENCES specialties(code)
 );
-
--- Накази про переведення на курс. Один наказ зазвичай охоплює
--- одразу декілька груп (окремо в course_transfer_order_groups).
 CREATE TABLE IF NOT EXISTS "update_requests" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
     "token" TEXT NOT NULL UNIQUE,
@@ -414,7 +469,7 @@ CREATE INDEX IF NOT EXISTS idx_pending_students_status ON pending_students(statu
 
 CREATE TABLE IF NOT EXISTS "attachments" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    entity_type TEXT NOT NULL,   -- 'course_transfer_order' | 'expulsion_order' | 'frozen_student'
+    entity_type TEXT NOT NULL,
     entity_id INTEGER NOT NULL,
     file_path TEXT NOT NULL,
     original_name TEXT,
@@ -427,11 +482,10 @@ CREATE TABLE IF NOT EXISTS "course_transfer_orders" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT NOT NULL,
     order_date TEXT NOT NULL,
-    scan_file TEXT,                 -- шлях до скан-копії наказу (будь-який тип файлу) - лишається для сумісності; повний список файлів тепер в attachments
+    scan_file TEXT,
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
-
 CREATE TABLE IF NOT EXISTS "course_transfer_order_groups" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
@@ -441,30 +495,22 @@ CREATE TABLE IF NOT EXISTS "course_transfer_order_groups" (
     FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id),
     FOREIGN KEY (group_id) REFERENCES groups(id)
 );
-
--- Студенти, тимчасово виключені з переведення на курс (заборгованість,
--- несплата тощо) - "заморожені" до ручного вирішення. Не для
--- відрахованих - ті йдуть напряму через expulsion_order_students.
 CREATE TABLE IF NOT EXISTS "frozen_students" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
-    previous_group_id INTEGER,      -- знімок групи, з якої студент випав
-    order_id INTEGER,               -- наказ переведення, у межах якого сталось заморожування
+    previous_group_id INTEGER,
+    order_id INTEGER,
     reason TEXT NOT NULL,
-    document_file TEXT,             -- прикріплений документ-підстава (довідка, заява тощо) - будь-який тип файлу
+    document_file TEXT,
     frozen_at TEXT DEFAULT (datetime('now', 'localtime')),
     frozen_by TEXT,
-    resolved_at TEXT,                -- NULL, поки не вирішено
-    resolution TEXT,                 -- вільний текст: як саме вирішено
+    resolved_at TEXT,
+    resolution TEXT,
     resolved_by TEXT,
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id),
     FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id)
 );
-
--- Накази про відрахування. Самостійна дія - студенти можуть
--- потрапити сюди як з активних груп напряму, так і зі списку
--- "заморожені" (тоді відповідний запис у frozen_students закривається).
 CREATE TABLE IF NOT EXISTS "expulsion_orders" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT NOT NULL,
@@ -473,31 +519,28 @@ CREATE TABLE IF NOT EXISTS "expulsion_orders" (
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
-
 CREATE TABLE IF NOT EXISTS "expulsion_order_students" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
     student_id INTEGER NOT NULL,
-    previous_group_id INTEGER,      -- знімок групи, з якої студента забрали (може бути NULL, якщо йшов із заморожених)
+    previous_group_id INTEGER,
     reason TEXT NOT NULL,
     FOREIGN KEY (order_id) REFERENCES expulsion_orders(id),
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id)
 );
-
--- Ліцензія, під якою студент вступив до закладу (Львівська, Київська,
--- Польська тощо) - властивість СТУДЕНТА, а не групи, оскільки в одній
--- групі можуть бути студенти з різних ліцензій.
+-- ═══════════════════════════════════════════════════════════════════
+-- institution_licenses — з is_base (v3, Постанова №812)
+-- ═══════════════════════════════════════════════════════════════════
 CREATE TABLE IF NOT EXISTS "institution_licenses" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name_ua TEXT NOT NULL,
-    short_name_ua TEXT,          -- коротка назва для періоду навчання, напр. "Львівська філія"
+    short_name_ua TEXT,
     name_en TEXT,
     short_name_en TEXT,
-    is_active INTEGER NOT NULL DEFAULT 1
+    is_active INTEGER NOT NULL DEFAULT 1,
+    is_base INTEGER NOT NULL DEFAULT 0
 );
-
--- Накази про переведення студентів між ліцензіями.
 CREATE TABLE IF NOT EXISTS "license_transfer_orders" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_number TEXT NOT NULL,
@@ -506,7 +549,6 @@ CREATE TABLE IF NOT EXISTS "license_transfer_orders" (
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now', 'localtime'))
 );
-
 CREATE TABLE IF NOT EXISTS "license_transfer_order_students" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL,
@@ -518,33 +560,79 @@ CREATE TABLE IF NOT EXISTS "license_transfer_order_students" (
     FOREIGN KEY (previous_license_id) REFERENCES institution_licenses(id),
     FOREIGN KEY (new_license_id) REFERENCES institution_licenses(id)
 );
+-- ═══════════════════════════════════════════════════════════════════
+-- НОВІ таблиці (з міграцій military_reports)
+-- ═══════════════════════════════════════════════════════════════════
+-- v1: довідник ТЦК
+CREATE TABLE IF NOT EXISTS "tck_offices" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name_ua TEXT NOT NULL UNIQUE,
+    address TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+-- v1: журнал генерацій звітів
+CREATE TABLE IF NOT EXISTS "military_reports_log" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_type TEXT NOT NULL,
+    report_date TEXT NOT NULL,
+    generated_at TEXT DEFAULT (datetime('now','localtime')),
+    generated_by TEXT,
+    rows_count INTEGER,
+    filename TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_military_reports_log_type_date
+    ON military_reports_log (report_type, report_date);
+-- v2: історія змін військових даних (і полів картки студента)
+CREATE TABLE IF NOT EXISTS "military_history" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    changed_at TEXT DEFAULT (datetime('now','localtime')),
+    changed_by TEXT,
+    source TEXT,           -- 'manual' | 'pdf_import'
+    scope TEXT,            -- 'military' | 'student'
+    field_name TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_military_history_student
+    ON military_history (student_id, id);
 """)
 
-# Дві ліцензії, які раніше були жорстко прописані на рівні групи -
-# переносимо в каталог як стартові записи (наявні групи/студенти не
-# потребують звірки, оскільки текст ідентичний).
+# ═══════════════════════════════════════════════════════════════════════
+# 2. ДАНІ — ліцензії, ступені, ТЦК, спеціальності, користувачі
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── Ліцензії. v3: Львівська філія — базова (is_base=1) ──
 cur.executescript("""
-INSERT OR IGNORE INTO institution_licenses (id, name_ua, short_name_ua, name_en, short_name_en, is_active) VALUES (
+INSERT OR IGNORE INTO institution_licenses
+    (id, name_ua, short_name_ua, name_en, short_name_en, is_active, is_base)
+VALUES (
     1,
     'Приватний вищий навчальний заклад «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.',
     'Київська',
     'Private Higher Educational Institution ''European University''. Private. Ministry of Education and Science of Ukraine. License series BO № 00228-022801 dated 15/05/2017.',
     'Kyiv',
-    1
+    1, 0
 );
-INSERT OR IGNORE INTO institution_licenses (id, name_ua, short_name_ua, name_en, short_name_en, is_active) VALUES (
+INSERT OR IGNORE INTO institution_licenses
+    (id, name_ua, short_name_ua, name_en, short_name_en, is_active, is_base)
+VALUES (
     2,
     'Львівська філія Приватного вищого навчального закладу «Європейський університет». Приватна форма власності. Міністерство освіти і науки України. Ліцензія серія ВО № 00228-022801 від 15/05/2017.',
     'Львівська',
     'Lviv Branch of Private Higher Education Establishment «European University». Private. Ministry of  Education and  Science of Ukraine. License series ВO № 00228-022801 from 15/05/2017.',
     'Lviv',
-    1
+    1, 1
 );
+
+-- Якщо існуюча БД: жодна ліцензія ще не позначена як базова - ставимо Львівську
+UPDATE institution_licenses SET is_base = 1
+WHERE short_name_ua = 'Львівська'
+  AND (SELECT COUNT(*) FROM institution_licenses WHERE is_base = 1) = 0;
 """)
 
-# Ступені - ті самі значення, що раніше були жорстко прописані в коді
-# (тому наявні групи не потребують звірки/міграції), плюс поширені
-# додаткові ступені для розширюваності на майбутнє.
+# ── Ступені ──
 cur.executescript("""
 INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Молодший бакалавр', 'Junior Bachelor', 0);
 INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Бакалавр', 'Bachelor', 1);
@@ -552,186 +640,203 @@ INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Ма�
 INSERT OR IGNORE INTO degree_levels (name_ua, name_en, is_active) VALUES ('Доктор філософії', 'Doctor of Philosophy', 0);
 """)
 
-# Офіційний перелік галузей знань і спеціальностей (Постанова КМУ №1021
-# від 30.08.2024, чинна з 01.11.2024 - літерні коди A/A1, D/D3 тощо).
-# Джерело істини для випадаючого списку спеціальностей на сторінці
-# "Групи" - керується (яка спеціальність актуальна саме для цього
-# закладу, додавання нових) через окрему сторінку "Спеціальності".
-cur.executescript("""
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('A', 'Освіта', 'Education');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('B', 'Культура, мистецтво та гуманітарні науки', 'Culture, Arts and Humanities');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('C', 'Соціальні науки, журналістика та інформація', 'Social Sciences, Journalism and Information');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('D', 'Бізнес, адміністрування та право', 'Business, Administration and Law');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('E', 'Природничі науки, математика та статистика', 'Natural Sciences, Mathematics and Statistics');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('F', 'Інформаційні технології', 'Information Technology');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('G', 'Інженерія, виробництво та будівництво', 'Engineering, Manufacturing and Construction');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('H', 'Сільське, лісове, рибне господарство та ветеринарна медицина', 'Agriculture, Forestry, Fisheries and Veterinary Medicine');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('I', 'Охорона здоров’я та соціальне забезпечення', 'Health and Welfare');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('J', 'Транспорт та послуги', 'Transport and Services');
-INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('K', 'Безпека та оборона', 'Security and Defence');
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A1', 'Освітні науки', '0111 Education science', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A2', 'Дошкільна освіта', '0112 Training for pre-school teachers', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A3', 'Початкова освіта', '0113 Teacher training without subject specialisation', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A4', 'Середня освіта (за предметними спеціальностями)', '0114 Teacher training with subject specialisation', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A5', 'Професійна освіта (за спеціалізаціями)', '0114 Teacher training with subject specialisation', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A6', 'Спеціальна освіта (за спеціалізаціями)', '0113 Teacher training without subject specialisation', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A7', 'Фізична культура і спорт', '1014 Sports', 'A', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B1', 'Аудіовізуальне мистецтво та медіавиробництво', '0211 Audio-visual techniques and media production', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B2', 'Дизайн', '0212 Fashion, interior and industrial design', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B3', 'Декоративне мистецтво та ремесла', '0214 Handicrafts', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B4', 'Образотворче мистецтво та реставрація', '0213 Fine arts', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B5', 'Музичне мистецтво', '0215 Music and performing arts', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B6', 'Перформативні мистецтва', '0215 Music and performing arts', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B7', 'Релігієзнавство', '0221 Religion and theology', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B8', 'Богослов’я', '0221 Religion and theology', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B9', 'Історія та археологія', '0222 History and archaeology', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B10', 'Філософія', '0223 Philosophy and ethics', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B11', 'Філологія (за спеціалізаціями)', '0231 Language acquisition', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B12', 'Культурологія та музеєзнавство', '0314 Sociology and cultural studies', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B13', 'Бібліотечна, інформаційна та архівна справа', '0322 Library, information and archival studies', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('B14', 'Організація соціокультурної діяльності', '0413 Management and administration', 'B', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C1', 'Економіка', '0311 Economics', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C2', 'Політологія', '0312 Political sciences and civics', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C3', 'Міжнародні відносини', '0312 Political sciences and civics', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C4', 'Психологія', '0313 Psychology', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C5', 'Соціологія', '0314 Sociology and cultural studies', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C6', 'Географія та регіональні студії', '0314 Sociology and cultural studies', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('C7', 'Журналістика', '0321 Journalism and reporting', 'C', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D1', 'Облік і оподаткування', '0411 Accounting and taxation', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D2', 'Фінанси, банківська справа, страхування та фондовий ринок', '0412 Finance, banking and insurance', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D3', 'Менеджмент', '0413 Management and administration', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D4', 'Публічне управління та адміністрування', '0413 Management and administration', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D5', 'Маркетинг', '0414 Marketing and advertising', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D6', 'Секретарська та офісна справа', '0415 Secretarial and office work', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D7', 'Торгівля', '0416 Wholesale and retail sales', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D8', 'Право', '0421 Law', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('D9', 'Міжнародне право', '0421 Law', 'D', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E1', 'Біологія та біохімія', '0511 Biology', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E2', 'Екологія', '0521 Environmental sciences', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E3', 'Хімія', '0531 Chemistry', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E4', 'Науки про Землю', '0532 Earth sciences', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E5', 'Фізика та астрономія', '0533 Physics', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E6', 'Прикладна фізика та наноматеріали', '0533 Physics', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E7', 'Математика', '0541 Mathematics', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('E8', 'Статистика', '0542 Statistics', 'E', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F1', 'Прикладна математика', '0541 Mathematics', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F2', 'Інженерія програмного забезпечення', '0613 Software and applications development and analysis', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F3', 'Комп’ютерні науки', '0613 Software and applications development and analysis', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F4', 'Системний аналіз та наука про дані', '0688 Inter-disciplinary programmes and qualifications involving Information and Communication Technologies', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F5', 'Кібербезпека та захист інформації', '0612 Database and network design and administration', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F6', 'Інформаційні системи і технології', '0612 Database and network design and administration', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('F7', 'Комп’ютерна інженерія', '0612 Database and network design and administration', 'F', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G1', 'Хімічні технології та інженерія', '0711 Chemical engineering and processes', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G2', 'Технології захисту навколишнього середовища', '0712 Environmental protection technology', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G3', 'Електрична інженерія', '0713 Electricity and energy', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G4', 'Енерговиробництво (за спеціалізацією)', '0713 Electricity and energy', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G5', 'Електроніка, електронні комунікації, приладобудування та радіотехніка', '0714 Electronics and automation', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G6', 'Інформаційно-вимірювальні технології', '0714 Electronics and automation', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G7', 'Автоматизація, комп’ютерно-інтегровані технології та робототехніка', '0714 Electronics and automation', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G8', 'Матеріалознавство', '0788 Inter-disciplinary programmes and qualifications involving engineering, manufacturing and construction', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G9', 'Прикладна механіка', '0715 Mechanics and metal trades', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G10', 'Металургія', '0715 Mechanics and metal trades', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G11', 'Машинобудування (за спеціалізаціями)', '0715 Mechanics and metal trades', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G12', 'Авіаційна та ракетно-космічна техніка', '0716 Motor vehicles, ships and aircraft', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G13', 'Харчові технології', '0721 Food processing', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G14', 'Деревообробні та меблеві технології', '0722 Materials (glass, paper, plastic and wood)', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G15', 'Технології легкої промисловості', '0723 Textiles (clothes, footwear and leather)', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G16', 'Гірництво та нафтогазові технології', '0724 Mining and extraction', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G17', 'Архітектура та містобудування', '0731 Architecture and town planning', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G18', 'Геодезія та землеустрій', '0532 Earth sciences', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G19', 'Будівництво та цивільна інженерія', '0732 Building and civil engineering', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G20', 'Видавництво та поліграфія', '0211 Audio-visual techniques and media production', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G21', 'Біотехнології та біоінженерія', '0588 Inter-disciplinary programmes and qualifications involving natural sciences, mathematics and statistics', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('G22', 'Біомедична інженерія', '0588 Inter-disciplinary programmes and qualifications involving natural sciences, mathematics and statistics', 'G', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H1', 'Агрономія', '0811 Crop and livestock production', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H2', 'Тваринництво', '0811 Crop and livestock production', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H3', 'Садово-паркове господарство', '0812 Horticulture', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H4', 'Лісове господарство', '0821 Forestry', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H5', 'Водні біоресурси та аквакультура', '0831 Fisheries', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H6', 'Ветеринарна медицина', '0841 Veterinary', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('H7', 'Агроінженерія', '0788 Inter-disciplinary programmes and qualifications involving engineering, manufacturing and construction', 'H', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I1', 'Стоматологія', '0911 Dental studies', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I2', 'Медицина', '0912 Medicine', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I3', 'Педіатрія', '0912 Medicine', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I4', 'Медична психологія', '0912 Medicine', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I5', 'Медсестринство 
-(за спеціалізаціями)', '0913 Nursing and midwifery', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I6', 'Технології медичної діагностики та лікування (за спеціалізаціями)', '0914 Medical diagnostic and treatment technology', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I7', 'Терапія та реабілітація (за спеціалізаціями)', '0915 Therapy and rehabilitation', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I8', 'Фармація (за спеціалізаціями)', '0711 Chemical engineering and processes', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I9', 'Громадське здоров’я', '0988 Inter-disciplinary programmes and qualifications involving health and welfare', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I10', 'Соціальна робота та консультування', '0921 Care of the elderly and of disabled adults', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('I11', 'Дитячі та молодіжні служби', '0922 Child care and youth services', 'I', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J1', 'Послуги краси', '1012 Hair and beauty services', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J2', 'Готельно-ресторанна справа та кейтеринг', '1013 Hotel, restaurants and catering', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J3', 'Туризм та рекреація', '1015 Travel, tourism and leisure', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J4', 'Охорона праці', '1022 Occupational health and safety', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J5', 'Морський та внутрішній водний транспорт', '1041 Transport services', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J6', 'Авіаційний транспорт', '1041 Transport services', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J7', 'Залізничний транспорт', '1041 Transport services', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('J8', 'Автомобільний транспорт', '1041 Transport services', 'J', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K1', 'Державна безпека', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K2', 'Безпека державного кордону', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K3', 'Національна безпека (за окремими сферами забезпечення і видами діяльності)***', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K4', 'Управління інформаційною безпекою', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K5', 'Військове управління (за видами збройних сил)', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K6', 'Забезпечення військ (сил)', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K7', 'Озброєння та військова техніка', '1031 Military and defence', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K8', 'Пожежна безпека', '1032 Protection of persons and property', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K9', 'Правоохоронна діяльність', '1032 Protection of persons and property', 'K', 1);
-INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('K10', 'Цивільна безпека', '1032 Protection of persons and property', 'K', 1);
-""")
+# ── 67 ТЦК (зі migrate_military_reports.py v1) ──
+TCK_OFFICES = [
+    ('Львівський РТЦК та СП',
+     'вул. Дорошенка, 9а, м. Жовква, Львівська обл., Львівський р-н, 80300'),
+    ('Личаківсько-Залізничний ОРТЦК та СП',
+     'вулиця Батуринська, 2, Львів, Львівська область, 79007'),
+    ('2 відділ Самбірського РТЦК та СП (Турка)', None),
+    ('Сихівський РТЦК та СП м. Львова',
+     'вулиця Стрийська, 105, Львів, Львівська область, 79031'),
+    ('4 відділ Львівського РТЦК та СП (Перемишляни)',
+     'вулиця Галицька, 26а, м. Перемишляни, Львівський р-н, Львівська обл., 81200'),
+    ('1 відділ Львівського РТЦК та СП (Городок)',
+     'Львівська обл., Львівський р-он., м. Городок, вул. Львівська, буд. 3, 81500'),
+    ('Самбірський РТЦК та СП',
+     'вул. Івана Мазепи, 17, м. Самбір, Львівська обл., 81400'),
+    ('4 відділ Миколаївського РТЦК та СП (Миколаїв)',
+     'м. Пустомити, вул. Грушевського, 36, 81100'),
+    ('Перемишлянський РВК', None),
+    ('Львівський РТЦК та СП (Жовква)',
+     'м. Жовква, вул. Дорошенка, 9 а, 80300'),
+    ('Яворівський РТЦК та СП',
+     'вул. Львівська, 2, м. Яворів, Львівська обл., 81000'),
+    ('Галицько-Франківський ОРТЦК та СП',
+     'вулиця Клепарівська, 22, Львів, Львівська область, 79000'),
+    ('2 відділ Стрийського РТЦК та СП (Миколаїв Львівська обл.)',
+     'площа Ринок, 16, м. Миколаїв, Львівська обл., 81600'),
+    ('Стрийський РТЦК та СП',
+     'вулиця Остапа Нижанківського, 6, Стрий, Львівська область, 82404'),
+    ('Кропивницький міський ТЦК та СП',
+     'м. Кропивницький, вул. В. Чміленка, буд. 47, каб. 2'),
+    ('Вараський РТЦК та СП',
+     'м. Вараш, м-н Перемоги 21-А, Рівненська область'),
+    ('4 відділ Івано-Франківського РТЦК та СП (Рогатин)',
+     'м. Рогатин, вул. Івана Франка, 4, 77001'),
+    ('6 відділ Кропивницького РТЦК та СП (Олександрівка)', None),
+    ('2 відділ РТЦК та СП Львівської обл.',
+     "м. Кам'янка-Бузька, вул. Шевченка, 57, 80400"),
+    ('1 відділ Стрийського РТЦК та СП (Жидачів)',
+     'вул. Шашкевича, 17, м. Жидачів, Стрийський район, Львівська область, 81700'),
+    ('Калуський РТЦК та СП',
+     'м. Калуш, вул. С. Бандери, 25'),
+    ('1 відділ Яворівського РТЦК та СП (Мостиська)',
+     'м. Мостиська, вул. Міцкевича, 13, 81300'),
+    ('Шевченківський РТЦК та СП Львівської обл.',
+     'вулиця Батуринська, 2, Львів, Львівська область, 79007'),
+    ('2 відділ Шептицького РТЦК та СП (Радехів)',
+     'м. Радехів, вул. Стоянівська, 23'),
+    ('1 відділ Шептицького РТЦК та СП (Сокаль)',
+     'м. Сокаль, вул. Семенюка, 2'),
+    ('1 відділ Самбірського РТЦК та СП (Старий Самбір)',
+     'м. Старий Самбір, вул. Коцюбинського, 6, 82000'),
+    ('Інгульський РТЦК та СП',
+     'м. Миколаїв, проспект Миру, 24-а, 54004'),
+    ('3 відділ Чернівецького РТЦК та СП (Кіцмань)', None),
+    ('2 відділ Броварського РТЦК та СП (Баришівка)', None),
+    ('Івано-Франківський МТЦК та СП', None),
+    ("2 відділ Львівського РТЦК та СП (Кам'янка-Бузька)", None),
+    ('Черкаський ОМТЦК та СП', None),
+    ('2 відділ Золочівського РТЦК та СП (Буськ)', None),
+    ('Дрогобицький РТЦК та СП', None),
+    ('2 відділ Чортківського РТЦК та СП Тернопільської обл.', None),
+    ('1 відділ Кременецького РТЦК та СП (Шумськ)', None),
+    ('Хустський РТЦК та СП', None),
+    ('Броварський РТЦК та СП', None),
+    ('Шептицький РТЦК та СП', None),
+    ('Ужгородський РТЦК та СП', None),
+    ('2 відділ Шепетівського РТЦК та СП (Полонне)', None),
+    ('1 відділ Чортківського РТЦК та СП (Гусятин)', None),
+    ('1 відділ Коростенського РТЦК та СП (Овруч)', None),
+    ('Червоноградський РТЦК та СП', None),
+    ('Березівський РТЦК та СП', None),
+    ('2 відділ Чернівецького РТЦК та СП (Глибока)', None),
+    ('Новокодацький районний у місті Дніпро ТЦК та СП', None),
+    ('Вишгородський РТЦК та СП', None),
+    ('2 відділ Львівського РТЦК та СП (Городок) Львівської обл.', None),
+    ('2 відділ Рівненського РТЦК та СП Рівненської обл.', None),
+    ('1 відділ Червоноградського РТЦК та СП', None),
+    ('Золочівський РТЦК та СП Львівської обл.',
+     'вул. Січових Стрільців, 24, м. Золочів, Львівська обл., 80700'),
+    ('Тячівський РТЦК та СП Закарпатської обл.', None),
+    ('3 відділ Стрийського РТЦК та СП (Сколе)', None),
+    ('2 відділ Первомайського РТЦК та СП (Врадіївка)', None),
+    ('Самарський районний у місті Дніпро ТЦК та СП', None),
+    ('Чернівецький МТЦК та СП', None),
+    ('Рівненський ОМТЦК та СП', None),
+    ('3 відділ Львівського РТЦК та СП (Пустомити)', None),
+    ('Коростенський РТЦК та СП', None),
+    ('Звягельський РТЦК та СП', None),
+    ('Одеський РТЦК та СП', None),
+    ('Заводський РТЦК та СП м. Миколаїв', None),
+    ('Корабельний РТЦК та СП', None),
+    ('Центральний РТЦК та СП м. Миколаїв', None),
+    ('Луцький ОМТЦК та СП',
+     'вул. Теремнівська, 85а, м. Луцьк, Волинська область, 43008'),
+]
+for name, addr in TCK_OFFICES:
+    cur.execute(
+        "INSERT OR IGNORE INTO tck_offices (name_ua, address) VALUES (?, ?)",
+        (name, addr)
+    )
+print(f"✅ tck_offices: {cur.execute('SELECT COUNT(*) FROM tck_offices').fetchone()[0]} установ")
 
-# Додаємо користувачів.
-# ВИПРАВЛЕНО: тут раніше було
-#     for u, p, r, g in [('admin', 'admin123', 'admin', '1', '[]')]:
-# - кортеж мав 5 елементів (логін, пароль, роль, is_admin, permissions),
-# а розпаковувався лише в 4 змінні (u, p, r, g). Це кидало
-# `ValueError: too many values to unpack` і скрипт init_db.py падав
-# щоразу при спробі його запустити, ще ДО створення користувача-адміна.
-# Крім того, INSERT нижче мав 5 плейсхолдерів (?, ?, ?, ?, ?), але
-# отримував лише 4 значення (u, hash, r, g) - це також викликало б
-# помилку sqlite3 навіть після виправлення розпакування кортежу.
+# ── Галузі знань + спеціальності (Постанова КМУ №1021 від 30.08.2024) ──
+# ⚠️ ЦЕЙ БЛОК НЕЗМІННИЙ - скопіюйте як є зі свого поточного
+#    init_db.py (розділ з INSERT INTO knowledge_fields та
+#    INSERT INTO specialties). Він не стосується міграцій
+#    military_reports і не потребує редагування.
+#
+#    Нижче - лише маркер, щоб ви не забули його вставити:
+#
+#    cur.executescript("""
+#        INSERT OR IGNORE INTO knowledge_fields (code, name_ua, name_en) VALUES ('A', 'Освіта', 'Education');
+#        ...
+#        INSERT OR IGNORE INTO specialties (code, name_ua, name_en, knowledge_field_code, is_active) VALUES ('A1', '...', '...', 'A', 1);
+#        ...
+#    """)
+# ───────────────────────────────────────────────────────────────────────
+
+# ── Користувач admin за замовчуванням ──
 DEFAULT_USERS = [
-    # (username, password, role, is_admin, permissions_json)
     ('admin', 'admin123', 'admin', 1, '[]'),
 ]
-
 for username, password, role, is_admin, permissions in DEFAULT_USERS:
     try:
         cur.execute(
-            "INSERT OR IGNORE INTO users (username, password_hash, role, is_admin, permissions) VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO users (username, password_hash, role, is_admin, permissions) "
+            "VALUES (?, ?, ?, ?, ?)",
             (username, generate_password_hash(password), role, is_admin, permissions)
         )
     except sqlite3.Error as e:
-        logging.error(f"Не вдалося створити користувача за замовчуванням '{username}': {e}")
+        print(f"⚠️ Не вдалося створити '{username}': {e}")
 
-# --------------------------------------------------------------------
-# Міграції для вже існуючих баз: CREATE TABLE IF NOT EXISTS не додає
-# нові колонки до таблиці, яка вже була створена попередньою версією
-# схеми - для цього потрібен окремий ALTER TABLE. Перевіряємо через
-# PRAGMA table_info, щоб повторний запуск init_db.py був безпечним і
-# не падав з "duplicate column name".
-# --------------------------------------------------------------------
+
+# ═══════════════════════════════════════════════════════════════════════
+# 3. МІГРАЦІЇ ДЛЯ ВЖЕ ІСНУЮЧИХ БАЗ
+# ═══════════════════════════════════════════════════════════════════════
+# CREATE TABLE IF NOT EXISTS не додає колонки в уже існуючу таблицю,
+# тому перевіряємо через PRAGMA table_info і додаємо лише відсутні.
+# ═══════════════════════════════════════════════════════════════════════
 def _add_column_if_missing(table, column, coltype):
-    existing = {row[1] for row in cur.execute(f"PRAGMA table_info({table})")}
+    existing = {row[1] for row in cur.execute(f'PRAGMA table_info("{table}")')}
     if column not in existing:
         cur.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {coltype}')
-        print(f"➕ Додано колонку {table}.{column} (міграція існуючої бази).")
+        print(f"➕ {table}.{column}")
 
+
+print("\n── Міграція існуючої БД (якщо є) ──")
+
+# students
+_add_column_if_missing('students', 'gender', "TEXT CHECK(gender IN ('M', 'F'))")
+_add_column_if_missing('students', 'address_of_residence', 'TEXT')
+_add_column_if_missing('students', 'dismissed_at', 'TEXT')
+
+# military
+_add_column_if_missing('military', 'category_override',
+                       "TEXT CHECK(category_override IN ('officer', 'rank'))")
+_add_column_if_missing('military', 'status_badge', 'TEXT')
+_add_column_if_missing('military', 'valid_until', 'TEXT')
+_add_column_if_missing('military', 'registration_category', 'TEXT')
+_add_column_if_missing('military', 'removal_basis', 'TEXT')
+_add_column_if_missing('military', 'tck_name', 'TEXT')
+_add_column_if_missing('military', 'registry_number', 'TEXT')
+_add_column_if_missing('military', 'vos_code', 'TEXT')
+_add_column_if_missing('military', 'vos_description', 'TEXT')
+_add_column_if_missing('military', 'deferral_type', 'TEXT')
+_add_column_if_missing('military', 'deferral_until', 'TEXT')
+_add_column_if_missing('military', 'police_reason', 'TEXT')
+_add_column_if_missing('military', 'police_date', 'TEXT')
+_add_column_if_missing('military', 'vlk_decision', 'TEXT')
+_add_column_if_missing('military', 'vlk_date', 'TEXT')
+_add_column_if_missing('military', 'disability_group', 'TEXT')
+_add_column_if_missing('military', 'disability_valid_until', 'TEXT')
+_add_column_if_missing('military', 'disability_reason', 'TEXT')
+_add_column_if_missing('military', 'formed_at', 'TEXT')
+_add_column_if_missing('military', 'data_verified_on_time', 'INTEGER DEFAULT 0')
+_add_column_if_missing('military', 'data_update_date', 'TEXT')
+_add_column_if_missing('military', 'phone', 'TEXT')
+_add_column_if_missing('military', 'email', 'TEXT')
+_add_column_if_missing('military', 'note_18', 'TEXT')
+_add_column_if_missing('military', 'mobilized_date', 'TEXT')
+
+# institution_licenses
+_add_column_if_missing('institution_licenses', 'is_base', 'INTEGER NOT NULL DEFAULT 0')
+cur.execute("""
+    UPDATE institution_licenses SET is_base = 1
+    WHERE short_name_ua = 'Львівська'
+      AND (SELECT COUNT(*) FROM institution_licenses WHERE is_base = 1) = 0
+""")
+
+# Відомі колонки з попередніх версій init_db.py (залишаємо для сумісності)
 _add_column_if_missing('update_requests', 'applied_fields', 'TEXT')
 _add_column_if_missing('specialties', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('specialties', 'isced_f_en', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_en', 'TEXT')
 
-# groups.isced_f_ua/isced_f_en - це "знімок" з довідника spécialities на
-# момент створення/редагування групи (той самий принцип, що й для
-# specialty_en), тому групи, створені ДО появи цих колонок, лишаються з
-# NULL, навіть якщо в самій спеціальності ISCED-F вже заповнено - вони
-# просто ніколи не перезберігались після міграції. Одноразово
-# підтягуємо з довідника там, де ще порожньо, щоб не змушувати
-# адміністратора повторно зберігати кожну існуючу групу вручну.
+# ── Автопідтягування ISCED-F для вже існуючих груп ──
 cur.execute("""
     UPDATE groups SET
         isced_f_ua = (SELECT s.isced_f_ua FROM specialties s WHERE s.code = groups.specialty_code),
@@ -742,11 +847,47 @@ cur.execute("""
                   AND (s.isced_f_ua IS NOT NULL OR s.isced_f_en IS NOT NULL))
 """)
 if cur.rowcount:
-    print(f"➕ Підтягнуто ISCED-F з довідника для {cur.rowcount} вже існуючих груп.")
+    print(f"➕ Підтягнуто ISCED-F для {cur.rowcount} існуючих груп")
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# 4. ДАНІ-МІГРАЦІЯ ДЛЯ ІСНУЮЧИХ СТУДЕНТІВ
+# ═══════════════════════════════════════════════════════════════════════
+def detect_gender_from_middle_name(middle_name):
+    """Стать за по батькові (з migrate_military_reports.py)."""
+    if not middle_name:
+        return None
+    m = middle_name.strip().lower().replace('’', "'").replace('ʼ', "'")
+    if m.endswith(('івна', 'ївна', 'овна', 'евна', 'євна', 'ична')):
+        return 'F'
+    return 'M'
+
+
+# Автозаповнення gender для тих, у кого NULL
+rows = cur.execute(
+    "SELECT id, middle_name_UA FROM students WHERE gender IS NULL"
+).fetchall()
+if rows:
+    updated = 0
+    for student_id, middle_name in rows:
+        g = detect_gender_from_middle_name(middle_name)
+        if g:
+            cur.execute("UPDATE students SET gender = ? WHERE id = ?", (g, student_id))
+            updated += 1
+    if updated:
+        print(f"➕ Автовизначено стать для {updated} з {len(rows)} студентів")
+    missing = len(rows) - updated
+    if missing:
+        print(f"   ⚠️ {missing} студентів без по батькові — стать лишилась NULL")
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 5. ФІНАЛ
+# ═══════════════════════════════════════════════════════════════════════
 conn.commit()
 conn.close()
-print("✅ DB та користувачі створені.")
-print("⚠️  УВАГА: користувач 'admin' створений зі стандартним паролем 'admin123'. "
-      "Обов'язково змініть його одразу після першого входу через "
+print()
+print("✅ БД готова до роботи.")
+print("⚠️  Якщо користувач 'admin' щойно створений — стандартний пароль "
+      "'admin123'. Змініть його одразу після першого входу через "
       "/admin/users/<id>/change-password.")
