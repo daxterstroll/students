@@ -810,3 +810,91 @@ main.container {
             line-height: 1;
         }
         .theme-toggle-btn:hover { background: rgba(244,239,227,.12); }
+		
+/* ======================================================================
+   УТИЛІТИ BOOTSTRAP — узгодження з палітрою сайту (світла + темна теми)
+   ----------------------------------------------------------------------
+   Bootstrap-утиліти .text-* і .bg-* мають фіксовані яскраві кольори,
+   розраховані на світлий фон. На темній темі вони:
+     - або недостатньо контрастують (text-success #198754 на темному),
+     - або надто «світяться» (bg-danger #dc3545, bg-secondary #6c757d),
+   випадаючи зі стриманої золотисто-чорнильної палітри.
+
+   Перевизначення нижче застосовуються ЛИШЕ в темній темі (крім code —
+   його рожевий Bootstrap #d63384 випадає з палітри і у світлій теж).
+   У світлій темі .text-* і .bg-* лишаються Bootstrap-типовими (вони
+   там добре читаються на --paper).
+   ====================================================================== */
+
+/* --- code / kbd: заміна «рожевого» Bootstrap на тепло-цегляний (світла)
+       і золотий (темна) — узгоджено з --stamp/--brass сайту. --- */
+code {
+    color: var(--stamp);
+    background-color: var(--stamp-soft);
+    padding: .1em .35em;
+    border-radius: 4px;
+    font-size: .92em;
+}
+html[data-theme="dark"] code {
+    color: var(--brass-lt);
+    background-color: rgba(200,162,74,.12);
+}
+pre code {
+    color: inherit;
+    background-color: transparent;
+    padding: 0;
+}
+kbd {
+    background-color: var(--ink);
+    color: var(--brass-lt);
+    border-radius: 4px;
+    padding: .15em .45em;
+    font-size: .85em;
+}
+
+/* --- .text-* у темній темі: світліші та тепліші відтінки, ніж типові
+       Bootstrap — гарантований контраст ≥ 7:1 на --paper (#12181f). --- */
+html[data-theme="dark"] .text-success { color: #a8d4ad !important; }
+html[data-theme="dark"] .text-danger  { color: #f0b3ab !important; }
+html[data-theme="dark"] .text-warning { color: var(--brass-lt) !important; }
+html[data-theme="dark"] .text-info    { color: #a9c2e8 !important; }
+
+/* --- .bg-* у темній темі: приглушені фони замість сирих яскравих
+       Bootstrap-кольорів. Властивість color НЕ перевизначаємо —
+       .badge над ними і так бере білий текст через власну змінну
+       --bs-badge-color, а звичайні текстові елементи успадкують
+       --ink-text, який на приглушеному фоні добре читається. --- */
+html[data-theme="dark"] .bg-danger    { background-color: var(--stamp-semi) !important; }
+html[data-theme="dark"] .bg-secondary { background-color: rgba(231,226,214,.14) !important; }
+html[data-theme="dark"] .bg-success   { background-color: rgba(79,122,82,.35) !important; }
+html[data-theme="dark"] .bg-info      { background-color: rgba(74,110,168,.28) !important; }
+
+/* bg-warning — єдиний, де потрібен явний колір тексту:
+   світлий --ink-text на приглушеному золотому дає контраст лише 2.5:1,
+   тому робимо насичений золотий фон + темно-чорнильний текст
+   (10:1 — читається без напруги, і в стилі бренду). */
+html[data-theme="dark"] .bg-warning {
+    background-color: var(--brass) !important;
+    color: var(--ink) !important;
+}
+
+/* --- table-bordered у темній темі: стандартний світло-сірий #dee2e6
+       малює на темному тлі «білу сітку». Замінюємо на --line. --- */
+html[data-theme="dark"] .table-bordered > :not(caption) > * > * {
+    border-color: var(--line);
+}
+
+/* --- Bootstrap 5.3: badge з text-bg-* у темній темі іноді показує
+       занадто насичені кольори — вирівнюємо з нашою палітрою. --- */
+html[data-theme="dark"] .text-bg-danger {
+    background-color: var(--stamp) !important;
+    color: #fff !important;
+}
+html[data-theme="dark"] .text-bg-warning {
+    background-color: var(--brass) !important;
+    color: var(--ink) !important;
+}
+html[data-theme="dark"] .text-bg-secondary {
+    background-color: rgba(231,226,214,.22) !important;
+    color: var(--ink-text) !important;
+}

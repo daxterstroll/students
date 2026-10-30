@@ -59,20 +59,64 @@ def block_templates_static_access():
 
 
 @app.context_processor
-def inject_pending_counts():
-    """Кількість заявок, що чекають на розгляд - для бейджів у меню."""
+def inject_nav_context():
+    """
+    Єдина точка, яка готує все для навбара:
+      - nav_sections  - структура меню (routes/nav.py)
+      - nav_badges    - числові бейджі (нові заявки, нові запити)
+      - has_perm(p)   - True, якщо адмін або має дозвіл p
+      - is_admin, perms - для backward-сумісності зі старими шаблонами
+
+    Повертає порожні значення для незалогінених - навбар у цьому
+    випадку взагалі не рендериться (див. layout.html).
+    """
     if not session.get('user_id'):
-        return {}
+        return {
+            'nav_sections': [],
+            'nav_badges': {},
+            'has_perm': lambda p: False,
+            'is_admin': False,
+            'perms': [],
+        }
+
+    # Бейджі з кількістю нових заявок - та сама логіка, що й була в
+    # inject_pending_counts (тепер об'єднана в один processor).
     try:
         from routes.db import get_db
         conn = get_db()
-        new_applications = conn.execute("SELECT COUNT(*) FROM pending_students WHERE status='new'").fetchone()[0]
-        new_update_requests = conn.execute("SELECT COUNT(*) FROM update_requests WHERE status='submitted'").fetchone()[0]
+        new_applications = conn.execute(
+            "SELECT COUNT(*) FROM pending_students WHERE status='new'"
+        ).fetchone()[0]
+        new_update_requests = conn.execute(
+            "SELECT COUNT(*) FROM update_requests WHERE status='submitted'"
+        ).fetchone()[0]
         conn.close()
-        return {'nav_pending_applications': new_applications, 'nav_pending_updates': new_update_requests}
     except Exception:
-        return {'nav_pending_applications': 0, 'nav_pending_updates': 0}
+        new_applications = 0
+        new_update_requests = 0
 
+    perms = set(session.get('permissions', []))
+    is_admin = bool(session.get('is_admin', False))
+
+    def has_perm(permission):
+        """True, якщо адмін АБО в користувача явно видано цей дозвіл.
+        None/'' трактується як 'без перевірки' - True."""
+        if not permission:
+            return True
+        return is_admin or permission in perms
+
+    from routes.nav import NAV_SECTIONS
+
+    return {
+        'nav_sections': NAV_SECTIONS,
+        'nav_badges': {
+            'nav_pending_applications': new_applications,
+            'nav_pending_updates': new_update_requests,
+        },
+        'has_perm': has_perm,
+        'is_admin': is_admin,
+        'perms': list(perms),
+    }
 
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
