@@ -679,6 +679,20 @@ main.container {
             --bs-table-color: #f0b3ab;
             --bs-table-border-color: rgba(162,59,46,.4);
         }
+		        /* table-info (блакитний) у темній темі: приглушений синій фон +
+           світлий текст. Без цього фон лишається світлим, а
+           успадкований color: var(--ink-text) - світлим → нечитабельно. */
+        html[data-theme="dark"] .table-info {
+            --bs-table-bg: rgba(74,110,168,.20);
+            --bs-table-color: var(--ink-text);
+            --bs-table-border-color: rgba(74,110,168,.4);
+        }
+        html[data-theme="dark"] tr.table-info > td,
+        html[data-theme="dark"] tr.table-info > th {
+            background-color: rgba(74,110,168,.20) !important;
+            color: var(--ink-text) !important;
+            border-color: rgba(74,110,168,.4) !important;
+        }
 
         /* Списки (list-group) - Bootstrap за замовчуванням дає їм білий
            фон через --bs-list-group-bg. */

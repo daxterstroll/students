@@ -785,6 +785,7 @@ def military_bulk_import_pdf():
             'student_name': None,
             'student_group': None,
             'error': None,
+            'warning': None,   # непомилкове попередження (напр. відсутня дата народження)
             'military_diff': [],
             'student_diff': [],
             'new_military': None,
@@ -821,10 +822,11 @@ def military_bulk_import_pdf():
                 result['error'] = "У PDF не знайдено ПІБ"
                 results.append(result)
                 continue
+            # Дата народження більше не обов'язкова для пошуку студента -
+            # студент шукається лише за ПІБ. Але якщо її немає в PDF,
+            # попереджаємо (у звіті буде видно, що дата не оновиться).
             if not birth_date:
-                result['error'] = "У PDF не знайдено дату народження"
-                results.append(result)
-                continue
+                result['warning'] = "У PDF не знайдено дату народження — поле не буде оновлене"
 
             name_parts = full_name.split()
             if len(name_parts) < 2:
@@ -835,34 +837,58 @@ def military_bulk_import_pdf():
             first_name = name_parts[1]
             middle_name = ' '.join(name_parts[2:]) if len(name_parts) > 2 else ''
 
+            # Шукаємо ЛИШЕ за ПІБ, без дати народження. Обмежуємось
+            # активними студентами: не архівні, не заморожені
+            # (немає незакритого запису в frozen_students), не
+            # відраховані (немає наказу про відрахування).
             student = conn.execute("""
-                SELECT id, last_name_UA, first_name_UA, middle_name_UA, birth_date, group_id
-                FROM students
-                WHERE LOWER_UA(TRIM(last_name_UA)) = LOWER_UA(?)
-                  AND LOWER_UA(TRIM(first_name_UA)) = LOWER_UA(?)
-                  AND LOWER_UA(TRIM(COALESCE(middle_name_UA, ''))) = LOWER_UA(?)
-                  AND TRIM(COALESCE(birth_date, '')) = ?
+                SELECT s.id, s.last_name_UA, s.first_name_UA,
+                       s.middle_name_UA, s.birth_date, s.group_id
+                FROM students s
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND NOT EXISTS (
+                      SELECT 1 FROM frozen_students fz
+                      WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM expulsion_order_students eos
+                      WHERE eos.student_id = s.id
+                  )
+                  AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
+                  AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
+                  AND LOWER_UA(TRIM(COALESCE(s.middle_name_UA, ''))) = LOWER_UA(?)
                 LIMIT 1
-            """, (last_name, first_name, middle_name, birth_date)).fetchone()
+            """, (last_name, first_name, middle_name)).fetchone()
 
             if not student:
+                # Fallback: без по батькові (у PDF його іноді немає або
+                # воно відрізняється скороченням)
                 student = conn.execute("""
-                    SELECT id, last_name_UA, first_name_UA, middle_name_UA, birth_date, group_id
-                    FROM students
-                    WHERE LOWER_UA(TRIM(last_name_UA)) = LOWER_UA(?)
-                      AND LOWER_UA(TRIM(first_name_UA)) = LOWER_UA(?)
-                      AND TRIM(COALESCE(birth_date, '')) = ?
+                    SELECT s.id, s.last_name_UA, s.first_name_UA,
+                           s.middle_name_UA, s.birth_date, s.group_id
+                    FROM students s
+                    WHERE COALESCE(s.archived, 0) = 0
+                      AND NOT EXISTS (
+                          SELECT 1 FROM frozen_students fz
+                          WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
+                      )
+                      AND NOT EXISTS (
+                          SELECT 1 FROM expulsion_order_students eos
+                          WHERE eos.student_id = s.id
+                      )
+                      AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
+                      AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
                     LIMIT 1
-                """, (last_name, first_name, birth_date)).fetchone()
+                """, (last_name, first_name)).fetchone()
 
             if not student:
                 result['error'] = (
-                    f"Студента не знайдено: {last_name} {first_name} {middle_name}, "
-                    f"дата народження {birth_date}"
+                    f"Активного студента не знайдено за ПІБ: "
+                    f"{last_name} {first_name} {middle_name}".strip()
                 )
                 results.append(result)
                 continue
-
+                
             result['student_id'] = student['id']
             result['student_name'] = (
                 f"{student['last_name_UA']} {student['first_name_UA']} "

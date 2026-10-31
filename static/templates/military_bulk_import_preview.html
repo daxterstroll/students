@@ -104,6 +104,9 @@
                                 {% else %}
                                     <span class="badge bg-success">OK</span>
                                 {% endif %}
+								{% if r.warning %}
+									<div class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>{{ r.warning }}</div>
+								{% endif %}
                             </td>
                         </tr>
                         {% if r.military_diff or r.student_diff %}
