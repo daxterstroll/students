@@ -2131,6 +2131,7 @@ def tck_students(tck_id):
                s.birth_date, s.gender, s.archived,
                m.id AS military_id, m.status_badge, m.military_rank,
                m.category_override, m.vos_code,
+               m.note_18,
                g.name AS group_name,
                fz.id AS frozen_id
         FROM students s
