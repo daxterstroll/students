@@ -1,0 +1,98 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Звіт про імпорт студентів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-clipboard-check', 'Звіт про імпорт з Excel',
+        report.filename ~ ' · ' ~ report.when) }}
+
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-success">{{ report.inserted }}</div>
+                <div class="text-muted small">Додано</div>
+            </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold {% if report.skipped_rows %}text-danger{% else %}text-muted{% endif %}">
+                    {{ report.skipped_rows|length }}
+                </div>
+                <div class="text-muted small">Пропущено</div>
+            </div></div>
+        </div>
+        {% if report.gender_auto %}
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-info">{{ report.gender_auto }}</div>
+                <div class="text-muted small">Стать визначено автоматично</div>
+            </div></div>
+        </div>
+        {% endif %}
+        {% if report.gender_missing %}
+        <div class="col-6 col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold text-warning">{{ report.gender_missing }}</div>
+                <div class="text-muted small">Без статі (заповніть вручну)</div>
+            </div></div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if report.skipped_rows %}
+    <div class="card mb-4 border-danger">
+        <div class="card-header bg-danger-subtle">
+            <h6 class="mb-0"><i class="bi bi-exclamation-triangle-fill me-2"></i>Пропущені рядки ({{ report.skipped_rows|length }})</h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">Рядок</th>
+                            <th>ПІБ</th>
+                            <th>Дата народження</th>
+                            <th>Причина пропуску</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in report.skipped_rows %}
+                        <tr>
+                            <td class="text-center font-monospace">{{ s.row }}</td>
+                            <td class="fw-semibold">{{ s.fio }}</td>
+                            <td class="font-monospace small">{{ s.birth_date }}</td>
+                            <td class="small text-danger">{{ s.reason }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-light border small">
+        <i class="bi bi-info-circle me-1"></i>
+        Виправте причини у вихідному файлі (наприклад, формат ПІБ, ID групи,
+        дублікати) і завантажте файл повторно — уже додані студенти будуть
+        розпізнані як дублікати й теж потраплять у звіт, це нормально.
+    </div>
+    {% else %}
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill me-1"></i>
+        Усі рядки файлу успішно імпортовано — пропусків немає.
+    </div>
+    {% endif %}
+
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('students.import_from_excel') }}" class="btn btn-primary">
+            <i class="bi bi-arrow-repeat me-2"></i>Завантажити інший файл
+        </a>
+        <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
+            <i class="bi bi-people me-2"></i>До списку студентів
+        </a>
+    </div>
+
+</div>
+{% endblock %}

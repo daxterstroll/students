@@ -47,6 +47,13 @@ ALLOWED_EXTENSIONS = {'xlsx'}
 DEEPL_API_URL = "https://api-free.deepl.com/v2/translate"
 translation_cache = {}
 
+# Папка для тимчасових JSON-файлів, у яких між кроком попереднього
+# перегляду і кроком підтвердження зберігається розібраний Excel-файл
+# імпорту документів про освіту. Тримаємо в static/uploads/tmp/ - там
+# уже лежать інші тимчасові файли імпортів (напр. паспортні дані), і
+# ця папка вже існує/створюється; прямий доступ через /static/ до неї
+# закритий в app.py (block_templates_static_access).
+TEMP_PREVIEW_FOLDER = os.path.join('static', 'uploads', 'tmp', 'preview')
 
 @admin_bp.route('/admin/manage_education_documents', methods=['GET', 'POST'])
 @permission_required('manage_education_documents')
