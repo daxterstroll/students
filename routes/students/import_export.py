@@ -16,6 +16,9 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 import openpyxl
 import os
+import re
+import json
+import time
 
 
 def _normalize_gender(raw):
@@ -36,6 +39,24 @@ def _normalize_gender(raw):
     if v in ('f', 'ж', 'жіноча', 'жінка', 'female', 'woman'):
         return 'F'
     return None
+
+
+REPORTS_DIR = os.path.join(os.getcwd(), 'import_reports')
+REPORTS_TTL_SECONDS = 24 * 3600  # звіти живуть 1 добу
+
+
+def _cleanup_old_reports():
+    """Видаляє звіти про імпорт, старші за добу (щоб папка не росла)."""
+    if not os.path.isdir(REPORTS_DIR):
+        return
+    now = time.time()
+    for f in os.listdir(REPORTS_DIR):
+        path = os.path.join(REPORTS_DIR, f)
+        try:
+            if os.path.isfile(path) and now - os.path.getmtime(path) > REPORTS_TTL_SECONDS:
+                os.remove(path)
+        except OSError:
+            pass
 
 
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
@@ -66,6 +87,7 @@ def import_from_excel():
     вручну на картці студента або через PDF «Резерв+» (сторінка
     «Військові дані» або пакетний імпорт PDF).
     """
+    _cleanup_old_reports()
     if request.method == 'POST':
         file = request.files.get('excel_file')
         if not file or not file.filename.endswith('.xlsx'):
@@ -79,9 +101,9 @@ def import_from_excel():
 
         conn = get_db()
         inserted = 0
-        skipped = 0
-        gender_auto = 0     # скільком стать визначено автоматично
-        gender_missing = 0  # у скількох не вдалося (немає по батькові)
+        skipped_rows = []  # список dict: {'row': i, 'fio': ..., 'birth_date': ..., 'reason': ...}
+        gender_auto = 0
+        gender_missing = 0
 
         role = session.get('role')
         user_group_ids = session.get('group_ids', [])
@@ -116,7 +138,12 @@ def import_from_excel():
             for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
                 try:
                     if not row or len(row) < 4:
-                        skipped += 1
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': '—',
+                            'birth_date': '—',
+                            'reason': 'Порожній рядок або менше 4 колонок'
+                        })
                         continue
 
                     group_id = row[0]
@@ -170,19 +197,31 @@ def import_from_excel():
                     try:
                         group_id = int(group_id)
                     except (ValueError, TypeError):
-                        flash(f"❗ Рядок {i}: некоректний ID групи '{row[0]}'")
-                        skipped += 1
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': full_name.strip() if full_name else '—',
+                            'birth_date': str(birth_date_raw or '').strip(),
+                            'reason': f"Некоректний ID групи: '{row[0]}'"
+                        })
                         continue
 
                     if group_id not in allowed_group_ids:
-                        flash(f"❗ Рядок {i}: група {group_id} не існує або недоступна")
-                        skipped += 1
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': full_name.strip() if full_name else '—',
+                            'birth_date': str(birth_date_raw or '').strip(),
+                            'reason': f"Група ID {group_id} не існує або недоступна"
+                        })
                         continue
 
                     name_parts = full_name.strip().split()
                     if len(name_parts) != 3:
-                        flash(f"❗ Рядок {i}: невірний формат ПІБ '{full_name}'")
-                        skipped += 1
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': full_name.strip(),
+                            'birth_date': str(birth_date_raw or '').strip(),
+                            'reason': f"Невірний формат ПІБ: «{full_name}» (очікується рівно 3 слова через пробіл)"
+                        })
                         continue
                     last_name, first_name, middle_name = name_parts
 
@@ -204,7 +243,12 @@ def import_from_excel():
                         WHERE last_name_UA=? AND first_name_UA=? AND middle_name_UA=? AND birth_date=?
                     """, (last_name, first_name, middle_name, birth_date)).fetchone()
                     if existing:
-                        skipped += 1
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'birth_date': birth_date,
+                            'reason': f"Студент уже є в базі (ID {existing['id']}) — дублікат"
+                        })
                         continue
 
                     # Автоматична генерація англійських ПІБ (КМУ №55-2010) -
@@ -229,10 +273,15 @@ def import_from_excel():
 
                 except Exception as e:
                     logger.debug(f"Пропущено рядок {i} при імпорті студентів з Excel: {e}")
-                    flash(f"⚠️ Помилка в рядку {i}: {e}")
-                    skipped += 1
+                    skipped_rows.append({
+                        'row': i,
+                        'fio': full_name.strip() if full_name else '—',
+                        'birth_date': str(birth_date_raw or '').strip(),
+                        'reason': f"Помилка обробки: {e}"
+                    })
                     continue
 
+            wb.close()
             conn.commit()
 
         except Exception as e:
@@ -244,12 +293,12 @@ def import_from_excel():
 
         log_action(
             current_username(),
-            f"імпорт студентів з Excel: додано {inserted}, пропущено {skipped}",
+            f"імпорт студентів з Excel: додано {inserted}, пропущено {len(skipped_rows)}",
             details=f"файл: {filename}, стать авто: {gender_auto}, без статі: {gender_missing}"
         )
 
         # Підсумкове повідомлення з деталями по статі
-        summary = f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}"
+        summary = f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {len(skipped_rows)}"
         if gender_auto:
             summary += f", стать визначено автоматично: {gender_auto}"
         if gender_missing:
@@ -261,6 +310,42 @@ def import_from_excel():
                   f"Знайдіть їх через фільтр у списку студентів (або в картці кожного) та заповніть вручну.",
                   "warning")
 
+        # Якщо є пропущені — показуємо детальний звіт, а не одразу список
+        if skipped_rows:
+            import uuid as _uuid
+            os.makedirs(REPORTS_DIR, exist_ok=True)
+            report_id = _uuid.uuid4().hex
+            report_path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+            with open(report_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'filename': filename,
+                    'inserted': inserted,
+                    'skipped_rows': skipped_rows,
+                    'gender_auto': gender_auto,
+                    'gender_missing': gender_missing,
+                    'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
+                }, f, ensure_ascii=False)
+            return redirect(url_for('students.import_report', report_id=report_id))
+
         return redirect(url_for('students.student_list'))
 
     return render_template('import_excel.html')
+    
+@students_bp.route('/import_from_excel/report/<report_id>')
+@permission_required('import_from_excel')
+def import_report(report_id):
+    """Детальний звіт про імпорт студентів з Excel (хто пропущений і чому).
+
+    Звіт зберігається в окремому JSON-файлі (а не в cookie-сесії), бо при
+    196 пропущених рядках сесія Flask перевищує ліміт cookie (4 КБ) —
+    браузер мовчки відкидає таку cookie, і звіт губиться.
+    """
+    # Захист від path traversal: лише hex-символи
+    report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
+    report_path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+    if not report_id or not os.path.isfile(report_path):
+        flash('Звіт про імпорт не знайдено або він застарів', 'warning')
+        return redirect(url_for('students.import_from_excel'))
+    with open(report_path, encoding='utf-8') as f:
+        report = json.load(f)
+    return render_template('import_excel_report.html', report=report)
