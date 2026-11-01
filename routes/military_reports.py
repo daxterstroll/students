@@ -24,12 +24,17 @@ routes/military_reports.py
 """
 
 import sqlite3
+import hashlib
 from datetime import date
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session
 from routes.db import get_db
 from routes.utils import log_action, permission_required, logger
 from routes.helpers import current_username
+from routes.orders_service import (
+    get_enrollment_student_ids,
+    orders_tables_ready,
+)
 
 military_reports_bp = Blueprint('military_reports', __name__)
 
@@ -148,6 +153,121 @@ def _is_dismissed_this_year(dismissed_at, report_year):
         return year == report_year
     except (ValueError, IndexError):
         return False
+
+
+def _year_from_order_date(order_date):
+    """Рік з DD.MM.YYYY / DD/MM/YYYY / YYYY-MM-DD / YYYY."""
+    if not order_date:
+        return None
+    s = str(order_date).strip()
+    for sep in ('.', '/'):
+        parts = s.split(sep)
+        if len(parts) == 3 and len(parts[2]) == 4 and parts[2].isdigit():
+            try:
+                return int(parts[2])
+            except ValueError:
+                return None
+    if len(s) >= 4 and s[0:4].isdigit():
+        if len(s) == 4 or s[4] in '-./':
+            try:
+                return int(s[0:4])
+            except ValueError:
+                return None
+    return None
+
+
+def _load_enrollment_years(conn):
+    """
+    student_id → рік наказу про зарахування (найраніший, якщо кілька).
+    Порожній dict, якщо таблиці orders ще немає.
+    """
+    if not orders_tables_ready(conn=conn):
+        return {}
+    rows = conn.execute("""
+        SELECT oi.entity_id AS student_id, o.order_date
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status = 'active'
+          AND o.order_type = 'enrollment'
+          AND oi.entity_type = 'student'
+    """).fetchall()
+    result = {}
+    for r in rows:
+        y = _year_from_order_date(r['order_date'])
+        if y is None:
+            continue
+        sid = r['student_id']
+        prev = result.get(sid)
+        if prev is None or y < prev:
+            result[sid] = y
+    return result
+
+
+def _parse_order_date_to_date(order_date):
+    """DD.MM.YYYY / DD/MM/YYYY / YYYY-MM-DD → datetime.date або None."""
+    from datetime import date as _date
+    if not order_date:
+        return None
+    s = str(order_date).strip()
+    for sep in ('.', '/'):
+        parts = s.split(sep)
+        if len(parts) == 3 and len(parts[2]) == 4:
+            try:
+                d, m, y = int(parts[0]), int(parts[1]), int(parts[2])
+                return _date(y, m, d)
+            except ValueError:
+                return None
+    if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+        try:
+            return _date(int(s[0:4]), int(s[5:7]), int(s[8:10]))
+        except ValueError:
+            return None
+    return None
+
+
+def _load_enrollment_dates(conn):
+    """student_id → date найранішого наказу enrollment."""
+    if not orders_tables_ready(conn=conn):
+        return {}
+    rows = conn.execute("""
+        SELECT oi.entity_id AS student_id, o.order_date
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status = 'active'
+          AND o.order_type = 'enrollment'
+          AND oi.entity_type = 'student'
+    """).fetchall()
+    result = {}
+    for r in rows:
+        d = _parse_order_date_to_date(r['order_date'])
+        if d is None:
+            continue
+        sid = r['student_id']
+        prev = result.get(sid)
+        if prev is None or d < prev:
+            result[sid] = d
+    return result
+
+
+def _was_enrolled_as_of(report_date, group_start_year, enrollment_date):
+    """
+    Чи студент уже мав бути на навчанні станом на report_date.
+    - є наказ enrollment → дата наказу <= report_date;
+    - немає → умовна дата 1 вересня group_start_year.
+    """
+    from datetime import date as _date
+    if enrollment_date is not None:
+        return enrollment_date <= report_date
+    if group_start_year:
+        try:
+            y = int(group_start_year)
+        except (TypeError, ValueError):
+            return True
+        return _date(y, 9, 1) <= report_date
+    return True
+
+
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Допоміжні функції
@@ -374,9 +494,14 @@ def dashboard():
         'no_category': 0,
         'no_gender': 0,
         'no_military': 0,
+        'no_enrollment_order': 0,
     }
     frozen_count = 0
     total_students = 0
+
+    enrolled_ids = set()
+    if orders_tables_ready(conn=conn):
+        enrolled_ids = get_enrollment_student_ids(conn=conn)
 
     for s in students:
         # ── 0. Фільтр ліцензії (Постанова №812) ──
@@ -399,6 +524,10 @@ def dashboard():
 
         # ── 2. Активний — рахуємо в загальному охваті ──
         total_students += 1
+
+        # ── 2b. Немає наказу про зарахування (для всіх активних не-frozen) ──
+        if s['id'] not in enrolled_ids:
+            issues['no_enrollment_order'] += 1
 
         # ── 3. Жінка без військових даних — не рахуємо ніде ──
         if _is_woman_without_military(
@@ -453,6 +582,7 @@ def dashboard():
             issues['no_tck'] += 1
         if not s['vos_code']:
             issues['no_vos'] += 1
+
 
     # Стан підготовки щорічного звіту (з журналу)
     report_types = [
@@ -589,6 +719,7 @@ def group_list(category):
                m.registry_number, m.military_registration_document,
                m.note_18, m.mobilized_date,
                g.id AS group_id, g.name AS group_name,
+               g.start_year AS group_start_year,
                fz.id AS frozen_id, fz.reason AS frozen_reason
         FROM students s
         INNER JOIN military m ON m.student_id = s.id
@@ -602,6 +733,7 @@ def group_list(category):
     """).fetchall()
 
     # ── Фільтрація в Python ──────────────────────────────────
+    enrollment_dates = _load_enrollment_dates(conn)
     filtered = []
     for r in rows_raw:
         # ── Фільтр базової ліцензії (Постанова №812) ──
@@ -639,6 +771,12 @@ def group_list(category):
         if group_id and r['group_id'] != group_id:
             continue
         if tck_filter and (r['tck_name'] or '') != tck_filter:
+            continue
+        if not _was_enrolled_as_of(
+            report_date,
+            r['group_start_year'],
+            enrollment_dates.get(r['id']),
+        ):
             continue
         filtered.append(dict(r))
 
@@ -819,6 +957,7 @@ ISSUE_LABELS = {
     'no_tck':      'Не вказано ТЦК',
     'no_vos':      'Не вказано ВОС',
     'no_license':  'Не вказано ліцензію вступу',
+    'no_enrollment_order': 'Немає наказу про зарахування',
 }
 
 
@@ -887,6 +1026,10 @@ def issues_list():
     """).fetchall()
 
     # ── Аналіз проблем кожного студента ─────────────────────
+    enrolled_ids = set()
+    if orders_tables_ready(conn=conn):
+        enrolled_ids = get_enrollment_student_ids(conn=conn)
+
     filtered = []
     for r in rows_raw:
         # Заморожені
@@ -905,6 +1048,9 @@ def issues_list():
         # 0. Без ліцензії вступу (Постанова №812)
         if not r['license_id'] and 'no_license' in enabled:
             problems.append('no_license')
+
+        if r['id'] not in enrolled_ids and 'no_enrollment_order' in enabled:
+            problems.append('no_enrollment_order')
 
         # 1. Без запису military
         if not r['military_id']:
@@ -1102,6 +1248,8 @@ def summary():
     dismissed_this_year = 0
     mobilized = 0
 
+    enrollment_years = _load_enrollment_years(conn)
+
     for s in students:
         # ── Фільтр базової ліцензії (Постанова №812) ──
         if not show_all_licenses:
@@ -1147,34 +1295,44 @@ def summary():
         if not category:
             continue
         counts[category] += 1
-        if s['group_start_year'] == report_year:
+        # «Зараховано з 1 січня» — ЛИШЕ якщо є наказ про зарахування
+        # з order_date у report_year (без fallback на start_year групи)
+        enroll_year = enrollment_years.get(s['id'])
+        if enroll_year == report_year:
             enrolled_this_year[category] += 1
 
     # ── Відраховані цього року ───────────────────────────────
     # Беремо всі накази за рік і для кожного студента визначаємо
     # категорію за ПОТОЧНИМ записом military (він міг змінитись після
     # відрахування, але для статистики це прийнятне наближення).
-    expelled_rows = conn.execute("""
-        SELECT eos.student_id,
-               m.status_badge, m.military_rank, m.category_override,
-               s.gender
-        FROM expulsion_order_students eos
-        INNER JOIN expulsion_orders eo ON eo.id = eos.order_id
-        LEFT JOIN students s ON s.id = eos.student_id
-        LEFT JOIN military m ON m.student_id = eos.student_id
-        WHERE eo.order_date >= ? AND eo.order_date < ?
-    """, (f"{report_year}-01-01", f"{report_year + 1}-01-01")).fetchall()
-
+    # Відраховані цього року — з orders (order_type=expulsion),
+    # рік береться з order_date у форматі DD.MM.YYYY / YYYY-MM-DD
     expelled_this_year = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
-    for e in expelled_rows:
-        status = e['status_badge'] or ''
-        if status in EXCLUDED_STATUSES:
-            continue
-        category = _detect_category(
-            e['military_rank'], status, e['gender'], e['category_override']
-        )
-        if category:
-            expelled_this_year[category] += 1
+    if orders_tables_ready(conn=conn):
+        expelled_rows = conn.execute("""
+            SELECT oi.entity_id AS student_id,
+                   o.order_date,
+                   m.status_badge, m.military_rank, m.category_override,
+                   s.gender
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN students s ON s.id = oi.entity_id
+            LEFT JOIN military m ON m.student_id = oi.entity_id
+            WHERE o.status = 'active'
+              AND o.order_type = 'expulsion'
+              AND oi.entity_type = 'student'
+        """).fetchall()
+        for e in expelled_rows:
+            if _year_from_order_date(e['order_date']) != report_year:
+                continue
+            status = e['status_badge'] or ''
+            if status in EXCLUDED_STATUSES:
+                continue
+            category = _detect_category(
+                e['military_rank'], status, e['gender'], e['category_override']
+            )
+            if category:
+                expelled_this_year[category] += 1
 
     conn.close()
 
@@ -1285,16 +1443,19 @@ def summary():
 # ═══════════════════════════════════════════════════════════════════════
 
 def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
-                          base_license_id, base_license_label):
+                          base_license_id, base_license_label, tck_filter=None):
     """
     Збирає рядки для Додатка 5 з повними полями (для генерації .xlsx).
     Логіка фільтрації — та сама, що й у group_list(), але БЕЗ пагінації
     і без include_frozen / include_dismissed (у звіт потрапляють лише
     активні на обліку).
 
+    tck_filter: точна назва ТЦК (як у military.tck_name) або None/'' = усі.
+
     Повертає список dict.
     """
     report_year = report_date.year
+    enrollment_dates = _load_enrollment_dates(conn)
 
     # Групи з start_year == report_year (для колонки 23 «Зараховано»)
     # і всі дані по студентах + military + passport + license
@@ -1373,6 +1534,18 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
             s['category_override'], s['note_18']
         )
         if cat != category:
+            continue
+
+        # Фільтр ТЦК (якщо задано)
+        if tck_filter and (s['tck_name'] or '') != tck_filter:
+            continue
+
+        # Станом на report_date
+        if not _was_enrolled_as_of(
+            report_date,
+            s['group_start_year'],
+            enrollment_dates.get(s['id']),
+        ):
             continue
 
         # ПІБ
@@ -1460,6 +1633,7 @@ def export_dodatok_5(category):
         report_mode=annual|current|custom  (як на сторінці)
         report_date=ДД.ММ.РРРР (для custom)
         show_all_licenses=1  (як на сторінці)
+        tck=назва ТЦК  (якщо задано — лише студенти цього ТЦК; інакше всі)
     """
     from flask import send_file
     from routes.military_reports_export import generate_dodatok_5_xlsx
@@ -1489,6 +1663,7 @@ def export_dodatok_5(category):
             report_date = dates['current']
 
     show_all_licenses = request.args.get('show_all_licenses') == '1'
+    tck_filter = (request.args.get('tck') or '').strip() or None
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -1498,13 +1673,14 @@ def export_dodatok_5(category):
     rows = _fetch_dodatok_5_rows(
         conn, category, report_date, show_all_licenses,
         base_license_id, base_license_short or base_license_name,
+        tck_filter=tck_filter,
     )
     conn.close()
 
     if not rows:
         flash(
-            "Немає студентів для генерації — перевірте, чи є активні "
-            "студенти цієї категорії для обраної ліцензії.",
+            "Немає студентів для генерації — перевірте категорію, ліцензію"
+            + (" та обраний ТЦК." if tck_filter else "."),
             "warning",
         )
         return redirect(url_for(
@@ -1513,6 +1689,7 @@ def export_dodatok_5(category):
             report_mode=report_mode,
             report_date=report_date_custom if report_mode == 'custom' else None,
             show_all_licenses='1' if show_all_licenses else None,
+            tck=tck_filter,
         ))
 
     xlsx_io = generate_dodatok_5_xlsx(
@@ -1522,9 +1699,17 @@ def export_dodatok_5(category):
 
     # ── Логування в журнал ──
     rtype = f'dodatok_5_{category}'
+    tck_slug = ''
+    if tck_filter:
+        # безпечне коротке ім'я для файлу
+        tck_slug = '_' + ''.join(
+            c if c.isalnum() or c in '-_' else '_'
+            for c in tck_filter
+        )[:40].strip('_')
     filename = (
         f"Додаток_5_{label.replace(' ', '_').replace(',', '')}_"
-        f"{_format_date_ua(report_date).replace('.', '-')}.xlsx"
+        f"{_format_date_ua(report_date).replace('.', '-')}"
+        f"{tck_slug}.xlsx"
     )
     try:
         log_conn = get_db()
@@ -1731,27 +1916,23 @@ def export_dodatok_12():
 
 
 @military_reports_bp.route('/admin/military_reports/tck', methods=['GET', 'POST'])
-@permission_required('manage_users')
+@permission_required('manage_military_reports')
 def tck_offices():
     """
-    Довідник ТЦК — CRUD-сторінка (тільки адмін).
+    Довідник ТЦК.
 
-    Дозволені дії:
-      - add              — додати новий ТЦК
-      - edit             — редагувати назву/адресу; опційно каскадно
-                           оновити назву у студентів (military.tck_name)
-      - delete           — видалити (тільки якщо не використовується)
-      - toggle           — деактивувати / активувати
-      - add_unknown      — додати один ТЦК зі списку «невідомих»
-                           (тих, що вже вказані у студентів, але відсутні
-                           в довіднику). Опційно об'єднати всі варіанти
-                           написання в одне значення
-      - add_all_unknown  — додати всі невідомі ТЦК однією дією
+    - is_admin: повний CRUD.
+    - manage_military_reports (не адмін): лише ТЦК зі студентами, без редагування.
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    is_admin_user = bool(session.get('is_admin'))
 
     if request.method == 'POST':
+        if not is_admin_user:
+            conn.close()
+            flash('Редагувати довідник ТЦК може лише адміністратор.', 'error')
+            return redirect(url_for('military_reports.tck_offices'))
         action = request.form.get('action')
 
         # ── Додати ───────────────────────────────────────────
@@ -2015,6 +2196,10 @@ def tck_offices():
         )
         rows.append(item)
 
+    # Не-адмін: лише ТЦК, де є студенти на обліку (стосуються роботи з людьми)
+    if not is_admin_user:
+        rows = [r for r in rows if r['students_count_all'] > 0]
+
     # Невідомі ТЦК: є у military, але відсутні в довіднику.
     #
     # SQLite не підтримує GROUP_CONCAT(DISTINCT x, separator) —
@@ -2086,6 +2271,15 @@ def tck_offices():
 
     conn.close()
 
+    # Не-адмін не бачить блок «невідомі» і масові операції
+    if not is_admin_user:
+        unknown_tck = []
+        stats = {
+            **stats,
+            'unknown_count': 0,
+            'unknown_students': 0,
+        }
+
     return render_template(
         'military_reports/tck.html',
         rows=rows,
@@ -2093,10 +2287,11 @@ def tck_offices():
         search=search,
         show=show,
         stats=stats,
+        can_manage_tck=is_admin_user,
     )
     
 @military_reports_bp.route('/admin/military_reports/tck/<int:tck_id>/students')
-@permission_required('manage_users')
+@permission_required('manage_military_reports')
 def tck_students(tck_id):
     """
     AJAX: список студентів, які використовують конкретний ТЦК.
@@ -2220,3 +2415,294 @@ def tck_students(tck_id):
             'total_frozen':   counts_row['total_frozen'] or 0,
         },
     })
+
+# ── Додаток 4 ──────────────────────────────────────────────
+from routes.dodatok4_export import generate_dodatok_4_xlsx  # noqa: E402
+
+
+# ── Додаток 4: відбиток даних і позначка «надіслано» ───────────
+
+_DODATOK4_FINGERPRINT_FIELDS = (
+    'last_name_UA', 'first_name_UA', 'middle_name_UA', 'birth_date', 'tax_id',
+    'registry_number', 'military_registration_document', 'vos_code',
+    'military_rank', 'tck_name', 'change_credentials',
+    'reason_for_changing_credentials', 'address_of_residence',
+)
+
+
+_DODATOK4_FIELD_LABELS = {
+    'last_name_UA': 'Прізвище',
+    'first_name_UA': "Ім'я",
+    'middle_name_UA': 'По батькові',
+    'birth_date': 'Дата народження',
+    'tax_id': 'РНКОПП',
+    'registry_number': 'Реєстр. номер',
+    'military_registration_document': 'ВОД',
+    'vos_code': 'ВОС',
+    'military_rank': 'Звання',
+    'tck_name': 'ТЦК',
+    'change_credentials': 'Зміна облікових даних',
+    'reason_for_changing_credentials': 'Підстава зміни',
+    'address_of_residence': 'Адреса',
+}
+
+
+def _dodatok4_values(row) -> dict:
+    """Поточні значення полів Додатка 4."""
+    out = {}
+    for key in _DODATOK4_FINGERPRINT_FIELDS:
+        try:
+            val = row[key] if not isinstance(row, dict) else row.get(key)
+        except (KeyError, IndexError, TypeError):
+            val = None
+        if isinstance(val, str):
+            out[key] = val.strip()
+        else:
+            out[key] = str(val or '')
+    return out
+
+
+def _dodatok4_snapshot_json(row) -> str:
+    import json
+    return json.dumps(_dodatok4_values(row), ensure_ascii=False)
+
+
+def _dodatok4_diff(row) -> list:
+    """
+    Список змін {(label, old, new)} порівняно зі збереженим snapshot.
+    Порожній список, якщо snapshot немає (перший друк) або збіг.
+    """
+    import json
+    try:
+        raw = row['dodatok4_snapshot'] if not isinstance(row, dict) else row.get('dodatok4_snapshot')
+    except (KeyError, IndexError, TypeError):
+        raw = None
+    if not raw:
+        return []
+    try:
+        old = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(old, dict):
+        return []
+    cur = _dodatok4_values(row)
+    changes = []
+    for key in _DODATOK4_FINGERPRINT_FIELDS:
+        a = (old.get(key) or '').strip()
+        b = (cur.get(key) or '').strip()
+        if a != b:
+            changes.append({
+                'field': key,
+                'label': _DODATOK4_FIELD_LABELS.get(key, key),
+                'old': a or '—',
+                'new': b or '—',
+            })
+    return changes
+
+
+
+def _ensure_dodatok4_columns(conn):
+    """Ідемпотентно додає колонки обліку Додатка 4 у military."""
+    existing = {row[1] for row in conn.execute('PRAGMA table_info(military)')}
+    if 'dodatok4_sent_at' not in existing:
+        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_sent_at TEXT')
+    if 'dodatok4_fingerprint' not in existing:
+        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_fingerprint TEXT')
+    if 'dodatok4_snapshot' not in existing:
+        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_snapshot TEXT')
+    conn.commit()
+
+
+def _dodatok4_fingerprint(row) -> str:
+    """Хеш полів, що потрапляють у Додаток 4."""
+    parts = []
+    for key in _DODATOK4_FINGERPRINT_FIELDS:
+        try:
+            if isinstance(row, dict):
+                val = row.get(key)
+            else:
+                val = row[key]
+        except (KeyError, IndexError, TypeError):
+            val = None
+        if isinstance(val, str):
+            parts.append(val.strip())
+        else:
+            parts.append(str(val or ''))
+    raw = '|'.join(parts)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def _dodatok4_needs_resend(row) -> bool:
+    """True, якщо ще не друкували або дані змінились після відправки."""
+    fp = _dodatok4_fingerprint(row)
+    try:
+        prev = row['dodatok4_fingerprint'] if not isinstance(row, dict) else row.get('dodatok4_fingerprint')
+    except (KeyError, IndexError, TypeError):
+        prev = None
+    if not prev:
+        return True
+    return prev != fp
+
+
+@military_reports_bp.route('/admin/military_reports/dodatok_4')
+@permission_required('manage_military_reports')
+def dodatok_4_list():
+    """
+    Список для Додатка 4.
+    За замовчуванням — потребують друку (ніколи не слали або дані змінились).
+    """
+    search = (request.args.get('search') or '').strip()
+    tck_filter = (request.args.get('tck') or '').strip()
+    status = (request.args.get('status') or 'need').strip()
+    if status not in ('need', 'sent', 'all'):
+        status = 'need'
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    _ensure_dodatok4_columns(conn)
+
+    tck_offices = conn.execute("""
+        SELECT name_ua FROM tck_offices WHERE is_active = 1
+        ORDER BY name_ua COLLATE UKRAINIAN
+    """).fetchall()
+
+    rows = conn.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+               s.birth_date, s.tax_id,
+               m.registry_number, m.military_registration_document,
+               m.vos_code, m.military_rank, m.tck_name,
+               m.change_credentials, m.reason_for_changing_credentials,
+               m.address_of_residence,
+               m.dodatok4_sent_at, m.dodatok4_fingerprint, m.dodatok4_snapshot,
+               g.name AS group_name
+        FROM students s
+        INNER JOIN military m ON m.student_id = s.id
+        LEFT JOIN groups g ON g.id = s.group_id
+        WHERE COALESCE(s.archived, 0) = 0
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN,
+                 s.first_name_UA COLLATE UKRAINIAN
+    """).fetchall()
+
+    filtered = []
+    for r in rows:
+        needs = _dodatok4_needs_resend(r)
+        if status == 'need' and not needs:
+            continue
+        if status == 'sent' and needs:
+            continue
+        if tck_filter and (r['tck_name'] or '') != tck_filter:
+            continue
+        if search:
+            hay = (
+                f"{r['last_name_UA']} {r['first_name_UA']} "
+                f"{r['middle_name_UA'] or ''}"
+            ).lower()
+            if not all(w in hay for w in search.lower().split()):
+                continue
+        full = ' '.join(
+            x for x in (
+                r['last_name_UA'], r['first_name_UA'], r['middle_name_UA'] or ''
+            ) if x
+        )
+        changes = _dodatok4_diff(r) if needs else []
+        has_fp = bool(r['dodatok4_fingerprint'] or '')
+        has_snap = bool(r['dodatok4_snapshot'] or '') if 'dodatok4_snapshot' in r.keys() else False
+        filtered.append({
+            **dict(r),
+            'full_name': full,
+            'needs_resend': needs,
+            'changes': changes,
+            'is_first_print': needs and not has_fp,
+            'missing_snapshot': needs and has_fp and not has_snap and not changes,
+        })
+
+    conn.close()
+    return render_template(
+        'military_reports/dodatok_4.html',
+        rows=filtered,
+        search=search,
+        tck_filter=tck_filter,
+        status=status,
+        tck_offices=tck_offices,
+    )
+
+
+@military_reports_bp.route('/admin/military_reports/dodatok_4/export/<int:student_id>')
+@permission_required('manage_military_reports')
+def dodatok_4_export(student_id):
+    """Один файл Додатка 4; після успіху — позначка «дані актуальні»."""
+    from flask import send_file
+    from routes.dodatok4_export import generate_dodatok_4_xlsx
+    from datetime import datetime
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    _ensure_dodatok4_columns(conn)
+
+    r = conn.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+               s.birth_date, s.tax_id,
+               m.registry_number, m.military_registration_document,
+               m.vos_code, m.military_rank, m.tck_name,
+               m.change_credentials, m.reason_for_changing_credentials,
+               m.address_of_residence,
+               m.dodatok4_sent_at, m.dodatok4_fingerprint
+        FROM students s
+        INNER JOIN military m ON m.student_id = s.id
+        WHERE s.id = ?
+    """, (student_id,)).fetchone()
+
+    if not r:
+        conn.close()
+        flash('Студента або військових даних не знайдено.', 'error')
+        return redirect(url_for('military_reports.dodatok_4_list'))
+
+    full = ' '.join(
+        x for x in (r['last_name_UA'], r['first_name_UA'], r['middle_name_UA'] or '') if x
+    )
+    data = {
+        'tck_header': r['tck_name'] or '',
+        'full_name': full,
+        'registry_number': r['registry_number'] or '',
+        'military_document': r['military_registration_document'] or '',
+        'vos_code': r['vos_code'] or '',
+        'military_rank': r['military_rank'] or '',
+        'birth_date': r['birth_date'] or '',
+        'change_text': r['change_credentials'] or '',
+        'basis_text': r['reason_for_changing_credentials'] or '',
+        'tck_name': r['tck_name'] or '',
+        'address': r['address_of_residence'] or '',
+        'tax_id': r['tax_id'] or '',
+    }
+
+    try:
+        buf = generate_dodatok_4_xlsx(data)
+    except FileNotFoundError as e:
+        conn.close()
+        flash(str(e), 'error')
+        return redirect(url_for('military_reports.dodatok_4_list'))
+
+    fp = _dodatok4_fingerprint(r)
+    snap = _dodatok4_snapshot_json(r)
+    conn.execute(
+        """
+        UPDATE military
+        SET dodatok4_sent_at = datetime('now', 'localtime'),
+            dodatok4_fingerprint = ?,
+            dodatok4_snapshot = ?
+        WHERE student_id = ?
+        """,
+        (fp, snap, student_id),
+    )
+    conn.commit()
+    conn.close()
+
+    safe = ''.join(c if c.isalnum() or c in '-_' else '_' for c in full)[:40]
+    filename = f"Dodatok_4_{safe}_{student_id}.xlsx"
+    return send_file(
+        buf,
+        as_attachment=True,
+        download_name=filename,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+

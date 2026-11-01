@@ -1,39 +1,408 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Редагувати користувача{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4">
 
+<style>
+/* Сторінки користувачів — узгоджено з main.css (data-theme=dark) */
+.users-page .users-search {
+    position: relative;
+    margin-bottom: 1.25rem;
+}
+.users-page .users-search i {
+    position: absolute;
+    top: 50%;
+    left: 0.9rem;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+}
+.users-page .users-search input {
+    padding-left: 2.5rem;
+    border-radius: 0.75rem;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+    color: var(--ink-text);
+}
+.users-page .users-search input::placeholder {
+    color: var(--muted);
+}
+.users-page .users-search input:focus {
+    border-color: var(--brass);
+    box-shadow: 0 0 0 0.2rem var(--brass-soft);
+    background: var(--paper-2);
+    color: var(--ink-text);
+    outline: none;
+}
+
+.users-page .users-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr));
+    gap: 1.25rem;
+}
+
+.users-page .user-card {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    padding: 1.25rem;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    color: var(--ink-text);
+}
+.users-page .user-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px;
+    height: 100%;
+    background: var(--brass);
+}
+.users-page .user-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.12);
+}
+html[data-theme="dark"] .users-page .user-card:hover {
+    box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.45);
+}
+
+.users-page .user-card-top {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+}
+.users-page .user-avatar {
+    width: 3.25rem;
+    height: 3.25rem;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--brass-lt), var(--brass));
+    color: var(--ink);
+    font-size: 1.1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.users-page .user-name {
+    font-family: 'Lora', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--heading, var(--ink-text));
+    margin: 0;
+}
+.users-page .role-badge {
+    margin-top: 0.25rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: var(--brass-soft);
+    border: 1px solid var(--brass-semi);
+    color: var(--ink-text);
+}
+.users-page .role-badge.admin {
+    background: var(--stamp-soft);
+    border-color: var(--stamp-semi);
+    color: var(--stamp);
+}
+
+.users-page .user-meta {
+    margin: 1rem 0;
+    padding: 0.85rem 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+}
+.users-page .user-meta small {
+    display: block;
+    color: var(--muted);
+    margin-bottom: 0.2rem;
+}
+.users-page .user-meta strong {
+    color: var(--ink-text);
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.users-page .perm-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.users-page .perm-chips .chip {
+    font-size: 0.7rem;
+    padding: 0.15rem 0.45rem;
+    border-radius: 0.35rem;
+    background: var(--brass-soft);
+    color: var(--ink-text);
+    border: 1px solid var(--line);
+}
+.users-page .user-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+.users-page .count-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: var(--paper-2);
+    color: var(--muted);
+    font-size: 0.875rem;
+}
+
+/* Форми add/edit */
+.users-page .form-label,
+.users-page .form-check-label {
+    color: var(--ink-text);
+}
+.users-page .form-text {
+    color: var(--muted);
+}
+.users-page .card {
+    background: var(--paper-2);
+    border-color: var(--line);
+    color: var(--ink-text);
+}
+.users-page .card-header {
+    background: transparent;
+    border-bottom-color: var(--line);
+    color: var(--heading, var(--ink-text));
+}
+.users-page .form-control,
+.users-page .form-select {
+    background-color: var(--paper);
+    color: var(--ink-text);
+    border-color: var(--line);
+}
+.users-page .form-control:focus,
+.users-page .form-select:focus {
+    background-color: var(--paper);
+    color: var(--ink-text);
+    border-color: var(--brass);
+    box-shadow: 0 0 0 0.2rem var(--brass-soft);
+}
+.users-page .form-select option {
+    background: var(--paper-2);
+    color: var(--ink-text);
+}
+.users-page .form-check-input {
+    background-color: var(--paper);
+    border-color: var(--line);
+}
+.users-page .form-check-input:checked {
+    background-color: var(--brass);
+    border-color: var(--brass);
+}
+.users-page hr {
+    border-color: var(--line);
+    opacity: 1;
+}
+.users-page #permissionsBlock .card {
+    background: var(--paper);
+}
+html[data-theme="dark"] .users-page .btn-outline-primary {
+    color: var(--brass-lt);
+    border-color: var(--brass-semi);
+}
+html[data-theme="dark"] .users-page .btn-outline-primary:hover {
+    background: var(--brass-soft);
+    color: var(--brass-lt);
+    border-color: var(--brass);
+}
+html[data-theme="dark"] .users-page .btn-outline-secondary {
+    color: var(--ink-text);
+    border-color: var(--line);
+}
+html[data-theme="dark"] .users-page .btn-outline-secondary:hover {
+    background: var(--paper-2);
+    color: var(--ink-text);
+}
+html[data-theme="dark"] .users-page .btn-outline-danger {
+    color: var(--stamp);
+    border-color: var(--stamp-semi);
+}
+html[data-theme="dark"] .users-page .btn-outline-danger:hover {
+    background: var(--stamp-soft);
+    color: var(--stamp);
+}
+
+.users-page .perm-group-card {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    height: 100%;
+    box-shadow: none;
+}
+.users-page .perm-group-card .perm-group-head {
+    background: var(--brass-soft);
+    border-bottom: 1px solid var(--line);
+    padding: 0.55rem 0.85rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--heading, var(--ink-text));
+}
+.users-page .perm-group-card .perm-group-body {
+    padding: 0.5rem 0.75rem 0.75rem;
+}
+.users-page .perm-group-card .form-check {
+    padding: 0.35rem 0.4rem 0.35rem 1.75rem;
+    margin: 0;
+    border-radius: 0.4rem;
+}
+.users-page .perm-group-card .form-check:hover {
+    background: var(--brass-soft);
+}
+.users-page .perm-group-card .form-check-label {
+    color: var(--ink-text);
+    cursor: pointer;
+}
+html[data-theme="dark"] .users-page .perm-group-card {
+    background: var(--paper-2);
+    border-color: var(--line);
+}
+html[data-theme="dark"] .users-page .perm-group-card .perm-group-head {
+    background: rgba(200, 162, 74, 0.12);
+    color: var(--brass-lt);
+}
+
+</style>
+
+<div class="container py-4 users-page">
+    <div class="mb-3">
+        <a href="{{ url_for('admin.manage_users') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До списку
+        </a>
+    </div>
     {{ ui.page_header('bi-person-gear', 'Редагувати користувача', user.username) }}
+    <form method="POST">
+        <div class="row g-3">
 
-    <div class="card">
-        <div class="card-body">
-            <form method="POST">
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label for="role" class="form-label">Роль</label>
-                        <select name="role" id="role" class="form-select" required>
-                            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Адміністратор</option>
-                            <option value="user" {% if user.role == 'user' %}selected{% endif %}>Працівник</option>
-                        </select>
+                <div class="col-12">
+                    <label class="form-label fw-semibold">Роль</label>
+                    <select name="role" id="role" class="form-select" required>
+                        <option value="user" {% if user.role != 'admin' %}selected{% endif %}>Працівник</option>
+                        <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Адміністратор (усі права)</option>
+                    </select>
+                    <div class="form-text">Адміністратор ігнорує список прав нижче і має повний доступ.</div>
+                </div>
+
+                <div class="col-12" id="permissionsBlock">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <label class="form-label fw-semibold mb-0">Права</label>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary" id="permSelectAll">Усі</button>
+                            <button type="button" class="btn btn-outline-secondary" id="permClearAll">Зняти</button>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <label for="group_id" class="form-label">Групи (оберіть декілька)</label>
-                        <select name="group_id" id="group_id" class="form-select" multiple>
-                            {% for group in groups|default([]) %}
-                                <option value="{{ group.id }}" {% if group.id in current_group_ids %}selected{% endif %}>{{ group.display_name }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div class="col-12">
-                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
-                        <a href="{{ url_for('admin.manage_users') }}" class="btn btn-outline-secondary">Назад</a>
+                    <div class="row g-3">
+                        {% for gkey, gtitle in permission_groups %}
+                        <div class="col-md-6 col-xl-4">
+                            <div class="perm-group-card">
+                                <div class="perm-group-head">{{ gtitle }}</div>
+                                <div class="perm-group-body">
+                                    {% for p in permissions_by_group.get(gkey, []) %}
+                                    <div class="form-check">
+                                        <input class="form-check-input perm-cb" type="checkbox"
+                                               name="permissions" value="{{ p.code }}"
+                                               id="perm_{{ p.code }}"
+                                               {% if p.code in selected_permissions %}checked{% endif %}>
+                                        <label class="form-check-label small" for="perm_{{ p.code }}">
+                                            {{ p.label }}
+                                        </label>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
-            </form>
-        </div>
-    </div>
 
+                <div class="col-12">
+                    <hr>
+                    <label class="form-label fw-semibold">Доступ до контингенту</label>
+                    <p class="form-text mb-2">
+                        Якщо нічого не обрано — працівник не бачить студентів (окрім адміністратора).
+                        Можна комбінувати групи, спеціальності та ступені.
+                    </p>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">Групи</label>
+                    <select name="group_id" class="form-select" multiple size="10">
+                        {% for group in groups %}
+                        <option value="{{ group.id }}"
+                            {% if group.id in selected_group_ids %}selected{% endif %}>
+                            {{ group.display_name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Ctrl/⌘ — кілька</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">Спеціальності</label>
+                    <select name="specialty_code" class="form-select" multiple size="10">
+                        {% for s in specialties %}
+                        <option value="{{ s.code }}"
+                            {% if s.code in selected_specialties %}selected{% endif %}>
+                            {{ s.code }} — {{ s.name_ua }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Усі групи спеціальності</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small">Ступені</label>
+                    <select name="degree_level" class="form-select" multiple size="10">
+                        {% for d in degrees %}
+                        <option value="{{ d.name_ua }}"
+                            {% if d.name_ua in selected_degrees %}selected{% endif %}>
+                            {{ d.name_ua }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Усі групи ступеня</div>
+                </div>
+
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-save me-2"></i>Зберегти
+                </button>
+                <a href="{{ url_for('admin.manage_users') }}" class="btn btn-outline-secondary">Скасувати</a>
+            </div>
+        </div>
+    </form>
 </div>
+
+<script>
+(function () {
+    const role = document.getElementById('role');
+    const block = document.getElementById('permissionsBlock');
+    function sync() {
+        if (!role || !block) return;
+        const isAdmin = role.value === 'admin';
+        block.style.opacity = isAdmin ? '0.5' : '1';
+        block.querySelectorAll('input').forEach(el => { el.disabled = isAdmin; });
+    }
+    role?.addEventListener('change', sync);
+    sync();
+    document.getElementById('permSelectAll')?.addEventListener('click', () => {
+        document.querySelectorAll('.perm-cb:not(:disabled)').forEach(c => c.checked = true);
+    });
+    document.getElementById('permClearAll')?.addEventListener('click', () => {
+        document.querySelectorAll('.perm-cb:not(:disabled)').forEach(c => c.checked = false);
+    });
+})();
+</script>
+
 {% endblock %}

@@ -492,6 +492,7 @@ ROWS.forEach(r => { ROWS_BY_ID[r.id] = r; });
     const headerDate  = document.getElementById('headerDate');
     const hiddenMode = document.getElementById('hiddenReportMode');
     const hiddenDate = document.getElementById('hiddenReportDate');
+    const filterForm = document.getElementById('filterForm');
 
     function updateDateDisplay() {
         const mode = document.querySelector('input[name="rmode"]:checked').value;
@@ -500,15 +501,43 @@ ROWS.forEach(r => { ROWS_BY_ID[r.id] = r; });
         else if (mode === 'current') shown = currentStr;
         else shown = customInput.value || '—';
 
-        displayDate.textContent = shown;
-        headerDate.textContent = shown;
-        hiddenMode.value = mode;
-        hiddenDate.value = mode === 'custom' ? customInput.value : '';
-        customInput.disabled = (mode !== 'custom');
+        if (displayDate) displayDate.textContent = shown;
+        if (headerDate) headerDate.textContent = shown;
+        if (hiddenMode) hiddenMode.value = mode;
+        if (hiddenDate) hiddenDate.value = mode === 'custom' ? customInput.value : '';
+        if (customInput) customInput.disabled = (mode !== 'custom');
     }
 
-    radios.forEach(r => r.addEventListener('change', updateDateDisplay));
-    customInput.addEventListener('input', updateDateDisplay);
+    function reloadWithDate() {
+        updateDateDisplay();
+        if (filterForm) filterForm.submit();
+    }
+
+    radios.forEach(r => r.addEventListener('change', function () {
+        updateDateDisplay();
+        // annual / current — одразу перезавантажити список
+        if (this.value !== 'custom') {
+            reloadWithDate();
+        } else if (customInput) {
+            customInput.focus();
+        }
+    }));
+
+    // довільна дата: Enter або повна ДД.ММ.РРРР
+    if (customInput) {
+        customInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                reloadWithDate();
+            }
+        });
+        customInput.addEventListener('change', function () {
+            if (this.value.trim().length >= 10) {
+                reloadWithDate();
+            }
+        });
+    }
+
     updateDateDisplay();
 })();
 
@@ -659,7 +688,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (showAllCheck && showAllCheck.checked) {
             params.set('show_all_licenses', '1');
         }
-
+		
+		const tckSelect = document.querySelector('select[name="tck"]');
+        if (tckSelect && tckSelect.value) {
+            params.set('tck', tckSelect.value);
+        }
+		
         window.location.href = btnExport.dataset.exportUrl + '?' + params.toString();
     });
 });

@@ -192,3 +192,5 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /tmp_military_bulk
+/import_reports
+/import_reports

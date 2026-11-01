@@ -1,0 +1,190 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Наказ про зарахування{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До студентів
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-plus',
+        'Наказ про зарахування',
+        'Оформлення наказу для студентів, у яких його ще немає (крок 3 моделі наказів)'
+    ) }}
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-success">{{ enrolled_count }}</div>
+                    <div class="small text-muted">уже мають наказ</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-warning">{{ missing_total }}</div>
+                    <div class="small text-muted">без наказу про зарахування</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold">{{ students|length }}</div>
+                    <div class="small text-muted">у поточному списку</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">Група</label>
+                    <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Усі активні студенти</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}" {% if group_id == g.id %}selected{% endif %}>
+                            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-check mt-4">
+                        <input class="form-check-input" type="checkbox" name="only_missing" value="1"
+                               id="onlyMissing" {% if only_missing %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="onlyMissing">
+                            Лише без наказу про зарахування
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-3 text-md-end">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-funnel me-1"></i>Оновити
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <form method="POST" id="enrollForm">
+        <input type="hidden" name="action" value="preview">
+        {% if group_id %}<input type="hidden" name="group_id" value="{{ group_id }}">{% endif %}
+        {% if only_missing %}<input type="hidden" name="only_missing" value="1">{% endif %}
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    <strong>Студенти</strong>
+                    <span class="text-muted small ms-2">позначте тих, кого включити в один наказ</span>
+                </span>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAll">
+                        Обрати всіх
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectNone">
+                        Зняти всіх
+                    </button>
+                    <button type="submit" class="btn btn-sm btn-primary" id="btnNext">
+                        Далі: реквізити наказу
+                        <i class="bi bi-arrow-right ms-1"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if students %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px;" class="text-center">
+                                    <input type="checkbox" class="form-check-input" id="checkAll">
+                                </th>
+                                <th>ПІБ</th>
+                                <th>Дата народж.</th>
+                                <th>Група</th>
+                                <th>Рік вступу</th>
+                                <th class="text-center">Наказ</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in students %}
+                            <tr class="{% if s.has_enrollment %}table-success{% endif %}">
+                                <td class="text-center">
+                                    {% if not s.has_enrollment %}
+                                    <input type="checkbox" class="form-check-input js-student"
+                                           name="student_ids" value="{{ s.id }}" checked>
+                                    {% else %}
+                                    <input type="checkbox" class="form-check-input" disabled>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('students.student_details', student_id=s.id) }}"
+                                       class="text-decoration-none">{{ s.full_name }}</a>
+                                </td>
+                                <td class="font-monospace small">{{ s.birth_date or '—' }}</td>
+                                <td class="small">{{ s.group_name or '—' }}</td>
+                                <td class="small">{{ s.start_year or '—' }}</td>
+                                <td class="text-center">
+                                    {% if s.has_enrollment %}
+                                    <span class="badge bg-success-subtle text-success-emphasis">є</span>
+                                    {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis">немає</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-5 text-center text-muted">
+                    <i class="bi bi-check-circle-fill fs-1 d-block mb-2 text-success"></i>
+                    {% if only_missing %}
+                        Усі студенти в цьому фільтрі вже мають наказ про зарахування.
+                    {% else %}
+                        Немає студентів за обраними фільтрами.
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const boxes = () => [...document.querySelectorAll('.js-student')];
+    const checkAll = document.getElementById('checkAll');
+    if (checkAll) {
+        checkAll.addEventListener('change', () => {
+            boxes().forEach(b => { b.checked = checkAll.checked; });
+        });
+    }
+    document.getElementById('btnSelectAll')?.addEventListener('click', () => {
+        boxes().forEach(b => { b.checked = true; });
+        if (checkAll) checkAll.checked = true;
+    });
+    document.getElementById('btnSelectNone')?.addEventListener('click', () => {
+        boxes().forEach(b => { b.checked = false; });
+        if (checkAll) checkAll.checked = false;
+    });
+    document.getElementById('enrollForm')?.addEventListener('submit', (e) => {
+        if (!boxes().some(b => b.checked)) {
+            e.preventDefault();
+            alert('Оберіть хоча б одного студента.');
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,19 +1,53 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Оформити випуск: перевірка{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-mortarboard', 'Перевірка перед випуском', 'Усі студенти позначені за замовчуванням - зніміть позначку, щоб виключити студента з випуску (вимагає причини)') }}
+    {{ ui.page_header('bi-mortarboard', 'Перевірка перед випуском', 'Усі студенти позначені за замовчуванням — зніміть позначку, щоб виключити студента з випуску (вимагає причини)') }}
 
     <div class="alert alert-warning small">
         <i class="bi bi-exclamation-triangle me-1"></i>
-        Групи й невиключені студенти будуть <strong>заархівовані</strong>. Виключені студенти потраплять у «Заморожені студенти» до подальшого вирішення.
+        Групи й невиключені студенти будуть <strong>заархівовані</strong>.
+        Виключені студенти потраплять у «Заморожені студенти» до подальшого вирішення.
+        Потрібен <strong>наказ про випуск</strong> (номер і дата).
     </div>
 
     <form method="POST" action="{{ url_for('admin.graduation_confirm') }}"
+          enctype="multipart/form-data"
           onsubmit="return confirm('Оформити випуск для {{ groups_with_students|length }} груп(и)? Групи будуть заархівовані.');">
+
+        <div class="card mb-3 border-primary">
+            <div class="card-header bg-primary-subtle">
+                <strong><i class="bi bi-file-earmark-text me-1"></i>Наказ про випуск</strong>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Номер наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_number" class="form-control form-control-sm"
+                               placeholder="напр. 12/2026" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Дата наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_date" class="form-control form-control-sm"
+                               placeholder="ДД.ММ.РРРР" required
+                               pattern="\d{2}\.\d{2}\.\d{4}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Скан наказу</label>
+                        <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small">Примітка</label>
+                        <input type="text" name="notes" class="form-control form-control-sm"
+                               placeholder="опційно">
+                    </div>
+                </div>
+            </div>
+        </div>
+
         {% for g in groups_with_students %}
         <input type="hidden" name="group_ids" value="{{ g.id }}">
         <div class="card mb-3">
@@ -35,7 +69,8 @@
                             <td>{{ s.full_name }}</td>
                             <td>
                                 <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
-                                       class="form-control form-control-sm d-none" placeholder="Причина виключення (обов'язково)">
+                                       class="form-control form-control-sm d-none"
+                                       placeholder="Причина виключення (обов'язково)">
                             </td>
                         </tr>
                         {% endfor %}
@@ -46,7 +81,9 @@
         </div>
         {% endfor %}
 
-        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити випуск</button>
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check-circle me-2"></i>Оформити випуск
+        </button>
         <a href="{{ url_for('admin.graduation') }}" class="btn btn-outline-secondary">Скасувати</a>
     </form>
 

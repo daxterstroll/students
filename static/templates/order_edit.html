@@ -1,0 +1,172 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Редагування наказу № {{ order.order_number }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between flex-wrap gap-2">
+        <a href="{{ url_for('admin.order_detail', order_id=order.id) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До картки наказу
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-pencil-square',
+        'Редагування наказу № ' ~ order.order_number,
+        (order.type_label or order.order_type)
+    ) }}
+
+    <div class="alert alert-info small">
+        Зміна складу наказу <strong>не скасовує</strong> уже виконані дії
+        (архів, зміна курсу тощо). Тут правите лише документ у реєстрі.
+    </div>
+
+    {# ── Реквізити ── #}
+    <div class="card mb-3">
+        <div class="card-header"><strong>Реквізити</strong></div>
+        <div class="card-body">
+            <form method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="action" value="save_meta">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Номер <span class="text-danger">*</span></label>
+                        <input type="text" name="order_number" class="form-control form-control-sm"
+                               value="{{ order.order_number }}" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Дата <span class="text-danger">*</span></label>
+                        <input type="text" name="order_date" class="form-control form-control-sm"
+                               value="{{ order.order_date }}" placeholder="ДД.ММ.РРРР" required
+                               pattern="\d{2}\.\d{2}\.\d{4}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Додати скан</label>
+                        <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Назва</label>
+                        <input type="text" name="title" class="form-control form-control-sm"
+                               value="{{ order.title or '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small">Примітка</label>
+                        <input type="text" name="notes" class="form-control form-control-sm"
+                               value="{{ order.notes or '' }}">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-check-lg me-1"></i>Зберегти реквізити
+                        </button>
+                    </div>
+                </div>
+            </form>
+            {% if order.attachments %}
+            <hr>
+            <div class="small text-muted mb-1">Поточні скани:</div>
+            <div class="d-flex flex-wrap gap-1">
+                {% for a in order.attachments %}
+                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank"
+                   class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-paperclip"></i> {{ a.original_name or 'файл' }}
+                </a>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Склад ── #}
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between">
+            <strong>Склад наказу</strong>
+            <span class="badge bg-primary">{{ order['items']|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if order['items'] %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center" style="width:40px;">№</th>
+                            <th>Об’єкт</th>
+                            <th>Тип</th>
+                            <th>Деталі</th>
+                            <th class="text-end" style="width:90px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for it in order['items'] %}
+                        <tr>
+                            <td class="text-center font-monospace small">{{ loop.index }}</td>
+                            <td>
+                                {% if it.student_id %}
+                                <a href="{{ url_for('students.student_details', student_id=it.student_id) }}">
+                                    {{ it.label }}
+                                </a>
+                                {% else %}
+                                {{ it.label }}
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">{{ it.entity_type }}</td>
+                            <td class="small">{{ it.payload_text or '—' }}</td>
+                            <td class="text-end">
+                                <form method="POST"
+                                      action="{{ url_for('admin.order_item_remove', order_id=order.id, item_id=it.id) }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Прибрати з наказу?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Прибрати">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted">Позицій немає</div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Додати студента ── #}
+    <div class="card mb-3">
+        <div class="card-header"><strong>Додати студента</strong></div>
+        <div class="card-body">
+            {% if candidates %}
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add_student">
+                <div class="col-md-6">
+                    <label class="form-label small">Студент</label>
+                    <select name="student_id" class="form-select form-select-sm" required>
+                        <option value="">— оберіть —</option>
+                        {% for c in candidates %}
+                        <option value="{{ c.id }}">{{ c.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% if order.order_type == 'expulsion' %}
+                <div class="col-md-4">
+                    <label class="form-label small">Причина (для відрахування)</label>
+                    <input type="text" name="reason" class="form-control form-control-sm"
+                           placeholder="опційно">
+                </div>
+                {% endif %}
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-success w-100">
+                        <i class="bi bi-plus-lg me-1"></i>Додати
+                    </button>
+                </div>
+            </form>
+            <p class="small text-muted mt-2 mb-0">
+                Показано активних студентів, яких ще немає в цьому наказі (до 2000).
+            </p>
+            {% else %}
+            <p class="text-muted small mb-0">Немає студентів для додавання (усі вже в наказі або архів).</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

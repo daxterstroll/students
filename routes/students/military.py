@@ -756,7 +756,7 @@ def delete_military(student_id):
 # ============================================================
 
 @students_bp.route('/admin/military/bulk_import_pdf', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('import_military_pdf')
 def military_bulk_import_pdf():
     """Пакетний імпорт PDF «Резерв+»."""
     if request.method == 'GET':
@@ -851,8 +851,12 @@ def military_bulk_import_pdf():
                       WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
                   )
                   AND NOT EXISTS (
-                      SELECT 1 FROM expulsion_order_students eos
-                      WHERE eos.student_id = s.id
+                      SELECT 1 FROM order_items oi
+                      JOIN orders o ON o.id = oi.order_id
+                      WHERE oi.entity_type = 'student'
+                        AND oi.entity_id = s.id
+                        AND o.order_type = 'expulsion'
+                        AND o.status = 'active'
                   )
                   AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
                   AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
@@ -872,10 +876,14 @@ def military_bulk_import_pdf():
                           SELECT 1 FROM frozen_students fz
                           WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
                       )
-                      AND NOT EXISTS (
-                          SELECT 1 FROM expulsion_order_students eos
-                          WHERE eos.student_id = s.id
-                      )
+                  AND NOT EXISTS (
+                      SELECT 1 FROM order_items oi
+                      JOIN orders o ON o.id = oi.order_id
+                      WHERE oi.entity_type = 'student'
+                        AND oi.entity_id = s.id
+                        AND o.order_type = 'expulsion'
+                        AND o.status = 'active'
+                  )
                       AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
                       AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
                     LIMIT 1
@@ -951,7 +959,7 @@ def military_bulk_import_pdf():
 
 
 @students_bp.route('/admin/military/bulk_import_pdf/<token>/apply', methods=['POST'])
-@login_required('')
+@permission_required('import_military_pdf')
 def military_bulk_import_apply(token):
     """Застосовує зміни з пакетного імпорту (з чекбоксами по полях)."""
     tmp_dir = os.path.join(TMP_MILITARY_BULK_DIR, token)

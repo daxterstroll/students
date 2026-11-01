@@ -9,6 +9,8 @@ routes/init_db.py
   - migrate_military_reports.py     (v1: gender, category_override, tck_offices, log)
   - migrate_military_reports_v2.py  (поля «Резерв+», military_history)
   - migrate_military_reports_v3.py  (Постанова №812: note_18, dismissed_at, is_base)
+  - єдина модель наказів: orders / order_items
+    (expulsion_* і course_transfer_* більше не створюються; лише orders / order_items)
 
 Запуск: `python init_db.py` з кореня проєкту
 (шлях до БД обчислюється відносно розташування файлу - не залежить від CWD).
@@ -504,23 +506,6 @@ CREATE TABLE IF NOT EXISTS "pending_students" (
 CREATE INDEX IF NOT EXISTS idx_pending_students_status ON pending_students(status);
 
 -- ─── Накази й рух студентів ───
-CREATE TABLE IF NOT EXISTS "course_transfer_orders" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_number TEXT NOT NULL,
-    order_date TEXT NOT NULL,
-    scan_file TEXT,
-    created_by TEXT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime'))
-);
-CREATE TABLE IF NOT EXISTS "course_transfer_order_groups" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL,
-    group_id INTEGER NOT NULL,
-    course_from INTEGER NOT NULL,
-    course_to INTEGER NOT NULL,
-    FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id),
-    FOREIGN KEY (group_id) REFERENCES groups(id)
-);
 CREATE TABLE IF NOT EXISTS "frozen_students" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
@@ -533,25 +518,6 @@ CREATE TABLE IF NOT EXISTS "frozen_students" (
     resolved_at TEXT,
     resolution TEXT,
     resolved_by TEXT,
-    FOREIGN KEY (student_id) REFERENCES students(id),
-    FOREIGN KEY (previous_group_id) REFERENCES groups(id),
-    FOREIGN KEY (order_id) REFERENCES course_transfer_orders(id)
-);
-CREATE TABLE IF NOT EXISTS "expulsion_orders" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_number TEXT NOT NULL,
-    order_date TEXT NOT NULL,
-    scan_file TEXT,
-    created_by TEXT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime'))
-);
-CREATE TABLE IF NOT EXISTS "expulsion_order_students" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL,
-    student_id INTEGER NOT NULL,
-    previous_group_id INTEGER,
-    reason TEXT NOT NULL,
-    FOREIGN KEY (order_id) REFERENCES expulsion_orders(id),
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id)
 );
@@ -607,7 +573,55 @@ CREATE TABLE IF NOT EXISTS "military_history" (
 );
 CREATE INDEX IF NOT EXISTS idx_military_history_student
     ON military_history (student_id, id);
+    
+CREATE TABLE IF NOT EXISTS "orders" (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_type   TEXT NOT NULL,
+        -- enrollment | course_transfer | license_transfer
+        -- | freeze | unfreeze | expulsion | graduation
+    order_number TEXT NOT NULL,
+    order_date   TEXT NOT NULL,          -- DD.MM.YYYY (як у старих таблицях)
+    title        TEXT,
+    notes        TEXT,
+    created_by   TEXT,
+    created_at   TEXT DEFAULT (datetime('now', 'localtime')),
+    status       TEXT NOT NULL DEFAULT 'active',
+        -- active | cancelled
+    -- Зв'язок зі старим записом (для міграції і перехідного періоду)
+    legacy_table TEXT,                  -- напр. 'course_transfer_orders'
+    legacy_id    INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS "idx_orders_type_date"
+    ON "orders" ("order_type", "order_date");
+CREATE INDEX IF NOT EXISTS "idx_orders_number"
+    ON "orders" ("order_number");
+CREATE INDEX IF NOT EXISTS "idx_orders_legacy"
+    ON "orders" ("legacy_table", "legacy_id");
+
+CREATE TABLE IF NOT EXISTS "order_items" (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    entity_type TEXT NOT NULL,          -- 'student' | 'group'
+    entity_id   INTEGER NOT NULL,
+    -- Контекст дії (JSON-рядок):
+    -- course_transfer: {"course_from":2,"course_to":3}
+    -- expulsion:       {"reason":"...","previous_group_id":12}
+    -- license_transfer:{"previous_license_id":1,"new_license_id":2}
+    -- enrollment:      {"group_id":5}
+    -- freeze:          {"reason":"...","previous_group_id":5}
+    payload     TEXT,
+    UNIQUE (order_id, entity_type, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS "idx_order_items_entity"
+    ON "order_items" ("entity_type", "entity_id");
+CREATE INDEX IF NOT EXISTS "idx_order_items_order"
+    ON "order_items" ("order_id");    
+
 """)
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -624,6 +638,19 @@ def _add_column_if_missing(table, column, coltype):
     if column not in existing:
         cur.execute(f'ALTER TABLE "{table}" ADD COLUMN "{column}" {coltype}')
         print(f"➕ {table}.{column}")
+
+
+# Legacy-таблиці відрахування більше не використовуються (модель orders).
+for _t in (
+    'expulsion_order_students', 'expulsion_orders',
+    'course_transfer_order_groups', 'course_transfer_orders',
+):
+    row = cur.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_t,)
+    ).fetchone()
+    if row:
+        cur.execute(f'DROP TABLE IF EXISTS "{_t}"')
+        print(f"🗑️  прибрано legacy-таблицю {_t}")
 
 
 print("── Міграція схеми ──")

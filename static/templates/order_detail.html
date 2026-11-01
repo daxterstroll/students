@@ -1,0 +1,119 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Наказ № {{ order.order_number }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between flex-wrap gap-2">
+        <a href="{{ url_for('admin.orders_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До реєстру наказів
+        </a>
+        <a href="{{ url_for('admin.order_edit', order_id=order.id) }}" class="btn btn-sm btn-primary">
+            <i class="bi bi-pencil me-1"></i> Редагувати
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-text',
+        'Наказ № ' ~ order.order_number,
+        (order.type_label or order.order_type) ~ ' · ' ~ order.order_date
+    ) }}
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-8">
+            <div class="card h-100">
+                <div class="card-header"><strong>Реквізити</strong></div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-sm-4 text-muted">Тип</dt>
+                        <dd class="col-sm-8">{{ order.type_label or order.order_type }}</dd>
+                        <dt class="col-sm-4 text-muted">Номер</dt>
+                        <dd class="col-sm-8 fw-semibold">{{ order.order_number }}</dd>
+                        <dt class="col-sm-4 text-muted">Дата</dt>
+                        <dd class="col-sm-8 font-monospace">{{ order.order_date }}</dd>
+                        {% if order.title %}
+                        <dt class="col-sm-4 text-muted">Назва</dt>
+                        <dd class="col-sm-8">{{ order.title }}</dd>
+                        {% endif %}
+                        {% if order.notes %}
+                        <dt class="col-sm-4 text-muted">Примітка</dt>
+                        <dd class="col-sm-8">{{ order.notes }}</dd>
+                        {% endif %}
+                        <dt class="col-sm-4 text-muted">Створив</dt>
+                        <dd class="col-sm-8">{{ order.created_by or '—' }}</dd>
+                        <dt class="col-sm-4 text-muted">Створено</dt>
+                        <dd class="col-sm-8 font-monospace small">{{ order.created_at or '—' }}</dd>
+                    </dl>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-header"><strong>Скани</strong></div>
+                <div class="card-body">
+                    {% if order.attachments %}
+                    <ul class="list-unstyled mb-0">
+                        {% for a in order.attachments %}
+                        <li class="mb-2">
+                            <a href="{{ url_for('static', filename=a.file_path) }}"
+                               target="_blank" rel="noopener"
+                               class="btn btn-sm btn-outline-secondary w-100 text-start">
+                                <i class="bi bi-paperclip me-1"></i>
+                                {{ a.original_name or a.file_path }}
+                            </a>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted small mb-0">Сканів немає</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Позиції наказу</strong>
+            <span class="badge bg-primary">{{ order['items']|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if order['items'] %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-center" style="width:40px;">№</th>
+                            <th>Об’єкт</th>
+                            <th>Тип</th>
+                            <th>Деталі</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for it in order['items'] %}
+                        <tr>
+                            <td class="text-center font-monospace small">{{ loop.index }}</td>
+                            <td>
+                                {% if it.student_id %}
+                                <a href="{{ url_for('students.student_details', student_id=it.student_id) }}">
+                                    {{ it.label }}
+                                </a>
+                                {% else %}
+                                {{ it.label }}
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">{{ it.entity_type }}</td>
+                            <td class="small">{{ it.payload_text or '—' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted">Позицій немає</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -225,7 +225,7 @@
                         </a>
                     </div>
                     {% endif %}
-                    {% set total_issues = issues.no_tck + issues.no_vos + issues.no_category + issues.no_gender + issues.no_military %}
+                    {% set total_issues = issues.no_tck + issues.no_vos + issues.no_category + issues.no_gender + issues.no_military + (issues.no_enrollment_order or 0) %}
                     {% if total_issues == 0 %}
                         <div class="text-success text-center py-3">
                             <i class="bi bi-check-circle-fill fs-2 d-block mb-2"></i>
@@ -264,6 +264,14 @@
                                 <strong>{{ issues.no_vos }}</strong> студентів без ВОС
                             </li>
                             {% endif %}
+
+                            {% if issues.no_enrollment_order %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_enrollment_order }}</strong> студентів без наказу про зарахування
+                                <a href="{{ url_for('admin.enrollment_order') }}" class="ms-1 small">оформити →</a>
+                            </li>
+                            {% endif %}
                         </ul>
                         <a href="{{ url_for('military_reports.issues_list') }}" class="btn btn-sm btn-outline-warning">
                             <i class="bi bi-list-check me-1"></i>Переглянути проблемних
@@ -281,6 +289,10 @@
                     <a href="{{ url_for('military_reports.summary') }}" class="btn btn-outline-primary text-start">
                         <i class="bi bi-bar-chart-fill me-2"></i>
                         <strong>Додаток 12</strong> — відомість оперативного обліку
+                    </a>
+                    <a href="{{ url_for('military_reports.dodatok_4_list') }}" class="btn btn-outline-primary text-start">
+                        <i class="bi bi-file-earmark-ruled me-2"></i>
+                        <strong>Додаток 4</strong> — повідомлення про зміну облікових даних
                     </a>
                     <a href="{{ url_for('military_reports.tck_offices') }}" class="btn btn-outline-secondary text-start">
                         <i class="bi bi-building me-2"></i>
