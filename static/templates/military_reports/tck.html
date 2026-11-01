@@ -17,6 +17,13 @@
         'Територіальні центри комплектування та соціальної підтримки'
     ) }}
 
+    {% if not (can_manage_tck|default(true)) %}
+    <div class="alert alert-secondary small">
+        Режим перегляду: видно лише ТЦК, до яких прив’язані студенти на обліку.
+        Змінювати довідник може адміністратор.
+    </div>
+    {% endif %}
+
     {# ── Статистика ── #}
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
@@ -54,7 +61,7 @@
     </div>
 
     {# ── Блок «ТЦК, яких немає в довіднику» ── #}
-    {% if unknown_tck %}
+    {% if can_manage_tck|default(true) and unknown_tck %}
     <div class="card mb-4 border-warning">
         <div class="card-header bg-warning-subtle">
             <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -152,6 +159,7 @@
     </div>
     {% endif %}
 
+{% if can_manage_tck|default(true) %}
     {# ── Форма додавання ── #}
     <div class="card mb-4">
         <div class="card-header">
@@ -179,6 +187,7 @@
         </div>
     </div>
 
+{% endif %}
     {# ── Фільтри ── #}
     <div class="card mb-3">
         <div class="card-body py-2">
@@ -281,6 +290,7 @@
                                 {% endif %}
                             </td>
                             <td class="text-center">
+                                {% if can_manage_tck|default(true) %}
                                 <form method="POST" class="d-inline">
                                     <input type="hidden" name="action" value="toggle">
                                     <input type="hidden" name="id" value="{{ r.id }}">
@@ -294,8 +304,12 @@
                                         {% endif %}
                                     </button>
                                 </form>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
                             </td>
                             <td class="text-end text-nowrap">
+                                {% if can_manage_tck|default(true) %}
                                 <button type="button"
                                         class="btn btn-sm btn-outline-primary js-edit-btn"
                                         data-id="{{ r.id }}"
@@ -321,6 +335,9 @@
                                         title="Використовується: {{ r.students_count_active }} активних{% if r.students_count_archived %}, {{ r.students_count_archived }} архівних{% endif %}{% if r.students_count_frozen %}, {{ r.students_count_frozen }} заморожених{% endif %} — видалення заборонено">
                                     <i class="bi bi-lock"></i>
                                 </button>
+                                {% endif %}
+                                {% else %}
+                                <span class="text-muted small">перегляд</span>
                                 {% endif %}
                             </td>
                         </tr>

@@ -1,0 +1,161 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Накази{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До студентів
+        </a>
+        <div class="d-flex flex-wrap gap-2">
+            {% for link in create_links %}
+            <a href="{{ url_for(link.endpoint) }}" class="btn btn-sm {% if link.type == 'enrollment' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+                <i class="bi {{ link.icon }} me-1"></i>{{ link.label }}
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
+    {{ ui.page_header(
+        'bi-journal-text',
+        'Реєстр наказів',
+        'Усі накази: зарахування, переведення, відрахування, випуск'
+    ) }}
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <a href="{{ url_for('admin.orders_list', search=search) }}"
+                   class="btn btn-sm {% if not order_type %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+                    Усі <span class="badge bg-secondary ms-1">{{ total_all }}</span>
+                </a>
+                {% for t in order_types %}
+                    {% if type_counts.get(t) %}
+                    <a href="{{ url_for('admin.orders_list', type=t, search=search) }}"
+                       class="btn btn-sm {% if order_type == t %}btn-dark{% else %}btn-outline-secondary{% endif %}">
+                        {{ type_labels.get(t, t) }}
+                        <span class="badge bg-secondary ms-1">{{ type_counts[t] }}</span>
+                    </a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form method="GET" class="row g-2 align-items-end">
+                {% if order_type %}
+                <input type="hidden" name="type" value="{{ order_type }}">
+                {% endif %}
+                <div class="col-md-6">
+                    <label class="form-label small mb-1">Пошук (номер, назва, примітка)</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" class="form-control"
+                               value="{{ search }}" placeholder="напр. 45/2026">
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="bi bi-search"></i>
+                        </button>
+                        {% if search %}
+                        <a href="{{ url_for('admin.orders_list', type=order_type or none) }}"
+                           class="btn btn-outline-secondary"><i class="bi bi-x"></i></a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">На сторінці</label>
+                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for n in [20, 50, 100, 200] %}
+                        <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between">
+            <strong>Знайдено: {{ total }}</strong>
+        </div>
+        <div class="card-body p-0">
+            {% if orders %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:70px;">ID</th>
+                            <th>Дата</th>
+                            <th>Номер</th>
+                            <th>Тип</th>
+                            <th class="text-center">Позицій</th>
+                            <th>Хто створив</th>
+                            <th class="text-end" style="width:120px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for o in orders %}
+                        <tr>
+                            <td class="font-monospace small text-muted">{{ o.id }}</td>
+                            <td class="font-monospace small">{{ o.order_date }}</td>
+                            <td>
+                                <a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
+                                   class="text-decoration-none fw-semibold">
+                                    {{ o.order_number }}
+                                </a>
+                                {% if o.notes %}
+                                <div class="small text-muted">{{ o.notes[:80] }}{% if o.notes|length > 80 %}…{% endif %}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                    {{ o.type_label }}
+                                </span>
+                            </td>
+                            <td class="text-center">{{ o.items_count }}</td>
+                            <td class="small">{{ o.created_by or '—' }}</td>
+                            <td class="text-end">
+                                <a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
+                                   class="btn btn-sm btn-outline-primary" title="Перегляд">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{{ url_for('admin.order_edit', order_id=o.id) }}"
+                                   class="btn btn-sm btn-outline-secondary" title="Редагувати">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-journal fs-1 d-block mb-2"></i>
+                Наказів не знайдено
+            </div>
+            {% endif %}
+        </div>
+
+        {% if total_pages > 1 %}
+        <div class="card-footer d-flex justify-content-center gap-2 py-3">
+            {% if page > 1 %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('admin.orders_list', page=page-1, per_page=per_page, type=order_type or none, search=search) }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            {% endif %}
+            <span class="small align-self-center">Стор. {{ page }} з {{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('admin.orders_list', page=page+1, per_page=per_page, type=order_type or none, search=search) }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

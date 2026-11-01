@@ -1,0 +1,96 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Підтвердження наказу про зарахування{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.enrollment_order') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Назад до списку
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-check',
+        'Підтвердження наказу про зарахування',
+        order_type_label ~ ' · ' ~ students|length ~ ' студентів'
+    ) }}
+
+    <form method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="confirm">
+        {% for s in students %}
+        <input type="hidden" name="student_ids" value="{{ s.id }}">
+        {% endfor %}
+
+        <div class="card mb-3">
+            <div class="card-header"><strong>Реквізити наказу</strong></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label small">Номер наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_number" class="form-control form-control-sm"
+                               placeholder="напр. 45/2026" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Дата наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_date" class="form-control form-control-sm"
+                               placeholder="ДД.ММ.РРРР" required
+                               pattern="\d{2}\.\d{2}\.\d{4}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small">Скан наказу (необов’язково)</label>
+                        <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small">Примітка</label>
+                        <input type="text" name="notes" class="form-control form-control-sm"
+                               placeholder="напр. набір 2026, денна форма">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between">
+                <strong>Список студентів у наказі</strong>
+                <span class="badge bg-primary">{{ students|length }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 50vh;">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="text-center" style="width:40px;">№</th>
+                                <th>ПІБ</th>
+                                <th>Група</th>
+                                <th>Рік вступу</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in students %}
+                            <tr>
+                                <td class="text-center font-monospace small">{{ loop.index }}</td>
+                                <td>{{ s.full_name }}</td>
+                                <td class="small">{{ s.group_name or '—' }}</td>
+                                <td class="small">{{ s.start_year or '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+            <a href="{{ url_for('admin.enrollment_order') }}" class="btn btn-outline-secondary">
+                Скасувати
+            </a>
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg me-1"></i>
+                Оформити наказ ({{ students|length }})
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

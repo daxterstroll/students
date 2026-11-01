@@ -1,0 +1,145 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Додаток 4 — зміна облікових даних{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-text',
+        'Додаток 4',
+        'Повідомлення про зміну облікових даних (для ТЦК)'
+    ) }}
+
+    <div class="alert alert-info small">
+        Після завантаження Excel студент позначається як <strong>актуальний</strong>
+        (дані вже «відправлені»). Якщо пізніше зміниться ПІБ, ТЦК, ВОС, адреса,
+        зміна/підстава тощо — він знову з’явиться у вкладці <em>Потребують друку</em>.
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form method="GET" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Пошук ПІБ</label>
+                    <input type="text" name="search" class="form-control form-control-sm"
+                           value="{{ search }}" placeholder="Прізвище…">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">ТЦК</label>
+                    <select name="tck" class="form-select form-select-sm">
+                        <option value="">Усі ТЦК</option>
+                        {% for t in tck_offices %}
+                        <option value="{{ t.name_ua }}" {% if tck_filter == t.name_ua %}selected{% endif %}>
+                            {{ t.name_ua }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Статус</label>
+                    <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="need" {% if status == 'need' %}selected{% endif %}>
+                            Потребують друку (нові або змінені)
+                        </option>
+                        <option value="sent" {% if status == 'sent' %}selected{% endif %}>
+                            Актуальні (вже згенеровано, без змін)
+                        </option>
+                        <option value="all" {% if status == 'all' %}selected{% endif %}>
+                            Усі на обліку
+                        </option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary w-100">OK</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header d-flex justify-content-between">
+            <strong>Студентів: {{ rows|length }}</strong>
+        </div>
+        <div class="card-body p-0">
+            {% if rows %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>ПІБ</th>
+                            <th>Група</th>
+                            <th>ТЦК</th>
+                            <th>Зміна / підстава</th>
+                            <th>Ост. генерація</th>
+                            <th>Стан</th>
+                            <th class="text-end" style="width:100px;">Файл</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('students.student_details', student_id=r.id) }}">
+                                    {{ r.full_name }}
+                                </a>
+                            </td>
+                            <td class="small">{{ r.group_name or '—' }}</td>
+                            <td class="small">{{ r.tck_name or '—' }}</td>
+                            <td class="small">
+                                {% if r.change_credentials or r.reason_for_changing_credentials %}
+                                <div>{{ r.change_credentials or '' }}</div>
+                                <div class="text-muted">{{ r.reason_for_changing_credentials or '' }}</div>
+                                {% else %}
+                                —
+                                {% endif %}
+                            </td>
+                            <td class="small font-monospace">{{ r.dodatok4_sent_at or '—' }}</td>
+                            <td>
+                                {% if r.needs_resend %}
+                                <span class="badge text-bg-warning">Потрібен друк</span>
+                                {% if r.is_first_print %}
+                                <div class="small text-muted mt-1">Ще не генерували</div>
+                                {% elif r.missing_snapshot %}
+                                <div class="small text-muted mt-1">Зміни були; згенеруйте ще раз, щоб надалі бачити деталі</div>
+                                {% elif r.changes %}
+                                <ul class="small mb-0 mt-1 ps-3">
+                                    {% for c in r.changes %}
+                                    <li>
+                                        <strong>{{ c.label }}:</strong>
+                                        <span class="text-decoration-line-through text-muted">{{ c.old }}</span>
+                                        → <span class="text-success">{{ c.new }}</span>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+                                {% else %}
+                                <span class="badge text-bg-success">Актуально</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{{ url_for('military_reports.dodatok_4_export', student_id=r.id) }}"
+                                   class="btn btn-sm btn-success" title="Завантажити Додаток 4">
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                Немає записів за обраними фільтрами.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

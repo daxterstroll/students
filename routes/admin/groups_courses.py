@@ -15,6 +15,10 @@ from routes.utils import get_attachments, save_multiple_attachments
 from datetime import datetime
 import difflib
 import time
+from routes.orders_service import (
+    create_order,
+    orders_tables_ready,
+)
 
 
 def compute_program_total_years(degree_level, program_credits):
@@ -455,7 +459,13 @@ def manage_groups():
             else:
                 student_count = conn.execute("SELECT COUNT(*) AS c FROM students WHERE group_id=?", (group_id,)).fetchone()['c']
                 transfer_order_count = conn.execute(
-                    "SELECT COUNT(*) AS c FROM course_transfer_order_groups WHERE group_id=?", (group_id,)
+                    """
+                    SELECT COUNT(*) AS c FROM order_items oi
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE oi.entity_type = 'group' AND oi.entity_id = ?
+                      AND o.order_type = 'course_transfer' AND o.status = 'active'
+                    """,
+                    (group_id,),
                 ).fetchone()['c']
 
                 if student_count > 0:
@@ -506,7 +516,6 @@ def manage_groups():
                     # прив'язки до конкретної групи, тому просто
                     # обнуляємо посилання, а не видаляємо весь запис.
                     conn.execute("UPDATE frozen_students SET previous_group_id = NULL WHERE previous_group_id=?", (group_id,))
-                    conn.execute("UPDATE expulsion_order_students SET previous_group_id = NULL WHERE previous_group_id=?", (group_id,))
 
                     for table in ('subjects', 'practices', 'courseworks', 'attestations'):
                         conn.execute(f"DELETE FROM {table} WHERE group_id=?", (group_id,))
@@ -713,8 +722,7 @@ def course_transfer():
 @admin_bp.route('/admin/course_transfer/confirm', methods=['POST'])
 @permission_required('manage_courses')
 def course_transfer_confirm():
-    """Крок 3: остаточне підтвердження переведення - зберігає наказ,
-    оновлює курс/назву обраних груп, виключених студентів заморожує."""
+    """Крок 3: переведення на курс — тільки orders (без course_transfer_*)."""
     order_number = (request.form.get('order_number') or '').strip()
     order_date = request.form.get('order_date')
     group_ids = [int(x) for x in request.form.getlist('group_ids')]
@@ -726,11 +734,16 @@ def course_transfer_confirm():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    # Перевіряємо, що для кожного виключеного студента вказано причину
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash("Таблиці наказів не створені. Запустіть migrate_orders.py", "error")
+        return redirect(url_for('admin.course_transfer'))
+
     excluded_students = []  # (student_id, group_id, reason)
     for group_id in group_ids:
         students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0", (group_id,)
+            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
+            (group_id,),
         ).fetchall()
         for s in students:
             included = request.form.get(f"include_{s['id']}") == '1'
@@ -742,56 +755,112 @@ def course_transfer_confirm():
                     return redirect(url_for('admin.course_transfer'))
                 excluded_students.append((s['id'], group_id, reason))
 
-    # Скан наказу - можна прикріпити кілька файлів будь-якого типу
     scan_files = request.files.getlist('scan_files')
 
-    cur = conn.execute(
-        "INSERT INTO course_transfer_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, NULL, ?)",
-        (order_number, order_date, current_username())
-    )
-    order_id = cur.lastrowid
-    saved_paths = save_multiple_attachments(conn, 'course_transfer_order', order_id, scan_files, 'course_transfer_orders', current_username())
-    if saved_paths:
-        conn.execute("UPDATE course_transfer_orders SET scan_file = ? WHERE id = ?", (saved_paths[0], order_id))
-
+    # Спочатку збираємо payload груп (до зміни course)
+    group_items = []
     transferred_groups_summary = []
     for group_id in group_ids:
-        group = conn.execute("SELECT name, course, specialty_code FROM groups WHERE id = ?", (group_id,)).fetchone()
+        group = conn.execute(
+            "SELECT name, course, specialty_code FROM groups WHERE id = ?",
+            (group_id,),
+        ).fetchone()
         if not group:
             continue
         course_from = group['course']
         course_to = course_from + 1
-
-        conn.execute(
-            "INSERT INTO course_transfer_order_groups (order_id, group_id, course_from, course_to) VALUES (?, ?, ?, ?)",
-            (order_id, group_id, course_from, course_to)
+        group_items.append({
+            'entity_type': 'group',
+            'entity_id': group_id,
+            'payload': {
+                'course_from': course_from,
+                'course_to': course_to,
+                'group_name_before': group['name'],
+            },
+        })
+        transferred_groups_summary.append(
+            f"{group['name']} (курс {course_from}→{course_to})"
         )
 
-        short_name_row = conn.execute(
-            "SELECT short_name FROM specialties WHERE code = ?", (group['specialty_code'],)
-        ).fetchone()
-        new_name = f"{short_name_row['short_name']}-{course_to}" if short_name_row and short_name_row['short_name'] else group['name']
+    if not group_items:
+        flash("Не знайдено жодної групи для переведення.", "error")
+        conn.close()
+        return redirect(url_for('admin.course_transfer'))
 
-        conn.execute("UPDATE groups SET course = ?, name = ? WHERE id = ?", (course_to, new_name, group_id))
-        transferred_groups_summary.append(f"{group['name']} -> {new_name}")
-
-    for student_id, group_id, reason in excluded_students:
-        conn.execute(
-            "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, frozen_by) VALUES (?, ?, ?, ?, ?)",
-            (student_id, group_id, order_id, reason, current_username())
+    try:
+        order_id = create_order(
+            'course_transfer',
+            order_number,
+            order_date,
+            group_items,
+            created_by=current_username(),
+            files=scan_files or None,
+            upload_subdir='orders',
+            conn=conn,
         )
-        conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
 
-    conn.commit()
+        # Оновлюємо курс/назву груп
+        for group_id in group_ids:
+            group = conn.execute(
+                "SELECT name, course, specialty_code FROM groups WHERE id = ?",
+                (group_id,),
+            ).fetchone()
+            if not group:
+                continue
+            course_from = group['course']
+            course_to = course_from + 1
+            short_name_row = conn.execute(
+                "SELECT short_name FROM specialties WHERE code = ?",
+                (group['specialty_code'],),
+            ).fetchone()
+            new_name = (
+                f"{short_name_row['short_name']}-{course_to}"
+                if short_name_row and short_name_row['short_name']
+                else group['name']
+            )
+            conn.execute(
+                "UPDATE groups SET course = ?, name = ? WHERE id = ?",
+                (course_to, new_name, group_id),
+            )
+
+        # Виключені → заморозка (order_id тепер з orders)
+        for student_id, group_id, reason in excluded_students:
+            conn.execute(
+                """
+                INSERT INTO frozen_students
+                    (student_id, previous_group_id, order_id, reason, frozen_by)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (student_id, group_id, order_id, reason, current_username()),
+            )
+            conn.execute(
+                "UPDATE students SET group_id = NULL WHERE id = ?",
+                (student_id,),
+            )
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        flash(f"Помилка оформлення переведення: {e}", "error")
+        return redirect(url_for('admin.course_transfer'))
+
     conn.close()
 
     log_action(
         current_username(),
-        f"наказ про переведення на курс №{order_number} від {order_date}",
-        details=f"груп: {len(group_ids)}, заморожено студентів: {len(excluded_students)} | {', '.join(transferred_groups_summary)}"
+        f"наказ про переведення на курс №{order_number} від {order_date} (order_id={order_id})",
+        details=(
+            f"груп: {len(group_ids)}, заморожено: {len(excluded_students)} "
+            f"| {', '.join(transferred_groups_summary)}"
+        ),
     )
-    flash(f"Переведення оформлено. Груп: {len(group_ids)}, заморожено студентів: {len(excluded_students)}.", "success")
-    return redirect(url_for('admin.courses'))
+    flash(
+        f"Переведення оформлено. Груп: {len(group_ids)}, "
+        f"заморожено студентів: {len(excluded_students)}.",
+        "success",
+    )
+    return redirect(url_for('admin.order_detail', order_id=order_id))
 
 
 @admin_bp.route('/admin/frozen_students')
@@ -815,7 +884,7 @@ def frozen_students():
         FROM frozen_students f
         JOIN students s ON s.id = f.student_id
         LEFT JOIN groups g ON g.id = f.previous_group_id
-        LEFT JOIN course_transfer_orders o ON o.id = f.order_id
+        LEFT JOIN orders o ON o.id = f.order_id AND o.order_type IN ('course_transfer', 'freeze')
         WHERE f.resolved_at IS NULL
         ORDER BY f.frozen_at
     """).fetchall()
@@ -829,7 +898,7 @@ def frozen_students():
         FROM frozen_students f
         JOIN students s ON s.id = f.student_id
         LEFT JOIN groups g ON g.id = f.previous_group_id
-        LEFT JOIN course_transfer_orders o ON o.id = f.order_id
+        LEFT JOIN orders o ON o.id = f.order_id AND o.order_type IN ('course_transfer', 'freeze')
         WHERE f.resolved_at IS NOT NULL
         ORDER BY f.resolved_at DESC
     """).fetchall()
@@ -1058,24 +1127,33 @@ def graduation():
 @admin_bp.route('/admin/graduation/confirm', methods=['POST'])
 @permission_required('manage_courses')
 def graduation_confirm():
-    """
-    Підтвердження випуску: виключені студенти (з причиною) ідуть у
-    frozen_students (без наказу переведення - для випуску формального
-    наказу з номером/датою поки не передбачено, лише сама дія
-    архівування), решта студентів і самі групи архівуються.
-    """
+    """Підтвердження випуску з обов'язковим наказом (orders)."""
     group_ids = [int(x) for x in request.form.getlist('group_ids')]
     if not group_ids:
         flash("Оберіть хоча б одну групу.", "error")
         return redirect(url_for('admin.graduation'))
 
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date = (request.form.get('order_date') or '').strip()
+    notes = (request.form.get('notes') or '').strip() or None
+
+    if not order_number or not order_date:
+        flash("Заповніть номер і дату наказу про випуск.", "error")
+        return redirect(url_for('admin.graduation'))
+
     conn = get_db()
     conn.row_factory = sqlite3.Row
+
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash("Таблиці наказів не створені. Запустіть migrate_orders.py", "error")
+        return redirect(url_for('admin.graduation'))
 
     excluded_students = []
     for group_id in group_ids:
         students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0", (group_id,)
+            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
+            (group_id,),
         ).fetchall()
         for s in students:
             included = request.form.get(f"include_{s['id']}") == '1'
@@ -1087,7 +1165,10 @@ def graduation_confirm():
                     return redirect(url_for('admin.graduation'))
                 excluded_students.append((s['id'], group_id, reason))
 
+    excluded_set = {sid for sid, _, _ in excluded_students}
+    graduated_student_ids = []
     graduated_names = []
+
     for group_id in group_ids:
         group = conn.execute("SELECT name FROM groups WHERE id = ?", (group_id,)).fetchone()
         if not group:
@@ -1096,26 +1177,90 @@ def graduation_confirm():
         for student_id, g_id, reason in excluded_students:
             if g_id == group_id:
                 conn.execute(
-                    "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, frozen_by) VALUES (?, ?, NULL, ?, ?)",
-                    (student_id, group_id, reason, current_username())
+                    """
+                    INSERT INTO frozen_students
+                        (student_id, previous_group_id, order_id, reason, frozen_by)
+                    VALUES (?, ?, NULL, ?, ?)
+                    """,
+                    (student_id, group_id, reason, current_username()),
                 )
                 conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
 
-        # Архівуємо групу і тих студентів, хто в ній лишився (виключені
-        # вже відв'язані від group_id вище і архівування їх не торкнеться)
+        remaining = conn.execute(
+            """
+            SELECT id FROM students
+            WHERE group_id = ? AND COALESCE(archived, 0) = 0
+            """,
+            (group_id,),
+        ).fetchall()
+        for r in remaining:
+            if r['id'] not in excluded_set:
+                graduated_student_ids.append(r['id'])
+
         conn.execute("UPDATE groups SET archived = TRUE WHERE id = ?", (group_id,))
-        conn.execute("UPDATE students SET archived = TRUE WHERE group_id = ?", (group_id,))
+        conn.execute(
+            "UPDATE students SET archived = TRUE WHERE group_id = ?",
+            (group_id,),
+        )
         graduated_names.append(group['name'])
 
-    conn.commit()
+    order_id = None
+    items = [
+        {
+            'entity_type': 'student',
+            'entity_id': sid,
+            'payload': {'action': 'graduated'},
+        }
+        for sid in graduated_student_ids
+    ]
+    for gid in group_ids:
+        items.append({
+            'entity_type': 'group',
+            'entity_id': gid,
+            'payload': {'action': 'archived_on_graduation'},
+        })
+
+    scan_files = request.files.getlist('scan_files')
+    try:
+        if items:
+            order_id = create_order(
+                'graduation',
+                order_number,
+                order_date,
+                items,
+                created_by=current_username(),
+                notes=notes,
+                title=f"Випуск: {', '.join(graduated_names)[:200]}",
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        flash(f"Помилка збереження наказу: {e}", "error")
+        return redirect(url_for('admin.graduation'))
+
     conn.close()
 
     log_action(
         current_username(),
-        f"оформив випуск груп: {', '.join(graduated_names)}",
-        details=f"заморожено студентів: {len(excluded_students)}"
+        f"оформив випуск груп: {', '.join(graduated_names)} "
+        f"(наказ №{order_number} від {order_date}"
+        + (f", order_id={order_id}" if order_id else "")
+        + ")",
+        details=f"випущено студентів: {len(graduated_student_ids)}, "
+                f"заморожено: {len(excluded_students)}",
     )
-    flash(f"Випуск оформлено. Груп: {len(graduated_names)}, заморожено студентів: {len(excluded_students)}.", "success")
+    flash(
+        f"Випуск оформлено (наказ №{order_number}). "
+        f"Груп: {len(graduated_names)}, випущено: {len(graduated_student_ids)}, "
+        f"заморожено: {len(excluded_students)}.",
+        "success",
+    )
+    if order_id:
+        return redirect(url_for('admin.order_detail', order_id=order_id))
     return redirect(url_for('admin.courses'))
 
 
@@ -1195,8 +1340,7 @@ def expulsion():
 @admin_bp.route('/admin/expulsion/confirm', methods=['POST'])
 @permission_required('manage_expulsion')
 def expulsion_confirm():
-    """Остаточне підтвердження наказу про відрахування - обробляє
-    студентів з обох джерел (активні групи + заморожені) в одній операції."""
+    """Наказ про відрахування → лише orders / order_items."""
     order_number = (request.form.get('order_number') or '').strip()
     order_date = request.form.get('order_date')
     group_ids = [int(x) for x in request.form.getlist('group_ids')]
@@ -1209,38 +1353,50 @@ def expulsion_confirm():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    # Студенти з активних груп - включаються за чекбоксом (за
-    # замовчуванням НЕ позначені - відрахування виключення, а не
-    # правило, на відміну від переведення/випуску).
-    to_expel = []  # (student_id, previous_group_id, reason, frozen_id_to_resolve)
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash("Таблиці наказів не створені. Запустіть migrate_orders.py", "error")
+        return redirect(url_for('admin.expulsion'))
+
+    to_expel = []  # (student_id, previous_group_id, reason, frozen_id)
+
     for group_id in group_ids:
         students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0", (group_id,)
+            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
+            (group_id,),
         ).fetchall()
         for s in students:
-            included = request.form.get(f"include_{s['id']}") == '1'
-            if included:
-                reason = (request.form.get(f"reason_{s['id']}") or '').strip()
-                if not reason:
-                    flash(f"Для студента (ID {s['id']}) не вказано причину відрахування.", "error")
-                    conn.close()
-                    return redirect(url_for('admin.expulsion'))
-                to_expel.append((s['id'], group_id, reason, None))
+            if request.form.get(f"include_{s['id']}") != '1':
+                continue
+            reason = (request.form.get(f"reason_{s['id']}") or '').strip()
+            if not reason:
+                flash(f"Для студента (ID {s['id']}) не вказано причину відрахування.", "error")
+                conn.close()
+                return redirect(url_for('admin.expulsion'))
+            to_expel.append((s['id'], group_id, reason, None))
 
-    # Заморожені студенти - усі обрані на кроці 1 включаються, з
-    # причиною, яку можна було відредагувати на кроці перегляду.
     for frozen_id in frozen_ids:
         frozen_row = conn.execute(
-            "SELECT student_id, previous_group_id FROM frozen_students WHERE id = ? AND resolved_at IS NULL", (frozen_id,)
+            """
+            SELECT student_id, previous_group_id
+            FROM frozen_students
+            WHERE id = ? AND resolved_at IS NULL
+            """,
+            (frozen_id,),
         ).fetchone()
         if not frozen_row:
             continue
         reason = (request.form.get(f"frozen_reason_{frozen_id}") or '').strip()
         if not reason:
-            flash(f"Для замороженого студента (запис {frozen_id}) не вказано причину відрахування.", "error")
+            flash(
+                f"Для замороженого студента (запис {frozen_id}) не вказано причину відрахування.",
+                "error",
+            )
             conn.close()
             return redirect(url_for('admin.expulsion'))
-        to_expel.append((frozen_row['student_id'], frozen_row['previous_group_id'], reason, frozen_id))
+        to_expel.append(
+            (frozen_row['student_id'], frozen_row['previous_group_id'], reason, frozen_id)
+        )
 
     if not to_expel:
         flash("Не обрано жодного студента для відрахування.", "error")
@@ -1248,38 +1404,70 @@ def expulsion_confirm():
         return redirect(url_for('admin.expulsion'))
 
     scan_files = request.files.getlist('scan_files')
+    items = [
+        {
+            'entity_type': 'student',
+            'entity_id': sid,
+            'payload': {
+                'previous_group_id': prev_gid,
+                'reason': reason,
+            },
+        }
+        for sid, prev_gid, reason, _fid in to_expel
+    ]
 
-    cur = conn.execute(
-        "INSERT INTO expulsion_orders (order_number, order_date, scan_file, created_by) VALUES (?, ?, NULL, ?)",
-        (order_number, order_date, current_username())
-    )
-    order_id = cur.lastrowid
-    saved_paths = save_multiple_attachments(conn, 'expulsion_order', order_id, scan_files, 'expulsion_orders', current_username())
-    if saved_paths:
-        conn.execute("UPDATE expulsion_orders SET scan_file = ? WHERE id = ?", (saved_paths[0], order_id))
-
-    for student_id, previous_group_id, reason, frozen_id in to_expel:
-        conn.execute(
-            "INSERT INTO expulsion_order_students (order_id, student_id, previous_group_id, reason) VALUES (?, ?, ?, ?)",
-            (order_id, student_id, previous_group_id, reason)
+    try:
+        order_id = create_order(
+            'expulsion',
+            order_number,
+            order_date,
+            items,
+            created_by=current_username(),
+            files=scan_files or None,
+            upload_subdir='orders',
+            conn=conn,
         )
-        conn.execute("UPDATE students SET archived = TRUE, group_id = NULL WHERE id = ?", (student_id,))
-        if frozen_id:
-            conn.execute(
-                "UPDATE frozen_students SET resolved_at = datetime('now', 'localtime'), resolution = ?, resolved_by = ? WHERE id = ?",
-                (f"Відраховано наказом №{order_number} від {order_date}", current_username(), frozen_id)
-            )
 
-    conn.commit()
+        for student_id, previous_group_id, reason, frozen_id in to_expel:
+            conn.execute(
+                "UPDATE students SET archived = TRUE, group_id = NULL WHERE id = ?",
+                (student_id,),
+            )
+            if frozen_id:
+                conn.execute(
+                    """
+                    UPDATE frozen_students
+                    SET resolved_at = datetime('now', 'localtime'),
+                        resolution = ?,
+                        resolved_by = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        f"Відраховано наказом №{order_number} від {order_date}",
+                        current_username(),
+                        frozen_id,
+                    ),
+                )
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        flash(f"Помилка оформлення наказу: {e}", "error")
+        return redirect(url_for('admin.expulsion'))
+
     conn.close()
 
     log_action(
         current_username(),
-        f"наказ про відрахування №{order_number} від {order_date}",
-        details=f"відраховано студентів: {len(to_expel)}"
+        f"наказ про відрахування №{order_number} від {order_date} (order_id={order_id})",
+        details=f"відраховано студентів: {len(to_expel)}",
     )
-    flash(f"Наказ про відрахування оформлено. Відраховано студентів: {len(to_expel)}.", "success")
-    return redirect(url_for('admin.frozen_students'))
+    flash(
+        f"Наказ про відрахування оформлено. Відраховано студентів: {len(to_expel)}.",
+        "success",
+    )
+    return redirect(url_for('admin.order_detail', order_id=order_id))
 
 
 @admin_bp.route('/admin/archive/<int:group_id>', methods=['POST'])
@@ -1397,16 +1585,24 @@ def archive():
     # лишається активною (лише сам студент стає архівним) - такий
     # студент інакше був би не видно ніде: ні в активному списку групи
     # (бо archived=TRUE), ні тут вище (бо його група не архівна).
-    expelled_students = conn.execute("""
-        SELECT eos.student_id, eos.reason, eo.order_number, eo.order_date,
-               TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS student_name,
-               g.name AS previous_group_name
-        FROM expulsion_order_students eos
-        JOIN expulsion_orders eo ON eo.id = eos.order_id
-        JOIN students s ON s.id = eos.student_id
-        LEFT JOIN groups g ON g.id = eos.previous_group_id
-        ORDER BY eo.order_date DESC
-    """).fetchall()
+    # Відраховані з нової моделі orders
+    if orders_tables_ready(conn=conn):
+        expelled_students = conn.execute("""
+            SELECT oi.entity_id AS student_id,
+                   json_extract(oi.payload, '$.reason') AS reason,
+                   o.order_number, o.order_date,
+                   TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS student_name,
+                   g.name AS previous_group_name
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            JOIN students s ON s.id = oi.entity_id
+            LEFT JOIN groups g ON g.id = json_extract(oi.payload, '$.previous_group_id')
+            WHERE o.order_type = 'expulsion' AND o.status = 'active'
+              AND oi.entity_type = 'student'
+            ORDER BY o.id DESC
+        """).fetchall()
+    else:
+        expelled_students = []
 
     conn.close()
     log_action(current_username(), "переглянув список архівних груп")

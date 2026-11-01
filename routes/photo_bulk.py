@@ -117,7 +117,7 @@ def _match_filename_to_student(filename, db_students):
 
 
 @photo_bulk_bp.route('/admin/photos/bulk', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def bulk_upload():
     """Крок 1: вибір групи і завантаження одразу декількох файлів фото."""
     _cleanup_old_sessions()
@@ -220,7 +220,7 @@ def bulk_upload():
 
 
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/match', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def match(token):
     """Крок 2: зіставлення файлів зі студентами (авто + вручну)."""
     manifest = _load_manifest(token)
@@ -252,7 +252,7 @@ def match(token):
 
 
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/preview')
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def preview(token):
     """Крок 3: попередній перегляд обрізаних фото з можливістю
     відредагувати обрізку кожного окремо перед підтвердженням."""
@@ -280,7 +280,7 @@ def preview(token):
 
 
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/recrop/<file_key>', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def recrop(token, file_key):
     """
     GET: віддає оригінальне зображення (для показу в Cropper.js на
@@ -320,7 +320,7 @@ def recrop(token, file_key):
 
 
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/preview_image/<file_key>')
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def preview_image(token, file_key):
     """Віддає поточний (обрізаний) preview-файл конкретного фото."""
     from flask import send_file
@@ -331,7 +331,7 @@ def preview_image(token, file_key):
 
 
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/confirm', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('bulk_photos')
 def confirm(token):
     """Крок 4: остаточне збереження всіх зіставлених фото."""
     manifest = _load_manifest(token)

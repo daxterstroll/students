@@ -26,6 +26,8 @@ import uuid
 import secrets
 import json
 from routes.passport_types import PASSPORT_TYPES_ID_STYLE, passport_template_context
+from routes.orders_service import get_student_orders, orders_tables_ready
+from routes.user_scope import get_allowed_group_ids
 
 UPDATE_REQUEST_FIELD_LABELS = {
     'last_name_UA': "Прізвище (українською)",
@@ -147,12 +149,78 @@ def _compute_military_completeness(military_row):
     return filled, total
 
 
+FAQ_SECTION_PERMISSIONS = {
+    'students': [
+        'manage_students',
+        'manage_passport_documents',
+        'manage_education_documents',
+        'manage_pending_students',
+        'study_periods',
+    ],
+    'education': [
+        'manage_specialties',
+        'manage_degree_levels',
+        'manage_educational_programs',
+        'manage_qualification_names',
+        'manage_accreditations',
+    ],
+    'courses': [
+        'manage_courses',
+        'manage_groups',
+        'manage_subjects',
+        'manage_activities',
+        'manage_expulsion',
+        'manage_frozen_students',
+        'archive',
+    ],
+    'import': [
+        'import_from_excel',
+        'import_passport_documents',
+        'import_subjects',
+        'import_education_docs',
+        'import_grades',
+    ],
+    'bulk': [
+        'group_export',
+        'manage_diplomas',
+        'manage_templates',
+    ],
+    'system': [
+        'manage_users',
+        'view_logs',
+    ],
+    'analytics': [
+        'analytics',
+    ],
+    'military': [
+        'manage_military_reports',
+    ],
+    'licenses': [
+        'manage_licenses',
+        'manage_license_transfer',
+        'license_report',
+    ],
+}
+
+
+def _allowed_faq_sections():
+    """Які розділи FAQ доступні поточному користувачу."""
+    if session.get('is_admin'):
+        return set(FAQ_SECTION_PERMISSIONS.keys())
+    perms = set(session.get('permissions') or [])
+    allowed = set()
+    for section, need in FAQ_SECTION_PERMISSIONS.items():
+        if perms.intersection(need):
+            allowed.add(section)
+    return allowed
+
+
 @students_bp.route('/faq')
 @login_required('')
 def faq():
-    """Довідка (FAQ)."""
-    return render_template('faq.html')
-
+    """Довідка (FAQ) — лише розділи за правами користувача."""
+    sections = _allowed_faq_sections()
+    return render_template('faq.html', faq_sections=_allowed_faq_sections())
 
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
@@ -187,9 +255,7 @@ def student_list():
     role = session.get('role')
     user_id = session.get('user_id')
 
-    group_ids = [row['group_id'] for row in conn.execute(
-        "SELECT group_id FROM user_groups WHERE user_id = ?", (user_id,)
-    ).fetchall()]
+    group_ids = get_allowed_group_ids(conn, user_id)
 
     # ── SELECT з усіма новими військовими полями ──
     base_query = """
@@ -623,6 +689,11 @@ def student_details(student_id):
 
     student_dict = dict(student)
     military_dict = dict(military) if military else None
+
+    student_orders = []
+    if orders_tables_ready(conn=conn):
+        student_orders = get_student_orders(student_id, conn=conn)
+
     conn.close()
 
     return render_template(
@@ -640,6 +711,7 @@ def student_details(student_id):
         student_attachments=student_attachments,
         passport_docs=passport_docs,
         study_periods=study_periods,
+        student_orders=student_orders,
         **passport_template_context(),
     )
 
@@ -1209,8 +1281,14 @@ def delete_student(student_id):
         conn.execute("DELETE FROM education_documents WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM passport_documents WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM frozen_students WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM expulsion_order_students WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM license_transfer_order_students WHERE student_id = ?", (student_id,))
+        conn.execute(
+            """
+            DELETE FROM order_items
+            WHERE entity_type = 'student' AND entity_id = ?
+            """,
+            (student_id,),
+        )
         conn.execute("DELETE FROM diplomas WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))

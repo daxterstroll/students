@@ -167,6 +167,10 @@
                                     <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
                                         <i class="bi bi-hash"></i> {{ issue_labels[p] }}
                                     </span>
+                                    {% elif p == 'no_enrollment_order' %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
+                                        <i class="bi bi-file-earmark-text"></i> {{ issue_labels[p] }}
+                                    </span>
                                     {% endif %}
                                 {% endfor %}
                             </td>

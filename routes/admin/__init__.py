@@ -53,3 +53,5 @@ from . import documents
 from . import applications
 from . import users
 from . import templates_and_export
+from . import enrollment_orders  # noqa: F401
+from . import orders_registry  # noqa: F401

@@ -20,6 +20,7 @@
 
     {{ ui.page_header('bi-question-circle-fill', 'Довідка', 'Опис усіх сторінок системи та покрокова інструкція заповнення додатка до диплома') }}
 
+{% if session.get('is_admin') %}
     {# ================================================================ #}
     {# ЧАСТИНА 1: Покрокова інструкція для додатка до диплома           #}
     {# ================================================================ #}
@@ -130,6 +131,7 @@
         </div>
     </div>
 
+{% endif %}
     {# ================================================================ #}
     {# ЧАСТИНА 2: Довідник сторінок                                      #}
     {# ================================================================ #}
@@ -138,7 +140,15 @@
 
     <div class="accordion mb-4" id="faqAccordion">
 
-        <div class="faq-category-title">Студенти</div>
+{% if not (faq_sections or []) %}
+<div class="alert alert-secondary mb-3">
+    Для ваших прав доступу розділів довідки поки немає. Зверніться до адміністратора.
+</div>
+{% endif %}
+
+
+        {% if 'students' in (faq_sections or []) %}
+<div class="faq-category-title">Студенти</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -404,7 +414,9 @@
             </div>
         </div>
 
-        <div class="faq-category-title">Освітня програма та довідники</div>
+        {% endif %}
+{% if 'education' in (faq_sections or []) %}
+<div class="faq-category-title">Освітня програма та довідники</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -583,7 +595,9 @@
             </div>
         </div>
 
-        <div class="faq-category-title">Курси та рух студентів</div>
+        {% endif %}
+{% if 'courses' in (faq_sections or []) %}
+<div class="faq-category-title">Курси та рух студентів</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -676,7 +690,9 @@
             </div>
         </div>
 
-        <div class="faq-category-title">Імпорт</div>
+        {% endif %}
+{% if 'import' in (faq_sections or []) %}
+<div class="faq-category-title">Імпорт</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -720,7 +736,9 @@
             </div>
         </div>
 
-        <div class="faq-category-title">Масова генерація</div>
+        {% endif %}
+{% if 'bulk' in (faq_sections or []) %}
+<div class="faq-category-title">Масова генерація</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -749,7 +767,9 @@
             </div>
         </div>
 
-        <div class="faq-category-title">Система та звітність</div>
+        {% endif %}
+{% if 'system' in (faq_sections or []) %}
+<div class="faq-category-title">Система та звітність</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">
@@ -850,4 +870,234 @@
     </div>
 
 </div>
+{% endif %}
+{% if 'military' in (faq_sections or []) %}
+        <div class="faq-category-title">Військовий облік</div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dashboard">
+                    <i class="bi bi-shield-fill-check me-2"></i>Дашборд військового обліку
+                </button>
+            </h2>
+            <div id="p-mil-dashboard" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Де:</strong> Навчальний процес → «Військовий облік (Додаток 5)».<br>
+                    <strong>Право:</strong> <code>manage_military_reports</code>.<br><br>
+                    На дашборді:
+                    <ul>
+                        <li>лічильники за категоріями Додатка 5: офіцери, рядові/сержанти, жінки, призовники;</li>
+                        <li>окремо — виключені за віком, відраховані в поточному році, мобілізовані;</li>
+                        <li>блок <strong>«Потребують уваги»</strong> — без military, без ТЦК, без ВОС, без статі, без категорії, <strong>без наказу про зарахування</strong>;</li>
+                        <li>розділ <strong>«Додатково»</strong> — Додаток 12, Додаток 4, довідник ТЦК.</li>
+                    </ul>
+                    У списки потрапляють лише <strong>не заархівовані</strong> студенти з записом у таблиці <code>military</code>.
+                    Заморожені за замовчуванням не входять у звіт.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-categories">
+                    <i class="bi bi-people me-2"></i>Категорії Додатка 5
+                </button>
+            </h2>
+            <div id="p-mil-categories" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Пріоритет визначення категорії:
+                    <ol>
+                        <li><strong>Призовник</strong> — за <code>status_badge</code>;</li>
+                        <li><strong>Жінка</strong> — за статтю (окремий список у постанові);</li>
+                        <li><strong>category_override</strong> у картці (явне «офіцер» / «рядовий»);</li>
+                        <li>автоматично за <strong>військовим званням</strong>.</li>
+                    </ol>
+                    Не входять у 4 групи: статуси «Невійськовозобов'язаний», «Знято з обліку»;
+                    окремі позначки графи 18 (виключений за віком, відрахований, мобілізований) —
+                    не в основний Додаток 5, але враховуються на дашборді / у Додатку 12.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-date">
+                    <i class="bi bi-calendar-date me-2"></i>Дата складання звіту
+                </button>
+            </h2>
+            <div id="p-mil-date" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    На списку категорії:
+                    <ul>
+                        <li><strong>Щорічний</strong> — станом на 01 січня (типова здача до 25 січня);</li>
+                        <li><strong>На сьогодні</strong> — поточна дата;</li>
+                        <li><strong>Довільна</strong> — будь-яка дата ДД.ММ.РРРР.</li>
+                    </ul>
+                    Дата впливає на відбір «<strong>хто вже мав бути на навчанні</strong>»:
+                    <ul>
+                        <li>є <strong>наказ про зарахування</strong> → дата наказу ≤ дата складання;</li>
+                        <li>немає наказу → умовна дата <strong>1 вересня</strong> року набору групи.</li>
+                    </ul>
+                    Тому студент групи 2025 при даті 01.01.2024 у звіт <strong>не</strong> потрапить.
+                    Після зміни дати список на екрані треба <strong>перезавантажити</strong>
+                    (радіокнопка щорічний/сьогодні або Enter у полі довільної дати).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-export5">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Експорт Додатка 5 (.xlsx)
+                </button>
+            </h2>
+            <div id="p-mil-export5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Кнопка «Згенерувати .xlsx» на сторінці категорії.
+                    У файл потрапляють ті самі фільтри, що на екрані:
+                    <ul>
+                        <li>дата складання;</li>
+                        <li>ліцензія (базова або «всі ліцензії»);</li>
+                        <li><strong>ТЦК</strong> — якщо в селекті обрано конкретний ТЦК;
+                            якщо «Всі ТЦК» — повний список категорії (для подальшої
+                            ручної розкладки поштою по установах).</li>
+                    </ul>
+                    Ім’я файлу містить категорію, дату і (за потреби) фрагмент назви ТЦК.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d12">
+                    <i class="bi bi-bar-chart me-2"></i>Додаток 12 — відомість оперативного обліку
+                </button>
+            </h2>
+            <div id="p-mil-d12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Де:</strong> Дашборд → Додатково → Додаток 12.<br>
+                    Агреговані рядки за категоріями. Колонка
+                    <em>«З 1 січня … зараховано»</em> рахує лише студентів
+                    з <strong>наказом про зарахування</strong> у відповідному році
+                    (без «підміни» роком набору групи).
+                    Колонка <em>«відраховано»</em> — з наказів типу відрахування в моделі
+                    <code>orders</code> за датою наказу в цьому році.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d4">
+                    <i class="bi bi-file-earmark-ruled me-2"></i>Додаток 4 — зміна облікових даних
+                </button>
+            </h2>
+            <div id="p-mil-d4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Де:</strong> Дашборд → Додатково → Додаток 4.<br>
+                    Офіційне <strong>повідомлення в ТЦК</strong> про зміну облікових даних
+                    (один Excel-файл на одного студента за шаблоном).
+                    <br><br>
+                    <strong>Поля форми ← картка студента / military:</strong>
+                    <ul>
+                        <li>ПІБ, дата народження, РНКОПП (ІПН);</li>
+                        <li>реєстраційний номер, ВОД, ВОС, звання;</li>
+                        <li>«Зміна облікових даних», «Підстава»;</li>
+                        <li>ТЦК, адреса проживання.</li>
+                    </ul>
+                    <strong>Статуси списку:</strong>
+                    <ul>
+                        <li><em>Потребують друку</em> — ще не генерували або дані змінились після останньої генерації;</li>
+                        <li><em>Актуальні</em> — файл уже згенеровано і з тих пір поля не змінювались;</li>
+                        <li><em>Усі</em> — увесь контингент з military.</li>
+                    </ul>
+                    Після завантаження Excel система зберігає «відбиток» полів.
+                    Якщо щось змінилось — студент знову в «Потрібен друк», і видно
+                    <strong>що саме</strong> (було → стало).
+                    Шаблон файлу: <code>static/example_excel/Додаток 4.xlsx</code>
+                    (або <code>dodatok_4.xlsx</code>).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-tck">
+                    <i class="bi bi-building me-2"></i>Довідник ТЦК
+                </button>
+            </h2>
+            <div id="p-mil-tck" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <strong>Де:</strong> Дашборд → Додатково → Довідник ТЦК.<br>
+                    <strong>Право входу:</strong> те саме <code>manage_military_reports</code>.
+                    <br><br>
+                    <strong>Адміністратор:</strong> повне керування — додавання, редагування,
+                    деактивація, видалення (якщо нікого не прив’язано), підтягування
+                    «невідомих» назв з карток студентів.
+                    <br><br>
+                    <strong>Користувач лише з військовим обліком (не адмін):</strong>
+                    <ul>
+                        <li>бачить <strong>тільки ті ТЦК, до яких реально прив’язані студенти</strong>
+                            (є кого вести / звіряти);</li>
+                        <li><strong>не</strong> редагує довідник (кнопки додати / змінити / видалити приховані);</li>
+                        <li>може відкрити список студентів цього ТЦК (для звірки).</li>
+                    </ul>
+                    Назви ТЦК в обліку мають збігатися з довідником — інакше
+                    фільтри й експорт по ТЦК працюють гірше; «невідомі» назви
+                    закриває адміністратор.
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-orders">
+                    <i class="bi bi-journal-text me-2"></i>Накази й військовий облік
+                </button>
+            </h2>
+            <div id="p-mil-orders" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    Єдина модель наказів (<code>orders</code>):
+                    зарахування, переведення на курс, відрахування, випуск.
+                    <ul>
+                        <li>без наказу про <strong>зарахування</strong> — студент у «Потребують уваги»
+                            і не потрапляє в «зараховано з 1 січня» Додатка 12;</li>
+                        <li>дата наказу про зарахування бере участь у відборі
+                            «станом на дату» для Додатка 5;</li>
+                        <li>накази видно в реєстрі <code>/admin/orders</code>
+                            і в блоці «Накази» на картці студента.</li>
+                    </ul>
+                    Детальніше — також у розділі FAQ «Накази» (якщо доданий раніше).
+                </div>
+            </div>
+        </div>
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-rights">
+                    <i class="bi bi-key me-2"></i>Права доступу
+                </button>
+            </h2>
+            <div id="p-mil-rights" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body small">
+                    <table class="table table-sm">
+                        <thead><tr><th>Право</th><th>Що дає</th></tr></thead>
+                        <tbody>
+                            <tr>
+                                <td><code>manage_military_reports</code></td>
+                                <td>Дашборд, списки, експорт Додатків 5/12/4,
+                                    перегляд довідника ТЦК (лише ТЦК зі студентами)</td>
+                            </tr>
+                            <tr>
+                                <td><code>is_admin</code></td>
+                                <td>Усе вище + повне редагування довідника ТЦК</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    Для співробітника, який лише готує розсилку в ТЦК, достатньо
+                    <code>manage_military_reports</code> без прав адміністратора.
+                </div>
+            </div>
+        </div>
+{% endif %}
 {% endblock %}
