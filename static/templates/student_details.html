@@ -580,79 +580,79 @@
                     </div>
                 </div>
 
-                <!-- Накази -->
-                <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
-                    <h2 class="accordion-header">
-                        <button class="accordion-button collapsed" type="button"
-                                data-bs-toggle="collapse" data-bs-target="#ordersCollapse">
-                            <i class="bi bi-file-earmark-text me-3 fs-4" style="color: var(--brass);"></i>
-                            <span class="flex-grow-1 text-start">
-                                Накази
-                                {% if student_orders %}
-                                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-2">
-                                    {{ student_orders|length }}
-                                </span>
-                                {% endif %}
-                            </span>
-                        </button>
-                    </h2>
-                    <div id="ordersCollapse" class="accordion-collapse collapse"
-                         data-bs-parent="#studentDetailsAccordion">
-                        <div class="accordion-body">
-                            {% if student_orders %}
-                            <div class="list-group list-group-flush">
-                                {% for o in student_orders %}
-                                <div class="list-group-item px-0 py-3">
-                                    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
-                                        <div>
-                                            <div class="fw-semibold">
-                                                <span class="text-muted font-monospace me-2">{{ o.order_date }}</span>
-                                                {{ o.type_label or o.order_type }}
-                                                <span class="text-muted">№ {{ o.order_number }}</span>
-                                            </div>
-                                            {% set p = o.payload or {} %}
-                                            <div class="small text-muted mt-1">
-                                                {% if o.order_type == 'course_transfer' and p.get('course_from') is not none %}
-                                                    курс {{ p.get('course_from') }} → {{ p.get('course_to') }}
-                                                {% elif o.order_type == 'expulsion' and p.get('reason') %}
-                                                    {{ p.get('reason') }}
-                                                {% elif o.order_type == 'enrollment' %}
-                                                    зарахування на навчання
-                                                {% elif o.order_type == 'license_transfer' %}
-                                                    зміна ліцензії
-                                                {% elif o.notes %}
-                                                    {{ o.notes }}
-                                                {% endif %}
-                                            </div>
-                                            {% if o.created_by %}
-                                            <div class="small text-muted">створив: {{ o.created_by }}</div>
-                                            {% endif %}
-                                        </div>
-                                        <div class="d-flex gap-1 flex-wrap">
-                                            {% for a in o.attachments or [] %}
-                                            <a href="{{ url_for('static', filename=a.file_path) }}"
-                                               class="btn btn-sm btn-outline-secondary"
-                                               target="_blank" rel="noopener"
-                                               title="{{ a.original_name or 'Скан' }}">
-                                                <i class="bi bi-paperclip"></i>
-                                            </a>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                </div>
-                                {% endfor %}
-                            </div>
-                            {% else %}
-                            <p class="text-muted text-center py-4 mb-0">
-                                Наказів немає
-                                <span class="d-block small mt-2">
-                                    <a href="{{ url_for('admin.enrollment_order') }}">Оформити наказ про зарахування</a>
-                                </span>
-                            </p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
+				<!-- Накази -->
+				<div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
+					<h2 class="accordion-header">
+						<button class="accordion-button collapsed" type="button"
+								data-bs-toggle="collapse" data-bs-target="#ordersCollapse">
+							<i class="bi bi-file-earmark-text me-3 fs-4" style="color: var(--brass);"></i>
+							<span class="flex-grow-1 text-start">
+								Накази
+								{% if student_orders %}
+								<span class="badge bg-secondary-subtle text-secondary-emphasis ms-2">
+									{{ student_orders|length }}
+								</span>
+								{% endif %}
+							</span>
+						</button>
+					</h2>
+					<div id="ordersCollapse" class="accordion-collapse collapse"
+						 data-bs-parent="#studentDetailsAccordion">
+						<div class="accordion-body">
+							{% if student_orders %}
+							<div class="list-group list-group-flush">
+								{% for o in student_orders %}
+								{# payload_text формується на сервері (routes/orders_service.py::format_payload):
+								   для відрахування - "з групи X (рік, форма); причина",
+								   для зарахування - "у групу X (рік, форма)",
+								   для переведення на курс - "курс A → B",
+								   для зміни ліцензії - "ліцензія A → B". #}
+								{% set details = (o.payload_text or '').strip() %}
+								{% if not details and o.notes %}
+									{% set details = o.notes %}
+								{% endif %}
+								<div class="list-group-item px-0 py-3">
+									<div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+										<div>
+											<div class="fw-semibold">
+												<span class="text-muted font-monospace me-2">{{ o.order_date }}</span>
+												{{ o.type_label or o.order_type }}
+												<span class="text-muted">№ {{ o.order_number }}</span>
+											</div>
+											{% if details %}
+											<div class="small text-muted mt-1">
+												<i class="bi bi-arrow-return-right me-1"></i>{{ details }}
+											</div>
+											{% endif %}
+											{% if o.created_by %}
+											<div class="small text-muted">створив: {{ o.created_by }}</div>
+											{% endif %}
+										</div>
+										<div class="d-flex gap-1 flex-wrap">
+											{% for a in o.attachments or [] %}
+											<a href="{{ url_for('static', filename=a.file_path) }}"
+											   class="btn btn-sm btn-outline-secondary"
+											   target="_blank" rel="noopener"
+											   title="{{ a.original_name or 'Скан' }}">
+												<i class="bi bi-paperclip"></i>
+											</a>
+											{% endfor %}
+										</div>
+									</div>
+								</div>
+								{% endfor %}
+							</div>
+							{% else %}
+							<p class="text-muted text-center py-4 mb-0">
+								Наказів немає
+								<span class="d-block small mt-2">
+									<a href="{{ url_for('admin.enrollment_order') }}">Оформити наказ про зарахування</a>
+								</span>
+							</p>
+							{% endif %}
+						</div>
+					</div>
+				</div>
 
                 <!-- Оцінки по всіх групах (вкладки) -->
 				{% if groups_data %}

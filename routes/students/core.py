@@ -18,6 +18,8 @@ from routes.utils import (
 )
 from routes.gen_docx import gen_doc
 from routes import office_editor
+from routes.utils import get_templates_with_metadata
+from routes.students.grades import _groups_for_student, _user_can_access_student
 from routes.config import PUBLIC_APPLY_BASE_URL
 from routes.gender import detect_gender_from_middle_name
 from datetime import datetime, timedelta
@@ -1640,82 +1642,164 @@ def generate_update_link(student_id):
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
 def generate(student_id):
-    """Генерує .docx-документ для одного студента за обраним шаблоном."""
-    if request.method == 'POST':
-        selected_template = request.form.get('template', 'template.docx')
+    """Генерація .docx-документа для одного студента за обраним шаблоном.
 
-        allowed_paths = {t['path'] for t in get_templates_with_metadata(is_admin=session.get('is_admin', False))}
-        if selected_template not in allowed_paths:
-            flash("У вас немає прав для генерації цього документа", "danger")
-            return redirect(url_for('students.student_list'))
+    2-кроковий сценарій для паралельного навчання:
+      1. Якщо груп декілька — вибір групи (group_id не вказано).
+      2. Після вибору — форма з шаблоном; генерація з даними обраної
+         групи (предмети, практики, кредити, освітня програма тощо).
+    Якщо група одна — форма з шаблоном одразу.
 
-        conn = get_db()
-        conn.row_factory = sqlite3.Row
-        student = conn.execute("""
-            SELECT s.*,
-                   g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
-                   g.start_year, g.study_form, g.program_credits,
-                   g.qualification_name, g.degree_level, g.specialty,
-                   g.educational_program, g.knowledge_area,
-                   g.qualification_name_en, g.degree_level_en,
-                   g.entry_requirements, g.entry_requirements_en,
-                   g.learning_outcomes, g.learning_outcomes_en,
-                   g.program_includes, g.program_includes_en,
-                   g.entry_requirements_reduced, g.entry_requirements_reduced_en,
-                   g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
-                   g.program_includes_reduced, g.program_includes_reduced_en,
-                   g.specialty_en, g.isced_f_ua, g.isced_f_en, g.educational_program_en, g.knowledge_area_en,
-                   il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
-                   il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
-                   m.registration_number_of_the_DRPVR, m.military_registration_document,
-                   m.issued_VOD, m.military_accounting_specialty_number, m.military_rank,
-                   m.change_credentials, m.reason_for_changing_credentials,
-                   m.being_on_military_registration, m.address_of_residence
-            FROM students s
-            LEFT JOIN groups g ON s.group_id = g.id
-            LEFT JOIN institution_licenses il ON s.license_id = il.id
-            LEFT JOIN military m ON s.id = m.student_id
-            WHERE s.id = ?
-        """, (student_id,)).fetchone()
-        military = conn.execute("SELECT * FROM military WHERE student_id=?", (student_id,)).fetchone()
+    ВАЖЛИВО: student_dict['group_id'] перезаписується на вибрану
+    групу перед викликом gen_doc() — саме звідти gen_doc бере
+    subjects/practices/courseworks/attestations.
+    """
+    conn = get_db()
+
+    student_basic = conn.execute(
+        "SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id "
+        "FROM students WHERE id = ?",
+        (student_id,)
+    ).fetchone()
+
+    if not student_basic:
         conn.close()
+        flash("Студента не знайдено", "error")
+        return redirect(url_for('students.student_list'))
 
-        if not student:
-            flash("Студента не знайдено")
-            return redirect(url_for('students.student_list'))
+    student_groups = _groups_for_student(conn, student_id)
 
-        student_dict = dict(student)
-        required_fields = ['last_name_UA', 'first_name_UA', 'id', 'group_id']
-        if not all(key in student_dict for key in required_fields):
-            logger.error(f"Неповні дані студента ID {student_id}: {student_dict}")
-            flash("Дані студента неповні (відсутні необхідні поля)")
-            return redirect(url_for('students.student_list'))
+    if not _user_can_access_student(session, student_groups, student_basic['group_id']):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
+        return redirect(url_for('students.student_list'))
 
-        military_dict = dict(military) if military else {}
-        student_name_part = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}".replace(" ", "_")
-        output_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
+    # ── Визначаємо обрану групу ────────────────────────────────
+    if request.method == 'POST':
+        selected_group_id = request.form.get('group_id', type=int)
+    else:
+        selected_group_id = request.args.get('group_id', type=int)
 
-        try:
-            gen_doc(student_dict, military_dict, template=selected_template, out=output_path,
-                    user_name=current_username())
-        except Exception as e:
-            logger.error(f"Помилка при генерації документа для студента ID {student_id}: {str(e)}")
-            flash(f"Помилка при генерації документа: {str(e)}")
-            return redirect(url_for('students.student_list'))
+    if not selected_group_id and len(student_groups) == 1:
+        selected_group_id = student_groups[0]['id']
 
-        log_action(
-            current_username(),
-            f"згенерував документ: {student_dict['last_name_UA']} {student_dict['first_name_UA']} (ID {student_id})",
-            group_ids=[student_dict['group_id']],
-            details=f"шаблон: {selected_template}"
+    if len(student_groups) > 1 and not selected_group_id:
+        conn.close()
+        return render_template(
+            'generate_word.html',
+            student=student_basic,
+            student_groups=student_groups,
+            selected_group=None,
+            is_choice_view=True,
+            available_templates=[],
         )
 
-        display_name = f"{student_name_part}.docx"
-        doc_id = office_editor.create_editing_session(output_path, display_name, session['user_id'])
-        return redirect(url_for('office.edit', doc_id=doc_id))
+    selected_group = next(
+        (g for g in student_groups if g['id'] == selected_group_id), None,
+    )
+    if not selected_group:
+        conn.close()
+        flash("Обрана група не належить студенту", "error")
+        return redirect(url_for('students.generate', student_id=student_id))
 
-    available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))
-    return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
+    gid = selected_group['id']
+
+    # ── Повні дані студента + обрана група + ліцензія ──────────
+    student = conn.execute("""
+        SELECT s.*,
+               g.name || ' (' || g.start_year || ', ' || g.study_form || ', '
+                    || g.program_credits || ' кредитів)' AS group_name,
+               g.study_form, g.start_year, g.program_credits,
+               g.qualification_name, g.degree_level, g.specialty,
+               g.educational_program, g.knowledge_area,
+               g.qualification_name_en, g.degree_level_en, g.specialty_en,
+               g.isced_f_ua, g.isced_f_en,
+               g.educational_program_en, g.knowledge_area_en,
+               il.name_ua  AS institution_name_and_status,
+               il.name_en  AS institution_name_and_status_en,
+               il.short_name_ua AS license_short_name_ua,
+               il.short_name_en AS license_short_name_en,
+               g.entry_requirements,     g.entry_requirements_en,
+               g.learning_outcomes,      g.learning_outcomes_en,
+               g.program_includes,       g.program_includes_en,
+               g.entry_requirements_reduced,     g.entry_requirements_reduced_en,
+               g.learning_outcomes_reduced,      g.learning_outcomes_reduced_en,
+               g.program_includes_reduced,       g.program_includes_reduced_en
+        FROM students s
+        LEFT JOIN groups g ON g.id = ?
+        LEFT JOIN institution_licenses il ON s.license_id = il.id
+        WHERE s.id = ?
+    """, (gid, student_id)).fetchone()
+
+    if not student:
+        conn.close()
+        flash("Не вдалося завантажити дані студента", "error")
+        return redirect(url_for('students.student_list'))
+
+    available_templates = get_templates_with_metadata(
+        is_admin=session.get('is_admin', False),
+    )
+
+    # ── POST: генерація ────────────────────────────────────────
+    if request.method == 'POST':
+        template = (request.form.get('template') or '').strip()
+        allowed_paths = {t['path'] for t in available_templates}
+        if template not in allowed_paths:
+            conn.close()
+            flash("У вас немає прав для генерації документів цим шаблоном", "danger")
+            return redirect(url_for(
+                'students.generate', student_id=student_id, group_id=gid,
+            ))
+
+        military = conn.execute(
+            "SELECT * FROM military WHERE student_id = ?", (student_id,)
+        ).fetchone()
+
+        student_dict = dict(student)
+        # ── Ключовий рядок: підміняємо primary-групу на обрану ──
+        student_dict['group_id'] = gid
+
+        military_dict = dict(military) if military else {}
+
+        display_name = (
+            f"{student['last_name_UA']}_{student['first_name_UA']}.docx"
+            .replace(' ', '_')
+        )
+        full_path = os.path.join(
+            office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx",
+        )
+
+        try:
+            gen_doc(
+                student_dict, military_dict,
+                template=template, out=full_path,
+                user_name=current_username(),
+            )
+            doc_id = office_editor.create_editing_session(
+                full_path, display_name, session['user_id'],
+            )
+            conn.close()
+            return redirect(url_for('office.edit', doc_id=doc_id))
+        except Exception as e:
+            logger.error(
+                f"Помилка генерації документа для студента {student_id}: {e}",
+                exc_info=True,
+            )
+            conn.close()
+            flash(f"Помилка генерації: {e}", "danger")
+            return redirect(url_for(
+                'students.generate', student_id=student_id, group_id=gid,
+            ))
+
+    conn.close()
+    return render_template(
+        'generate_word.html',
+        student=student,
+        student_groups=student_groups,
+        selected_group=selected_group,
+        is_choice_view=False,
+        available_templates=available_templates,
+    )
     
 @students_bp.route('/students/<int:student_id>/enrollments/add', methods=['POST'])
 @permission_required('manage_students')

@@ -1,167 +1,403 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Редагування оцінок: {{ student.last_name_UA }} {{ student.first_name_UA }}{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-star-fill', 'Редагування оцінок з активностей', student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' · ' ~ student.group_name) }}
+{% if is_choice_view %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 1: вибір групи
+       ═══════════════════════════════════════════════════════════ #}
+    {{ ui.page_header(
+        'bi-people-fill',
+        'Оберіть групу',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')
+    ) }}
 
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        Студент навчається паралельно у кількох групах. Оберіть, з якої групи
+        редагувати оцінки — предмети й активності в кожній групі свої.
+    </div>
+
+    <div class="group-select-list">
+        {% for g in student_groups %}
+        <a href="{{ url_for('students.edit_activities_grades', student_id=student.id, group_id=g.id) }}"
+           class="group-select-card">
+            <div class="group-select-icon">
+                <i class="bi bi-people-fill"></i>
+            </div>
+            <div class="group-select-body">
+                <div class="group-select-name">{{ g.name }}</div>
+                <div class="group-select-meta">
+                    {{ g.start_year }} рік вступу
+                    <span class="group-select-sep">·</span>
+                    {{ g.study_form }}
+                    <span class="group-select-sep">·</span>
+                    {{ g.program_credits }} кредитів
+                </div>
+            </div>
+            <i class="bi bi-chevron-right group-select-arrow"></i>
+        </a>
+        {% endfor %}
+    </div>
+
+{% else %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 2: редагування оцінок обраної групи
+       ═══════════════════════════════════════════════════════════ #}
+
+    {% if student_groups|length > 1 %}
+    <div class="mb-3">
+        <a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Обрати іншу групу
+        </a>
+    </div>
+    {% endif %}
+
+    {{ ui.page_header(
+        'bi-star-fill',
+        'Редагування оцінок з активностей',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' · ' ~ selected_group.name
+    ) }}
+
+    {# ─── Плашка з метаданими групи ─── #}
+    <div class="group-meta-card mb-3">
+        <div class="group-meta-item">
+            <i class="bi bi-people-fill me-1"></i>
+            <strong>{{ selected_group.name }}</strong>
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-calendar3 me-1"></i>{{ selected_group.start_year }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-book me-1"></i>{{ selected_group.study_form }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-award me-1"></i>{{ selected_group.program_credits }} кредитів
+        </div>
+        {% if is_reduced %}
+        <span class="badge text-bg-warning ms-auto"
+              title="Студент вступив з визнанням частини кредитів попереднього диплома">
+            <i class="bi bi-signpost-split me-1"></i>скорочена програма
+        </span>
+        {% endif %}
+    </div>
+
+    {% if not practices and not courseworks and not attestations %}
+        {{ ui.empty_state(
+            'bi-journal-x',
+            'У цій групі немає практик, курсових чи атестацій',
+            'Немає що редагувати — зверніться до адміністратора'
+        ) }}
+    {% else %}
     <form method="POST">
-    <div class="card">
-        <div class="card-body">
-        <div class="accordion" id="activitiesAccordion">
-            <!-- Практики -->
-            <div class="accordion-item">
-                <h2 class="accordion-header" id="practicesHeading">
-                    <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#practicesCollapse" aria-expanded="true" aria-controls="practicesCollapse">
-                        Практики
-                    </button>
-                </h2>
-                <div id="practicesCollapse" class="accordion-collapse collapse show" aria-labelledby="practicesHeading">
-                    <div class="accordion-body">
-                        {% if practices %}
-                            <div class="table-responsive"><table class="table table-bordered table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Код</th>
-                                        <th>Назва</th>
-                                        <th>Кредити</th>
-                                        <th>Тип</th>
-                                        <th>Оцінка</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for practice in practices %}
-                                        <tr>
-                                            <td>{{ practice.code | default('-') }}</td>
-                                            <td>{{ practice.name | default('-') }}</td>
-                                            <td>{{ practice.credits | default('-') }}</td>
-                                            <td>{{ practice.type | default('-') }}</td>
-                                            <td>
-                                                <input type="number" name="grade_practice_{{ practice.id }}" class="form-control" value="{{ grade_map.get((practice.id, 'practice'), {}).get('grade', '') }}" min="0" max="100">
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table></div>
-                        {% else %}
-                            <p class="text-muted">Практики відсутні</p>
-                        {% endif %}
-                    </div>
-                </div>
+        <input type="hidden" name="group_id" value="{{ selected_group.id }}">
+
+        {# ─── Практики ─── #}
+        {% if practices %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-briefcase me-2"></i>Практики</h6>
             </div>
-            <!-- Курсові роботи -->
-            <div class="accordion-item">
-                <h2 class="accordion-header" id="courseworksHeading">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#courseworksCollapse" aria-expanded="false" aria-controls="courseworksCollapse">
-                        Курсові роботи
-                    </button>
-                </h2>
-                <div id="courseworksCollapse" class="accordion-collapse collapse" aria-labelledby="courseworksHeading">
-                    <div class="accordion-body">
-                        {% if courseworks %}
-                            <div class="table-responsive"><table class="table table-bordered table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Код</th>
-                                        <th>Назва</th>
-                                        <th>Кредити</th>
-                                        <th>Тип</th>
-                                        <th>Оцінка</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for coursework in courseworks %}
-                                        <tr>
-                                            <td>{{ coursework.code | default('-') }}</td>
-                                            <td>{{ coursework.name | default('-') }}</td>
-                                            <td>{{ coursework.credits | default('-') }}</td>
-                                            <td>{{ coursework.type | default('-') }}</td>
-                                            <td>
-                                                <input type="number" name="grade_coursework_{{ coursework.id }}" class="form-control" value="{{ grade_map.get((coursework.id, 'coursework'), {}).get('grade', '') }}" min="0" max="100">
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table></div>
-                        {% else %}
-                            <p class="text-muted">Курсові роботи відсутні</p>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-            <!-- Атестації -->
-            <div class="accordion-item">
-                <h2 class="accordion-header" id="attestationsHeading">
-                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#attestationsCollapse" aria-expanded="false" aria-controls="attestationsCollapse">
-                        Атестації
-                    </button>
-                </h2>
-                <div id="attestationsCollapse" class="accordion-collapse collapse" aria-labelledby="attestationsHeading">
-                    <div class="accordion-body">
-                        {% if attestations %}
-                            <div class="table-responsive"><table class="table table-bordered table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Код</th>
-                                        <th>Назва</th>
-                                        <th>Індивідуальна назва</th>
-                                        <th>Кредити</th>
-                                        <th>Тип</th>
-                                        <th>Оцінка</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for attestation in attestations %}
-                                        <tr>
-                                            <td>{{ attestation.code | default('-') }}</td>
-                                            <td>
-                                                {% if attestation.name and attestation.student_name %}
-                                                    {{ attestation.name }} {{ attestation.student_name }}
-                                                {% elif attestation.name %}
-                                                    {{ attestation.name }}
-                                                {% elif attestation.student_name %}
-                                                    {{ attestation.student_name }}
-                                                {% else %}
-                                                    -
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                <input type="text" name="name_attestation_{{ attestation.id }}" class="form-control" value="{{ grade_map.get((attestation.id, 'attestation'), {}).get('name', '') }}">
-                                            </td>
-                                            <td>{{ attestation.credits | default('-') }}</td>
-                                            <td>{{ attestation.type | default('-') }}</td>
-                                            <td>
-                                                <input type="number" name="grade_attestation_{{ attestation.id }}" class="form-control" value="{{ grade_map.get((attestation.id, 'attestation'), {}).get('grade', '') }}" min="0" max="100">
-                                            </td>
-                                        </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table></div>
-                        {% else %}
-                            <p class="text-muted">Атестації відсутні</p>
-                        {% endif %}
-                    </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table grades-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Код</th>
+                                <th>Назва</th>
+                                <th class="text-center" style="width:90px;">Кредити</th>
+                                <th style="width:110px;">Тип</th>
+                                <th style="width:160px;">Оцінка</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in practices %}
+                            <tr>
+                                <td>{{ p.code or '—' }}</td>
+                                <td>{{ p.name or '—' }}</td>
+                                <td class="text-center">{{ p.credits }}</td>
+                                <td>{{ p.type }}</td>
+                                <td>
+                                    <input type="number"
+                                           name="grade_practice_{{ p.id }}"
+                                           class="form-control form-control-sm grade-input"
+                                           value="{{ grade_map.get((p.id, 'practice'), {}).get('grade', '') }}"
+                                           min="0" max="100"
+                                           placeholder="0–100">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
-        <div class="mt-4">
-            <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
-            <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-2"></i>Назад</a>
+        {% endif %}
+
+        {# ─── Курсові роботи ─── #}
+        {% if courseworks %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-journal-text me-2"></i>Курсові роботи</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table grades-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Код</th>
+                                <th>Назва</th>
+                                <th class="text-center" style="width:90px;">Кредити</th>
+                                <th style="width:110px;">Тип</th>
+                                <th style="width:160px;">Оцінка</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for c in courseworks %}
+                            <tr>
+                                <td>{{ c.code or '—' }}</td>
+                                <td>{{ c.name or '—' }}</td>
+                                <td class="text-center">{{ c.credits }}</td>
+                                <td>{{ c.type }}</td>
+                                <td>
+                                    <input type="number"
+                                           name="grade_coursework_{{ c.id }}"
+                                           class="form-control form-control-sm grade-input"
+                                           value="{{ grade_map.get((c.id, 'coursework'), {}).get('grade', '') }}"
+                                           min="0" max="100"
+                                           placeholder="0–100">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
+        {% endif %}
+
+        {# ─── Атестації ─── #}
+        {% if attestations %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Атестації</h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table grades-table mb-0">
+                        <thead>
+                            <tr>
+                                <th>Код</th>
+                                <th>Назва</th>
+                                <th style="width:190px;">Індивідуальна назва</th>
+                                <th class="text-center" style="width:90px;">Кредити</th>
+                                <th style="width:110px;">Тип</th>
+                                <th style="width:160px;">Оцінка</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for a in attestations %}
+                            <tr>
+                                <td>{{ a.code or '—' }}</td>
+                                <td>
+                                    {% if a.name and a.student_name %}
+                                        {{ a.name }} {{ a.student_name }}
+                                    {% elif a.name %}
+                                        {{ a.name }}
+                                    {% elif a.student_name %}
+                                        {{ a.student_name }}
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <input type="text"
+                                           name="name_attestation_{{ a.id }}"
+                                           class="form-control form-control-sm"
+                                           value="{{ grade_map.get((a.id, 'attestation'), {}).get('name', '') }}"
+                                           placeholder="необов'язково">
+                                </td>
+                                <td class="text-center">{{ a.credits }}</td>
+                                <td>{{ a.type }}</td>
+                                <td>
+                                    <input type="number"
+                                           name="grade_attestation_{{ a.id }}"
+                                           class="form-control form-control-sm grade-input"
+                                           value="{{ grade_map.get((a.id, 'attestation'), {}).get('grade', '') }}"
+                                           min="0" max="100"
+                                           placeholder="0–100">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
+        {% endif %}
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-2"></i>Зберегти оцінки
+            </button>
+            {% if student_groups|length > 1 %}
+            <a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"
+               class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> До вибору групи
+            </a>
+            {% else %}
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Назад
+            </a>
+            {% endif %}
         </div>
     </form>
+    {% endif %}
+{% endif %}
+
 </div>
 
 
 <style>
-    .accordion-button:not(.collapsed) {
-        background-color: var(--paper-2) !important;
-        color: var(--brass) !important;
-    }
-    .accordion-button:focus { box-shadow: none; }
+/* ====================================================================
+   Стилі сторінки — узгоджені зі світлою і темною темами через
+   CSS-змінні, визначені в main.css (:root та html[data-theme="dark"]):
+   --paper, --paper-2, --ink-text, --muted, --line, --brass, --brass-soft,
+   --brass-semi, --heading.
+   ==================================================================== */
+
+/* ─── Таблиця оцінок ─── */
+.grades-table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--ink-text);
+    --bs-table-border-color: var(--line);
+    --bs-table-hover-bg: var(--brass-soft);
+    --bs-table-hover-color: var(--ink-text);
+    color: var(--ink-text);
+    border-color: var(--line);
+    margin-bottom: 0;
+}
+.grades-table > :not(caption) > * > * {
+    background-color: transparent;
+    border-color: var(--line);
+    color: inherit;
+    padding: .6rem .85rem;
+    vertical-align: middle;
+}
+.grades-table thead th {
+    background: var(--paper-2);
+    color: var(--heading, var(--ink-text));
+    font-weight: 600;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    border-bottom: 2px solid var(--line) !important;
+    border-top: none !important;
+    white-space: nowrap;
+}
+.grades-table tbody tr:hover {
+    background-color: var(--brass-soft);
+}
+.grades-table tbody td {
+    font-size: .9rem;
+}
+.grades-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ─── Крок 1: вибір групи ─── */
+.group-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+.group-select-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--ink-text);
+    transition: transform .2s ease, box-shadow .2s ease,
+                background-color .2s ease, border-color .2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+.group-select-card:hover {
+    background: var(--brass-soft);
+    border-color: var(--brass-semi, var(--brass));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
+    color: var(--ink-text);
+}
+.group-select-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brass-soft);
+    color: var(--brass);
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.group-select-body {
+    flex-grow: 1;
+    min-width: 0;
+}
+.group-select-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: .15rem;
+    color: var(--ink-text);
+}
+.group-select-meta {
+    font-size: .82rem;
+    color: var(--muted);
+}
+.group-select-sep {
+    opacity: .5;
+    margin: 0 .3rem;
+}
+.group-select-arrow {
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: transform .2s ease, color .2s ease;
+}
+.group-select-card:hover .group-select-arrow {
+    transform: translateX(3px);
+    color: var(--brass);
+}
+
+/* ─── Крок 2: плашка з метаданими групи ─── */
+.group-meta-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--brass);
+    border-radius: 8px;
+    padding: .85rem 1.15rem;
+    color: var(--ink-text);
+}
+.group-meta-item {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    color: var(--ink-text);
+}
+.group-meta-item.text-muted {
+    color: var(--muted) !important;
+}
 </style>
 
 {% endblock %}

@@ -56,6 +56,58 @@ def _payload_loads(raw: Optional[str]) -> dict:
     except (TypeError, ValueError, json.JSONDecodeError):
         return {}
 
+def format_payload(conn, order_type: str, payload: dict) -> str:
+    """Людиночитабельний опис payload наказу — те, що показується
+    в картці наказу (`/admin/orders/<id>`), у списку наказів студента
+    (`/students/<id>`, блок «Накази») та в реєстрі.
+
+    Для expulsion: «з групи КН-21 (2022, Денна); причина».
+    Для course_transfer: «курс 1 → 2».
+    Для license_transfer: «ліцензія A → B».
+    Для enrollment: «у групу КН-21 (2022, Денна)».
+    Інакше — `key=value, …`.
+    """
+    if not payload:
+        return ''
+    if order_type == 'course_transfer':
+        a, b = payload.get('course_from'), payload.get('course_to')
+        if a is not None and b is not None:
+            return f'курс {a} → {b}'
+    if order_type == 'expulsion':
+        parts = []
+        prev_gid = payload.get('previous_group_id')
+        if prev_gid:
+            row = conn.execute(
+                "SELECT name, start_year, study_form FROM groups WHERE id = ?",
+                (prev_gid,),
+            ).fetchone()
+            if row:
+                parts.append(
+                    f'з групи {row["name"]} ({row["start_year"]}, {row["study_form"]})'
+                )
+            else:
+                parts.append(f'з групи #{prev_gid}')
+        reason = payload.get('reason')
+        if reason:
+            parts.append(str(reason))
+        return '; '.join(parts) if parts else ''
+    if order_type == 'license_transfer':
+        return (
+            f"ліцензія {payload.get('previous_license_id')} → "
+            f"{payload.get('new_license_id')}"
+        )
+    if order_type == 'enrollment' and payload.get('group_id'):
+        row = conn.execute(
+            "SELECT name, start_year, study_form FROM groups WHERE id = ?",
+            (payload['group_id'],),
+        ).fetchone()
+        if row:
+            return f'у групу {row["name"]} ({row["start_year"]}, {row["study_form"]})'
+        return f"група id={payload['group_id']}"
+    if order_type == 'graduation' and payload.get('action'):
+        return str(payload['action'])
+    parts = [f'{k}={v}' for k, v in payload.items() if v is not None and v != '']
+    return ', '.join(parts)
 
 def create_order(
     order_type: str,
@@ -358,6 +410,7 @@ def get_student_orders(student_id: int, conn=None) -> list[dict]:
                 d['order_type'], d['order_type']
             )
             d['payload'] = _payload_loads(d.pop('item_payload', None))
+            d['payload_text'] = format_payload(conn, d['order_type'], d['payload'])
             atts = conn.execute(
                 """
                 SELECT id, file_path, original_name
