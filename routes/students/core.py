@@ -179,6 +179,8 @@ FAQ_SECTION_PERMISSIONS = {
         'import_subjects',
         'import_education_docs',
         'import_grades',
+        'import_military_pdf',
+        'bulk_photos',
     ],
     'bulk': [
         'group_export',
@@ -203,8 +205,47 @@ FAQ_SECTION_PERMISSIONS = {
 }
 
 
+def _refresh_session_permissions():
+    """
+    Підтягує is_admin / permissions з БД у сесію.
+    Потрібно після зміни прав адміном — інакше FAQ і меню
+    показують старий список до повторного входу.
+    """
+    import json
+    user_id = session.get('user_id')
+    if not user_id:
+        return
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT is_admin, role, permissions FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return
+    # sqlite Row or tuple
+    try:
+        is_admin = bool(row['is_admin']) or (row['role'] == 'admin')
+        raw = row['permissions']
+    except (TypeError, KeyError, IndexError):
+        is_admin = bool(row[0]) or (row[1] == 'admin')
+        raw = row[2]
+    try:
+        perms = json.loads(raw or '[]')
+    except Exception:
+        perms = []
+    if not isinstance(perms, list):
+        perms = []
+    session['is_admin'] = is_admin
+    session['permissions'] = perms
+    session.modified = True
+
+
 def _allowed_faq_sections():
-    """Які розділи FAQ доступні поточному користувачу."""
+    """Які розділи FAQ доступні поточному користувачу (з актуальними правами)."""
+    _refresh_session_permissions()
     if session.get('is_admin'):
         return set(FAQ_SECTION_PERMISSIONS.keys())
     perms = set(session.get('permissions') or [])
@@ -218,9 +259,9 @@ def _allowed_faq_sections():
 @students_bp.route('/faq')
 @login_required('')
 def faq():
-    """Довідка (FAQ) — лише розділи за правами користувача."""
+    """Довідка (FAQ) — лише розділи за актуальними правами."""
     sections = _allowed_faq_sections()
-    return render_template('faq.html', faq_sections=_allowed_faq_sections())
+    return render_template('faq.html', faq_sections=sections)
 
 @students_bp.route('/students', methods=['GET'])
 @login_required('')
