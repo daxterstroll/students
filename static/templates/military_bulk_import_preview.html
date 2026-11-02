@@ -17,9 +17,9 @@
 
     <div class="alert alert-light border small">
         <i class="bi bi-info-circle me-1"></i>
-        <strong>Позначені рядки</strong> буде застосовано. Всередині рядка можна
-        <strong>зняти чекбокси з окремих полів</strong>, щоб не перезаписувати їх
-        для цього студента.
+        <strong>Позначені рядки</strong> буде застосовано. У деталях рядка можна
+        <strong>зняти окремі поля</strong> (військові або персональні: дата народження,
+        ІПН, адреса тощо). Кнопки зверху керують усіма полями одразу.
     </div>
 
     <form method="POST" action="{{ url_for('students.military_bulk_import_apply', token=token) }}"
@@ -27,11 +27,15 @@
 
         <div class="card mb-3">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                <div>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">Обрати всі</button>
-                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">Зняти всі</button>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">Обрати всі рядки</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">Зняти всі рядки</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllFields('mil', true)">Усі військові поля</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="toggleAllFields('mil', false)">Жодного військового</button>
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="toggleAllFields('stud', true)">Усі персональні</button>
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="toggleAllFields('stud', false)">Жодного персонального</button>
                 </div>
-                <span class="small text-muted">Позначені рядки буде застосовано</span>
+                <span class="small text-muted">Рядок + окремі поля (військові / персональні)</span>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
@@ -196,10 +200,20 @@
 
 <script>
 function toggleAll(state) {
-    document.querySelectorAll('.apply-checkbox').forEach(cb => cb.checked = state);
+    document.querySelectorAll('.apply-checkbox').forEach(cb => { cb.checked = state; });
 }
 function toggleFields(prefix, state) {
-    document.querySelectorAll('.field-checkbox.' + prefix).forEach(cb => cb.checked = state);
+    document.querySelectorAll('.field-checkbox.' + prefix).forEach(cb => { cb.checked = state; });
+}
+function toggleAllFields(kind, state) {
+    document.querySelectorAll('.field-checkbox').forEach(cb => {
+        const cls = cb.className || '';
+        if (kind === 'mil' && cls.indexOf('mil_') !== -1) cb.checked = state;
+        if (kind === 'stud' && cls.indexOf('stud_') !== -1) cb.checked = state;
+    });
 }
 </script>
 {% endblock %}
+
+
+============================================

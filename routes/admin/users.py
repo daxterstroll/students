@@ -144,34 +144,75 @@ def _parse_log_file(path):
 @admin_bp.route('/admin/view_logs')
 @permission_required('view_logs')
 def view_logs():
-    log_dir = os.path.join(os.getcwd(), 'logs')
-    files = []
-    if os.path.isdir(log_dir):
-        files = sorted(
-            [f for f in os.listdir(log_dir) if f.startswith('app-') and f.endswith('.log')],
-            reverse=True,
-        )
-    chosen = request.args.get('file') or (files[0] if files else None)
-    entries = []
-    if chosen:
-        entries = _parse_log_file(os.path.join(log_dir, chosen))
-        entries = list(reversed(entries[-500:]))
+    """
+    Журнал дій за обраний місяць (logs/app-YYYY-MM.log).
+    """
+    from routes.utils import LOGS_DIR
+    from datetime import date
+
+    month_pattern = re.compile(r'^app-(\d{4}-\d{2})\.log$')
+    available_months = []
+    if os.path.isdir(LOGS_DIR):
+        for fname in os.listdir(LOGS_DIR):
+            m = month_pattern.match(fname)
+            if m:
+                fpath = os.path.join(LOGS_DIR, fname)
+                available_months.append({
+                    'value': m.group(1),
+                    'size_kb': round(os.path.getsize(fpath) / 1024, 1),
+                })
+    available_months.sort(key=lambda x: x['value'], reverse=True)
+
+    current_month = datetime.now().strftime('%Y-%m')
+    selected_month = request.args.get('month', current_month)
+    if not re.match(r'^\d{4}-\d{2}$', selected_month):
+        selected_month = current_month
+
+    parsed_logs = _parse_log_file(
+        os.path.join(LOGS_DIR, f'app-{selected_month}.log')
+    )
+    parsed_logs.reverse()
+    usernames = sorted({e['username'] for e in parsed_logs if e.get('username')})
+
+    recent_errors = []
+    for month_info in available_months[:6]:
+        for entry in _parse_log_file(
+            os.path.join(LOGS_DIR, f"app-{month_info['value']}.log")
+        ):
+            if entry.get('level') == 'ERROR':
+                recent_errors.append({**entry, 'month': month_info['value']})
+    recent_errors.sort(key=lambda e: (e.get('date', ''), e.get('time', '')), reverse=True)
+    recent_errors = recent_errors[:20]
+
+    log_action(current_username(), 'переглянув журнал дій')
+
     return render_template(
         'view_logs.html',
-        log_files=files,
-        chosen_file=chosen,
-        entries=entries,
+        logs=parsed_logs,
+        usernames=usernames,
+        now=date.today().strftime('%Y-%m-%d'),
+        available_months=available_months,
+        selected_month=selected_month,
+        current_month=current_month,
+        recent_errors=recent_errors,
     )
 
 
-@admin_bp.route('/admin/download_log/<path:filename>')
+@admin_bp.route('/admin/download_log')
 @permission_required('view_logs')
-def download_log(filename):
-    path = os.path.join(os.getcwd(), 'logs', filename)
-    if not os.path.isfile(path):
-        flash('Файл не знайдено', 'error')
+def download_log():
+    """Завантажити .log за обраний місяць."""
+    from routes.utils import LOGS_DIR
+    month = request.args.get('month', '')
+    if not re.match(r'^\d{4}-\d{2}$', month):
+        flash('Невірний формат місяця.', 'error')
         return redirect(url_for('admin.view_logs'))
-    return send_file(path, as_attachment=True)
+    fpath = os.path.join(LOGS_DIR, f'app-{month}.log')
+    if not os.path.exists(fpath):
+        flash('Файл логів за цей місяць не знайдено.', 'error')
+        return redirect(url_for('admin.view_logs'))
+    log_action(current_username(), f'завантажив лог за {month}')
+    return send_file(fpath, as_attachment=True, download_name=f'app-{month}.log')
 
 
 @admin_bp.route('/admin/users')
