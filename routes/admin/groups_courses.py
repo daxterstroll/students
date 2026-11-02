@@ -1197,11 +1197,17 @@ def graduation_confirm():
             if r['id'] not in excluded_set:
                 graduated_student_ids.append(r['id'])
 
-        conn.execute("UPDATE groups SET archived = TRUE WHERE id = ?", (group_id,))
-        conn.execute(
-            "UPDATE students SET archived = TRUE WHERE group_id = ?",
+        # Завершуємо навчання в ЦІЙ групі для кожного студента
+        from routes.enrollments_service import end_enrollment
+        remaining_students = conn.execute(
+            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
             (group_id,),
-        )
+        ).fetchall()
+        for r in remaining_students:
+            if r['id'] not in excluded_set:
+                end_enrollment(r['id'], group_id, status='graduated', conn=conn)
+
+        conn.execute("UPDATE groups SET archived = TRUE WHERE id = ?", (group_id,))
         graduated_names.append(group['name'])
 
     order_id = None
@@ -1532,7 +1538,7 @@ def archive():
     groups = conn.execute("""
         SELECT g.id, g.name, g.start_year, g.study_form, g.program_credits, g.degree_level,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS display_name,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id AND s.archived = TRUE) AS student_count
+               (SELECT COUNT(*) FROM student_enrollments e WHERE e.group_id = g.id) AS student_count
         FROM groups g WHERE g.archived = TRUE ORDER BY g.start_year DESC, g.degree_level, g.name
     """).fetchall()
     groups = [dict(g) for g in groups]
@@ -1566,9 +1572,20 @@ def archive():
 
     students_by_group = {}
     for group in groups:
+        # Усі, хто колись мав enrollment у цій групі, зі своїм фінальним статусом
         students = conn.execute("""
-            SELECT id, last_name_UA, first_name_UA, birth_date, program_credits_override
-            FROM students WHERE group_id=? AND archived=TRUE ORDER BY last_name_UA
+            SELECT s.id, s.last_name_UA, s.first_name_UA, s.birth_date,
+                   s.program_credits_override,
+                   e.status AS enrollment_status,
+                   e.created_at AS enrolled_at,
+                   o.order_number AS end_order_number,
+                   o.order_date   AS end_order_date
+            FROM student_enrollments e
+            JOIN students s ON s.id = e.student_id
+            LEFT JOIN orders o
+                   ON o.id = e.order_id AND o.status = 'active'
+            WHERE e.group_id = ?
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
         """, (group['id'],)).fetchall()
         students_by_group[group['id']] = students
         # Скорочена програма - те саме порівняння, що й

@@ -941,6 +941,70 @@ def add_student():
         first_name_ua = request.form['first_name_UA']
         middle_name_ua = request.form.get('middle_name_UA', '')
         last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
+                # ── Перевірка: чи ця людина вже є в системі (активна чи архівна)? ──
+        tax_id_form = (request.form.get('tax_id') or '').strip() or None
+        existing = None
+        if tax_id_form:
+            existing = conn.execute(
+                "SELECT id, archived FROM students WHERE tax_id = ?",
+                (tax_id_form,),
+            ).fetchone()
+        if not existing:
+            existing = conn.execute("""
+                SELECT id, archived FROM students
+                WHERE LOWER_UA(last_name_UA) = LOWER_UA(?)
+                  AND LOWER_UA(first_name_UA) = LOWER_UA(?)
+                  AND LOWER_UA(COALESCE(middle_name_UA, '')) = LOWER_UA(?)
+                  AND birth_date = ?
+            """, (last_name_ua, first_name_ua, middle_name_ua, birth_date)).fetchone()
+
+        if existing:
+            existing_id = existing['id']
+            # Перевіряємо, чи вже є active enrollment у цій групі
+            already_in_group = conn.execute("""
+                SELECT 1 FROM student_enrollments
+                WHERE student_id = ? AND group_id = ? AND status = 'active'
+            """, (existing_id, group_int)).fetchone()
+
+            if already_in_group:
+                flash(
+                    f"Студент {last_name_ua} {first_name_ua} уже навчається в цій групі.",
+                    "warning",
+                )
+                conn.close()
+                return redirect(url_for('students.student_details', student_id=existing_id))
+
+            # Реактивуємо enrollment і знімаємо з архіву
+            add_enrollment(existing_id, group_int, is_primary=True, conn=conn)
+            conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (existing_id,))
+            # Оновлюємо змінені поля, які прийшли з форми (ПІБ/телефон/email тощо)
+            conn.execute("""
+                UPDATE students SET
+                    last_name_UA=?, first_name_UA=?, middle_name_UA=?,
+                    last_name_ENG=?, first_name_ENG=?, birth_date=?,
+                    edebo_code=?, tax_id=?, license_id=?,
+                    phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
+                WHERE id=?
+            """, (last_name_ua, first_name_ua, middle_name_ua,
+                  last_name_eng, first_name_eng, birth_date,
+                  request.form.get('edebo_code'), tax_id_form, license_id,
+                  phone, phone_backup, email, address_of_residence, gender,
+                  existing_id))
+            conn.commit()
+
+            log_action(
+                current_username(),
+                f"повторно зарахував раніше архівного студента: "
+                f"{last_name_ua} {first_name_ua} (ID {existing_id}) → група {group_int}",
+                group_ids=[group_int],
+            )
+            conn.close()
+            flash(
+                f"Студент {last_name_ua} {first_name_ua} вже був у системі — "
+                f"додано нове навчання в обраній групі.",
+                "success",
+            )
+            return redirect(url_for('students.student_details', student_id=existing_id))
 
         # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
         gender_form = (request.form.get('gender') or 'auto').strip()

@@ -222,6 +222,15 @@ def add_enrollment(
                 (group_id, student_id),
             )
 
+        # ── Якщо в студента є хоч один active enrollment — знімаємо з архіву ──
+        # (стосується випадку, коли студента "випустили", а потім зарахували знову)
+        conn.execute("""
+            UPDATE students SET archived = FALSE
+            WHERE id = ? AND archived = TRUE
+              AND EXISTS (SELECT 1 FROM student_enrollments
+                          WHERE student_id = ? AND status = 'active')
+        """, (student_id, student_id))
+
         if own:
             conn.commit()
         return True, 'Навчання додано'
@@ -321,6 +330,14 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
                     "UPDATE students SET group_id = NULL WHERE id = ?",
                     (student_id,),
                 )
+
+        # ── Якщо більше немає active enrollment'ів — архівуємо студента ──
+        conn.execute("""
+            UPDATE students SET archived = TRUE
+            WHERE id = ? AND archived = FALSE
+              AND NOT EXISTS (SELECT 1 FROM student_enrollments
+                              WHERE student_id = ? AND status = 'active')
+        """, (student_id, student_id))
 
         if own:
             conn.commit()

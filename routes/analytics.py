@@ -118,8 +118,22 @@ def dashboard():
     # заповненість, оцінки тощо) - так само, як архівні студенти/групи
     # виключаються за замовчуванням. Показуються лише коли галочку
     # "Враховувати заморожених студентів" увімкнено.
-    frozen_exclude_cond = "" if include_frozen else \
-        "AND NOT EXISTS (SELECT 1 FROM frozen_students fz WHERE fz.student_id = s.id AND fz.resolved_at IS NULL)"
+        # Виключаємо студента зі статистики, лише якщо ВІН ЗАМОРОЖЕНИЙ ПОВНІСТЮ:
+    #   1. є активний frozen_students запис
+    #   2. І немає жодного активного student_enrollments (тобто він ніде не вчиться).
+    # Для паралельника, замороженого з однієї групи, але активного в іншій -
+    # він лишається в статистиці (він реально навчається).
+    if include_frozen:
+        frozen_exclude_cond = ""
+    else:
+        frozen_exclude_cond = """
+            AND NOT (
+                EXISTS (SELECT 1 FROM frozen_students fz
+                        WHERE fz.student_id = s.id AND fz.resolved_at IS NULL)
+                AND NOT EXISTS (SELECT 1 FROM student_enrollments se
+                                WHERE se.student_id = s.id AND se.status = 'active')
+            )
+        """
     student_archived_cond = ("" if include_archived else "AND COALESCE(s.archived,0)=0") + " " + frozen_exclude_cond
     group_archived_cond = "" if include_archived else "AND COALESCE(g.archived,0)=0"
 
@@ -155,11 +169,15 @@ def dashboard():
     """, group_where_params).fetchall()]
     groups_by_id = {g['id']: g for g in groups_full}
 
-    # ================= Студенти по групах / формах / ступенях =================
+    # Кількість студентів у групі - через student_enrollments (паралельне навчання):
+    # студент, який навчається у двох групах, рахується ОДИН РАЗ у кожній,
+    # а не тільки у своїй primary.
     students_per_group = conn.execute(f"""
         SELECT g.id, g.name, g.start_year, g.study_form, COALESCE(g.archived,0) AS archived,
-               COUNT(s.id) FILTER (WHERE 1=1 {student_archived_cond}) AS cnt
-        FROM groups g LEFT JOIN students s ON s.group_id = g.id
+               COUNT(DISTINCT s.id) FILTER (WHERE 1=1 {student_archived_cond}) AS cnt
+        FROM groups g
+        LEFT JOIN student_enrollments e ON e.group_id = g.id AND e.status = 'active'
+        LEFT JOIN students s ON s.id = e.student_id
         {group_where}
         GROUP BY g.id ORDER BY cnt DESC
     """, group_where_params).fetchall()
@@ -205,8 +223,13 @@ def dashboard():
 
     # Список студентів для випадаючого списку "Якість оцінок конкретного студента"
     student_options = conn.execute(f"""
-        SELECT s.id, s.last_name_UA || ' ' || s.first_name_UA || ' ' || COALESCE(s.middle_name_UA,'') AS full_name,
-               g.name AS group_name
+        SELECT s.id,
+               s.last_name_UA || ' ' || s.first_name_UA || ' ' || COALESCE(s.middle_name_UA,'') AS full_name,
+               g.name AS group_name,
+               (SELECT GROUP_CONCAT(g2.name, ' | ')
+                FROM student_enrollments e2
+                JOIN groups g2 ON g2.id = e2.group_id
+                WHERE e2.student_id = s.id AND e2.status = 'active') AS all_groups
         FROM students s JOIN groups g ON g.id = s.group_id
         WHERE 1=1 {student_archived_cond} {group_archived_cond} {scope_clause}
         ORDER BY g.name, s.last_name_UA
@@ -256,17 +279,17 @@ def dashboard():
         # для кожного типу, як і в students.py.
         queries = {
             'practice': f"""
-                SELECT ag.student_id, 'practice' AS entity_type, ag.grade, p.code, p.name
+                SELECT ag.student_id, 'practice' AS entity_type, ag.grade, p.code, p.name, p.group_id
                 FROM activity_grades ag JOIN practices p ON p.id = ag.entity_id
                 WHERE ag.entity_type='practice' AND ag.student_id IN ({placeholders})
             """,
             'coursework': f"""
-                SELECT ag.student_id, 'coursework' AS entity_type, ag.grade, c.code, c.name
+                SELECT ag.student_id, 'coursework' AS entity_type, ag.grade, c.code, c.name, c.group_id
                 FROM activity_grades ag JOIN courseworks c ON c.id = ag.entity_id
                 WHERE ag.entity_type='coursework' AND ag.student_id IN ({placeholders})
             """,
             'attestation': f"""
-                SELECT ag.student_id, 'attestation' AS entity_type, ag.grade, a.code, a.name, ag.name AS thesis_title
+                SELECT ag.student_id, 'attestation' AS entity_type, ag.grade, a.code, a.name, a.group_id, ag.name AS thesis_title
                 FROM activity_grades ag JOIN attestations a ON a.id = ag.entity_id
                 WHERE ag.entity_type='attestation' AND ag.student_id IN ({placeholders})
             """,
@@ -314,8 +337,12 @@ def dashboard():
     diploma_by_student = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
-        for row in conn.execute(f"SELECT student_id, diploma_number, appendix_number FROM diplomas WHERE student_id IN ({placeholders})", student_ids):
-            diploma_by_student[row['student_id']] = dict(row)
+        for row in conn.execute(f"""
+            SELECT student_id, diploma_number, appendix_number
+            FROM diplomas WHERE student_id IN ({placeholders})
+            ORDER BY id DESC
+        """, student_ids):
+            diploma_by_student.setdefault(row['student_id'], dict(row))
 
     # ================= Обчислення заповненості по кожному студенту (+ по групах окремо) =================
     personal_pcts, military_pcts, grades_pcts, activities_pcts = [], [], [], []
@@ -328,6 +355,14 @@ def dashboard():
     at_risk_students = []  # один запис на студента: {'student','group','count','worst_letter','details'}
 
     per_group_stats = {}  # group_id -> {'personal': [...], 'grades': [...], ...}
+    active_enrollment_group_ids = {}
+    if student_ids:
+        placeholders = ','.join('?' for _ in student_ids)
+        for row in conn.execute(f"""
+            SELECT student_id, group_id FROM student_enrollments
+            WHERE status = 'active' AND student_id IN ({placeholders})
+        """, student_ids):
+            active_enrollment_group_ids.setdefault(row['student_id'], []).append(row['group_id'])
 
     for st in students_raw:
         gid = st['group_id']
@@ -354,18 +389,36 @@ def dashboard():
             passport_filled = sum(1 for f in passport_fields if passport.get(f) and str(passport.get(f)).strip())
             passport_pcts.append(passport_filled / len(passport_fields) * 100)
 
-        group_subj_total = subjects_total_by_group.get(gid, 0)
-        st_grades = grades_by_student.get(st['id'], [])
-        grades_pct = (len(st_grades) / group_subj_total * 100) if group_subj_total else None
-        if grades_pct is not None:
+                # ── Заповненість оцінок рахуємо per-group, а не «усі оцінки / предмети primary» ──
+        # Для паралельника: 20 предметів у КН-2 + 10 у КБ-1 = дві незалежні
+        # пропорції, обидві входять у загальне середнє по студенту.
+        group_ids_for_student = active_enrollment_group_ids.get(st['id']) or ([gid] if gid else [])
+        grades_pcts_for_student = []
+        for enroll_gid in group_ids_for_student:
+            group_subj_total = subjects_total_by_group.get(enroll_gid, 0)
+            if not group_subj_total:
+                continue
+            st_grades_in_group = [g for g in grades_by_student.get(st['id'], [])
+                                   if g.get('group_id') == enroll_gid]
+            grades_pcts_for_student.append(len(st_grades_in_group) / group_subj_total * 100)
+        if grades_pcts_for_student:
+            grades_pct = sum(grades_pcts_for_student) / len(grades_pcts_for_student)
             grades_pcts.append(grades_pct)
             per_group_stats[gid]['grades'].append(grades_pct)
+        else:
+            grades_pct = None
 
-        group_act_total = activities_total_by_group.get(gid, 0)
-        st_acts = activities_by_student.get(st['id'], [])
-        act_pct = (len(st_acts) / group_act_total * 100) if group_act_total else None
-        if act_pct is not None:
-            activities_pcts.append(act_pct)
+        # Активності - той самий принцип
+        activities_pcts_for_student = []
+        for enroll_gid in group_ids_for_student:
+            group_act_total = activities_total_by_group.get(enroll_gid, 0)
+            if not group_act_total:
+                continue
+            st_acts_in_group = [a for a in activity_rows_by_student.get(st['id'], [])
+                                 if a.get('group_id') == enroll_gid]
+            activities_pcts_for_student.append(len(st_acts_in_group) / group_act_total * 100)
+        if activities_pcts_for_student:
+            activities_pcts.append(sum(activities_pcts_for_student) / len(activities_pcts_for_student))
 
         has_edu = st['id'] in edu_doc_students
         if has_edu:
@@ -398,14 +451,14 @@ def dashboard():
             if letter == 'Незадовільно':
                 risky_items.append((f"{a['code']} {a['name']}" if a['name'] else a['entity_type'], a['grade']))
 
-        if risky_items:
-            at_risk_students.append({
-                'student': f"{st['last_name_UA']} {st['first_name_UA']}",
-                'group': groups_by_id.get(gid, {}).get('name', '?'),
-                'count': len(risky_items),
-                'worst_letter': 'Незадовільно',
-                'details': risky_items,
-            })
+        risky_items = []
+        for letter, g in letters:
+            if letter == 'Незадовільно':
+                group_of_subject = groups_by_id.get(g.get('group_id'), {}).get('name', '?')
+                risky_items.append((
+                    f"{g['subject_code']} {g['subject_name']} ({group_of_subject})",
+                    g['grade'],
+                ))
 
         letters_only = [l for l, _ in letters if l]
         attestation_letters = [_grade_letter(g) for g in attestation_by_student.get(st['id'], [])]
@@ -582,29 +635,51 @@ def dashboard():
     course_distribution = []
     if is_admin:
         course_distribution = conn.execute("""
-            SELECT g.course AS course, COUNT(s.id) AS student_count
-            FROM groups g LEFT JOIN students s ON s.group_id = g.id AND COALESCE(s.archived, 0) = 0
+            SELECT g.course AS course, COUNT(DISTINCT s.id) AS student_count
+            FROM groups g
+            LEFT JOIN student_enrollments e ON e.group_id = g.id AND e.status = 'active'
+            LEFT JOIN students s ON s.id = e.student_id AND COALESCE(s.archived, 0) = 0
             WHERE COALESCE(g.archived, 0) = 0
             GROUP BY g.course ORDER BY g.course
         """).fetchall()
 
     # ================= Підсумок наказів руху студентів за поточний навчальний рік =================
+    # Модель наказів тепер єдина (orders/order_items), старі
+    # course_transfer_orders/expulsion_orders видалені init_db.py -
+    # тому всі цифри рахуються з єдиної таблиці через order_type.
     orders_summary = None
     if is_admin:
         current_year = datetime.now().year
         academic_year_start = current_year if datetime.now().month >= 9 else current_year - 1
-        cutoff = f"{academic_year_start}-09-01"
-        transfer_orders_count = conn.execute(
-            "SELECT COUNT(*) FROM course_transfer_orders WHERE order_date >= ?", (cutoff,)
-        ).fetchone()[0]
-        expulsion_orders_count = conn.execute(
-            "SELECT COUNT(*) FROM expulsion_orders WHERE order_date >= ?", (cutoff,)
-        ).fetchone()[0]
+        academic_year_start_date = f"{academic_year_start}-09-01"
+        # Дати в orders.order_date зберігаються у форматі ДД.ММ.РРРР - тому
+        # порівнюємо через substr для року/місяця, а не напряму з ISO.
+        transfer_orders_count = conn.execute("""
+            SELECT COUNT(*) FROM orders
+            WHERE order_type = 'course_transfer' AND status = 'active'
+              AND (
+                  substr(order_date, 7, 4) > ?
+                  OR (substr(order_date, 7, 4) = ? AND substr(order_date, 4, 2) >= '09')
+              )
+        """, (str(academic_year_start), str(academic_year_start))).fetchone()[0]
+        expulsion_orders_count = conn.execute("""
+            SELECT COUNT(*) FROM orders
+            WHERE order_type = 'expulsion' AND status = 'active'
+              AND (
+                  substr(order_date, 7, 4) > ?
+                  OR (substr(order_date, 7, 4) = ? AND substr(order_date, 4, 2) >= '09')
+              )
+        """, (str(academic_year_start), str(academic_year_start))).fetchone()[0]
         expelled_students_count = conn.execute("""
-            SELECT COUNT(*) FROM expulsion_order_students eos
-            JOIN expulsion_orders eo ON eo.id = eos.order_id
-            WHERE eo.order_date >= ?
-        """, (cutoff,)).fetchone()[0]
+            SELECT COUNT(*) FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE o.order_type = 'expulsion' AND o.status = 'active'
+              AND oi.entity_type = 'student'
+              AND (
+                  substr(o.order_date, 7, 4) > ?
+                  OR (substr(o.order_date, 7, 4) = ? AND substr(o.order_date, 4, 2) >= '09')
+              )
+        """, (str(academic_year_start), str(academic_year_start))).fetchone()[0]
         orders_summary = {
             'academic_year': f"{academic_year_start}/{academic_year_start + 1}",
             'transfer_orders': transfer_orders_count,
@@ -653,10 +728,30 @@ def dashboard():
         required_credits = groups_by_id.get(gid, {}).get('program_credits')
 
         student_row = next((s for s in student_options if s['id'] == selected_student_id), None)
+        
+        all_student_groups = conn.execute("""
+            SELECT g.id, g.name, g.program_credits, e.is_primary
+            FROM student_enrollments e
+            JOIN groups g ON g.id = e.group_id
+            WHERE e.student_id = ? AND e.status = 'active'
+            ORDER BY e.is_primary DESC, g.name
+        """, (selected_student_id,)).fetchall()
+
+        subjects_per_group = {}
+        for grp in all_student_groups:
+            grp_subjects = [t for t in s_letters if t.group_id == grp['id']] if False else \
+                           [t for t in s_letters if t[0] in {sub['id'] for sub in subjects_by_group.get(grp['id'], [])}]
+            # (простіше - додати group_id у s_letters, див. правку вище)
+            subjects_per_group[grp['id']] = {
+                'group': dict(grp),
+                'subjects': grp_subjects,
+            }
+        
         student_detail = {
             'id': selected_student_id,
             'full_name': student_row['full_name'] if student_row else '',
             'group_name': student_row['group_name'] if student_row else '',
+            'groups': subjects_per_group,
             'subjects': s_letters,
             'activities': s_activity_rows,
             'a_share': round(a_share * 100, 1),

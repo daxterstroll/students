@@ -21,6 +21,7 @@ import json
 import uuid
 import re
 import time
+from datetime import datetime, date
 from openpyxl import load_workbook
 from rapidfuzz import process, fuzz
 import requests
@@ -29,6 +30,19 @@ from routes.passport_types import (
     PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
     normalize_passport_type, passport_template_context,
 )
+
+def _excel_date_to_ua(value):
+    """Excel повертає datetime для клітинок з форматом дати.
+    str(datetime) → '2020-05-15 00:00:00' — треба прибрати час і переставити
+    складові на ДД.ММ.РРРР. Рядки лишаємо як є (але з '.' замість '-')."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, datetime):
+        return value.strftime('%d.%m.%Y')
+    if isinstance(value, date):
+        return value.strftime('%d.%m.%Y')
+    return str(value).strip().replace('-', '.')
+
 
 ALLOWED_EXTENSIONS = {'xlsx'}
 
@@ -678,8 +692,8 @@ def import_passport_documents():
 
                     series = str(row[2]).strip() if len(row) > 2 and row[2] not in (None, '') else None
                     issued_by = str(row[4]).strip() if len(row) > 4 and row[4] not in (None, '') else None
-                    issue_date = str(row[5]).strip().replace('-', '.') if len(row) > 5 and row[5] not in (None, '') else None
-                    valid_until = str(row[6]).strip().replace('-', '.') if len(row) > 6 and row[6] not in (None, '') else None
+                    issue_date = _excel_date_to_ua(row[5]) if len(row) > 5 else None
+                    valid_until = _excel_date_to_ua(row[6]) if len(row) > 6 else None
                     unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
                     # "Дійсний до" стосується лише ID-картки - якщо у файлі
                     # випадково заповнено для книжки, ігноруємо значення.

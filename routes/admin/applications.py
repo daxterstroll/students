@@ -485,17 +485,39 @@ def pending_student_review(pending_id):
             program_credits_override_raw = (request.form.get('program_credits_override') or '').strip()
             program_credits_override = int(program_credits_override_raw) if program_credits_override_raw else None
 
-            cur = conn.execute("""
-                INSERT INTO students (
-                    last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
-                    group_id, license_id, phone, phone_backup, email, program_credits_override
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'], row['last_name_ENG'], row['first_name_ENG'],
-                row['birth_date'], row['tax_id'], group_id, license_id, row['phone'], row['phone_backup'], row['email'],
-                program_credits_override,
-            ))
-            student_id = cur.lastrowid
+                        # ── Перевірка: чи студент уже є в базі? ──
+            existing_student = None
+            if row['tax_id']:
+                existing_student = conn.execute(
+                    "SELECT id FROM students WHERE tax_id = ?", (row['tax_id'],)
+                ).fetchone()
+            if not existing_student:
+                existing_student = conn.execute("""
+                    SELECT id FROM students
+                    WHERE LOWER_UA(last_name_UA) = LOWER_UA(?)
+                      AND LOWER_UA(first_name_UA) = LOWER_UA(?)
+                      AND birth_date = ?
+                """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
+
+            if existing_student:
+                # Не дублюємо — реактивуємо enrollment і знімаємо з архіву
+                student_id = existing_student['id']
+                conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
+
+                from routes.enrollments_service import add_enrollment
+                add_enrollment(student_id, group_id, is_primary=False, conn=conn)
+
+                # Далі — та сама логіка перенесення сканів/документів,
+                # але БЕЗ повторного INSERT INTO students.
+                # (решта коду після цього блоку вже працює зі student_id)
+            else:
+                cur = conn.execute("""
+                    INSERT INTO students (
+                        last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
+                        group_id, license_id, phone, phone_backup, email, program_credits_override
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (...))
+                student_id = cur.lastrowid
 
             # Фото — копіюємо байти з "карантинної" папки
             if row['photo_path']:
