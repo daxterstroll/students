@@ -92,7 +92,7 @@
                             <th>Тип</th>
                             <th class="text-center">Позицій</th>
                             <th>Хто створив</th>
-                            <th class="text-end" style="width:120px;">Дії</th>
+                            <th class="text-end" style="width:150px;">Дії</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -116,7 +116,7 @@
                             </td>
                             <td class="text-center">{{ o.items_count }}</td>
                             <td class="small">{{ o.created_by or '—' }}</td>
-                            <td class="text-end">
+                            <td class="text-end text-nowrap">
                                 <a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
                                    class="btn btn-sm btn-outline-primary" title="Перегляд">
                                     <i class="bi bi-eye"></i>
@@ -125,6 +125,14 @@
                                    class="btn btn-sm btn-outline-secondary" title="Редагувати">
                                     <i class="bi bi-pencil"></i>
                                 </a>
+                                <form method="POST"
+                                      action="{{ url_for('admin.order_delete', order_id=o.id) }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Видалити наказ № {{ o.order_number }}?');">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
                             </td>
                         </tr>
                         {% endfor %}

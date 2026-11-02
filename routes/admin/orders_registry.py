@@ -26,6 +26,8 @@ from routes.orders_service import (
     ORDER_TYPES,
     get_order,
     orders_tables_ready,
+    delete_order,
+    move_order_item,
 )
 
 
@@ -227,12 +229,26 @@ def order_detail(order_id):
         return redirect(url_for('admin.orders_list'))
 
     order = _enrich_order(conn, order)
+
+    # Інші накази того ж типу — для перенесення студентів
+    peer_orders = conn.execute(
+        """
+        SELECT id, order_number, order_date, title
+        FROM orders
+        WHERE order_type = ? AND id != ?
+        ORDER BY order_date DESC, id DESC
+        LIMIT 100
+        """,
+        (order.get('order_type'), order_id),
+    ).fetchall()
+    peer_orders = [dict(r) for r in peer_orders]
     conn.close()
 
     return render_template(
         'order_detail.html',
         order=order,
         type_labels=ORDER_TYPE_LABELS,
+        peer_orders=peer_orders,
     )
 
 
@@ -458,3 +474,73 @@ def _format_payload(order_type: str, payload: dict) -> str:
         return str(payload['action'])
     parts = [f'{k}={v}' for k, v in payload.items() if v is not None and v != '']
     return ', '.join(parts)
+
+
+@admin_bp.route('/admin/orders/<int:order_id>/delete', methods=['POST'])
+@permission_required('manage_students')
+def order_delete(order_id):
+    """Видалити наказ разом із пунктами (order_items)."""
+    if not _can_manage():
+        flash('Немає доступу до реєстру наказів.', 'error')
+        return redirect(url_for('students.student_list'))
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash('Таблиці наказів не готові.', 'error')
+        return redirect(url_for('admin.orders_list'))
+
+    order = get_order(order_id, conn=conn)
+    if not order:
+        conn.close()
+        flash('Наказ не знайдено.', 'error')
+        return redirect(url_for('admin.orders_list'))
+
+    number = order.get('order_number') or order_id
+    otype = order.get('order_type') or ''
+    ok = delete_order(order_id, conn=conn)
+    if ok:
+        conn.commit()
+        log_action(
+            current_username(),
+            f'видалив наказ № {number} (id={order_id}, type={otype})',
+        )
+        flash(f'Наказ № {number} видалено.', 'success')
+    else:
+        flash('Не вдалося видалити наказ.', 'error')
+    conn.close()
+    return redirect(url_for('admin.orders_list'))
+
+
+@admin_bp.route(
+    '/admin/orders/<int:order_id>/items/<int:item_id>/move',
+    methods=['POST'],
+)
+@permission_required('manage_students')
+def order_item_move(order_id, item_id):
+    """Перенести студента (order_item) в інший наказ того ж типу."""
+    if not _can_manage():
+        flash('Немає доступу.', 'error')
+        return redirect(url_for('students.student_list'))
+
+    target_id = request.form.get('target_order_id', type=int)
+    if not target_id:
+        flash('Оберіть наказ для перенесення.', 'error')
+        return redirect(url_for('admin.order_detail', order_id=order_id))
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    ok, msg = move_order_item(item_id, target_id, conn=conn)
+    if ok:
+        conn.commit()
+        log_action(
+            current_username(),
+            f'переніс пункт наказу item={item_id} з order={order_id} → {target_id}',
+            details=msg,
+        )
+        flash(msg, 'success')
+    else:
+        flash(msg, 'error')
+    conn.close()
+    return redirect(url_for('admin.order_detail', order_id=order_id))
