@@ -28,6 +28,7 @@ from routes.orders_service import (
     orders_tables_ready,
     delete_order,
     move_order_item,
+    format_payload,
 )
 
 
@@ -201,7 +202,7 @@ def _enrich_order(conn, order: dict) -> dict:
             except Exception:
                 payload = {}
         item['payload'] = payload
-        item['payload_text'] = _format_payload(conn, order['order_type'], payload)
+        item['payload_text'] = format_payload(conn, order['order_type'], payload)
         enriched.append(item)
     order['items'] = enriched
     return order
@@ -452,51 +453,6 @@ def order_item_remove(order_id, item_id):
     )
     flash('Позицію прибрано з наказу.', 'success')
     return redirect(url_for('admin.order_edit', order_id=order_id))
-
-
-def _format_payload(conn, order_type: str, payload: dict) -> str:
-    if not payload:
-        return ''
-    if order_type == 'course_transfer':
-        a, b = payload.get('course_from'), payload.get('course_to')
-        if a is not None and b is not None:
-            return f'курс {a} → {b}'
-    if order_type == 'expulsion':
-        parts = []
-        prev_gid = payload.get('previous_group_id')
-        if prev_gid:
-            row = conn.execute(
-                "SELECT name, start_year, study_form FROM groups WHERE id = ?",
-                (prev_gid,),
-            ).fetchone()
-            if row:
-                parts.append(
-                    f'з групи {row["name"]} ({row["start_year"]}, {row["study_form"]})'
-                )
-            else:
-                parts.append(f'з групи #{prev_gid}')
-        reason = payload.get('reason')
-        if reason:
-            parts.append(str(reason))
-        return '; '.join(parts) if parts else ''
-    if order_type == 'license_transfer':
-        return (
-            f"ліцензія {payload.get('previous_license_id')} → "
-            f"{payload.get('new_license_id')}"
-        )
-    if order_type == 'enrollment' and payload.get('group_id'):
-        row = conn.execute(
-            "SELECT name, start_year, study_form FROM groups WHERE id = ?",
-            (payload['group_id'],),
-        ).fetchone()
-        if row:
-            return f'у групу {row["name"]} ({row["start_year"]}, {row["study_form"]})'
-        return f"група id={payload['group_id']}"
-    if order_type == 'graduation' and payload.get('action'):
-        return str(payload['action'])
-    parts = [f'{k}={v}' for k, v in payload.items() if v is not None and v != '']
-    return ', '.join(parts)
-
 
 @admin_bp.route('/admin/orders/<int:order_id>/delete', methods=['POST'])
 @permission_required('manage_students')

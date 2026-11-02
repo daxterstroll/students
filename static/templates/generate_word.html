@@ -1,45 +1,231 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Генерація документа{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width: 680px;">
+<div class="container py-4" style="max-width: 720px;">
 
-    {{ ui.page_header('bi-file-earmark-word-fill', 'Генерація документа', 'Створення .docx-документа за обраним шаблоном') }}
+{% if is_choice_view %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 1: вибір групи
+       ═══════════════════════════════════════════════════════════ #}
+    {{ ui.page_header(
+        'bi-people-fill',
+        'Оберіть групу',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')
+    ) }}
 
-    <div class="card">
-        <div class="card-body">
-            <form method="POST">
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        Студент навчається паралельно у кількох групах. Оберіть, з даних якої
+        групи генерувати документ — перелік предметів у додатку, кваліфікація,
+        освітня програма й кредити в кожній групі свої.
+    </div>
+
+    <div class="group-select-list">
+        {% for g in student_groups %}
+        <a href="{{ url_for('students.generate', student_id=student.id, group_id=g.id) }}"
+           class="group-select-card">
+            <div class="group-select-icon">
+                <i class="bi bi-file-earmark-word-fill"></i>
+            </div>
+            <div class="group-select-body">
+                <div class="group-select-name">{{ g.name }}</div>
+                <div class="group-select-meta">
+                    {{ g.start_year }} рік вступу
+                    <span class="group-select-sep">·</span>
+                    {{ g.study_form }}
+                    <span class="group-select-sep">·</span>
+                    {{ g.program_credits }} кредитів
+                </div>
+            </div>
+            <i class="bi bi-chevron-right group-select-arrow"></i>
+        </a>
+        {% endfor %}
+    </div>
+
+{% else %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 2: вибір шаблону + генерація
+       ═══════════════════════════════════════════════════════════ #}
+
+    {% if student_groups|length > 1 %}
+    <div class="mb-3">
+        <a href="{{ url_for('students.generate', student_id=student.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Обрати іншу групу
+        </a>
+    </div>
+    {% endif %}
+
+    {{ ui.page_header(
+        'bi-file-earmark-word-fill',
+        'Генерація документа',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' · ' ~ selected_group.name
+    ) }}
+
+    {# ─── Плашка з метаданими групи ─── #}
+    <div class="group-meta-card mb-3">
+        <div class="group-meta-item">
+            <i class="bi bi-people-fill me-1"></i>
+            <strong>{{ selected_group.name }}</strong>
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-calendar3 me-1"></i>{{ selected_group.start_year }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-book me-1"></i>{{ selected_group.study_form }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-award me-1"></i>{{ selected_group.program_credits }} кредитів
+        </div>
+    </div>
+
+    {% if not available_templates %}
+        {{ ui.empty_state(
+            'bi-file-earmark-x',
+            'Немає доступних шаблонів',
+            'Зверніться до адміністратора — розділ «Шаблони документів»'
+        ) }}
+    {% else %}
+    <form method="POST">
+        <input type="hidden" name="group_id" value="{{ selected_group.id }}">
+
+        <div class="card">
+            <div class="card-body">
                 <div class="mb-3">
-                    <label class="form-label">Оберіть шаблон</label>
+                    <label class="form-label" for="templateSelect">Оберіть шаблон</label>
                     <select name="template" class="form-select" id="templateSelect">
-                    {% for tpl in available_templates %}
+                        {% for tpl in available_templates %}
                         <option value="{{ tpl.path }}" data-description="{{ tpl.description }}">
                             {{ tpl.display_name }}{% if tpl.admin_only %} 🔒{% endif %}
                         </option>
-                    {% endfor %}
+                        {% endfor %}
                     </select>
                     <div class="form-text" id="templateDescription"></div>
                 </div>
 
-                <script>
-                    (function () {
-                        const select = document.getElementById('templateSelect');
-                        const desc = document.getElementById('templateDescription');
-                        function updateDescription() {
-                            const opt = select.options[select.selectedIndex];
-                            desc.textContent = opt ? (opt.dataset.description || '') : '';
-                        }
-                        select.addEventListener('change', updateDescription);
-                        updateDescription();
-                    })();
-                </script>
-
-                <button type="submit" class="btn btn-primary"><i class="bi bi-file-earmark-arrow-down me-2"></i>Створити документ</button>
-                <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Назад</a>
-            </form>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-file-earmark-arrow-down me-2"></i>Створити документ
+                    </button>
+                    {% if student_groups|length > 1 %}
+                    <a href="{{ url_for('students.generate', student_id=student.id) }}"
+                       class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i> До вибору групи
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('students.student_list') }}"
+                       class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i> Назад
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-    </div>
+    </form>
+    {% endif %}
+{% endif %}
 
 </div>
+
+
+<style>
+/* ====================================================================
+   Ті самі стилі, що для edit_grades / edit_activities_grades —
+   узгоджені зі світлою і темною темами через CSS-змінні main.css.
+   ==================================================================== */
+
+.group-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+.group-select-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--ink-text);
+    transition: transform .2s ease, box-shadow .2s ease,
+                background-color .2s ease, border-color .2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+.group-select-card:hover {
+    background: var(--brass-soft);
+    border-color: var(--brass-semi, var(--brass));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
+    color: var(--ink-text);
+}
+.group-select-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brass-soft);
+    color: var(--brass);
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.group-select-body { flex-grow: 1; min-width: 0; }
+.group-select-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: .15rem;
+    color: var(--ink-text);
+}
+.group-select-meta { font-size: .82rem; color: var(--muted); }
+.group-select-sep { opacity: .5; margin: 0 .3rem; }
+.group-select-arrow {
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: transform .2s ease, color .2s ease;
+}
+.group-select-card:hover .group-select-arrow {
+    transform: translateX(3px);
+    color: var(--brass);
+}
+
+.group-meta-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--brass);
+    border-radius: 8px;
+    padding: .85rem 1.15rem;
+    color: var(--ink-text);
+}
+.group-meta-item {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    color: var(--ink-text);
+}
+.group-meta-item.text-muted { color: var(--muted) !important; }
+</style>
+
+<script>
+    (function () {
+        const select = document.getElementById('templateSelect');
+        const desc = document.getElementById('templateDescription');
+        if (!select || !desc) return;
+        function updateDescription() {
+            const opt = select.options[select.selectedIndex];
+            desc.textContent = opt ? (opt.dataset.description || '') : '';
+        }
+        select.addEventListener('change', updateDescription);
+        updateDescription();
+    })();
+</script>
+
 {% endblock %}

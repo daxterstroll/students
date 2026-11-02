@@ -1,81 +1,332 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Оцінки для {{ student.last_name_UA }}{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-card-checklist', 'Виставлення оцінок', student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' · ' ~ student.group_name) }}
+{% if is_choice_view %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 1: вибір групи
+       ═══════════════════════════════════════════════════════════ #}
+    {{ ui.page_header(
+        'bi-people-fill',
+        'Оберіть групу',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')
+    ) }}
 
-    <div class="card">
-        <div class="card-body p-0">
-            <div class="alert alert-light border small m-3 mb-0">
-                <i class="bi bi-clipboard-check me-1"></i>Можна скопіювати стовпчик оцінок з Excel і вставити в перше поле "Оцінка" — решта заповниться автоматично зверху вниз.
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        Студент навчається паралельно у кількох групах. Оберіть, з якої групи
+        редагувати оцінки — перелік предметів у кожній групі свій.
+    </div>
+
+    <div class="group-select-list">
+        {% for g in student_groups %}
+        <a href="{{ url_for('students.edit_grades', student_id=student.id, group_id=g.id) }}"
+           class="group-select-card">
+            <div class="group-select-icon">
+                <i class="bi bi-journal-bookmark-fill"></i>
             </div>
-            <form method="post">
+            <div class="group-select-body">
+                <div class="group-select-name">{{ g.name }}</div>
+                <div class="group-select-meta">
+                    {{ g.start_year }} рік вступу
+                    <span class="group-select-sep">·</span>
+                    {{ g.study_form }}
+                    <span class="group-select-sep">·</span>
+                    {{ g.program_credits }} кредитів
+                </div>
+            </div>
+            <i class="bi bi-chevron-right group-select-arrow"></i>
+        </a>
+        {% endfor %}
+    </div>
+
+{% else %}
+    {# ═══════════════════════════════════════════════════════════
+       КРОК 2: редагування оцінок обраної групи
+       ═══════════════════════════════════════════════════════════ #}
+
+    {% if student_groups|length > 1 %}
+    <div class="mb-3">
+        <a href="{{ url_for('students.edit_grades', student_id=student.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Обрати іншу групу
+        </a>
+    </div>
+    {% endif %}
+
+    {{ ui.page_header(
+        'bi-card-checklist',
+        'Виставлення оцінок',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' · ' ~ selected_group.name
+    ) }}
+
+    {# ─── Плашка з метаданими групи ─── #}
+    <div class="group-meta-card mb-3">
+        <div class="group-meta-item">
+            <i class="bi bi-people-fill me-1"></i>
+            <strong>{{ selected_group.name }}</strong>
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-calendar3 me-1"></i>{{ selected_group.start_year }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-book me-1"></i>{{ selected_group.study_form }}
+        </div>
+        <div class="group-meta-item text-muted small">
+            <i class="bi bi-award me-1"></i>{{ selected_group.program_credits }} кредитів
+        </div>
+        {% if is_reduced %}
+        <span class="badge text-bg-warning ms-auto"
+              title="Студент вступив з визнанням частини кредитів попереднього диплома">
+            <i class="bi bi-signpost-split me-1"></i>скорочена програма
+        </span>
+        {% endif %}
+    </div>
+
+    {% if not subjects %}
+        {{ ui.empty_state(
+            'bi-journal-x',
+            'У цій групі немає предметів',
+            'Немає що редагувати — зверніться до адміністратора'
+        ) }}
+    {% else %}
+    <form method="POST">
+        <input type="hidden" name="group_id" value="{{ selected_group.id }}">
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <h6 class="mb-0"><i class="bi bi-journal me-2"></i>Предмети групи</h6>
+                <span class="count-pill">
+                    <i class="bi bi-journal"></i>{{ subjects|length }}
+                </span>
+            </div>
+            <div class="card-body p-0">
+                <div class="alert alert-light border small m-3 mb-0">
+                    <i class="bi bi-clipboard-check me-1"></i>
+                    Можна скопіювати стовпчик оцінок з Excel і вставити (Ctrl+V)
+                    у перше поле «Оцінка» — решта заповниться автоматично зверху вниз.
+                </div>
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
+                    <table class="table grades-table mb-0">
                         <thead>
                             <tr>
                                 <th>Код</th>
                                 <th>Назва предмета</th>
-                                <th>Кредити</th>
-                                <th style="width: 160px;">Оцінка</th>
+                                <th class="text-center" style="width:100px;">Кредити</th>
+                                <th style="width:170px;">Оцінка</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for subject in subjects %}
                             <tr>
-                                <td>{{ subject.code }}</td>
-                                <td>{{ subject.name }}</td>
-                                <td>{{ subject.credits }}</td>
+                                <td>{{ subject.code or '—' }}</td>
+                                <td>{{ subject.name or '—' }}</td>
+                                <td class="text-center">{{ subject.credits }}</td>
                                 <td>
-                                    <input type="text" name="grade_{{ subject.id }}" value="{{ grade_map[subject.id]|default('') }}" class="form-control form-control-sm grade-input">
+                                    <input type="text"
+                                           name="grade_{{ subject.id }}"
+                                           value="{{ grade_map[subject.id]|default('') }}"
+                                           class="form-control form-control-sm grade-input"
+                                           placeholder="0–100">
                                 </td>
                             </tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
-                <div class="p-3">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
-                    <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary"><i class="bi bi-arrow-left me-2"></i>Назад</a>
-                </div>
-            </form>
+            </div>
         </div>
-    </div>
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-2"></i>Зберегти оцінки
+            </button>
+            {% if student_groups|length > 1 %}
+            <a href="{{ url_for('students.edit_grades', student_id=student.id) }}"
+               class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> До вибору групи
+            </a>
+            {% else %}
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> Назад
+            </a>
+            {% endif %}
+        </div>
+    </form>
+    {% endif %}
+{% endif %}
 
 </div>
+
+
+<style>
+/* ====================================================================
+   Стилі сторінки — узгоджені зі світлою і темною темами через
+   CSS-змінні, визначені в main.css.
+   ==================================================================== */
+
+/* ─── Таблиця оцінок ─── */
+.grades-table {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--ink-text);
+    --bs-table-border-color: var(--line);
+    --bs-table-hover-bg: var(--brass-soft);
+    --bs-table-hover-color: var(--ink-text);
+    color: var(--ink-text);
+    border-color: var(--line);
+    margin-bottom: 0;
+}
+.grades-table > :not(caption) > * > * {
+    background-color: transparent;
+    border-color: var(--line);
+    color: inherit;
+    padding: .6rem .85rem;
+    vertical-align: middle;
+}
+.grades-table thead th {
+    background: var(--paper-2);
+    color: var(--heading, var(--ink-text));
+    font-weight: 600;
+    font-size: .82rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    border-bottom: 2px solid var(--line) !important;
+    border-top: none !important;
+    white-space: nowrap;
+}
+.grades-table tbody tr:hover {
+    background-color: var(--brass-soft);
+}
+.grades-table tbody td {
+    font-size: .9rem;
+}
+.grades-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* ─── Крок 1: вибір групи ─── */
+.group-select-list {
+    display: flex;
+    flex-direction: column;
+    gap: .65rem;
+}
+.group-select-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--ink-text);
+    transition: transform .2s ease, box-shadow .2s ease,
+                background-color .2s ease, border-color .2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+.group-select-card:hover {
+    background: var(--brass-soft);
+    border-color: var(--brass-semi, var(--brass));
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .08);
+    color: var(--ink-text);
+}
+.group-select-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brass-soft);
+    color: var(--brass);
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+.group-select-body {
+    flex-grow: 1;
+    min-width: 0;
+}
+.group-select-name {
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin-bottom: .15rem;
+    color: var(--ink-text);
+}
+.group-select-meta {
+    font-size: .82rem;
+    color: var(--muted);
+}
+.group-select-sep {
+    opacity: .5;
+    margin: 0 .3rem;
+}
+.group-select-arrow {
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: transform .2s ease, color .2s ease;
+}
+.group-select-card:hover .group-select-arrow {
+    transform: translateX(3px);
+    color: var(--brass);
+}
+
+/* ─── Крок 2: плашка з метаданими групи ─── */
+.group-meta-card {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.25rem;
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--brass);
+    border-radius: 8px;
+    padding: .85rem 1.15rem;
+    color: var(--ink-text);
+}
+.group-meta-item {
+    display: inline-flex;
+    align-items: center;
+    white-space: nowrap;
+    color: var(--ink-text);
+}
+.group-meta-item.text-muted {
+    color: var(--muted) !important;
+}
+</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const gradeInputs = Array.from(document.querySelectorAll('.grade-input'));
+    if (!gradeInputs.length) return;
 
     gradeInputs.forEach((input, index) => {
         input.addEventListener('paste', function (e) {
             const clipboardText = (e.clipboardData || window.clipboardData).getData('text');
             if (!clipboardText || !clipboardText.includes('\n')) {
-                // Одне значення без переносів рядків - нехай вставляється як завжди
-                return;
+                return; // одне значення — звичайна вставка
             }
             e.preventDefault();
 
-            // Стовпчик, скопійований з Excel - рядки, розділені переносами;
-            // якщо випадково прихопили кілька колонок (є таби) - беремо перше значення з рядка.
+            // Стовпчик з Excel: рядки розділені переносами; якщо прихопили
+            // кілька колонок (є таби) — беремо перше значення з рядка.
             const values = clipboardText
                 .split(/\r\n|\n|\r/)
                 .map(line => line.split('\t')[0].trim())
-                .filter((v, i, arr) => !(i === arr.length - 1 && v === '')); // прибрати завершальний порожній рядок
+                .filter((v, i, arr) => !(i === arr.length - 1 && v === ''));
 
             for (let i = 0; i < values.length && (index + i) < gradeInputs.length; i++) {
                 gradeInputs[index + i].value = values[i];
             }
 
-            // Фокус на останнє заповнене поле - зручно одразу побачити результат
             const lastIndex = Math.min(index + values.length - 1, gradeInputs.length - 1);
             gradeInputs[lastIndex].focus();
         });
     });
 });
 </script>
+
 {% endblock %}
