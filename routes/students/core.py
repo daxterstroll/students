@@ -28,6 +28,13 @@ import json
 from routes.passport_types import PASSPORT_TYPES_ID_STYLE, passport_template_context
 from routes.orders_service import get_student_orders, orders_tables_ready
 from routes.user_scope import get_allowed_group_ids
+from routes.enrollments_service import (
+    ensure_enrollments_table,
+    list_student_enrollments,
+    add_enrollment,
+    set_primary_enrollment,
+    end_enrollment,
+)
 
 UPDATE_REQUEST_FIELD_LABELS = {
     'last_name_UA': "Прізвище (українською)",
@@ -361,8 +368,16 @@ def student_list():
     params = []
 
     if group_id:
-        where_clauses.append("s.group_id = ?")
-        params.append(group_id)
+        where_clauses.append("""
+            (
+                s.group_id = ?
+                OR s.id IN (
+                    SELECT student_id FROM student_enrollments
+                    WHERE group_id = ? AND status = 'active'
+                )
+            )
+        """)
+        params.extend([group_id, group_id])
 
     if degree_level:
         where_clauses.append("g.degree_level = ?")
@@ -388,8 +403,16 @@ def student_list():
     if role != 'admin' and not group_id:
         if group_ids:
             placeholders = ','.join('?' for _ in group_ids)
-            where_clauses.append(f"s.group_id IN ({placeholders})")
-            params.extend(group_ids)
+            where_clauses.append(f"""
+                (
+                    s.group_id IN ({placeholders})
+                    OR s.id IN (
+                        SELECT student_id FROM student_enrollments
+                        WHERE status = 'active' AND group_id IN ({placeholders})
+                    )
+                )
+            """)
+            params.extend(list(group_ids) + list(group_ids))
         else:
             conn.close()
             return render_template(
@@ -734,6 +757,17 @@ def student_details(student_id):
     student_orders = []
     if orders_tables_ready(conn=conn):
         student_orders = get_student_orders(student_id, conn=conn)
+        
+    ensure_enrollments_table(conn)
+    enrollments = list_student_enrollments(student_id, conn=conn)
+    all_groups = conn.execute("""
+        SELECT id,
+               name || ' (' || start_year || ', ' || study_form || ', ' ||
+               COALESCE(degree_level, '') || ')' AS display_name
+        FROM groups
+        WHERE COALESCE(archived, 0) = 0
+        ORDER BY start_year DESC, name COLLATE UKRAINIAN
+    """).fetchall()
 
     conn.close()
 
@@ -742,6 +776,8 @@ def student_details(student_id):
         student=student_dict,
         military=military_dict,
         military_attachments=military_attachments,
+        enrollments=enrollments,
+        all_groups=all_groups,
         military_history=military_history,
         field_label=_field_label,
         subject_grades=subject_grades,
@@ -940,8 +976,9 @@ def add_student():
         """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
               birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
               license_id, phone, phone_backup, email, address_of_residence, gender))
-        conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        add_enrollment(student_id, group_int, is_primary=True, conn=conn)
+        conn.commit()
 
         military_fields_list = [
             'status_badge', 'valid_until', 'registration_category', 'removal_basis',
@@ -1322,7 +1359,6 @@ def delete_student(student_id):
         conn.execute("DELETE FROM education_documents WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM passport_documents WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM frozen_students WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM license_transfer_order_students WHERE student_id = ?", (student_id,))
         conn.execute(
             """
             DELETE FROM order_items
@@ -1331,8 +1367,10 @@ def delete_student(student_id):
             (student_id,),
         )
         conn.execute("DELETE FROM diplomas WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM student_enrollments WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))
+        conn.execute("DELETE FROM student_enrollments WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM activity_grades WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
         conn.commit()
@@ -1342,7 +1380,7 @@ def delete_student(student_id):
             f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
             group_ids=[student['group_id']],
             details="каскадне видалення: military, military_history, grades, activity_grades, education_documents, passport_documents, "
-                    "frozen_students, expulsion_order_students, license_transfer_order_students, diplomas, вкладення, фото"
+                    "frozen_students, expulsion_order_students, diplomas, вкладення, фото"
         )
     except Exception as e:
         conn.rollback()
@@ -1473,3 +1511,61 @@ def generate(student_id):
 
     available_templates = get_templates_with_metadata(is_admin=session.get('is_admin', False))
     return render_template('generate_word.html', student_id=student_id, available_templates=available_templates)
+    
+@students_bp.route('/students/<int:student_id>/enrollments/add', methods=['POST'])
+@permission_required('manage_students')
+def enrollment_add(student_id):
+    group_id = request.form.get('group_id', type=int)
+    is_primary = request.form.get('is_primary') == '1'
+    if not group_id:
+        flash('Оберіть групу.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    ok, msg = add_enrollment(student_id, group_id, is_primary=is_primary)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        log_action(
+            current_username(),
+            f"додав навчання student={student_id} → group={group_id}",
+            details=f"primary={is_primary}",
+        )
+    return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route('/students/<int:student_id>/enrollments/set_primary', methods=['POST'])
+@permission_required('manage_students')
+def enrollment_set_primary(student_id):
+    group_id = request.form.get('group_id', type=int)
+    if not group_id:
+        flash('Не вказано групу.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    ok, msg = set_primary_enrollment(student_id, group_id)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        log_action(
+            current_username(),
+            f"змінив основне навчання student={student_id} → group={group_id}",
+        )
+    return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route('/students/<int:student_id>/enrollments/end', methods=['POST'])
+@permission_required('manage_students')
+def enrollment_end(student_id):
+    group_id = request.form.get('group_id', type=int)
+    status = request.form.get('status') or 'completed'
+    if status not in ('completed', 'expelled'):
+        status = 'completed'
+    if not group_id:
+        flash('Не вказано групу.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    ok, msg = end_enrollment(student_id, group_id, status=status)
+    flash(msg, 'success' if ok else 'error')
+    if ok:
+        log_action(
+            current_username(),
+            f"завершив навчання student={student_id} group={group_id} status={status}",
+        )
+    return redirect(url_for('students.student_details', student_id=student_id))

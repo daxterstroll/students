@@ -1,0 +1,120 @@
+{# Підключення: {% include 'student_enrollments_section.html' %}
+   Потрібні змінні: student, enrollments, all_groups #}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong><i class="bi bi-mortarboard me-1"></i> Навчання (групи)</strong>
+        <span class="badge text-bg-secondary">{{ enrollments|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        {% if enrollments %}
+        <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Група</th>
+                        <th>Ступінь</th>
+                        <th>Статус</th>
+                        <th></th>
+                        <th class="text-end" style="width:220px;">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in enrollments %}
+                    <tr class="{% if e.status != 'active' %}table-secondary{% endif %}">
+                        <td>
+                            <strong>{{ e.group_name or ('#' ~ e.group_id) }}</strong>
+                            <div class="small text-muted">
+                                {{ e.start_year or '' }}
+                                {% if e.study_form %} · {{ e.study_form }}{% endif %}
+                                {% if e.course %} · {{ e.course }} курс{% endif %}
+                            </div>
+                        </td>
+                        <td class="small">{{ e.degree_level or '—' }}</td>
+                        <td>
+                            {% if e.status == 'active' %}
+                            <span class="badge text-bg-success">active</span>
+                            {% elif e.status == 'expelled' %}
+                            <span class="badge text-bg-danger">{{ e.status }}</span>
+                            {% else %}
+                            <span class="badge text-bg-secondary">{{ e.status }}</span>
+                            {% endif %}
+                            {% if e.is_primary %}
+                            <span class="badge text-bg-primary">основне</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">{{ e.notes or '' }}</td>
+                        <td class="text-end text-nowrap">
+                            {% if e.status == 'active' %}
+                                {% if not e.is_primary %}
+                                <form method="POST"
+                                      action="{{ url_for('students.enrollment_set_primary', student_id=student.id) }}"
+                                      class="d-inline">
+                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Зробити основним">
+                                        <i class="bi bi-star"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                <form method="POST"
+                                      action="{{ url_for('students.enrollment_end', student_id=student.id) }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Завершити навчання в цій групі?');">
+                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
+                                    <input type="hidden" name="status" value="completed">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Завершити">
+                                        <i class="bi bi-check2"></i>
+                                    </button>
+                                </form>
+                                <form method="POST"
+                                      action="{{ url_for('students.enrollment_end', student_id=student.id) }}"
+                                      class="d-inline"
+                                      onsubmit="return confirm('Позначити відрахування з цієї групи?');">
+                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
+                                    <input type="hidden" name="status" value="expelled">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Відраховано з групи">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                </form>
+                            {% else %}
+                                <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-3 text-muted small">Записів про навчання ще немає (лише students.group_id).</div>
+        {% endif %}
+    </div>
+    <div class="card-footer">
+        <form method="POST" action="{{ url_for('students.enrollment_add', student_id=student.id) }}" class="row g-2 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label small mb-0">Додати паралельне навчання</label>
+                <select name="group_id" class="form-select form-select-sm" required>
+                    <option value="">— група —</option>
+                    {% for g in all_groups %}
+                    <option value="{{ g.id }}">
+                        {{ g.display_name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <div class="form-check mt-4">
+                    <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="enrollPrimary">
+                    <label class="form-check-label small" for="enrollPrimary">Зробити основним</label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                    <i class="bi bi-plus-lg me-1"></i>Додати
+                </button>
+            </div>
+        </form>
+        <div class="form-text small mt-1">
+            Друга група (наприклад бакалавр при молодшому бакалаврі) — без галочки «основним».
+        </div>
+    </div>
+</div>

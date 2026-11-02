@@ -183,6 +183,20 @@ CREATE TABLE IF NOT EXISTS "students" (
     FOREIGN KEY("license_id") REFERENCES "institution_licenses"("id")
 );
 
+CREATE TABLE IF NOT EXISTS student_enrollments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id  INTEGER NOT NULL,
+    group_id    INTEGER NOT NULL,
+    is_primary  INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'active',
+    order_id    INTEGER,
+    notes       TEXT,
+    created_at  TEXT DEFAULT (datetime('now', 'localtime')),
+    UNIQUE (student_id, group_id),
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id)
+);
+
 -- ─── Військовий облік ───
 CREATE TABLE IF NOT EXISTS "military" (
     "id"    INTEGER,
