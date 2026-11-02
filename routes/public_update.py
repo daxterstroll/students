@@ -66,10 +66,14 @@ def _validate_scan_files(files, max_files, label):
 def _iso_to_ua_date(value):
     if not value:
         return None
-    try:
-        return datetime.strptime(value, "%Y-%m-%d").strftime("%d.%m.%Y")
-    except ValueError:
-        return value
+    s = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y",
+                "%Y.%m.%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(s, fmt).strftime("%d.%m.%Y")
+        except ValueError:
+            continue
+    return value
 
 
 def _load_request(token):

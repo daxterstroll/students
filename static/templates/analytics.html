@@ -496,7 +496,7 @@
                     <select name="student_id" id="studentSelect" class="form-select form-select-sm">
                         <option value="">— оберіть студента —</option>
                         {% for opt in student_options %}
-                        <option value="{{ opt.id }}" {% if opt.id == selected_student_id %}selected{% endif %}>{{ opt.full_name }} ({{ opt.group_name }})</option>
+                        <option value="{{ opt.id }}" {% if opt.id == selected_student_id %}selected{% endif %}>{{ opt.full_name }} ({{ opt.group_name }}{% if opt.all_groups and '|' in opt.all_groups %} ({{ opt.all_groups }}){% endif %})</option>
                         {% endfor %}
                     </select>
                 </div>
