@@ -480,6 +480,110 @@ def orders_tables_ready(conn=None) -> bool:
 
 # ── Хелпери для підключення до старих confirm-ендпоінтів ──────────────
 
+
+def move_order_item(item_id: int, target_order_id: int, conn=None) -> tuple:
+    """
+    Переносить order_item в інший наказ.
+    Повертає (ok: bool, message: str).
+    """
+    own = conn is None
+    if own:
+        from routes.db import get_db
+        conn = get_db()
+    try:
+        item = conn.execute(
+            """
+            SELECT oi.id, oi.order_id, oi.entity_type, oi.entity_id,
+                   o.order_type, o.order_number
+            FROM order_items oi
+            JOIN orders o ON o.id = oi.order_id
+            WHERE oi.id = ?
+            """,
+            (item_id,),
+        ).fetchone()
+        if not item:
+            return False, 'Пункт наказу не знайдено'
+
+        target = conn.execute(
+            "SELECT id, order_type, order_number FROM orders WHERE id = ?",
+            (target_order_id,),
+        ).fetchone()
+        if not target:
+            return False, 'Цільовий наказ не знайдено'
+
+        # Row access
+        try:
+            src_type = item['order_type']
+            tgt_type = target['order_type']
+            src_order_id = item['order_id']
+            tgt_num = target['order_number']
+        except Exception:
+            src_type = item[4]
+            tgt_type = target[1]
+            src_order_id = item[1]
+            tgt_num = target[2]
+
+        if src_order_id == target_order_id:
+            return False, 'Студент уже в цьому наказі'
+
+        if src_type != tgt_type:
+            return False, (
+                f'Типи наказів різні ({src_type} → {tgt_type}). '
+                'Переносити можна лише між наказами одного типу.'
+            )
+
+        # Уникаємо дубля студента в цільовому наказі
+        try:
+            entity_type, entity_id = item['entity_type'], item['entity_id']
+        except Exception:
+            entity_type, entity_id = item[2], item[3]
+
+        dup = conn.execute(
+            """
+            SELECT id FROM order_items
+            WHERE order_id = ? AND entity_type = ? AND entity_id = ?
+            """,
+            (target_order_id, entity_type, entity_id),
+        ).fetchone()
+        if dup:
+            return False, f'Цей студент уже є в наказі № {tgt_num}'
+
+        conn.execute(
+            "UPDATE order_items SET order_id = ? WHERE id = ?",
+            (target_order_id, item_id),
+        )
+        if own:
+            conn.commit()
+        return True, f'Перенесено в наказ № {tgt_num}'
+    finally:
+        if own:
+            conn.close()
+
+
+def delete_order(order_id: int, conn=None) -> bool:
+
+    """
+    Повністю видаляє наказ і всі order_items.
+    Повертає True, якщо наказ існував і видалений.
+    """
+    own = conn is None
+    if own:
+        from routes.db import get_db
+        conn = get_db()
+    try:
+        row = conn.execute("SELECT id, order_number, order_type FROM orders WHERE id = ?", (order_id,)).fetchone()
+        if not row:
+            return False
+        conn.execute("DELETE FROM order_items WHERE order_id = ?", (order_id,))
+        conn.execute("DELETE FROM orders WHERE id = ?", (order_id,))
+        if own:
+            conn.commit()
+        return True
+    finally:
+        if own:
+            conn.close()
+
+
 def mirror_course_transfer_order(
     conn,
     *,

@@ -5,13 +5,23 @@
 {% block content %}
 <div class="container py-4">
 
-    <div class="mb-3 d-flex justify-content-between flex-wrap gap-2">
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <a href="{{ url_for('admin.orders_list') }}" class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> До реєстру наказів
+            <i class="bi bi-arrow-left me-1"></i> До реєстру
         </a>
-        <a href="{{ url_for('admin.order_edit', order_id=order.id) }}" class="btn btn-sm btn-primary">
-            <i class="bi bi-pencil me-1"></i> Редагувати
-        </a>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('admin.order_edit', order_id=order.id) }}" class="btn btn-sm btn-primary">
+                <i class="bi bi-pencil me-1"></i> Редагувати
+            </a>
+            <form method="POST"
+                  action="{{ url_for('admin.order_delete', order_id=order.id) }}"
+                  class="d-inline"
+                  onsubmit="return confirm('Видалити наказ № {{ order.order_number }}? Цю дію не можна скасувати.');">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-trash me-1"></i> Видалити
+                </button>
+            </form>
+        </div>
     </div>
 
     {{ ui.page_header(
@@ -88,6 +98,7 @@
                             <th>Об’єкт</th>
                             <th>Тип</th>
                             <th>Деталі</th>
+                            <th style="min-width:220px;">Перенести в наказ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -105,6 +116,28 @@
                             </td>
                             <td class="small text-muted">{{ it.entity_type }}</td>
                             <td class="small">{{ it.payload_text or '—' }}</td>
+                            <td>
+                                {% if peer_orders and it.id %}
+                                <form method="POST"
+                                      action="{{ url_for('admin.order_item_move', order_id=order.id, item_id=it.id) }}"
+                                      class="d-flex gap-1 align-items-center">
+                                    <select name="target_order_id" class="form-select form-select-sm" required>
+                                        <option value="">— обрати —</option>
+                                        {% for p in peer_orders %}
+                                        <option value="{{ p.id }}">
+                                            № {{ p.order_number }} · {{ p.order_date }}{% if p.title %} · {{ p.title[:30] }}{% endif %}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="btn btn-sm btn-outline-primary text-nowrap"
+                                            title="Перенести">
+                                        <i class="bi bi-arrow-left-right"></i>
+                                    </button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% endfor %}
                     </tbody>
