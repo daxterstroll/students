@@ -5,6 +5,21 @@
 {% macro val(v) -%}
 {%- if v -%}{{ v }}{%- else -%}<span class="text-muted fst-italic">Інформація відсутня</span>{%- endif -%}
 {%- endmacro %}
+{% macro grade_cell(item) %}
+{%- set has_grade = item.grade is not none and (item.grade|string)|trim -%}
+{%- if has_grade -%}
+    {%- set grade_text = item.grade | format_grade(item.type) -%}
+    {%- if 'Ошибка' in grade_text -%}
+        <span class="grade-pill grade-pill--warn" title="Перевірте введену оцінку — {{ item.grade }}">{{ grade_text }}</span>
+    {%- elif 'Незадовільно' in grade_text or 'Не зараховано' in grade_text or 'Fail' in grade_text -%}
+        <span class="grade-pill grade-pill--fail">{{ grade_text }}</span>
+    {%- else -%}
+        <span class="grade-pill grade-pill--pass">{{ grade_text }}</span>
+    {%- endif -%}
+{%- else -%}
+    <span class="text-muted fst-italic small">Оцінку не виставлено</span>
+{%- endif -%}
+{% endmacro %}
 {% block main_class %}py-3{% endblock %} 
 {% block content %}
 <div class="container py-4">
@@ -150,7 +165,7 @@
         <div class="col-lg-7">
             <div class="accordion" id="studentDetailsAccordion">
 
-				{% include 'student_enrollments_section.html' %}
+                {% include 'student_enrollments_section.html' %}
 
                 <!-- Паспортні дані -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
@@ -183,12 +198,12 @@
                                             <div class="text-muted small">Дата видачі</div>
                                             <div>{{ val(doc.issue_date) }}</div>
                                         </div>
-										{% if doc.document_type in passport_types_id_style %}
-										<div class="col-sm-6">
-											<div class="text-muted small">Дійсний до</div>
-											<div>{{ val(doc.valid_until) }}</div>
-										</div>
-										{% endif %}
+                                        {% if doc.document_type in passport_types_id_style %}
+                                        <div class="col-sm-6">
+                                            <div class="text-muted small">Дійсний до</div>
+                                            <div>{{ val(doc.valid_until) }}</div>
+                                        </div>
+                                        {% endif %}
                                         {% if doc.unique_number %}
                                         <div class="col-sm-6">
                                             <div class="text-muted small">Номер запису в ЄДДР</div>
@@ -242,7 +257,6 @@
                             </div>
 
                             {% if military %}
-                                {# ── Група 1: Статус ── #}
                                 {% if military.status_badge or military.registration_category or military.valid_until or military.formed_at %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-2">
                                     <i class="bi bi-person-badge me-1"></i>Статус
@@ -283,7 +297,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 2: ТЦК і звання ── #}
                                 {% if military.tck_name or military.military_rank or military.registry_number or military.vos_code or military.vos_description %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-building me-1"></i>ТЦК та військова спеціальність
@@ -322,7 +335,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 3: Відстрочка ── #}
                                 {% if military.deferral_type or military.deferral_until %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-calendar-check me-1"></i>Відстрочка
@@ -343,7 +355,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 4: ВЛК / інвалідність ── #}
                                 {% if military.vlk_decision or military.vlk_date or military.disability_group or military.disability_valid_until or military.disability_reason %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-heart-pulse me-1"></i>ВЛК та інвалідність
@@ -382,7 +393,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 5: Поліція ── #}
                                 {% if military.police_reason or military.police_date %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-shield-exclamation me-1"></i>Звернення до Нацполіції
@@ -403,7 +413,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 6: Контакти (те, що в military, а не в student) ── #}
                                 {% if military.phone or military.email %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-telephone me-1"></i>Контакти з документа
@@ -424,7 +433,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 7: Дата уточнення ── #}
                                 {% if military.data_update_date or military.data_verified_on_time %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-check2-circle me-1"></i>Дані уточнено
@@ -447,7 +455,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Група 8: Легасі-поля (старі, не з PDF) ── #}
                                 {% if military.military_registration_document or military.issued_VOD or military.military_accounting_specialty_number or military.change_credentials or military.reason_for_changing_credentials or military.being_on_military_registration %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-archive me-1"></i>Додаткові поля (старі)
@@ -492,7 +499,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Скановані копії (включно з PDF «Резерв+») ── #}
                                 {% if military_attachments %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-paperclip me-1"></i>Скановані копії
@@ -513,7 +519,6 @@
                                 </div>
                                 {% endif %}
 
-                                {# ── Останні зміни (скорочено) ── #}
                                 {% if military_history %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-clock-history me-1"></i>Останні зміни
@@ -574,6 +579,7 @@
                         </div>
                     </div>
                 </div>
+
                 <!-- Накази -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
@@ -648,89 +654,178 @@
                     </div>
                 </div>
 
+                <!-- Оцінки по всіх групах (вкладки) -->
+				{% if groups_data %}
+				<div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
+					<h2 class="accordion-header">
+						<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#gradesCollapse">
+							<i class="bi bi-journal-check me-3 fs-4" style="color: var(--brass);"></i>
+							<span class="flex-grow-1 text-start">
+								Оцінки
+								{% if groups_data|length > 1 %}
+								<span class="badge bg-info-subtle text-info-emphasis ms-2">
+									{{ groups_data|length }} групи
+								</span>
+								{% endif %}
+							</span>
+						</button>
+					</h2>
+					<div id="gradesCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
+						<div class="accordion-body">
 
+							{% if groups_data|length > 1 %}
+							<ul class="nav nav-tabs mb-3" role="tablist">
+								{% for g in groups_data %}
+								<li class="nav-item" role="presentation">
+									<button class="nav-link {% if loop.first %}active{% endif %}"
+											data-bs-toggle="tab"
+											data-bs-target="#tab-grades-{{ g.group_id }}"
+											type="button" role="tab">
+										{{ g.short_group_name }}
+										{% if g.is_primary %}
+										<span class="badge bg-primary ms-1" title="Основна група">осн.</span>
+										{% else %}
+										<span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
+										{% endif %}
+										{% if g.is_reduced %}
+										<span class="badge bg-warning text-dark ms-1"
+											  title="Скорочена програма: {{ g.student_credits_override }} з {{ g.group_program_credits }} кр.">
+											скор.
+										</span>
+										{% endif %}
+									</button>
+								</li>
+								{% endfor %}
+							</ul>
+							{% endif %}
 
+							<div class="tab-content">
+								{% for g in groups_data %}
+								<div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+									 id="tab-grades-{{ g.group_id }}" role="tabpanel">
 
+									{% set title_suffix = '' if groups_data|length == 1 else ' — ' ~ g.short_group_name %}
 
+									{% if g.subjects %}
+									<h6 class="section-title mb-2">Предмети{{ title_suffix }}</h6>
+									<div class="table-responsive mb-3">
+										<table class="table table-sm table-hover mb-0 align-middle">
+											<thead>
+												<tr>
+													<th>Код</th>
+													<th>Назва</th>
+													<th>Кредити</th>
+													<th class="text-end">Оцінка</th>
+												</tr>
+											</thead>
+											<tbody>
+												{% for s in g.subjects %}
+												<tr>
+													<td class="font-monospace">{{ s.code }}</td>
+													<td>{{ s.name }}</td>
+													<td>{{ s.credits }}</td>
+													<td class="text-end">{{ grade_cell(s) }}</td>
+												</tr>
+												{% endfor %}
+											</tbody>
+										</table>
+									</div>
+									{% endif %}
 
-                <!-- Макрос для інших секцій -->
-                {% macro data_section(icon, title, data, empty_text, edit_url, show_thesis=False) %}
-                <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
-                    <h2 class="accordion-header">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#{{ title|lower|replace(' ', '') }}Collapse">
-                            <i class="bi {{ icon }} me-3 fs-4" style="color: var(--brass);"></i>{{ title }}
-                        </button>
-                    </h2>
-                    <div id="{{ title|lower|replace(' ', '') }}Collapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
-                        <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3">
-                                {% if data %}
-                                    <a href="{{ edit_url }}" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-pencil me-1"></i>Редагувати
-                                    </a>
-                                {% else %}
-                                    <a href="{{ edit_url }}" class="btn btn-sm btn-success">
-                                        <i class="bi bi-plus-circle me-1"></i>Додати
-                                    </a>
-                                {% endif %}
-                            </div>
-                            {% if data %}
-                                <div class="table-responsive">
-                                    <table class="table mb-0">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>Код</th>
-                                                <th>Назва</th>
-                                                <th>Тип</th>
-                                                <th class="text-end">Оцінка</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for item in data %}
-                                            <tr>
-                                                <td class="font-monospace">{{ val(item.code) }}</td>
-                                                <td>
-                                                    {{ val(item.name) }}
-                                                    {% if show_thesis and item.student_name %}
-                                                    <br><span class="text-muted small">Тема: {{ item.student_name }}</span>
-                                                    {% endif %}
-                                                </td>
-                                                <td>{{ val(item.type) }}</td>
-                                                <td class="text-end">
-                                                    {% set has_grade = item.grade is not none and item.grade|string|trim %}
-                                                    {% if has_grade %}
-                                                        {% set grade_text = item.grade | format_grade(item.type) %}
-                                                        {% if 'Ошибка' in grade_text %}
-                                                            <span class="grade-pill grade-pill--warn" title="Перевірте введену оцінку - {{ item.grade }}">{{ grade_text }}</span>
-                                                        {% elif 'Fail' in grade_text %}
-                                                            <span class="grade-pill grade-pill--fail">{{ grade_text }}</span>
-                                                        {% else %}
-                                                            <span class="grade-pill grade-pill--pass">{{ grade_text }}</span>
-                                                        {% endif %}
-                                                    {% else %}
-                                                        <span class="text-muted fst-italic small">Оцінку не виставлено</span>
-                                                    {% endif %}
-                                                </td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            {% else %}
-                                <div class="p-5 text-center text-muted">
-                                    <i class="bi bi-inbox display-4 mb-3 d-block"></i>
-                                    {{ empty_text }}
-                                </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-                {% endmacro %}
+									{% if g.practices %}
+									<h6 class="section-title mb-2">Практики{{ title_suffix }}</h6>
+									<div class="table-responsive mb-3">
+										<table class="table table-sm table-hover mb-0 align-middle">
+											<thead>
+												<tr>
+													<th>Код</th>
+													<th>Назва</th>
+													<th>Кредити</th>
+													<th class="text-end">Оцінка</th>
+												</tr>
+											</thead>
+											<tbody>
+												{% for p in g.practices %}
+												<tr>
+													<td class="font-monospace">{{ p.code }}</td>
+													<td>{{ p.name }}</td>
+													<td>{{ p.credits }}</td>
+													<td class="text-end">{{ grade_cell(p) }}</td>
+												</tr>
+												{% endfor %}
+											</tbody>
+										</table>
+									</div>
+									{% endif %}
 
-                {{ data_section('bi-book', 'Оцінки', subject_grades, 'Оцінки відсутні', url_for('students.edit_grades', student_id=student.id)) }}
-                {{ data_section('bi-briefcase', 'Практики', practice_data, 'Практики відсутні', url_for('students.edit_activities_grades', student_id=student.id)) }}
-                {{ data_section('bi-file-earmark-text', 'Курсові роботи', coursework_data, 'Курсові роботи відсутні', url_for('students.edit_activities_grades', student_id=student.id)) }}
-                {{ data_section('bi-award', 'Атестації', attestation_data, 'Атестації відсутні', url_for('students.edit_activities_grades', student_id=student.id), show_thesis=True) }}
+									{% if g.courseworks %}
+									<h6 class="section-title mb-2">Курсові роботи{{ title_suffix }}</h6>
+									<div class="table-responsive mb-3">
+										<table class="table table-sm table-hover mb-0 align-middle">
+											<thead>
+												<tr>
+													<th>Код</th>
+													<th>Назва</th>
+													<th>Кредити</th>
+													<th class="text-end">Оцінка</th>
+												</tr>
+											</thead>
+											<tbody>
+												{% for c in g.courseworks %}
+												<tr>
+													<td class="font-monospace">{{ c.code }}</td>
+													<td>{{ c.name }}</td>
+													<td>{{ c.credits }}</td>
+													<td class="text-end">{{ grade_cell(c) }}</td>
+												</tr>
+												{% endfor %}
+											</tbody>
+										</table>
+									</div>
+									{% endif %}
+
+									{% if g.attestations %}
+									<h6 class="section-title mb-2">Атестація{{ title_suffix }}</h6>
+									<div class="table-responsive mb-3">
+										<table class="table table-sm table-hover mb-0 align-middle">
+											<thead>
+												<tr>
+													<th>Код</th>
+													<th>Назва</th>
+													<th>Тема роботи</th>
+													<th>Кредити</th>
+													<th class="text-end">Оцінка</th>
+												</tr>
+											</thead>
+											<tbody>
+												{% for a in g.attestations %}
+												<tr>
+													<td class="font-monospace">{{ a.code }}</td>
+													<td>{{ a.name }}</td>
+													<td>{{ a.student_name or '—' }}</td>
+													<td>{{ a.credits }}</td>
+													<td class="text-end">{{ grade_cell(a) }}</td>
+												</tr>
+												{% endfor %}
+											</tbody>
+										</table>
+									</div>
+									{% endif %}
+
+									{% if not g.subjects and not g.practices and not g.courseworks and not g.attestations %}
+									<div class="empty-state py-3">
+										<i class="bi bi-journal-x"></i>
+										<p class="mb-0">У цій групі ще немає предметів / оцінок</p>
+									</div>
+									{% endif %}
+
+								</div>
+								{% endfor %}
+							</div>
+						</div>
+					</div>
+				</div>
+				{% endif %}
 
                 <!-- Документи про освіту -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">

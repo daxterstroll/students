@@ -660,6 +660,7 @@ def student_details(student_id):
     if not student:
         log_action(current_username(), f"спроба перегляду неіснуючого студента (ID {student_id})")
         flash("Студента не знайдено")
+        conn.close()
         return redirect(url_for('students.student_list'))
 
     log_action(
@@ -669,9 +670,12 @@ def student_details(student_id):
         details=f"група: {student['group_name']}"
     )
 
+    # ── Enrollment'и завантажуємо ДО побудови groups_data ──
+    ensure_enrollments_table(conn)
+    enrollments = list_student_enrollments(student_id, conn=conn)
+
     military = conn.execute("SELECT * FROM military WHERE student_id = ?", (student_id,)).fetchone()
     military_attachments = get_attachments(conn, 'military', military['id']) if military else []
-    # Останні 5 змін військових даних
     military_history = conn.execute(
         """SELECT changed_at, changed_by, source, scope, field_name, old_value, new_value
            FROM military_history
@@ -689,60 +693,109 @@ def student_details(student_id):
                 return label
         return name
 
-    is_reduced = bool(student['group_id']) and is_student_on_reduced_program(conn, student_id, student['group_id'])
+    # ── Дані по КОЖНІЙ групі, в якій навчається студент ──
+    active_enrollments = [e for e in enrollments if e['status'] == 'active']
+    if student['group_id'] and not any(
+        e['group_id'] == student['group_id'] for e in active_enrollments
+    ):
+        active_enrollments.insert(0, {
+            'group_id': student['group_id'],
+            'group_name': student['group_name'],
+            'is_primary': 1,
+            'program_credits': student['program_credits'],
+        })
 
-    subjects_query = """
-        SELECT s.id, s.code, s.name, s.type, s.reduced_type, g.grade
-        FROM subjects s
-        LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
-        WHERE s.group_id = ?
-    """ + program_track_condition(is_reduced, 's') + " ORDER BY s.position"
-    subject_rows = conn.execute(subjects_query, [student_id, student['group_id']]).fetchall()
-    subject_grades = [
-        {'code': s['code'], 'name': s['name'],
-         'type': apply_track_overrides(dict(s), is_reduced)['type'],
-         'grade': s['grade']}
-        for s in subject_rows
-    ]
+    groups_data = []
+    for enr in active_enrollments:
+        gid = enr['group_id']
+        group_program_credits = enr.get('program_credits')
+        is_reduced_g = is_student_on_reduced_program(conn, student_id, gid)
 
-    practices_query = """
-        SELECT p.id, p.code, p.name, p.type, p.reduced_type, ag.grade
-        FROM practices p
-        LEFT JOIN activity_grades ag ON ag.entity_id = p.id AND ag.entity_type = 'practice' AND ag.student_id = ?
-        WHERE p.group_id = ?
-    """ + program_track_condition(is_reduced, 'p') + " ORDER BY p.position"
-    practice_data = [
-        {'code': p['code'], 'name': p['name'],
-         'type': apply_track_overrides(dict(p), is_reduced)['type'],
-         'grade': p['grade']}
-        for p in conn.execute(practices_query, [student_id, student['group_id']]).fetchall()
-    ]
+        subjects_query = """
+            SELECT s.id, s.code, s.name, s.type, s.reduced_type,
+                   s.credits, s.reduced_credits, g.grade
+            FROM subjects s
+            LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
+            WHERE s.group_id = ?
+        """ + program_track_condition(is_reduced_g, 's') + " ORDER BY s.position"
+        subj_rows = conn.execute(subjects_query, [student_id, gid]).fetchall()
+        subjects_list = [
+            {**apply_track_overrides(dict(s), is_reduced_g), 'grade': s['grade']}
+            for s in subj_rows
+        ]
 
-    courseworks_query = """
-        SELECT c.id, c.code, c.name, c.type, c.reduced_type, ag.grade
-        FROM courseworks c
-        LEFT JOIN activity_grades ag ON ag.entity_id = c.id AND ag.entity_type = 'coursework' AND ag.student_id = ?
-        WHERE c.group_id = ?
-    """ + program_track_condition(is_reduced, 'c') + " ORDER BY c.position"
-    coursework_data = [
-        {'code': c['code'], 'name': c['name'],
-         'type': apply_track_overrides(dict(c), is_reduced)['type'],
-         'grade': c['grade']}
-        for c in conn.execute(courseworks_query, [student_id, student['group_id']]).fetchall()
-    ]
+        practices_query = """
+            SELECT p.id, p.code, p.name, p.type, p.reduced_type,
+                   p.credits, p.reduced_credits, ag.grade
+            FROM practices p
+            LEFT JOIN activity_grades ag
+                   ON ag.entity_id = p.id AND ag.entity_type = 'practice'
+                  AND ag.student_id = ?
+            WHERE p.group_id = ?
+        """ + program_track_condition(is_reduced_g, 'p') + " ORDER BY p.position"
+        prac_rows = conn.execute(practices_query, [student_id, gid]).fetchall()
+        practices_list = [
+            {**apply_track_overrides(dict(p), is_reduced_g), 'grade': p['grade']}
+            for p in prac_rows
+        ]
 
-    attestations_query = """
-        SELECT a.id, a.code, a.name, a.type, a.reduced_type, ag.grade, ag.name AS student_name
-        FROM attestations a
-        LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
-        WHERE a.group_id = ?
-    """ + program_track_condition(is_reduced, 'a') + " ORDER BY a.position"
-    attestation_data = [
-        {'code': a['code'], 'name': a['name'],
-         'type': apply_track_overrides(dict(a), is_reduced)['type'],
-         'grade': a['grade'], 'student_name': a['student_name']}
-        for a in conn.execute(attestations_query, [student_id, student['group_id']]).fetchall()
-    ]
+        courseworks_query = """
+            SELECT c.id, c.code, c.name, c.type, c.reduced_type,
+                   c.credits, c.reduced_credits, ag.grade
+            FROM courseworks c
+            LEFT JOIN activity_grades ag
+                   ON ag.entity_id = c.id AND ag.entity_type = 'coursework'
+                  AND ag.student_id = ?
+            WHERE c.group_id = ?
+        """ + program_track_condition(is_reduced_g, 'c') + " ORDER BY c.position"
+        cw_rows = conn.execute(courseworks_query, [student_id, gid]).fetchall()
+        courseworks_list = [
+            {**apply_track_overrides(dict(c), is_reduced_g), 'grade': c['grade']}
+            for c in cw_rows
+        ]
+
+        attestations_query = """
+            SELECT a.id, a.code, a.name, a.type, a.reduced_type,
+                   a.credits, a.reduced_credits, ag.grade, ag.name AS student_name
+            FROM attestations a
+            LEFT JOIN activity_grades ag
+                   ON ag.entity_id = a.id AND ag.entity_type = 'attestation'
+                  AND ag.student_id = ?
+            WHERE a.group_id = ?
+        """ + program_track_condition(is_reduced_g, 'a') + " ORDER BY a.position"
+        att_rows = conn.execute(attestations_query, [student_id, gid]).fetchall()
+        attestations_list = [
+            {**apply_track_overrides(dict(a), is_reduced_g),
+             'grade': a['grade'], 'student_name': a['student_name']}
+            for a in att_rows
+        ]
+
+        # Коротка назва групи (без " (2022, Денна, 240 кредитів)")
+        short_name = (enr.get('group_name') or '').split(' (')[0].strip()
+
+        groups_data.append({
+            'group_id': gid,
+            'group_name': enr.get('group_name') or '',
+            'short_group_name': short_name or f"Група #{gid}",
+            'is_primary': bool(enr['is_primary']),
+            'is_reduced': is_reduced_g,
+            'group_program_credits': group_program_credits,
+            'student_credits_override': student['program_credits_override'],
+            'subjects': subjects_list,
+            'practices': practices_list,
+            'courseworks': courseworks_list,
+            'attestations': attestations_list,
+        })
+
+    # ── Backward compatibility: старі змінні → на ОСНОВНУ групу ──
+    _primary = next(
+        (g for g in groups_data if g['is_primary']),
+        groups_data[0] if groups_data else None
+    )
+    subject_grades = _primary['subjects'] if _primary else []
+    practice_data = _primary['practices'] if _primary else []
+    coursework_data = _primary['courseworks'] if _primary else []
+    attestation_data = _primary['attestations'] if _primary else []
 
     education_docs = conn.execute("""
         SELECT ed.id, ed.document_type, ed.document_type_en, ed.document_number,
@@ -783,9 +836,7 @@ def student_details(student_id):
     student_orders = []
     if orders_tables_ready(conn=conn):
         student_orders = get_student_orders(student_id, conn=conn)
-        
-    ensure_enrollments_table(conn)
-    enrollments = list_student_enrollments(student_id, conn=conn)
+
     all_groups = conn.execute("""
         SELECT id,
                name || ' (' || start_year || ', ' || study_form || ', ' ||
@@ -804,6 +855,7 @@ def student_details(student_id):
         military_attachments=military_attachments,
         enrollments=enrollments,
         all_groups=all_groups,
+        groups_data=groups_data,
         military_history=military_history,
         field_label=_field_label,
         subject_grades=subject_grades,
@@ -817,7 +869,6 @@ def student_details(student_id):
         student_orders=student_orders,
         **passport_template_context(),
     )
-
 
 @students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
 @permission_required('study_periods')
