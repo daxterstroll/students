@@ -71,6 +71,8 @@ def backfill_primary_from_students(conn=None) -> int:
 
 
 def list_student_enrollments(student_id: int, conn=None) -> list:
+    """Повертає ВСІ enrollments студента (включно з завершеними),
+    ordered: primary first, потім active, потім решта."""
     own = conn is None
     if own:
         conn = get_db()
@@ -80,7 +82,8 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
             SELECT e.id, e.student_id, e.group_id, e.is_primary, e.status,
                    e.order_id, e.notes, e.created_at,
                    g.name AS group_name, g.start_year, g.study_form,
-                   g.degree_level, g.course, g.specialty_code
+                   g.degree_level, g.course, g.specialty_code,
+                   g.program_credits
             FROM student_enrollments e
             LEFT JOIN groups g ON g.id = e.group_id
             WHERE e.student_id = ?
@@ -223,7 +226,6 @@ def add_enrollment(
             )
 
         # ── Якщо в студента є хоч один active enrollment — знімаємо з архіву ──
-        # (стосується випадку, коли студента "випустили", а потім зарахували знову)
         conn.execute("""
             UPDATE students SET archived = FALSE
             WHERE id = ? AND archived = TRUE

@@ -1323,10 +1323,21 @@ def expulsion():
             """, group_ids).fetchall()
             for g in selected_groups:
                 students = conn.execute("""
-                    SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name
-                    FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-                    ORDER BY last_name_UA COLLATE UKRAINIAN
-                """, (g['id'],)).fetchall()
+                    SELECT s.id,
+                           TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name,
+                           CASE WHEN s.group_id = ? THEN 1 ELSE 0 END AS is_primary
+                    FROM students s
+                    WHERE COALESCE(s.archived, 0) = 0
+                      AND (
+                          s.group_id = ?
+                          OR EXISTS (
+                              SELECT 1 FROM student_enrollments e
+                              WHERE e.student_id = s.id
+                                AND e.group_id = ? AND e.status = 'active'
+                          )
+                      )
+                    ORDER BY s.last_name_UA COLLATE UKRAINIAN
+                """, (g['id'], g['id'], g['id'])).fetchall()
                 groups_with_students.append({'id': g['id'], 'name': g['name'], 'students': students})
 
         frozen_students_list = []
