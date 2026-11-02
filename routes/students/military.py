@@ -837,11 +837,8 @@ def military_bulk_import_pdf():
             first_name = name_parts[1]
             middle_name = ' '.join(name_parts[2:]) if len(name_parts) > 2 else ''
 
-            # Шукаємо ЛИШЕ за ПІБ, без дати народження. Обмежуємось
-            # активними студентами: не архівні, не заморожені
-            # (немає незакритого запису в frozen_students), не
-            # відраховані (немає наказу про відрахування).
-            student = conn.execute("""
+            # Пошук: ПІБ + дата народження (якщо є в PDF).
+            base_sql = """
                 SELECT s.id, s.last_name_UA, s.first_name_UA,
                        s.middle_name_UA, s.birth_date, s.group_id
                 FROM students s
@@ -856,18 +853,33 @@ def military_bulk_import_pdf():
                       WHERE oi.entity_type = 'student'
                         AND oi.entity_id = s.id
                         AND o.order_type = 'expulsion'
-                        AND o.status = 'active'
                   )
                   AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
                   AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
                   AND LOWER_UA(TRIM(COALESCE(s.middle_name_UA, ''))) = LOWER_UA(?)
-                LIMIT 1
-            """, (last_name, first_name, middle_name)).fetchone()
+            """
+            params = [last_name, first_name, middle_name]
+            student = None
+            if birth_date:
+                student = conn.execute(
+                    base_sql + " AND TRIM(COALESCE(s.birth_date, '')) = ? LIMIT 1",
+                    params + [birth_date],
+                ).fetchone()
+                if not student:
+                    student = conn.execute(base_sql + " LIMIT 1", params).fetchone()
+                    if student:
+                        warn = (
+                            f"Дата в PDF ({birth_date}) ≠ у картці "
+                            f"({student['birth_date'] or '—'}) — перевірте"
+                        )
+                        result['warning'] = (
+                            f"{result['warning']}; {warn}" if result.get('warning') else warn
+                        )
+            else:
+                student = conn.execute(base_sql + " LIMIT 1", params).fetchone()
 
             if not student:
-                # Fallback: без по батькові (у PDF його іноді немає або
-                # воно відрізняється скороченням)
-                student = conn.execute("""
+                base_sql2 = """
                     SELECT s.id, s.last_name_UA, s.first_name_UA,
                            s.middle_name_UA, s.birth_date, s.group_id
                     FROM students s
@@ -876,18 +888,18 @@ def military_bulk_import_pdf():
                           SELECT 1 FROM frozen_students fz
                           WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
                       )
-                  AND NOT EXISTS (
-                      SELECT 1 FROM order_items oi
-                      JOIN orders o ON o.id = oi.order_id
-                      WHERE oi.entity_type = 'student'
-                        AND oi.entity_id = s.id
-                        AND o.order_type = 'expulsion'
-                        AND o.status = 'active'
-                  )
                       AND LOWER_UA(TRIM(s.last_name_UA)) = LOWER_UA(?)
                       AND LOWER_UA(TRIM(s.first_name_UA)) = LOWER_UA(?)
-                    LIMIT 1
-                """, (last_name, first_name)).fetchone()
+                """
+                if birth_date:
+                    student = conn.execute(
+                        base_sql2 + " AND TRIM(COALESCE(s.birth_date, '')) = ? LIMIT 1",
+                        [last_name, first_name, birth_date],
+                    ).fetchone()
+                if not student:
+                    student = conn.execute(
+                        base_sql2 + " LIMIT 1", [last_name, first_name]
+                    ).fetchone()
 
             if not student:
                 result['error'] = (
