@@ -157,7 +157,15 @@ def dashboard():
         archived_groups = conn.execute("SELECT COUNT(*) FROM groups WHERE COALESCE(archived,0)=1").fetchone()[0]
         total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
     else:
-        active_groups = len(user_group_ids)
+        if user_group_ids:
+            placeholders = ','.join('?' for _ in user_group_ids)
+            active_groups = conn.execute(
+                f"SELECT COUNT(*) FROM groups WHERE id IN ({placeholders}) "
+                f"AND COALESCE(archived,0)=0",
+                list(user_group_ids),
+            ).fetchone()[0]
+        else:
+            active_groups = 0
         archived_groups = 0
         total_users = None
 
@@ -231,7 +239,7 @@ def dashboard():
                 JOIN groups g2 ON g2.id = e2.group_id
                 WHERE e2.student_id = s.id AND e2.status = 'active') AS all_groups
         FROM students s JOIN groups g ON g.id = s.group_id
-        WHERE 1=1 {student_archived_cond} {group_archived_cond} {scope_clause}
+        WHERE 1=1 {student_archived_cond} {scope_clause}
         ORDER BY g.name, s.last_name_UA
     """, scope_params).fetchall()
 
@@ -439,33 +447,51 @@ def dashboard():
         dims.append(100 if dip.get('diploma_number') else 0)
         readiness_scores.append(sum(dims) / len(dims))
 
+        st_grades = grades_by_student.get(st['id'], [])
+        st_grades = grades_by_student.get(st['id'], [])
         letters = [(_grade_letter(g['grade']), g) for g in st_grades]
+
         risky_items = []
         for letter, g in letters:
             if letter:
                 all_letters.append(letter)
-            if letter == 'Незадовільно':
-                risky_items.append((f"{g['subject_code']} {g['subject_name']}", g['grade']))
-        for a in activity_rows_by_student.get(st['id'], []):
-            letter = _grade_letter(a['grade'])
-            if letter == 'Незадовільно':
-                risky_items.append((f"{a['code']} {a['name']}" if a['name'] else a['entity_type'], a['grade']))
-
-        risky_items = []
-        for letter, g in letters:
             if letter == 'Незадовільно':
                 group_of_subject = groups_by_id.get(g.get('group_id'), {}).get('name', '?')
                 risky_items.append((
                     f"{g['subject_code']} {g['subject_name']} ({group_of_subject})",
                     g['grade'],
                 ))
+        for a in activity_rows_by_student.get(st['id'], []):
+            letter = _grade_letter(a['grade'])
+            if letter:
+                all_letters.append(letter)
+            if letter == 'Незадовільно':
+                item_label = f"{a['code']} {a['name']}" if a['name'] else a['entity_type']
+                risky_items.append((item_label, a['grade']))
+
+        if risky_items:
+            at_risk_students.append({
+                'student': f"{st['last_name_UA']} {st['first_name_UA']}",
+                'group': groups_by_id.get(gid, {}).get('name', '?'),
+                'count': len(risky_items),
+                'details': risky_items,
+            })
 
         letters_only = [l for l, _ in letters if l]
+        activity_letters = [
+            _grade_letter(a['grade'])
+            for a in activity_rows_by_student.get(st['id'], [])
+            if a['entity_type'] != 'attestation'
+        ]
+        activity_letters = [l for l in activity_letters if l]
+        all_letters_for_honor = letters_only + activity_letters
+
         attestation_letters = [_grade_letter(g) for g in attestation_by_student.get(st['id'], [])]
         attestation_letters = [l for l in attestation_letters if l]
-        if letters_only:
-            a_share = letters_only.count('A') / len(letters_only)
-            no_fail = not any(l in ('D', 'E', 'Незадовільно') for l in letters_only)
+
+        if all_letters_for_honor:
+            a_share = all_letters_for_honor.count('A') / len(all_letters_for_honor)
+            no_fail = not any(l in ('D', 'E', 'Незадовільно') for l in all_letters_for_honor)
             attestation_ok = all(l == 'A' for l in attestation_letters) if attestation_letters else True
             if a_share >= 0.75 and no_fail and attestation_ok:
                 honor_eligible += 1
@@ -703,13 +729,21 @@ def dashboard():
                              _grade_letter(a['grade']), a.get('thesis_title')) for a in s_activities]
 
         letters_only = [t[3] for t in s_letters if t[3]]
+        activity_letters = [
+            _grade_letter(a['grade'])
+            for a in s_activities
+            if a['entity_type'] != 'attestation'
+        ]
+        activity_letters = [l for l in activity_letters if l]
+        all_letters_for_honor = letters_only + activity_letters
+
         attestation_letters = [_grade_letter(g) for g in attestation_by_student.get(selected_student_id, [])]
         attestation_letters = [l for l in attestation_letters if l]
 
-        a_share = (letters_only.count('A') / len(letters_only)) if letters_only else 0
-        no_fail = not any(l in ('D', 'E', 'Незадовільно') for l in letters_only)
+        a_share = (all_letters_for_honor.count('A') / len(all_letters_for_honor)) if all_letters_for_honor else 0
+        no_fail = not any(l in ('D', 'E', 'Незадовільно') for l in all_letters_for_honor)
         attestation_ok = all(l == 'A' for l in attestation_letters) if attestation_letters else True
-        is_honor_eligible = bool(letters_only) and a_share >= 0.75 and no_fail and attestation_ok
+        is_honor_eligible = bool(all_letters_for_honor) and a_share >= 0.75 and no_fail and attestation_ok
 
         # Список конкретних НЕзаповнених предметів (не лише кількість)
         taken_subject_ids = {g['subject_id'] for g in s_grades}
@@ -729,29 +763,10 @@ def dashboard():
 
         student_row = next((s for s in student_options if s['id'] == selected_student_id), None)
         
-        all_student_groups = conn.execute("""
-            SELECT g.id, g.name, g.program_credits, e.is_primary
-            FROM student_enrollments e
-            JOIN groups g ON g.id = e.group_id
-            WHERE e.student_id = ? AND e.status = 'active'
-            ORDER BY e.is_primary DESC, g.name
-        """, (selected_student_id,)).fetchall()
-
-        subjects_per_group = {}
-        for grp in all_student_groups:
-            grp_subjects = [t for t in s_letters if t.group_id == grp['id']] if False else \
-                           [t for t in s_letters if t[0] in {sub['id'] for sub in subjects_by_group.get(grp['id'], [])}]
-            # (простіше - додати group_id у s_letters, див. правку вище)
-            subjects_per_group[grp['id']] = {
-                'group': dict(grp),
-                'subjects': grp_subjects,
-            }
-        
         student_detail = {
             'id': selected_student_id,
             'full_name': student_row['full_name'] if student_row else '',
             'group_name': student_row['group_name'] if student_row else '',
-            'groups': subjects_per_group,
             'subjects': s_letters,
             'activities': s_activity_rows,
             'a_share': round(a_share * 100, 1),

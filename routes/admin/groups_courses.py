@@ -1434,7 +1434,16 @@ def expulsion_confirm():
             conn=conn,
         )
 
+        from routes.enrollments_service import end_enrollment
         for student_id, previous_group_id, reason, frozen_id in to_expel:
+            # Закриваємо enrollment у тій групі, звідки відраховуємо —
+            # інакше запис назавжди лишиться 'active' і студент
+            # продовжує рахуватись у списках групи за enrollments.
+            if previous_group_id:
+                end_enrollment(
+                    student_id, previous_group_id,
+                    status='expelled', conn=conn,
+                )
             conn.execute(
                 "UPDATE students SET archived = TRUE, group_id = NULL WHERE id = ?",
                 (student_id,),
