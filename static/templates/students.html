@@ -565,15 +565,31 @@
                     <td>{{ student.first_name_UA }} {{ ui.reduced_program_badge(student) }} {{ ui.student_status_badge(student) }}</td>
                     <td>{{ student.middle_name_UA }}</td>
                     <td>{{ student.birth_date }}</td>
-                    <td>
-                        {% if student.group_name %}
-                            {{ student.group_name }}
-                        {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
-                            <span class="text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
-                        {% else %}
-                            <span class="text-muted">-</span>
-                        {% endif %}
-                    </td>
+					<td>
+						{% if student.group_name %}
+							{{ student.group_name }}
+							{% if student.is_parallel %}
+								<span class="badge bg-info-subtle text-info-emphasis ms-1"
+									  title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+									<i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+								</span>
+							{% endif %}
+						{% elif student.all_groups_list %}
+							{# s.group_id=NULL, але активні enrollments є (напр. заморожений
+							   з однієї групи, але паралельно вчиться в іншій) #}
+							{{ student.all_groups_list | join(', ') }}
+							{% if student.is_parallel %}
+								<span class="badge bg-info-subtle text-info-emphasis ms-1"
+									  title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+									<i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+								</span>
+							{% endif %}
+						{% elif student.status == 'frozen' and student.frozen_previous_group_name %}
+							<span class="text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
+						{% else %}
+							<span class="text-muted">-</span>
+						{% endif %}
+					</td>
                     <td style="min-width:160px;">
                         <div class="progress-bar-container">
                             <div class="fill-bar">
