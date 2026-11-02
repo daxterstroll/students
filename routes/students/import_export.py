@@ -10,6 +10,7 @@ from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
 from routes.gender import detect_gender_from_middle_name
+from routes.enrollments_service import add_enrollment, ensure_enrollments_table
 import sqlite3
 from routes.utils import generate_english_name
 from werkzeug.utils import secure_filename
@@ -100,6 +101,8 @@ def import_from_excel():
         file.save(filepath)
 
         conn = get_db()
+        ensure_enrollments_table(conn)
+        enrollments_added = 0  # лічильник паралельних
         inserted = 0
         skipped_rows = []  # список dict: {'row': i, 'fio': ..., 'birth_date': ..., 'reason': ...}
         gender_auto = 0
@@ -238,18 +241,55 @@ def import_from_excel():
                     else:
                         birth_date = str(birth_date_raw).strip()
 
-                    existing = conn.execute("""
-                        SELECT id FROM students
-                        WHERE last_name_UA=? AND first_name_UA=? AND middle_name_UA=? AND birth_date=?
-                    """, (last_name, first_name, middle_name, birth_date)).fetchone()
+                    # Пошук існуючої людини: спочатку ІПН, потім ПІБ+дата
+                    existing = None
+                    if tax_id:
+                        existing = conn.execute(
+                            "SELECT id, group_id FROM students WHERE tax_id = ?",
+                            (tax_id,),
+                        ).fetchone()
+                    if not existing:
+                        existing = conn.execute("""
+                            SELECT id, group_id FROM students
+                            WHERE last_name_UA=? AND first_name_UA=?
+                              AND middle_name_UA=? AND birth_date=?
+                        """, (last_name, first_name, middle_name, birth_date)).fetchone()
+
                     if existing:
-                        skipped_rows.append({
-                            'row': i,
-                            'fio': f"{last_name} {first_name} {middle_name}",
-                            'birth_date': birth_date,
-                            'reason': f"Студент уже є в базі (ID {existing['id']}) — дублікат"
-                        })
+                        sid = existing['id']
+                        # Уже в цій групі (primary або enrollment)?
+                        in_group = conn.execute("""
+                            SELECT 1 FROM student_enrollments
+                            WHERE student_id = ? AND group_id = ? AND status = 'active'
+                        """, (sid, group_id)).fetchone()
+                        if not in_group and existing['group_id'] == group_id:
+                            in_group = True
+
+                        if in_group:
+                            skipped_rows.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'birth_date': birth_date,
+                                'reason': f"Уже в групі {group_id} (ID {sid})",
+                            })
+                            continue
+
+                        # Та сама людина, інша група → паралельне навчання
+                        ok, msg = add_enrollment(
+                            sid, group_id, is_primary=False, conn=conn,
+                        )
+                        if ok:
+                            enrollments_added += 1
+                        else:
+                            skipped_rows.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'birth_date': birth_date,
+                                'reason': msg,
+                            })
                         continue
+
+                    # Нова людина — INSERT як раніше (код нижче без змін)
 
                     # Автоматична генерація англійських ПІБ (КМУ №55-2010) -
                     # з Excel ці поля НЕ читаються.
@@ -270,6 +310,11 @@ def import_from_excel():
                     ))
 
                     inserted += 1
+                    
+                    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                    add_enrollment(
+                        new_id, group_id, is_primary=True, conn=conn,
+                    )
 
                 except Exception as e:
                     logger.debug(f"Пропущено рядок {i} при імпорті студентів з Excel: {e}")
@@ -298,7 +343,7 @@ def import_from_excel():
         )
 
         # Підсумкове повідомлення з деталями по статі
-        summary = f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {len(skipped_rows)}"
+        summary = f"✅ Імпорт завершено. Додано нових: {inserted}, паралельних навчань: {enrollments_added}, пропущено: {len(skipped_rows)}"
         if gender_auto:
             summary += f", стать визначено автоматично: {gender_auto}"
         if gender_missing:
