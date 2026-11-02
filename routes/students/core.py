@@ -350,6 +350,15 @@ def student_list():
                g.isced_f_en,
                g.educational_program_en,
                g.knowledge_area_en,
+               -- Список активних enrollments (паралельне навчання). Використовуємо
+               -- той самий підхід, що й в analytics.py::student_options() —
+               -- GROUP_CONCAT через ' | ' (потім у Python розбиваємо).
+               (SELECT GROUP_CONCAT(g2.name, ' | ')
+                FROM student_enrollments e2
+                JOIN groups g2 ON g2.id = e2.group_id
+                WHERE e2.student_id = s.id AND e2.status = 'active') AS all_groups,
+               (SELECT COUNT(*) FROM student_enrollments e2
+                WHERE e2.student_id = s.id AND e2.status = 'active') AS enrollment_count,
                fs.id AS frozen_record_id,
                fs.reason AS frozen_reason,
                pg.name AS frozen_previous_group_name
@@ -479,6 +488,23 @@ def student_list():
         student_dict['filled_fields'] = student_filled_fields
         student_dict['total_fields'] = student_total_fields
         student_dict['has_photo'] = bool(student_dict.get('photo'))
+
+        # ── Паралельне навчання: розбираємо GROUP_CONCAT у список ──
+        raw_groups = (student_dict.get('all_groups') or '').strip()
+        student_dict['all_groups_list'] = [
+            name.strip() for name in raw_groups.split('|') if name.strip()
+        ]
+        # Дублюємо primary у all_groups, якщо його там з якоїсь причини
+        # немає (наприклад, у старих даних enrollment ще не забекфілений
+        # або s.group_id змінили вручну). Це гарантує, що primary завжди
+        # присутній в all_groups_list.
+        if student_dict.get('group_name'):
+            primary_short = (student_dict['group_name'].split(' (')[0]).strip()
+            if primary_short and primary_short not in student_dict['all_groups_list']:
+                student_dict['all_groups_list'].insert(0, primary_short)
+
+        student_dict['is_parallel'] = len(student_dict['all_groups_list']) > 1
+        student_dict['extra_groups_count'] = max(0, len(student_dict['all_groups_list']) - 1)
 
         # ── Заповненість військових даних (залежно від статусу) ──
         military_row_for_calc = student_dict if student_dict.get('has_military') else None

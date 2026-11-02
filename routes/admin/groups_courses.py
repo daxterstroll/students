@@ -1093,24 +1093,48 @@ def graduation():
 
         placeholders = ','.join('?' for _ in group_ids)
         selected_groups = conn.execute(f"""
-            SELECT id, name FROM groups WHERE id IN ({placeholders}) AND archived = FALSE ORDER BY name
+            SELECT id, name FROM groups WHERE id IN ({placeholders}) AND archived = FALSE
+            ORDER BY name
         """, group_ids).fetchall()
 
         groups_with_students = []
         for g in selected_groups:
+            # Включаємо і primary (students.group_id), і паралельні
+            # enrollment'и (student_enrollments.status='active'). Студент
+            # може з'явитись у кількох списках — це OK, бо include_/
+            # reason_ тепер ключуються за (group_id, student_id).
             students = conn.execute("""
-                SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name
-                FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-                ORDER BY last_name_UA COLLATE UKRAINIAN
-            """, (g['id'],)).fetchall()
+                SELECT s.id,
+                       TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name,
+                       CASE WHEN s.group_id = ? THEN 1 ELSE 0 END AS is_primary
+                FROM students s
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (
+                      s.group_id = ?
+                      OR EXISTS (
+                          SELECT 1 FROM student_enrollments e
+                          WHERE e.student_id = s.id
+                            AND e.group_id = ? AND e.status = 'active'
+                      )
+                  )
+                ORDER BY s.last_name_UA COLLATE UKRAINIAN
+            """, (g['id'], g['id'], g['id'])).fetchall()
             groups_with_students.append({'id': g['id'], 'name': g['name'], 'students': students})
 
         conn.close()
         return render_template("graduation_review.html", groups_with_students=groups_with_students)
 
     groups = conn.execute("""
-        SELECT id, name, course, start_year, study_form, degree_level, program_credits,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0) AS student_count
+        SELECT id, name,
+               (SELECT COUNT(*) FROM students s
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (
+                      s.group_id = groups.id
+                      OR EXISTS (SELECT 1 FROM student_enrollments e
+                                 WHERE e.student_id = s.id
+                                   AND e.group_id = groups.id AND e.status = 'active')
+                  )
+               ) AS student_count
         FROM groups WHERE archived = FALSE ORDER BY name
     """).fetchall()
     conn.close()
@@ -1367,16 +1391,26 @@ def expulsion_confirm():
     to_expel = []  # (student_id, previous_group_id, reason, frozen_id)
 
     for group_id in group_ids:
-        students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
-            (group_id,),
-        ).fetchall()
+        # Та сама логіка, що й у кроці 2 (expulsion POST): знаходимо всіх
+        # студентів групи — і primary, і паралельних. Ключі форми тепер
+        # містять group_id, тому один і той самий студент у двох групах
+        # обробляється незалежно.
+        students = conn.execute("""
+            SELECT s.id FROM students s
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (
+                  s.group_id = ?
+                  OR EXISTS (SELECT 1 FROM student_enrollments e
+                             WHERE e.student_id = s.id
+                               AND e.group_id = ? AND e.status = 'active')
+              )
+        """, (group_id, group_id)).fetchall()
         for s in students:
-            if request.form.get(f"include_{s['id']}") != '1':
+            if request.form.get(f"include_{group_id}_{s['id']}") != '1':
                 continue
-            reason = (request.form.get(f"reason_{s['id']}") or '').strip()
+            reason = (request.form.get(f"reason_{group_id}_{s['id']}") or '').strip()
             if not reason:
-                flash(f"Для студента (ID {s['id']}) не вказано причину відрахування.", "error")
+                flash(f"Для студента (ID {s['id']}, група ID {group_id}) не вказано причину відрахування.", "error")
                 conn.close()
                 return redirect(url_for('admin.expulsion'))
             to_expel.append((s['id'], group_id, reason, None))
@@ -1444,10 +1478,19 @@ def expulsion_confirm():
                     student_id, previous_group_id,
                     status='expelled', conn=conn,
                 )
-            conn.execute(
-                "UPDATE students SET archived = TRUE, group_id = NULL WHERE id = ?",
-                (student_id,),
-            )
+
+            # Архівуємо ЛИШЕ якщо в студента не лишилось жодного активного
+            # enrollment. Для паралельника (напр. відрахований з A, але
+            # досі вчиться в B) — end_enrollment уже зробив B основною і
+            # зняв archived=FALSE; форсувати archived=TRUE тут означало б
+            # «сховати» студента, який реально навчається.
+            conn.execute("""
+                UPDATE students SET archived = TRUE, group_id = NULL
+                WHERE id = ?
+                  AND NOT EXISTS (SELECT 1 FROM student_enrollments
+                                  WHERE student_id = ? AND status = 'active')
+            """, (student_id, student_id))
+
             if frozen_id:
                 conn.execute(
                     """
