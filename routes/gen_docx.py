@@ -679,6 +679,7 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     total_grades = 0
     excellent_count = 0
     satisfactory_count = 0
+    fail_count = 0
 
     for g in all_grades:
         grade_text = g.get('grade', '')
@@ -694,6 +695,12 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         elif ' D' in grade_text or ' E' in grade_text:
             satisfactory_count += 1
 
+        # Fx / F (або текст без літери, напр. "Незадовільно / Fail") -
+        # це провал, а не «просто не A/D/E». Без цієї гілки студент із
+        # 45 Fx і рештою A отримував «Диплом з відзнакою».
+        elif ' Fx' in grade_text or ' F' in grade_text or 'Незадовільно' in grade_text or 'Fail' in grade_text:
+            fail_count += 1
+
     # аттестация
     attestation_grade = ''
 
@@ -707,6 +714,7 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         total_grades > 0
         and excellent_count / total_grades >= 0.75
         and satisfactory_count == 0
+        and fail_count == 0
         and ' A' in attestation_grade
     )
 

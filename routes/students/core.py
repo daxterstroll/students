@@ -941,7 +941,25 @@ def add_student():
         first_name_ua = request.form['first_name_UA']
         middle_name_ua = request.form.get('middle_name_UA', '')
         last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
-                # ── Перевірка: чи ця людина вже є в системі (активна чи архівна)? ──
+
+        # ── Усі поля з форми читаємо ОДИН раз, ДО будь-яких UPDATE. ──
+        # Раніше gender/license_id/phone/... визначались ПІСЛЯ if existing:,
+        # тому в цій гілці UPDATE падав з NameError → 500 при повторному
+        # зарахуванні архівного студента.
+        gender_form = (request.form.get('gender') or 'auto').strip()
+        if gender_form in ('M', 'F'):
+            gender = gender_form
+        else:
+            gender = detect_gender_from_middle_name(middle_name_ua)
+
+        license_id = request.form.get('license_id') or None
+        phone = (request.form.get('phone') or '').strip() or None
+        phone_backup = (request.form.get('phone_backup') or '').strip() or None
+        email = (request.form.get('email') or '').strip() or None
+        address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
+        edebo_code_form = (request.form.get('edebo_code') or '').strip() or None
+
+        # ── Перевірка: чи ця людина вже є в системі (активна чи архівна)? ──
         tax_id_form = (request.form.get('tax_id') or '').strip() or None
         existing = None
         if tax_id_form:
@@ -949,22 +967,53 @@ def add_student():
                 "SELECT id, archived FROM students WHERE tax_id = ?",
                 (tax_id_form,),
             ).fetchone()
-        if not existing:
+
+        # Fallback по ПІБ+дата ЛИШЕ якщо tax_id НЕ введено — щоб не
+        # зіставити двох різних людей з однаковим ПІБ+датою, але різними
+        # ІПН (раніше цей fallback спрацьовував навіть коли ІПН був
+        # введений, але не знаходився).
+        if not existing and not tax_id_form:
+            # birth_date у базі може бути '2000-05-15' / '15.05.2000' /
+            # '15/05/2000' (імпорт з Excel, старі дані) — порівнюємо
+            # нормалізовано, а не посимвольно.
             existing = conn.execute("""
                 SELECT id, archived FROM students
                 WHERE LOWER_UA(last_name_UA) = LOWER_UA(?)
                   AND LOWER_UA(first_name_UA) = LOWER_UA(?)
                   AND LOWER_UA(COALESCE(middle_name_UA, '')) = LOWER_UA(?)
-                  AND birth_date = ?
+                  AND REPLACE(REPLACE(REPLACE(COALESCE(birth_date,''), '-', '.'), '/', '.'), ' ', '')
+                      = REPLACE(REPLACE(REPLACE(?, '-', '.'), '/', '.'), ' ', '')
             """, (last_name_ua, first_name_ua, middle_name_ua, birth_date)).fetchone()
 
         if existing:
             existing_id = existing['id']
-            # Перевіряємо, чи вже є active enrollment у цій групі
+            was_archived = bool(existing['archived'])
+
             already_in_group = conn.execute("""
                 SELECT 1 FROM student_enrollments
                 WHERE student_id = ? AND group_id = ? AND status = 'active'
             """, (existing_id, group_int)).fetchone()
+
+            # Студент архівний, але enrollment у цій групі досі 'active'
+            # (типовий наслідок archive_group без end_enrollment) —
+            # просто знімаємо з архіву, БЕЗ попередження «вже навчається»
+            # (це була б неправда: він архівний).
+            if already_in_group and was_archived:
+                conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (existing_id,))
+                conn.commit()
+                log_action(
+                    current_username(),
+                    f"розархівовано студента при повторному додаванні: "
+                    f"{last_name_ua} {first_name_ua} (ID {existing_id})",
+                    group_ids=[group_int],
+                )
+                conn.close()
+                flash(
+                    f"Студент {last_name_ua} {first_name_ua} уже був у цій групі в архіві — "
+                    f"повернуто в активні.",
+                    "success",
+                )
+                return redirect(url_for('students.student_details', student_id=existing_id))
 
             if already_in_group:
                 flash(
@@ -974,20 +1023,45 @@ def add_student():
                 conn.close()
                 return redirect(url_for('students.student_details', student_id=existing_id))
 
-            # Реактивуємо enrollment і знімаємо з архіву
-            add_enrollment(existing_id, group_int, is_primary=True, conn=conn)
+            # Активуємо enrollment (якщо в цій групі був expelled/graduated —
+            # переактивується; якщо запису не було — створюється новий).
+            ok_enroll, msg_enroll = add_enrollment(
+                existing_id, group_int, is_primary=True, conn=conn,
+            )
+            if not ok_enroll:
+                conn.rollback()
+                conn.close()
+                flash(f"Не вдалося додати навчання в групу: {msg_enroll}", "error")
+                return redirect(url_for('students.student_details', student_id=existing_id))
+
+            # add_enrollment уже знімає archived=FALSE при наявності
+            # active enrollment — дублюємо для певності (idempotent).
             conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (existing_id,))
-            # Оновлюємо змінені поля, які прийшли з форми (ПІБ/телефон/email тощо)
+
+            # COALESCE: порожні поля у формі НЕ затирають наявні дані
+            # (раніше UPDATE сліпо перезаписував усе — телефон, email,
+            # ЄДЕБО, ліцензія, адреса, ПІБ англ., по батькові ставали
+            # NULL, якщо у формі їх не заповнили).
             conn.execute("""
                 UPDATE students SET
-                    last_name_UA=?, first_name_UA=?, middle_name_UA=?,
-                    last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    edebo_code=?, tax_id=?, license_id=?,
-                    phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
+                    last_name_UA         = COALESCE(NULLIF(?, ''), last_name_UA),
+                    first_name_UA        = COALESCE(NULLIF(?, ''), first_name_UA),
+                    middle_name_UA       = COALESCE(NULLIF(?, ''), middle_name_UA),
+                    last_name_ENG        = COALESCE(NULLIF(?, ''), last_name_ENG),
+                    first_name_ENG       = COALESCE(NULLIF(?, ''), first_name_ENG),
+                    birth_date           = COALESCE(NULLIF(?, ''), birth_date),
+                    edebo_code           = COALESCE(?, edebo_code),
+                    tax_id               = COALESCE(?, tax_id),
+                    license_id           = COALESCE(?, license_id),
+                    phone                = COALESCE(?, phone),
+                    phone_backup         = COALESCE(?, phone_backup),
+                    email                = COALESCE(?, email),
+                    address_of_residence = COALESCE(?, address_of_residence),
+                    gender               = COALESCE(?, gender)
                 WHERE id=?
-            """, (last_name_ua, first_name_ua, middle_name_ua,
+            """, (last_name_ua, first_name_ua, middle_name_ua or '',
                   last_name_eng, first_name_eng, birth_date,
-                  request.form.get('edebo_code'), tax_id_form, license_id,
+                  edebo_code_form, tax_id_form, license_id,
                   phone, phone_backup, email, address_of_residence, gender,
                   existing_id))
             conn.commit()
@@ -1006,13 +1080,10 @@ def add_student():
             )
             return redirect(url_for('students.student_details', student_id=existing_id))
 
-        # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
-        gender_form = (request.form.get('gender') or 'auto').strip()
-        if gender_form in ('M', 'F'):
-            gender = gender_form
-        else:
-            gender = detect_gender_from_middle_name(middle_name_ua)
-
+        # ── Новий студент ──
+        # gender / license_id / phone / phone_backup / email /
+        # address_of_residence уже визначені ВИЩЕ, тому тут НЕ
+        # повторюємо їхні визначення.
         issued_VOD_raw = request.form.get('issued_VOD', '').strip()
         issued_VOD = None
         if issued_VOD_raw:
@@ -1024,13 +1095,6 @@ def add_student():
                 flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
                 conn.close()
                 return render_template('add_student.html', groups=groups, licenses=licenses)
-
-        license_id = request.form.get('license_id') or None
-        phone = (request.form.get('phone') or '').strip() or None
-        phone_backup = (request.form.get('phone_backup') or '').strip() or None
-        email = (request.form.get('email') or '').strip() or None
-        address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
-
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
