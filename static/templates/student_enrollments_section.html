@@ -71,6 +71,16 @@
                         {% endif %}
                     </div>
 
+                    <div class="enrollment-card__license" style="margin-top:-.35rem;">
+                        <i class="bi bi-upc-scan text-muted"></i>
+                        <span class="text-muted small">Код ЄДЕБО:</span>
+                        {% if e.edebo_code %}
+                            <span class="enrollment-badge enrollment-badge--license font-monospace">{{ e.edebo_code }}</span>
+                        {% else %}
+                            <span class="text-muted fst-italic small">не вказано</span>
+                        {% endif %}
+                    </div>
+
                     {% if e.status == 'active' %}
                     <div class="enrollment-card__actions">
                         {% if not e.is_primary %}
@@ -88,6 +98,12 @@
                                 data-group-id="{{ e.group_id }}"
                                 data-group-name="{{ e.group_name or '' }}">
                             <i class="bi bi-award"></i> Змінити ліцензію
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info js-change-edebo"
+                                data-group-id="{{ e.group_id }}"
+                                data-group-name="{{ e.group_name or '' }}"
+                                data-current-edebo="{{ e.edebo_code or '' }}">
+                            <i class="bi bi-upc-scan"></i> Змінити ЄДЕБО
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-success js-end-enrollment"
                                 data-group-id="{{ e.group_id }}"
@@ -126,10 +142,6 @@
     </div>
 </div>
 
-{# ═══════════════════════════════════════════════════════════════════
-   Модальні вікна — всі дії створюють наказ
-   ═══════════════════════════════════════════════════════════════════ #}
-
 <!-- Додати паралельне навчання -->
 <div class="modal fade" id="addEnrollmentModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -162,6 +174,11 @@
                             <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Код ЄДЕБО</label>
+                        <input type="text" name="edebo_code" class="form-control"
+                               placeholder="залиште пустим — як у студента">
                     </div>
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="newEnrollPrimary">
@@ -247,6 +264,39 @@
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
                     <button type="submit" class="btn btn-primary">
                         <i class="bi bi-check-lg me-1"></i>Оформити наказ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Змінити код ЄДЕБО (без наказу) -->
+<div class="modal fade" id="changeEdeboModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="changeEdeboForm">
+                <input type="hidden" name="action_type" value="change_edebo_code">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-upc-scan me-2"></i>Змінити код ЄДЕБО</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Код ЄДЕБО зберігається окремо для кожного навчання (як і ліцензія).
+                        Наказ тут <strong>не потрібен</strong> — зміна набирає чинності одразу.
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small fw-semibold">Новий код ЄДЕБО <span class="text-danger">*</span></label>
+                        <input type="text" name="new_edebo_code" id="newEdeboInput"
+                               class="form-control font-monospace" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Зберегти
                     </button>
                 </div>
             </form>
@@ -445,10 +495,20 @@ document.addEventListener('DOMContentLoaded', function () {
             const gid = btn.dataset.groupId;
             const form = document.getElementById('changeLicenseForm');
             form.action = actionUrlTemplate.replace('__GID__', gid);
-            const m = new bootstrap.Modal(document.getElementById('changeLicenseModal'));
-            m.show();
+            new bootstrap.Modal(document.getElementById('changeLicenseModal')).show();
         });
     });
+
+    // Зміна коду ЄДЕБО
+	document.querySelectorAll('.js-change-edebo').forEach(function (btn) {
+		btn.addEventListener('click', function () {
+			const gid = btn.dataset.groupId;
+			const form = document.getElementById('changeEdeboForm');
+			form.action = actionUrlTemplate.replace('__GID__', gid);
+			document.getElementById('newEdeboInput').value = btn.dataset.currentEdebo || '';
+			new bootstrap.Modal(document.getElementById('changeEdeboModal')).show();
+		});
+	});
 
     // Завершення навчання (випуск / відрахування)
     document.querySelectorAll('.js-end-enrollment').forEach(function (btn) {
@@ -480,8 +540,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 reasonInput.required = true;
             }
 
-            const m = new bootstrap.Modal(document.getElementById('endEnrollmentModal'));
-            m.show();
+            new bootstrap.Modal(document.getElementById('endEnrollmentModal')).show();
         });
     });
 });

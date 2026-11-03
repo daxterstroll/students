@@ -189,12 +189,15 @@ CREATE TABLE IF NOT EXISTS student_enrollments (
     group_id    INTEGER NOT NULL,
     is_primary  INTEGER NOT NULL DEFAULT 0,
     status      TEXT NOT NULL DEFAULT 'active',
+    license_id  INTEGER,
+    edebo_code  TEXT,                    -- ЄДЕБО для ЦЬОГО навчання
     order_id    INTEGER,
     notes       TEXT,
     created_at  TEXT DEFAULT (datetime('now', 'localtime')),
     UNIQUE (student_id, group_id),
     FOREIGN KEY (student_id) REFERENCES students(id),
-    FOREIGN KEY (group_id) REFERENCES groups(id)
+    FOREIGN KEY (group_id) REFERENCES groups(id),
+    FOREIGN KEY (license_id) REFERENCES institution_licenses(id)
 );
 
 -- ─── Військовий облік ───
@@ -681,6 +684,30 @@ _add_column_if_missing('students', 'dismissed_at', 'TEXT')
 # student_study_periods — привязка періодів до конкретного enrollment'а
 _add_column_if_missing('student_study_periods', 'group_id', 'INTEGER REFERENCES groups(id)')
 cur.execute("CREATE INDEX IF NOT EXISTS idx_study_periods_group ON student_study_periods(group_id)")
+
+# student_enrollments — ЄДЕБО на рівні навчання
+_add_column_if_missing('student_enrollments', 'edebo_code', 'TEXT')
+
+# Одноразовий backfill: старий edebo_code з students → у primary enrollment.
+# Робимо ЛИШЕ якщо в enrollment ще порожньо, і тільки для primary
+# (щоб у паралельного студента не «затекло» одне значення у всі групи).
+cur.execute("""
+    UPDATE student_enrollments
+    SET edebo_code = (
+        SELECT s.edebo_code FROM students s
+        WHERE s.id = student_enrollments.student_id
+          AND s.edebo_code IS NOT NULL AND s.edebo_code != ''
+    )
+    WHERE edebo_code IS NULL
+      AND is_primary = 1
+      AND EXISTS (
+          SELECT 1 FROM students s
+          WHERE s.id = student_enrollments.student_id
+            AND s.edebo_code IS NOT NULL AND s.edebo_code != ''
+      )
+""")
+if cur.rowcount:
+    print(f"➕ student_enrollments.edebo_code: перенесено з students для {cur.rowcount} primary-записів")
 
 # Одноразове заповнення: старі періоди (без group_id) прив'язуємо до
 # ОСНОВНОЇ групи студента на момент міграції — далі студент зможе

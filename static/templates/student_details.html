@@ -123,10 +123,14 @@
                             <div class="text-muted small">Дата народження</div>
                             <div class="font-monospace">{{ val(student.birth_date) }}</div>
                         </div>
-                        <div class="col-6">
-                            <div class="text-muted small">Код ЄДЕБО</div>
-                            <div class="font-monospace">{{ val(student.edebo_code) }}</div>
-                        </div>
+						<div class="col-6">
+							<div class="text-muted small">
+								Основний код ЄДЕБО
+								<i class="bi bi-info-circle" style="font-size:.7rem;"
+								   title="Це код ОСНОВНОГО навчання. Усі коди по кожній групі — у блоці «Навчання (групи)» нижче."></i>
+							</div>
+							<div class="font-monospace">{{ val(student.edebo_code) }}</div>
+						</div>
                         <div class="col-6">
                             <div class="text-muted small">Ідентифікаційний код</div>
                             <div class="font-monospace">{{ val(student.tax_id) }}</div>

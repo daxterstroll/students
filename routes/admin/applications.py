@@ -529,6 +529,7 @@ def pending_student_review(pending_id):
                     student_id, group_id,
                     is_primary=not has_active,
                     license_id=license_id,  # з форми, не з картки студента
+                    edebo_code=row['edebo_code'],
                     conn=conn,
                 )
             else:
@@ -547,6 +548,7 @@ def pending_student_review(pending_id):
                     student_id, group_id,
                     is_primary=True,
                     license_id=license_id,  # те, що обрано в формі approve
+                    edebo_code=row['edebo_code'],
                     conn=conn,
                 )
 
@@ -1201,6 +1203,18 @@ def update_request_review(request_id):
                     f"UPDATE students SET {set_clause} WHERE id=?",
                     list(simple_updates.values()) + [student_id]
                 )
+                # Синхронізуємо зміни per-enrollment полів із primary enrollment,
+                # бо students.<field> — це лише кеш (джерело істини — enrollment).
+                if 'edebo_code' in simple_updates:
+                    _primary = conn.execute(
+                        "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                    ).fetchone()
+                    if _primary and _primary['group_id']:
+                        conn.execute(
+                            "UPDATE student_enrollments SET edebo_code = ? "
+                            "WHERE student_id = ? AND group_id = ? AND is_primary = 1",
+                            (simple_updates['edebo_code'], student_id, _primary['group_id']),
+                        )
                 applied_parts.append(", ".join(simple_updates.keys()))
                 applied_field_keys.extend(simple_updates.keys())
 
