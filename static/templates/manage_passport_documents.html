@@ -92,9 +92,9 @@
                         <input type="text" name="valid_until" id="valid_until" class="form-control" placeholder="Напр., 19.06.2030">
                     </div>
                     <div class="col-md-12">
-                        <label for="document_scans" class="form-label">Скановані копії (необов'язково, до {{ max_files }} файлів)</label>
+                        <label for="document_scans" class="form-label">Скановані копії (необов'язково, до {{ max_files }} за раз)</label>
                         <input type="file" name="document_scans" id="document_scans" class="form-control" accept="image/*,.pdf" multiple>
-                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files }} на запис.</div>
+                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files }} за одну загрузку. Загальна кількість сканів не обмежена — можна додавати новими партіями.</div>
                     </div>
                     <div class="col-md-3 d-flex align-items-end">
                         <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
@@ -241,7 +241,7 @@
                                                                         <input type="text" name="valid_until" class="form-control" value="{{ doc.valid_until or '' }}">
                                                                     </div>
                                                                     <div class="col-12 mt-3 border-top pt-3">
-                                                                        <label class="form-label">Скановані копії ({{ doc.attachments|length }}/{{ max_files }})</label>
+                                                                        <label class="form-label">Скановані копії ({{ doc.attachments|length }})</label>
                                                                         {% if doc.attachments %}
                                                                         <div class="mb-2">
                                                                             {% for a in doc.attachments %}
@@ -258,10 +258,8 @@
                                                                         {% else %}
                                                                         <div class="small text-muted mb-2">Немає доданих сканів.</div>
                                                                         {% endif %}
-                                                                        {% if doc.attachments|length < max_files %}
                                                                         <input type="file" name="document_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
-                                                                        <div class="form-text">Додати ще файли (максимум {{ max_files - doc.attachments|length }}).</div>
-                                                                        {% endif %}
+                                                                        <div class="form-text">Додати ще файли — не більше {{ max_files }} за одну загрузку.</div>
                                                                     </div>
                                                                     <div class="col-12 mt-3">
                                                                         <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>

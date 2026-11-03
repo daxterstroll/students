@@ -47,13 +47,7 @@
                     </button>
                 </div>
             </form>
-            {% if military_attachments|length >= max_files %}
-            <div class="alert alert-warning small mt-3 mb-0">
-                <i class="bi bi-exclamation-triangle me-1"></i>
-                Досягнуто ліміт сканованих копій ({{ max_files }}). Видаліть непотрібні скани,
-                щоб мати змогу завантажити новий PDF.
-            </div>
-            {% endif %}
+            {# Загальна кількість сканів не обмежується — можна завантажувати новими партіями (по {{ max_files }} файлів за раз). #}
         </div>
     </div>
 
@@ -207,21 +201,15 @@
                         <div class="small text-muted mb-2">Немає доданих сканів.</div>
                         {% endif %}
 
-                        {% if military_attachments|length < max_files %}
                         <input type="file" name="military_scans" class="form-control form-control-sm"
                                accept="image/*,.pdf" multiple>
                         <div class="form-text">
                             Можна кілька файлів (фото сторінок або PDF), не більше
-                            {{ max_files - military_attachments|length }} ще.
+                            {{ max_files }} за одну загрузку. Кількість уже збережених
+                            сканів не обмежена — можна завантажувати новими партіями.
                             Завантажені через блок вище PDF-файли «Резерв+» автоматично
                             з'являються тут.
                         </div>
-                        {% else %}
-                        <div class="small text-muted">
-                            Ліміт {{ max_files }} файлів вичерпано. Видаліть непотрібні скани,
-                            щоб додати нові.
-                        </div>
-                        {% endif %}
                     </div>
 
                     {# ── Кнопки ── #}
