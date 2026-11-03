@@ -732,12 +732,17 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     # -----------------------------
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    # Номери диплома/додатка беруться для КОНКРЕТНОЇ групи, під яку
+    # генерується документ (student_dict['group_id']), а не «будь-який»
+    # номер студента. Якщо для цієї групи номер ще не заводили — у
+    # документі номер буде порожнім, і адмін побачить, що треба заповнити
+    # (Довідники → Номери диплому / додатку → ця група).
     diploma_row = conn.execute("""
         SELECT diploma_number, appendix_number
         FROM diplomas
-        WHERE student_id = ?
+        WHERE student_id = ? AND group_id = ?
         ORDER BY id DESC LIMIT 1
-    """, (student['id'],)).fetchone()
+    """, (student['id'], student_dict.get('group_id'))).fetchone()
     conn.close()
     
 # -----------------------------

@@ -276,7 +276,9 @@ def import_from_excel():
 
                         # Та сама людина, інша група → паралельне навчання
                         ok, msg = add_enrollment(
-                            sid, group_id, is_primary=False, conn=conn,
+                            sid, group_id, is_primary=False,
+                            license_id=license_id,  # з колонки E файлу — НЕ успадковувати
+                            conn=conn,
                         )
                         if ok:
                             enrollments_added += 1

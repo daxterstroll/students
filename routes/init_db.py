@@ -374,9 +374,11 @@ CREATE TABLE IF NOT EXISTS "foreign_education_docs" (
 CREATE TABLE IF NOT EXISTS "diplomas" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
+    group_id INTEGER,
     diploma_number TEXT,
     appendix_number TEXT,
-    FOREIGN KEY (student_id) REFERENCES students(id)
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (group_id) REFERENCES groups(id)
 );
 CREATE TABLE IF NOT EXISTS "accreditations" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -673,6 +675,9 @@ print("── Міграція схеми ──")
 _add_column_if_missing('students', 'gender', "TEXT CHECK(gender IN ('M', 'F'))")
 _add_column_if_missing('students', 'address_of_residence', 'TEXT')
 _add_column_if_missing('students', 'dismissed_at', 'TEXT')
+
+# diplomas — ключ тепер (student_id, group_id), а не просто student_id
+_add_column_if_missing('diplomas', 'group_id', 'INTEGER')
 
 # military — усі поля з v1/v2/v3
 for _col, _type in [
@@ -1039,6 +1044,43 @@ def detect_gender_from_middle_name(middle_name):
     if m.endswith(('івна', 'ївна', 'овна', 'евна', 'євна', 'ична')):
         return 'F'
     return 'M'
+    
+# ── 4.5. diplomas: перенос ключа з (student_id) на (student_id, group_id) ──
+# Для існуючих записів, де group_id порожнє, заповнюємо його основною
+# групою студента (це відповідає старій поведінці: «один номер на
+# студента» → «номер для primary-групи»).
+cur.execute("""
+    UPDATE diplomas
+    SET group_id = (
+        SELECT s.group_id FROM students s WHERE s.id = diplomas.student_id
+    )
+    WHERE group_id IS NULL
+      AND EXISTS (
+          SELECT 1 FROM students s
+          WHERE s.id = diplomas.student_id AND s.group_id IS NOT NULL
+      )
+""")
+if cur.rowcount:
+    print(f"➕ diplomas: підтягнуто group_id для {cur.rowcount} записів")
+
+# Тепер, коли всі існуючі записи мають group_id, можна створити
+# UNIQUE INDEX. Він не заважатиме legacy-записам без group_id
+# (напр. студент без групи) — partial index WHERE group_id IS NOT NULL.
+cur.execute("""
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_diplomas_student_group_unique
+    ON diplomas(student_id, group_id)
+    WHERE group_id IS NOT NULL
+""")
+
+# Перевірка: скільки записів залишилось без group_id (зазвичай це
+# студенти без групи — архівні, заморожені, без enrollment'ів).
+_orphan = cur.execute(
+    "SELECT COUNT(*) FROM diplomas WHERE group_id IS NULL"
+).fetchone()[0]
+if _orphan:
+    print(f"⚠️ diplomas: {_orphan} записів без group_id "
+          f"(студенти без групи) — вони не будуть показані в manage_diplomas "
+          f"і не використовуватимуться при генерації документів")
 
 
 rows = cur.execute(

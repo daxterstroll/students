@@ -237,12 +237,17 @@
                                       title="Не вказано ліцензію вступу — заповніть в картці студента">
                                     <i class="bi bi-exclamation-triangle"></i> без ліцензії
                                 </span>
-                                {% elif show_all_licenses and r.license_id != base_license_id %}
-                                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
-                                      title="Студент не належить до базової ліцензії">
-                                    {{ r.license_short_name_ua or '—' }}
-                                </span>
-                                {% endif %}
+								{% else %}
+									{% set lic_names = r.get('enrollment_license_shorts') or [] %}
+									{% if lic_names %}
+										{% for lic in lic_names %}
+										<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
+											  title="Ліцензія навчання">
+											<i class="bi bi-award"></i> {{ lic }}
+										</span>
+										{% endfor %}
+									{% endif %}
+								{% endif %}
                             </td>
                             <td class="font-monospace small">{{ r.birth_date or '—' }}</td>
                             <td>

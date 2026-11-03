@@ -204,6 +204,15 @@ def add_enrollment(
         # Якщо license_id не передано — успадковуємо від студента
         if license_id is None:
             license_id = st['license_id'] if hasattr(st, 'keys') else st[1]
+            if license_id is None:
+                # Останній fallback: базова ліцензія закладу. Так активний
+                # enrollment НІКОЛИ не залишається без ліцензії — краще
+                # підставити базову (видиму в звітах), ніж NULL (невидимий).
+                base_row = conn.execute(
+                    "SELECT id FROM institution_licenses WHERE is_base = 1 LIMIT 1"
+                ).fetchone()
+                if base_row:
+                    license_id = base_row[0] if not hasattr(base_row, 'keys') else base_row['id']
 
         existing = conn.execute(
             """
@@ -414,6 +423,72 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
         if own:
             conn.commit()
         return True, 'Навчання завершено'
+    finally:
+        if own:
+            conn.close()
+            
+def get_student_licenses(student_id: int, conn=None) -> set:
+    """Множина license_id усіх АКТИВНИХ enrollment'ів студента."""
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        ensure_enrollments_table(conn)
+        rows = conn.execute("""
+            SELECT DISTINCT license_id FROM student_enrollments
+            WHERE student_id = ? AND status = 'active' AND license_id IS NOT NULL
+        """, (student_id,)).fetchall()
+        return {(r['license_id'] if hasattr(r, 'keys') else r[0]) for r in rows}
+    finally:
+        if own:
+            conn.close()
+
+
+def student_has_license(student_id: int, license_id: int, conn=None) -> bool:
+    """True, якщо студент учиться під цією ліцензією хоч в одній активній групі."""
+    if not license_id:
+        return False
+    return license_id in get_student_licenses(student_id, conn=conn)
+
+
+def student_has_base_license(student_id: int, base_license_id: int,
+                              conn=None) -> bool:
+    """True, якщо студент має хоч один активний enrollment під базовою
+    ліцензією АБО взагалі не має жодного enrollment'а з ліцензією (щоб
+    адмін побачив його з бейджем «без ліцензії» й міг виправити).
+
+    Це саме та семантика, яка потрібна модулю військового обліку
+    (Постанова №812): показуємо студентів, які мають відношення до
+    базової ліцензії, і тих, чиї дані ще не заповнені.
+    """
+    lic_ids = get_student_licenses(student_id, conn=conn)
+    if not lic_ids:
+        return True  # показати з бейджем — адмін має заповнити
+    return base_license_id in lic_ids
+
+
+def list_student_enrollments_without_license(conn=None) -> list:
+    """Активні enrollment'и без license_id — для ручного виправлення
+    адміністратором. Використовується на сторінках звітності та на
+    списку студентів як окремий фільтр «без ліцензії».
+    """
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        ensure_enrollments_table(conn)
+        rows = conn.execute("""
+            SELECT e.id, e.student_id, e.group_id, e.status,
+                   s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+                   g.name AS group_name
+            FROM student_enrollments e
+            JOIN students s ON s.id = e.student_id
+            JOIN groups g ON g.id = e.group_id
+            WHERE e.status = 'active' AND e.license_id IS NULL
+              AND COALESCE(s.archived, 0) = 0
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
+        """).fetchall()
+        return [dict(r) for r in rows]
     finally:
         if own:
             conn.close()

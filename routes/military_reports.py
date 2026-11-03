@@ -402,7 +402,48 @@ def _get_base_license_info(conn):
         return None, '', ''
     return row[0], (row[1] or ''), (row[2] or '')
 
+def _load_enrollment_licenses(conn) -> dict:
+    """student_id → set(license_id) усіх активних enrollment'ів.
+    Один SQL на весь дашборд замість N+1 у циклі."""
+    rows = conn.execute("""
+        SELECT student_id, license_id
+        FROM student_enrollments
+        WHERE status = 'active' AND license_id IS NOT NULL
+    """).fetchall()
+    result = {}
+    for r in rows:
+        sid = r['student_id'] if hasattr(r, 'keys') else r[0]
+        lid = r['license_id'] if hasattr(r, 'keys') else r[1]
+        result.setdefault(sid, set()).add(lid)
+    return result
 
+
+def _load_enrollment_license_shorts(conn) -> dict:
+    """student_id → список коротких назв ліцензій (для відображення)."""
+    rows = conn.execute("""
+        SELECT e.student_id,
+               COALESCE(il.short_name_ua, il.name_ua) AS short
+        FROM student_enrollments e
+        JOIN institution_licenses il ON il.id = e.license_id
+        WHERE e.status = 'active' AND e.license_id IS NOT NULL
+        ORDER BY il.id
+    """).fetchall()
+    result = {}
+    for r in rows:
+        sid = r['student_id'] if hasattr(r, 'keys') else r[0]
+        sh = r['short'] if hasattr(r, 'keys') else r[1]
+        result.setdefault(sid, []).append(sh)
+    return result
+
+
+def _has_base_license(student_id, enrollment_licenses, base_license_id):
+    """True, якщо студент має активний enrollment під базовою ліцензією,
+    АБО взагалі не має активних enrollment'ів з ліцензією (тоді показуємо
+    з бейджем «без ліцензії» — дані потребують виправлення)."""
+    lic_ids = enrollment_licenses.get(student_id, set())
+    if not lic_ids:
+        return True
+    return base_license_id in lic_ids
 
 def _format_date_ua(d):
     """Форматує date → 'ДД.ММ.РРРР'."""
@@ -464,7 +505,7 @@ def dashboard():
     # Фільтр по базовій ліцензії (Постанова №812)
     show_all_licenses = request.args.get('show_all_licenses') == '1'
     base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
-
+    enrollment_licenses = _load_enrollment_licenses(conn)
     students = conn.execute("""
         SELECT s.id, s.gender, s.dismissed_at, s.license_id,
                m.id AS military_id, m.status_badge, m.military_rank,
@@ -505,10 +546,10 @@ def dashboard():
 
     for s in students:
         # ── 0. Фільтр ліцензії (Постанова №812) ──
-        # Студенти без ліцензії (NULL) показуються ЗАВЖДИ (з бейджем),
-        # бо інакше вони б "зникли" з поля зору і їх ніхто б не заповнив.
+        # Студент належить базовій ліцензії, якщо хоч один його АКТИВНИЙ
+        # enrollment — під нею. Студенти без ліцензій показуються з бейджем.
         if not show_all_licenses:
-            if s['license_id'] is not None and s['license_id'] != base_license_id:
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
                 continue
 
         # ── 1. Заморожені — рахуємо окремо, далі не йдемо ──
@@ -735,11 +776,13 @@ def group_list(category):
     # ── Фільтрація в Python ──────────────────────────────────
     enrollment_dates = _load_enrollment_dates(conn)
     filtered = []
+    enrollment_licenses = _load_enrollment_licenses(conn)
+    enrollment_license_shorts = _load_enrollment_license_shorts(conn)   
     for r in rows_raw:
         # ── Фільтр базової ліцензії (Постанова №812) ──
         # Без ліцензії (NULL) — показуємо завжди (з бейджем).
         if not show_all_licenses:
-            if r['license_id'] is not None and r['license_id'] != base_license_id:
+            if not _has_base_license(r['id'], enrollment_licenses, base_license_id):
                 continue
 
         # Заморожені — тільки якщо увімкнено чекбокс
@@ -778,7 +821,9 @@ def group_list(category):
             enrollment_dates.get(r['id']),
         ):
             continue
-        filtered.append(dict(r))
+        row = dict(r)
+        row['enrollment_license_shorts'] = enrollment_license_shorts.get(r['id'], [])
+        filtered.append(row)
 
     total = len(filtered)
     total_pages = (total + per_page - 1) // per_page if total else 1
@@ -822,6 +867,7 @@ def group_list(category):
             'category_override': r['category_override'] or '',
             'vos_code': r['vos_code'] or '',
             'tck_name': r['tck_name'] or '',
+            'license_short_names': r.get('enrollment_license_shorts') or [],
             'tck_in_catalog': r['tck_in_catalog'],
             'registry_number': r['registry_number'] or '',
             'note_18': r['note_18'] or '',
@@ -1238,6 +1284,8 @@ def summary():
               WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
           )
     """).fetchall()
+    enrollment_licenses = _load_enrollment_licenses(conn)
+
 
     # Лічильники по категоріях + по роках
     counts = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
@@ -1253,7 +1301,7 @@ def summary():
     for s in students:
         # ── Фільтр базової ліцензії (Постанова №812) ──
         if not show_all_licenses:
-            if s['license_id'] is not None and s['license_id'] != base_license_id:
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
                 continue
 
         if not s['military_id']:
@@ -1456,6 +1504,8 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
     """
     report_year = report_date.year
     enrollment_dates = _load_enrollment_dates(conn)
+    enrollment_licenses = _load_enrollment_licenses(conn)
+    enrollment_license_shorts = _load_enrollment_license_shorts(conn)
 
     # Групи з start_year == report_year (для колонки 23 «Зараховано»)
     # і всі дані по студентах + military + passport + license
@@ -1525,7 +1575,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
 
         # Фільтр ліцензії
         if not show_all_licenses:
-            if s['license_id'] is not None and s['license_id'] != base_license_id:
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
                 continue
 
         # Категорія
@@ -1615,7 +1665,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
             'note_18': s['note_18'] or '',
             'change_credentials': s['change_credentials'] or '',
             'reason_for_change': s['reason_for_changing_credentials'] or '',
-            'license_short': s['license_short'] or '',
+            'license_short': ', '.join(enrollment_license_shorts.get(s['id'], [])) or (s['license_short'] or ''),
             'enrolled_note': enrolled_note,
             'expelled_note': expelled_note,
         })
