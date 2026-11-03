@@ -1125,7 +1125,7 @@ def graduation():
         return render_template("graduation_review.html", groups_with_students=groups_with_students)
 
     groups = conn.execute("""
-        SELECT id, name,
+        SELECT id, name, course, degree_level, program_credits,
                (SELECT COUNT(*) FROM students s
                 WHERE COALESCE(s.archived, 0) = 0
                   AND (

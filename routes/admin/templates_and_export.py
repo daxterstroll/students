@@ -721,6 +721,11 @@ def generate_group_docs():
     conn.close()
 
     job_id = uuid.uuid4().hex
+    # Зберігаємо людиночитабельну назву пакета - потім її показує
+    # сторінка /office/batch/<batch_id> (коли користувач повертається
+    # з редактора окремого документа назад до списку).
+    office_editor.set_batch_name(batch_id, group_name)
+
     with _JOBS_LOCK:
         _JOBS[job_id] = {
             'total': len(students_data),
