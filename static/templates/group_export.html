@@ -7,6 +7,104 @@
 
     {{ ui.page_header('bi-file-earmark-zip-fill', 'Масова генерація документів', 'Оберіть групу, рік народження та шаблон, щоб згенерувати документи для декількох студентів одразу') }}
 
+{# ═══════════════════════════════════════════════════════════
+   Обмеження масової генерації для паралельного навчання
+   ═══════════════════════════════════════════════════════════ #}
+<div class="accordion mb-3" id="limitsAccordion">
+  <div class="accordion-item border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+    <h2 class="accordion-header">
+      <button class="accordion-button collapsed" type="button"
+              data-bs-toggle="collapse" data-bs-target="#limitsBody">
+        <i class="bi bi-info-circle me-2" style="color: var(--brass);"></i>
+        <span class="fw-semibold">Як працює генерація для студентів із паралельним навчанням — важливо знати</span>
+      </button>
+    </h2>
+    <div id="limitsBody" class="accordion-collapse collapse"
+         data-bs-parent="#limitsAccordion">
+      <div class="accordion-body small">
+
+        <div class="alert alert-light border mb-3 py-2">
+          <i class="bi bi-exclamation-triangle-fill me-2" style="color: var(--stamp);"></i>
+          <strong>Один пакет = один документ на студента.</strong>
+          Якщо студент одночасно вчиться у двох (або більше) групах,
+          йому потрібно <strong>окремий документ для кожної групи</strong>,
+          адже предмети, диплом, ліцензія, освітня програма й навіть
+          періоди навчання в кожній групі — свої.
+        </div>
+
+        <h6 class="fw-semibold mb-2">Що генерується за різних фільтрів:</h6>
+
+        <table class="table table-sm mb-3" style="font-size:.85rem;">
+          <thead class="table-light">
+            <tr>
+              <th>Фільтр</th>
+              <th>Для якої групи буде документ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><i class="bi bi-funnel me-1"></i>Обрано <strong>групу A</strong></td>
+              <td>
+                Для групи <strong>A</strong> — навіть якщо в студента
+                основна група інша. У документ підтягнуться предмети,
+                диплом, ліцензія й періоди навчання саме з A.
+              </td>
+            </tr>
+            <tr>
+              <td><i class="bi bi-funnel me-1"></i>Обрано <strong>групу B</strong></td>
+              <td>
+                Для групи <strong>B</strong>. Той самий студент, але
+                тепер з даними B.
+              </td>
+            </tr>
+            <tr>
+              <td><i class="bi bi-calendar3 me-1"></i>Обрано <strong>лише рік народження</strong> (без групи)</td>
+              <td>
+                Для <strong>основної</strong> групи кожного студента
+                (primary enrollment). Для паралельної групи документ
+                так не згенерується.
+              </td>
+            </tr>
+            <tr>
+              <td><i class="bi bi-check2-square me-1"></i>Обрано <strong>окремих студентів галочками</strong></td>
+              <td>
+                Для тих, кого відмітили, з тією самою логікою визначення
+                групи, що й вище.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h6 class="fw-semibold mb-2">
+          <i class="bi bi-signpost-split me-1" style="color: var(--brass);"></i>
+          Як отримати документи для обох груп одного студента
+        </h6>
+        <ol class="mb-3 ps-3">
+          <li>Запустіть масову генерацію з фільтром «Група <strong>A</strong>» — отримаєте ZIP з документами для A.</li>
+          <li>Поверніться на цю сторінку.</li>
+          <li>Запустіть масову генерацію з фільтром «Група <strong>B</strong>» — отримаєте окремий ZIP з документами для B.</li>
+        </ol>
+        <p class="mb-3 text-muted">
+          Це дві різні сесії генерації — з різними наборами даних у документах.
+          Обидві можна редагувати в ONLYOFFICE незалежно, як і будь-який інший пакет.
+        </p>
+
+        <div class="alert alert-light border mb-0 py-2">
+          <i class="bi bi-shield-check me-2" style="color: #3f7556;"></i>
+          <strong>Що НЕ потрапить у документ помилково:</strong>
+          предмети з іншої групи, диплом із іншої групи, ліцензія з іншої
+          групи — усе це тепер береться з тієї групи, під яку ви фільтрували.
+          Якщо студента з паралельним навчанням не видно у списку — це
+          означає, що він не має активного навчання в обраній групі; його
+          можна додати в картці студента (розділ «Навчання (групи)»).
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
     <div class="card mb-4">
         <div class="card-body">
             <form method="GET" id="filter-form" class="row g-3">
