@@ -75,6 +75,7 @@ def manage_education_documents():
     """CRUD-сторінка документів про освіту студентів (атестат/диплом попереднього рівня) разом із додатковими даними про визнання іноземного документа (foreign_education_docs)."""
     db = get_db()
     cursor = db.cursor()
+    MAX_FILES = 5
 
     cursor.execute("""
         SELECT id, last_name_UA, first_name_UA FROM students
@@ -117,9 +118,11 @@ def manage_education_documents():
 
     # Основний запит документів
     cursor.execute("""
-        SELECT g.id AS group_id, g.name AS group_name, s.id AS student_id,
+        SELECT COALESCE(ed.group_id, s.group_id) AS group_id,
+               g.name AS group_name, s.id AS student_id,
                s.last_name_UA, s.first_name_UA,
-               ed.id AS doc_id, ed.document_type, ed.document_type_en, ed.document_number,
+               ed.id AS doc_id, ed.group_id AS doc_group_id,
+               ed.document_type, ed.document_type_en, ed.document_number,
                ed.institution_name, ed.institution_name_en, ed.country, ed.country_en, ed.completion_date,
                fed.reference_number, fed.reference_institution, fed.reference_institution_en,
                fed.reference_country, fed.reference_country_en, fed.reference_issue_date,
@@ -127,12 +130,26 @@ def manage_education_documents():
                fed.recognition_issuer_en, fed.recognition_date
         FROM education_documents ed
         INNER JOIN students s ON ed.student_id = s.id
-        INNER JOIN groups g ON s.group_id = g.id
+        LEFT JOIN groups g ON g.id = COALESCE(ed.group_id, s.group_id)
         LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
-        WHERE s.archived = FALSE AND g.archived = FALSE
+        WHERE s.archived = FALSE AND (g.archived = FALSE OR g.archived IS NULL)
         ORDER BY g.name, s.last_name_UA, s.first_name_UA, ed.id
     """)
     rows = cursor.fetchall()
+    
+        # Enrollment'и обраного студента — для випадаючого списку груп
+    # у формі додавання/редагування документа (щоб при паралельному
+    # навчанні документ можна було прив'язати до конкретної групи).
+    student_enrollments = []
+    if student:
+        try:
+            from routes.enrollments_service import list_student_enrollments
+            student_enrollments = [
+                e for e in list_student_enrollments(student['id'], conn=db)
+                if e.get('group_id')
+            ]
+        except Exception as logger_exc:
+            logger.warning(f"Не вдалося завантажити enrollments: {logger_exc}")
 
     documents_by_group = {}
     for row in rows:
@@ -222,12 +239,14 @@ def manage_education_documents():
                     student_id = existing[0]
 
                 # Оновлення основного документа (зберігаємо country як ввели)
+                doc_group_id = request.form.get('doc_group_id', type=int)
+
                 cursor.execute("""
                     UPDATE education_documents SET
-                        student_id=?, document_type=?, document_type_en=?, document_number=?,
+                        student_id=?, group_id=?, document_type=?, document_type_en=?, document_number=?,
                         institution_name=?, institution_name_en=?, country=?, country_en=?, completion_date=?
                     WHERE id=?
-                """, (student_id, request.form.get('document_type'), request.form.get('document_type_en'),
+                """, (student_id, doc_group_id, request.form.get('document_type'), request.form.get('document_type_en'),
                       request.form.get('document_number'), request.form.get('institution_name'),
                       request.form.get('institution_name_en'), country, country_en,
                       request.form.get('completion_date'), doc_id))
@@ -339,12 +358,14 @@ def manage_education_documents():
                 if not student_id:
                     raise ValueError("Не обрано студента")
 
+                doc_group_id = request.form.get('doc_group_id', type=int)
+
                 cursor.execute("""
                     INSERT INTO education_documents (
-                        student_id, document_type, document_type_en, document_number,
+                        student_id, group_id, document_type, document_type_en, document_number,
                         institution_name, institution_name_en, country, country_en, completion_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (student_id, document_type, document_type_en, document_number,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, doc_group_id, document_type, document_type_en, document_number,
                       institution_name, institution_name_en, country, country_en, completion_date))
 
                 education_doc_id = cursor.lastrowid
@@ -397,7 +418,8 @@ def manage_education_documents():
         documents_by_group=sorted_documents_by_group,
         students=students,
         student=student,
-        student_doc_id=student_doc_id
+        student_doc_id=student_doc_id,
+        student_enrollments=student_enrollments,
     )
 
 
@@ -446,9 +468,12 @@ def manage_passport_documents():
             SELECT s.id, s.last_name_UA, s.first_name_UA
             FROM students s
             WHERE s.group_id = ? AND s.archived = FALSE
-              AND s.id NOT IN (SELECT student_id FROM passport_documents)
+              AND s.id NOT IN (
+                  SELECT student_id FROM education_documents
+                  WHERE group_id = ? OR group_id IS NULL
+              )
             ORDER BY s.last_name_UA, s.first_name_UA
-        """, (selected_group_id,))
+        """, (selected_group_id, selected_group_id))
         students_without_docs = cursor.fetchall()
 
     cursor.execute("""
@@ -1094,12 +1119,21 @@ def import_docs_commit():
                       row["institution_name"], inst_name_en, row["country"], row["country_en"], education_doc_id))
                 updated += 1
             else:
+                # Група для нового документа — ОСНОВНА група студента
+                # (у масовага імпорту немає як вибрати групу для кожної
+                # людини; якщо потрібно прив'язати до іншої — адмін
+                # змінить у картці студента після імпорту).
+                primary_row = cursor.execute(
+                    "SELECT group_id FROM students WHERE id = ?", (row["student_id"],)
+                ).fetchone()
+                primary_gid = primary_row["group_id"] if primary_row else None
+
                 cursor.execute("""
                     INSERT INTO education_documents (
-                        student_id, document_type, document_type_en, document_number,
+                        student_id, group_id, document_type, document_type_en, document_number,
                         completion_date, institution_name, institution_name_en, country, country_en
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (row["student_id"], row["document_type"], doc_type_en, row["document_number"],
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (row["student_id"], primary_gid, row["document_type"], doc_type_en, row["document_number"],
                       row["completion_date"], row["institution_name"], inst_name_en, row["country"], country_en))
                 education_doc_id = cursor.lastrowid
                 added += 1

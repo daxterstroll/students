@@ -454,7 +454,11 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         global_logger.error(f"Ошибка при загрузке шаблона {template}: {str(e)}")
         raise
 
-    # Получение данных о документах об образовании
+    # Получение данных о документах об образовании — для КОНКРЕТНОЇ групи,
+    # для якої генерується документ. Fallback на group_id IS NULL — щоб
+    # старі «загальні» документи підтягувалися, коли для групи свого
+    # немає. Пріоритет: спочатку документ конкретної групи, потім NULL.
+    _group_id = student['group_id'] if 'group_id' in student.keys() else None
     conn = get_db()
     conn.row_factory = sqlite3.Row
     education_docs = conn.execute("""
@@ -467,8 +471,10 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         FROM education_documents ed
         LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
         WHERE ed.student_id = ?
-        ORDER BY ed.id DESC LIMIT 1
-    """, (student['id'],)).fetchone()
+          AND (ed.group_id = ? OR ed.group_id IS NULL)
+        ORDER BY (ed.group_id = ?) DESC, ed.id DESC
+        LIMIT 1
+    """, (student['id'], _group_id, _group_id)).fetchone()
     conn.close()
 
     # Преобразование словарей

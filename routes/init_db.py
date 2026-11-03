@@ -352,6 +352,7 @@ CREATE TABLE IF NOT EXISTS "education_documents" (
     "country"   TEXT NOT NULL,
     "country_en"    TEXT NOT NULL,
     "completion_date"   TEXT NOT NULL,
+    "group_id"      INTEGER REFERENCES groups(id),
     PRIMARY KEY("id" AUTOINCREMENT),
     FOREIGN KEY("student_id") REFERENCES "students"("id")
 );
@@ -700,6 +701,21 @@ if cur.rowcount:
 # diplomas — ключ тепер (student_id, group_id), а не просто student_id
 _add_column_if_missing('diplomas', 'group_id', 'INTEGER')
 
+# education_documents — документ про освіту для конкретної групи
+# (напр. для бакалаврату — шкільний атестат, для магістратури — диплом бакалавра)
+_add_column_if_missing('education_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
+cur.execute("CREATE INDEX IF NOT EXISTS idx_education_documents_group ON education_documents(group_id)")
+
+# Backfill: старі документи → до ОСНОВНОЇ групи студента
+cur.execute("""
+    UPDATE education_documents
+    SET group_id = (SELECT s.group_id FROM students s WHERE s.id = education_documents.student_id)
+    WHERE group_id IS NULL
+      AND EXISTS (SELECT 1 FROM students s WHERE s.id = education_documents.student_id AND s.group_id IS NOT NULL)
+""")
+if cur.rowcount:
+    print(f"➕ education_documents: прив'язано до групи {cur.rowcount} записів")
+
 # military — усі поля з v1/v2/v3
 for _col, _type in [
     ('category_override', "TEXT CHECK(category_override IN ('officer', 'rank'))"),
@@ -742,6 +758,66 @@ _add_column_if_missing('specialties', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('specialties', 'isced_f_en', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_en', 'TEXT')
+
+
+
+# ── student_enrollments: видалити дублікати пар (student_id, group_id) ──
+# Якщо БД створювалась старою версією CREATE TABLE — UNIQUE-констрейнту
+# не було, і в таблиці могли накопичитись дублікати. Один такий
+# дублікат ламає картку студента (groups_data містить ту саму групу
+# двічі → шаблон рендерить 2 таби + повторює оцінки/документи/періоди).
+#
+# Залишаємо одну запис на пару, з пріоритетом:
+#   1) status='active'
+#   2) is_primary=1
+#   3) найбільший id (найсвіжіша)
+_dup_count = cur.execute("""
+    SELECT COUNT(*) FROM (
+        SELECT student_id, group_id
+        FROM student_enrollments
+        GROUP BY student_id, group_id
+        HAVING COUNT(*) > 1
+    )
+""").fetchone()[0]
+
+if _dup_count:
+    print(f"⚠️ student_enrollments: знайдено {_dup_count} дублікатів пар (student_id, group_id) — чистка")
+    cur.execute("""
+        DELETE FROM student_enrollments
+        WHERE id NOT IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY student_id, group_id
+                           ORDER BY
+                               CASE status
+                                   WHEN 'active' THEN 0
+                                   WHEN 'frozen' THEN 1
+                                   WHEN 'completed' THEN 2
+                                   WHEN 'graduated' THEN 3
+                                   WHEN 'expelled' THEN 4
+                                   ELSE 5
+                               END,
+                               is_primary DESC,
+                               id DESC
+                       ) AS rn
+                FROM student_enrollments
+            ) WHERE rn = 1
+        )
+    """)
+    print(f"   видалено зайвих записів: {_dup_count}")
+
+# Після чистки — UNIQUE INDEX, який унеможливить нові дублікати.
+# Синтаксис partial — не заважає старим SQLite, які ігнорують
+# ON CONFLICT без явного рівня; тут достатньо звичайного UNIQUE.
+try:
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_unique_student_group
+        ON student_enrollments (student_id, group_id)
+    """)
+except sqlite3.IntegrityError as e:
+    print(f"⚠️ Не вдалося створити UNIQUE INDEX на student_enrollments: {e}")
+
 
 
 # ═══════════════════════════════════════════════════════════════════════
