@@ -55,16 +55,32 @@ def _parse_date(date_str):
 # До неї (напр. 29/09/2026) - звичайний "01/09/2022-29/09/2026".
 LONG_DATES_FORMAT_FROM = datetime(2026, 9, 30)
 
-def get_study_periods(cursor, student_id, lang='ua',
+def get_study_periods(cursor, student_id, group_id=None, lang='ua',
                        default_filiya="Львівська філія Приватного вищого навчального закладу «Європейський університет»",
                        default_filiya_en="Lviv Branch of Private Higher Education Establishment «European University»"):
-    """... (докстрінг без змін) ..."""
-    cursor.execute("""
-        SELECT filiya, filiya_en, group_name, start_date, end_date
-        FROM student_study_periods
-        WHERE student_id = ?
-        ORDER BY period_order ASC, start_date ASC
-    """, (student_id,))
+    """
+    Повертає (names, dates) — періоди навчання САМЕ ДЛЯ ЦІЄЇ ГРУПИ
+    (enrollment'а студента), бо в кожної групи періоди можуть бути свої
+    (наприклад паралельне навчання в двох закладах з різними датами).
+
+    Фільтр: `group_id = ? OR group_id IS NULL` — щоб старі періоди,
+    які з якоїсь причини не прив'язані до конкретної групи, все одно
+    підтягувалися (легасі-поведінка).
+    """
+    if group_id:
+        cursor.execute("""
+            SELECT filiya, filiya_en, group_name, start_date, end_date
+            FROM student_study_periods
+            WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
+            ORDER BY period_order ASC, start_date ASC
+        """, (student_id, group_id))
+    else:
+        cursor.execute("""
+            SELECT filiya, filiya_en, group_name, start_date, end_date
+            FROM student_study_periods
+            WHERE student_id = ?
+            ORDER BY period_order ASC, start_date ASC
+        """, (student_id,))
     periods = cursor.fetchall()
 
     if not periods:
@@ -93,7 +109,7 @@ def get_study_periods(cursor, student_id, lang='ua',
             dates.append("")
 
     return "; ".join(names), "; ".join(dates)
-
+    
 def insert_subjects_table(doc, student_id):
     """Вставка таблицы с предметами и оценками студента."""
     # global_logger.debug(f"Запуск insert_subjects_table для student_id={student_id}")
@@ -459,9 +475,34 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     student_dict = {k: clean_text(v) for k, v in dict(student).items()}
     military_dict = {k: clean_text(v) for k, v in dict(military).items()} if military else {}
 
-    # Якщо студент на скороченій програмі (180/90 замість 240/120 у
-    # групі) - підміняємо 3 текстові поля програми на _reduced-варіант
-    # групи, якщо він заповнений (див. докстрінг функції вище).
+    # Періоди навчання — для ТІЄЇ групи, для якої генерується документ.
+    # Робимо це ТУТ, ПІСЛЯ student_dict, щоб student_dict['group_id']
+    # уже був доступний (при паралельному навчанні в кожної групи свої
+    # періоди). НЕ дублювати цей блок у кінці функції.
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        current_group_id = student_dict.get('group_id')
+        names_ua, dates_ua = get_study_periods(
+            cursor, student_dict['id'], group_id=current_group_id, lang='ua'
+        )
+        names_en, dates_en = get_study_periods(
+            cursor, student_dict['id'], group_id=current_group_id, lang='en'
+        )
+    except Exception as e:
+        global_logger.error(
+            f"Ошибка при получении периодов навчання для студента ID "
+            f"{student_dict.get('id', 'unknown')}: {e}"
+        )
+        names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»"
+        dates_ua = ''
+        names_en = "Lviv Branch of Private Higher Education Establishment «European University»"
+        dates_en = ''
+    finally:
+        conn.close()
+
+    # Якщо студент на скороченій програмі...
     apply_reduced_program_texts(student_dict)
 
     # Добавление данных об образовании в student_dict
@@ -745,28 +786,6 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     """, (student['id'], student_dict.get('group_id'))).fetchone()
     conn.close()
     
-# -----------------------------
-    # Період навчання (назви окремо, дати окремо, з переносом рядків)
-    # -----------------------------
-    conn = get_db()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    try:
-        names_ua, dates_ua = get_study_periods(
-            cursor, student_dict['id'], lang='ua'
-        )
-        names_en, dates_en = get_study_periods(
-            cursor, student_dict['id'], lang='en'
-        )
-    except Exception as e:
-        global_logger.error(f"Ошибка при получении периодов навчання для студента ID {student_dict.get('id', 'unknown')}: {e}")
-        names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»"
-        dates_ua = ''
-        names_en = "Lviv Branch of Private Higher Education Establishment «European University»"
-        dates_en = ''
-    finally:
-        conn.close()
-
     # Якщо періодів немає (дати порожні) — формуємо дати та назву на основі даних студента
     if not dates_ua:
         start_year = student_dict.get('start_year', '')

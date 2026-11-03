@@ -1,16 +1,25 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Періоди навчання{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-calendar2-date-fill', 'Періоди навчання', student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')) }}
+    {{ ui.page_header('bi-calendar2-date-fill', 'Періоди навчання',
+        student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or '')) }}
 
     <div class="d-flex justify-content-end mb-3">
         <a href="/" class="btn btn-outline-secondary btn-sm" onclick="event.preventDefault(); window.history.back();">
             <i class="bi bi-arrow-left me-1"></i> Назад
         </a>
+    </div>
+
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        Кожен період навчання прив'язується до <strong>конкретної групи (enrollment'а)</strong>
+        студента. Це важливо для паралельного навчання: у кожної групи — свої філія, дати й назва групи на той момент.
+        Період без прив'язки до групи (<em>«— загальний —»</em>) показується у <strong>всіх</strong> групах студента — це
+        легасі-поведінка для старих записів, краще прив'язати його до конкретної групи.
     </div>
 
     <div class="card mb-4">
@@ -19,19 +28,28 @@
                 <table class="table table-hover mb-0 align-middle">
                     <thead>
                         <tr>
-                            <th style="width:16%">Філія (укр)</th>
-                            <th style="width:16%">Filiya (en)</th>
-                            <th style="width:12%">Група в той період</th>
-                            <th style="width:11%">Дата початку</th>
-                            <th style="width:11%">Дата закінчення</th>
-                            <th style="width:6%">Порядок</th>
-                            <th style="width:18%">Примітка</th>
-                            <th style="width:10%">Дії</th>
+                            <th style="width:14%">Група</th>
+                            <th style="width:18%">Філія (укр)</th>
+                            <th style="width:14%">Filiya (en)</th>
+                            <th style="width:10%">Група в той період</th>
+                            <th style="width:10%">Початок</th>
+                            <th style="width:10%">Кінець</th>
+                            <th style="width:5%">Пор.</th>
+                            <th style="width:12%">Примітка</th>
+                            <th style="width:7%">Дії</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for p in periods %}
+                        {% set grp_label %}
+                            {% if p.group_id %}
+                                {% for e in enrollments if e.group_id == p.group_id %}{{ e.group_name or ('#' ~ p.group_id) }}{% endfor %}
+                            {% else %}
+                                <em class="text-muted">— загальний —</em>
+                            {% endif %}
+                        {% endset %}
                         <tr>
+                            <td class="small">{{ grp_label }}</td>
                             <td>{{ p.filiya }}</td>
                             <td>{{ p.filiya_en or '—' }}</td>
                             <td>{{ p.group_name or '—' }}</td>
@@ -44,7 +62,8 @@
                                         data-bs-toggle="modal" data-bs-target="#editPeriodModal{{ p.id }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
-                                <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
+                                <form method="post"
+                                      action="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
                                       style="display:inline"
                                       onsubmit="return confirm('Видалити цей період навчання?');">
                                     <input type="hidden" name="action" value="delete">
@@ -57,7 +76,7 @@
                         </tr>
                         {% else %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted py-4">Періодів ще не додано</td>
+                            <td colspan="9" class="text-center text-muted py-4">Періодів ще не додано</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -66,7 +85,6 @@
         </div>
     </div>
 
-    <!-- Модальні вікна редагування -->
     {% for p in periods %}
     <div class="modal fade" id="editPeriodModal{{ p.id }}" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
@@ -76,10 +94,23 @@
                     <input type="hidden" name="period_id" value="{{ p.id }}">
                     <div class="modal-header">
                         <h5 class="modal-title">Редагування періоду навчання</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <div class="row g-3">
+                            <div class="col-md-12">
+                                <label class="form-label">До якої групи належить період</label>
+                                <select name="group_id" class="form-select">
+                                    <option value="">— загальний для всіх груп —</option>
+                                    {% for e in enrollments %}
+                                    <option value="{{ e.group_id }}"
+                                            {% if p.group_id == e.group_id %}selected{% endif %}>
+                                        {{ e.group_name or ('#' ~ e.group_id) }}
+                                        {% if e.is_primary %} (основна){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label">Філія (укр)</label>
                                 <input type="text" name="filiya" value="{{ p.filiya or '' }}" class="form-control" required>
@@ -120,7 +151,6 @@
     </div>
     {% endfor %}
 
-    <!-- Форма додавання нового періоду -->
     <div class="card">
         <div class="card-header py-3">
             <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати новий період навчання</h5>
@@ -129,6 +159,22 @@
             <form method="post" action="{{ url_for('students.manage_study_periods', student_id=student.id) }}">
                 <input type="hidden" name="action" value="add">
                 <div class="row g-3">
+                    <div class="col-md-12">
+                        <label class="form-label">До якої групи належить період <span class="text-danger">*</span></label>
+                        <select name="group_id" class="form-select" {% if not enrollments %}disabled{% endif %}>
+                            <option value="">— загальний для всіх груп —</option>
+                            {% for e in enrollments %}
+                            <option value="{{ e.group_id }}">
+                                {{ e.group_name or ('#' ~ e.group_id) }}
+                                {% if e.is_primary %} (основна){% endif %}
+                                {% if e.status != 'active' %} (не активна){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        {% if not enrollments %}
+                        <div class="form-text text-warning">У студента ще немає жодного enrollment'а — спершу додайте його в блоці «Навчання (групи)» на картці студента. Поки період буде збережено як «загальний».</div>
+                        {% endif %}
+                    </div>
                     <div class="col-md-6">
                         <label class="form-label">Філія (укр)</label>
                         <input type="text" name="filiya" class="form-control" placeholder="напр. Миколаївська філія" required>

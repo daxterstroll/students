@@ -84,15 +84,38 @@ def manage_study_periods_bulk_assign():
         added = 0
         try:
             for student_id in target_student_ids:
-                next_order = cursor.execute(
-                    "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods WHERE student_id = ?",
-                    (student_id,)
-                ).fetchone()[0]
+                # Якщо група явно задана в фільтрі (mode=whole_group або
+                # some_from_group) — прив'язуємо до неї. Інакше (режим
+                # any_students без фільтра) — прив'язуємо до ОСНОВНОЇ
+                # групи КОЖНОГО студента окремо (щоб не змішувати
+                # періоди різних груп).
+                target_gid = group_id
+                if target_gid is None:
+                    row = cursor.execute(
+                        "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                    ).fetchone()
+                    target_gid = row['group_id'] if row else None
+
+                if target_gid is not None:
+                    next_order = cursor.execute(
+                        "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods "
+                        "WHERE student_id = ? AND group_id = ?",
+                        (student_id, target_gid),
+                    ).fetchone()[0]
+                else:
+                    next_order = cursor.execute(
+                        "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods "
+                        "WHERE student_id = ? AND group_id IS NULL",
+                        (student_id,),
+                    ).fetchone()[0]
+
                 cursor.execute("""
                     INSERT INTO student_study_periods
-                        (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, next_order, note))
+                        (student_id, group_id, filiya, filiya_en, group_name,
+                         start_date, end_date, period_order, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, target_gid, filiya, filiya_en, group_name,
+                      start_date, end_date, next_order, note))
                 added += 1
 
             db.commit()

@@ -964,11 +964,19 @@
                     </div>
                 </div>
 
-                <!-- Періоди навчання -->
+                <!-- Періоди навчання — таби по групах (як оцінки) -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#studyPeriodsCollapse">
-                            <i class="bi bi-signpost-split me-3 fs-4" style="color: var(--brass);"></i>Періоди навчання
+                            <i class="bi bi-signpost-split me-3 fs-4" style="color: var(--brass);"></i>
+                            <span class="flex-grow-1 text-start">
+                                Періоди навчання
+                                {% if groups_data|length > 1 %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-2">
+                                    {{ groups_data|length }} групи
+                                </span>
+                                {% endif %}
+                            </span>
                         </button>
                     </h2>
                     <div id="studyPeriodsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
@@ -979,34 +987,69 @@
                                     <i class="bi bi-pencil me-1"></i>Керувати періодами
                                 </a>
                             </div>
-                            {% if study_periods %}
-                                <div class="table-responsive">
-                                    <table class="table mb-0">
-                                        <thead class="table-light">
-                                            <tr>
-                                                <th>Філія</th>
-                                                <th>Група</th>
-                                                <th>Початок</th>
-                                                <th>Кінець</th>
-                                                <th>Примітка</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for period in study_periods %}
-                                            <tr>
-                                                <td>{{ val(period.filiya) }}</td>
-                                                <td>{{ val(period.group_name) }}</td>
-                                                <td class="font-monospace">{{ val(period.start_date) }}</td>
-                                                <td class="font-monospace">{{ period.end_date | default('т.ч.', true) }}</td>
-                                                <td>{{ val(period.note) }}</td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                    </table>
+
+                            {% if groups_data %}
+                                {% if groups_data|length > 1 %}
+                                <ul class="nav nav-tabs mb-3" role="tablist">
+                                    {% for g in groups_data %}
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link {% if loop.first %}active{% endif %}"
+                                                data-bs-toggle="tab"
+                                                data-bs-target="#tab-periods-{{ g.group_id }}"
+                                                type="button" role="tab">
+                                            {{ g.short_group_name }}
+                                            {% if g.is_primary %}
+                                            <span class="badge bg-primary ms-1" title="Основна група">осн.</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
+                                            {% endif %}
+                                        </button>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+
+                                <div class="tab-content">
+                                    {% for g in groups_data %}
+                                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                                         id="tab-periods-{{ g.group_id }}" role="tabpanel">
+                                        {% if g.study_periods %}
+                                            <div class="table-responsive">
+                                                <table class="table mb-0">
+                                                    <thead class="table-light">
+                                                        <tr>
+                                                            <th>Філія</th>
+                                                            <th>Група</th>
+                                                            <th>Початок</th>
+                                                            <th>Кінець</th>
+                                                            <th>Примітка</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {% for period in g.study_periods %}
+                                                        <tr>
+                                                            <td>{{ val(period.filiya) }}</td>
+                                                            <td>{{ val(period.group_name) }}</td>
+                                                            <td class="font-monospace">{{ val(period.start_date) }}</td>
+                                                            <td class="font-monospace">{{ period.end_date | default('т.ч.', true) }}</td>
+                                                            <td>{{ val(period.note) }}</td>
+                                                        </tr>
+                                                        {% endfor %}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        {% else %}
+                                            <div class="p-4 text-center text-muted">
+                                                <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                                                Для цієї групи періодів навчання ще не додано
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
                                 </div>
                             {% else %}
-                                <div class="p-5 text-center text-muted">
-                                    <i class="bi bi-inbox display-4 mb-3 d-block"></i>
+                                <div class="p-4 text-center text-muted">
+                                    <i class="bi bi-inbox fs-4 d-block mb-2"></i>
                                     Періоди навчання відсутні
                                 </div>
                             {% endif %}
