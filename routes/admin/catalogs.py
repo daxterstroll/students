@@ -457,28 +457,6 @@ def manage_degree_levels():
                     current_username(),
                     f"{'увімкнув' if row['is_active'] else 'вимкнув'} ступінь: {row['name_ua']}"
                 )
-        elif action == 'set_base':
-            license_id = request.form.get('id')
-            row = conn.execute(
-                "SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?",
-                (license_id,),
-            ).fetchone()
-            if row:
-                # Знімаємо базову з усіх, призначаємо на вибрану
-                conn.execute("UPDATE institution_licenses SET is_base = 0 WHERE is_base = 1")
-                conn.execute(
-                    "UPDATE institution_licenses SET is_base = 1 WHERE id = ?",
-                    (license_id,),
-                )
-                conn.commit()
-                label = row['short_name_ua'] or row['name_ua']
-                flash(f"Базову ліцензію змінено на «{label}». "
-                      f"Дашборд, списки груп і Додаток 12 тепер за замовчуванням "
-                      f"показують студентів цієї ліцензії.", 'success')
-                log_action(current_username(),
-                           f"призначив базову ліцензію: {label} (ID {license_id})")
-            else:
-                flash("Ліцензію не знайдено", 'error')
         elif action == 'add':
             name_ua = (request.form.get('name_ua') or '').strip()
             name_en = (request.form.get('name_en') or '').strip() or None
@@ -545,9 +523,17 @@ def manage_degree_levels():
 def manage_licenses():
     """
     Каталог ліцензій, під якими студенти вступають до закладу
-    (Львівська, Київська, Польська тощо) - властивість СТУДЕНТА, а не
-    групи, оскільки в одній групі можуть навчатись студенти з різних
-    ліцензій. Той самий принцип CRUD, що й у "Ступенях"/"Спеціальностях".
+    (Львівська, Київська, Польська тощо).
+
+    Після впровадження паралельного навчання ліцензія може зберігатися
+    на ДВОХ рівнях:
+      - students.license_id — primary-ліцензія студента (для legacy-коду,
+        який ще не читає enrollment'и);
+      - student_enrollments.license_id — ліцензія конкретної групи
+        студента (для студента з 2 групами під різними ліцензіями).
+
+    Тому всі підрахунки/перевірки нижче враховують ОБИДВА джерела
+    через UNION, щоб не пропустити реальне використання ліцензії.
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -562,6 +548,30 @@ def manage_licenses():
             row = conn.execute("SELECT short_name_ua, is_active FROM institution_licenses WHERE id = ?", (license_id,)).fetchone()
             if row:
                 log_action(current_username(), f"{'увімкнув' if row['is_active'] else 'вимкнув'} ліцензію: {row['short_name_ua']}")
+
+        elif action == 'set_base':
+            license_id = request.form.get('id')
+            row = conn.execute(
+                "SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?",
+                (license_id,),
+            ).fetchone()
+            if row:
+                conn.execute("UPDATE institution_licenses SET is_base = 0 WHERE is_base = 1")
+                conn.execute("UPDATE institution_licenses SET is_base = 1 WHERE id = ?", (license_id,))
+                conn.commit()
+                label = row['short_name_ua'] or row['name_ua']
+                flash(
+                    f"Базову ліцензію змінено на «{label}». "
+                    f"Дашборд, списки груп і Додаток 12 тепер за замовчуванням "
+                    f"показують студентів цієї ліцензії.",
+                    'success',
+                )
+                log_action(
+                    current_username(),
+                    f"призначив базову ліцензію: {label} (ID {license_id})",
+                )
+            else:
+                flash("Ліцензію не знайдено", 'error')
 
         elif action == 'add':
             name_ua = (request.form.get('name_ua') or '').strip()
@@ -598,29 +608,74 @@ def manage_licenses():
 
         elif action == 'delete':
             license_id = request.form.get('id')
-            row = conn.execute("SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?", (license_id,)).fetchone()
-            in_use = conn.execute(
-                "SELECT COUNT(*) AS c FROM students WHERE license_id = ?", (license_id,)
-            ).fetchone()['c']
+            row = conn.execute(
+                "SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?",
+                (license_id,),
+            ).fetchone()
+            # Скільки унікальних АКТИВНИХ студентів використовують ліцензію
+            # через students.license_id або student_enrollments.license_id.
+            in_use = conn.execute("""
+                SELECT COUNT(DISTINCT student_id) AS c FROM (
+                    SELECT id AS student_id FROM students
+                    WHERE license_id = ? AND COALESCE(archived, 0) = 0
+                    UNION
+                    SELECT e.student_id
+                    FROM student_enrollments e
+                    JOIN students s ON s.id = e.student_id
+                    WHERE e.license_id = ?
+                      AND e.status = 'active'
+                      AND COALESCE(s.archived, 0) = 0
+                )
+            """, (license_id, license_id)).fetchone()['c']
+
             if in_use > 0:
-                flash(f"Неможливо видалити - {in_use} студент(ів) мають цю ліцензію. Вимкніть актуальність замість видалення.", "error")
+                flash(
+                    f"Неможливо видалити - {in_use} студент(ів) мають цю ліцензію "
+                    f"(включно з паралельним навчанням). Вимкніть актуальність "
+                    f"замість видалення.",
+                    "error",
+                )
             else:
                 conn.execute("DELETE FROM institution_licenses WHERE id = ?", (license_id,))
                 conn.commit()
                 flash("Ліцензію видалено.", "success")
                 log_action(current_username(), f"видалив ліцензію: {row['short_name_ua'] or row['name_ua'] if row else ''}")
 
-    licenses = conn.execute("""
+    # ── Список ліцензій + кількість унікальних активних студентів ──
+    # students_count = скільки людей користуються цією ліцензією (primary
+    # або як ліцензія якоїсь активної групи). Студент, у якого обидві
+    # групи під цією ж ліцензією, рахується один раз.
+    counts_by_license_id = {}
+    for r in conn.execute("""
+        SELECT license_id, COUNT(DISTINCT student_id) AS c FROM (
+            SELECT id AS student_id, license_id FROM students
+            WHERE license_id IS NOT NULL AND COALESCE(archived, 0) = 0
+            UNION
+            SELECT e.student_id, e.license_id
+            FROM student_enrollments e
+            JOIN students s ON s.id = e.student_id
+            WHERE e.license_id IS NOT NULL
+              AND e.status = 'active'
+              AND COALESCE(s.archived, 0) = 0
+        )
+        GROUP BY license_id
+    """).fetchall():
+        counts_by_license_id[r['license_id']] = r['c']
+
+    licenses = []
+    for r in conn.execute("""
         SELECT l.id, l.name_ua, l.short_name_ua, l.name_en, l.short_name_en,
-               l.is_active, l.is_base,
-               (SELECT COUNT(*) FROM students s WHERE s.license_id = l.id) AS students_count
+               l.is_active, l.is_base
         FROM institution_licenses l
         ORDER BY l.is_base DESC, l.id
-    """).fetchall()
+    """).fetchall():
+        d = dict(r)
+        d['students_count'] = counts_by_license_id.get(d['id'], 0)
+        licenses.append(d)
+
     conn.close()
 
     return render_template("manage_licenses.html", licenses=licenses)
-
 
 @admin_bp.route('/admin/license_transfer', methods=['GET', 'POST'])
 @permission_required('manage_license_transfer')
@@ -705,7 +760,12 @@ def license_transfer():
 @admin_bp.route('/admin/license_transfer/confirm', methods=['POST'])
 @permission_required('manage_license_transfer')
 def license_transfer_confirm():
-    """Остаточне підтвердження наказу про переведення між ліцензіями."""
+    """Остаточне підтвердження наказу про переведення між ліцензіями.
+
+    Оновлює students.license_id І student_enrollments.license_id для
+    всіх активних груп кожного студента — інакше license_report
+    показуватиме старі ліцензії в групах, розходячись з наказом.
+    """
     order_number = (request.form.get('order_number') or '').strip()
     order_date = request.form.get('order_date')
     target_license_id = request.form.get('target_license_id')
@@ -734,13 +794,29 @@ def license_transfer_confirm():
     order_id = cur.lastrowid
 
     for student_id in student_ids:
-        prev = conn.execute("SELECT license_id FROM students WHERE id = ?", (student_id,)).fetchone()
+        prev = conn.execute(
+            "SELECT license_id FROM students WHERE id = ?", (student_id,)
+        ).fetchone()
         previous_license_id = prev['license_id'] if prev else None
         conn.execute(
-            "INSERT INTO license_transfer_order_students (order_id, student_id, previous_license_id, new_license_id) VALUES (?, ?, ?, ?)",
+            "INSERT INTO license_transfer_order_students "
+            "(order_id, student_id, previous_license_id, new_license_id) "
+            "VALUES (?, ?, ?, ?)",
             (order_id, student_id, previous_license_id, target_license_id)
         )
-        conn.execute("UPDATE students SET license_id = ? WHERE id = ?", (target_license_id, student_id))
+        # 1) Primary-ліцензія студента
+        conn.execute(
+            "UPDATE students SET license_id = ? WHERE id = ?",
+            (target_license_id, student_id),
+        )
+        # 2) Ліцензія у ВСІХ активних enrollment'ах цього студента
+        #    (переведення наказу стосується всього студента, а не однієї
+        #    його групи)
+        conn.execute(
+            "UPDATE student_enrollments SET license_id = ? "
+            "WHERE student_id = ? AND status = 'active'",
+            (target_license_id, student_id),
+        )
 
     conn.commit()
     conn.close()
@@ -750,129 +826,232 @@ def license_transfer_confirm():
         f"наказ про переведення між ліцензіями №{order_number} від {order_date}",
         details=f"студентів: {len(student_ids)}, нова ліцензія ID {target_license_id}"
     )
-    flash(f"Переведення між ліцензіями оформлено. Студентів: {len(student_ids)}.", "success")
+    flash(
+        f"Переведення між ліцензіями оформлено. Студентів: {len(student_ids)}.",
+        "success",
+    )
     return redirect(url_for('admin.manage_licenses'))
-
 
 @admin_bp.route('/admin/license_report')
 @permission_required('license_report')
 def license_report():
+    """Звіт по ліцензіях.
+
+    ВАЖЛИВО: ітеруємо по student_enrollments (студент ↔ група), а не по
+    students.group_id. Це дозволяє коректно показати студента, який
+    паралельно вчиться у 2+ групах під різними ліцензіями: у звіті він
+    з'явиться в кожній групі під своєю ліцензією з цього enrollment.
+
+    Для студентів без жодного enrollment (legacy) — fallback на
+    students.group_id + students.license_id.
     """
-    Звіт по ліцензіях: скільки студентів кожної групи належать до
-    якої ліцензії (Ф=Філія/Львів, К=Київ, П=Польща тощо - будь-які
-    активні ліцензії з каталогу). Два режими: "Список" (як у
-    друкованих списках вступників - курс/спеціальність/студенти з
-    позначкою ліцензії) і "Підсумки" (зведена таблиця з кількостями,
-    як власноруч ведена Excel-таблиця). Перемикач архівних груп - той
-    самий принцип, що й в Аналітиці.
-    """
-    include_archived = request.args.get('include_archived') == '1'
-    view = request.args.get('view', 'list')
+    from collections import defaultdict
+    from routes.helpers import sort_ukrainian
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    group_cond = "" if include_archived else "WHERE COALESCE(g.archived,0)=0"
-    groups = conn.execute(f"""
-        SELECT g.id, g.name, g.course, g.specialty, g.degree_level, g.study_form, g.archived, g.program_credits
-        FROM groups g {group_cond}
-        ORDER BY g.course, g.specialty COLLATE UKRAINIAN, g.name COLLATE UKRAINIAN
+    view = request.args.get('view', 'list')
+    if view not in ('list', 'summary'):
+        view = 'list'
+    include_archived = request.args.get('include_archived', '0') == '1'
+
+    # ── 1. Усі ліцензії (для порядку колонок) ──────────────────
+    license_rows = conn.execute("""
+        SELECT id, short_name_ua, name_ua
+        FROM institution_licenses
+        WHERE COALESCE(is_active, 1) = 1
+        ORDER BY COALESCE(short_name_ua, name_ua)
+    """).fetchall()
+    license_names = [
+        r['short_name_ua'] or r['name_ua'] for r in license_rows
+    ]
+
+    # ── 2. Плоский список "студент × група × ліцензія" ─────────
+    # Кожен рядок — один enrollment (або "віртуальний enrollment" для
+    # legacy-студентів без записів у student_enrollments).
+    archive_filter = "" if include_archived else " AND COALESCE(g.archived, 0) = 0"
+
+    flat_rows = conn.execute(f"""
+        SELECT
+            s.id                AS student_id,
+            s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+            s.program_credits_override,
+            s.archived          AS student_archived,
+            s.gender,
+            COALESCE(e.group_id, s.group_id)             AS group_id,
+            COALESCE(e.license_id, s.license_id)         AS license_id,
+            COALESCE(e.status, 'active')                 AS enrollment_status,
+            g.id                AS gid,
+            g.name              AS group_name,
+            g.start_year, g.study_form, g.course,
+            g.specialty, g.degree_level,
+            g.program_credits,
+            g.archived          AS group_archived,
+            il.short_name_ua    AS license_short_name,
+            il.name_ua          AS license_name
+        FROM students s
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id AND e.status = 'active'
+        LEFT JOIN groups g
+               ON g.id = COALESCE(e.group_id, s.group_id)
+        LEFT JOIN institution_licenses il
+               ON il.id = COALESCE(e.license_id, s.license_id)
+        WHERE COALESCE(s.archived, 0) = 0
+              AND COALESCE(g.archived, 0) = 0 OR g.archived = 1
+    """).fetchall() if False else conn.execute(f"""
+        SELECT
+            s.id                AS student_id,
+            s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+            s.program_credits_override,
+            s.archived          AS student_archived,
+            s.gender,
+            COALESCE(e.group_id, s.group_id)             AS group_id,
+            COALESCE(e.license_id, s.license_id)         AS license_id,
+            COALESCE(e.status, 'active')                 AS enrollment_status,
+            g.id                AS gid,
+            g.name              AS group_name,
+            g.start_year, g.study_form, g.course,
+            g.specialty, g.degree_level,
+            g.program_credits,
+            g.archived          AS group_archived,
+            il.short_name_ua    AS license_short_name,
+            il.name_ua          AS license_name
+        FROM students s
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id AND e.status = 'active'
+        LEFT JOIN groups g
+               ON g.id = COALESCE(e.group_id, s.group_id)
+        LEFT JOIN institution_licenses il
+               ON il.id = COALESCE(e.license_id, s.license_id)
+        WHERE g.id IS NOT NULL
+              AND COALESCE(s.archived, 0) = 0
+              {archive_filter}
     """).fetchall()
 
-    licenses = conn.execute(
-        "SELECT id, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
-    ).fetchall()
-    license_names = [l['short_name_ua'] for l in licenses]
+    # ── 3. Групуємо: група → студенти + лічильники ліцензій ────
+    by_group = {}   # gid -> {group: {...}, students: [...], counts: {...}}
+    for r in flat_rows:
+        gid = r['gid']
+        if gid not in by_group:
+            by_group[gid] = {
+                'group': {
+                    'id': gid,
+                    'name': r['group_name'] or '—',
+                    'start_year': r['start_year'],
+                    'study_form': r['study_form'],
+                    'course': r['course'],
+                    'specialty': r['specialty'] or '—',
+                    'degree_level': r['degree_level'] or '—',
+                    'archived': bool(r['group_archived']),
+                    'program_credits': r['program_credits'],
+                },
+                'students': [],
+                'counts': defaultdict(int),
+            }
+        full_name = ' '.join(
+            x for x in (r['last_name_UA'], r['first_name_UA'],
+                        r['middle_name_UA'] or '') if x
+        )
+        lic = r['license_short_name'] or '—'
+        by_group[gid]['students'].append({
+            'full_name': full_name,
+            'program_credits_override': r['program_credits_override'],
+            'archived': bool(r['student_archived']),
+            'license_short_name': lic,
+        })
+        by_group[gid]['counts'][lic] += 1
 
-    # Порядок ступенів - за їхнім id в каталозі degree_levels, той
-    # самий принцип, що й на дошці "Курси" й в "Архіві груп".
-    degree_order = {
-        row['name_ua']: row['id']
-        for row in conn.execute("SELECT id, name_ua FROM degree_levels").fetchall()
-    }
+    # Сортуємо студентів у кожній групі
+    for gid_data in by_group.values():
+        gid_data['students'] = sort_ukrainian(
+            gid_data['students'], lambda s: s['full_name']
+        )
 
-    groups_with_students = []
+    groups_with_students = list(by_group.values())
+
+    # ── 4. Групуємо по ступенях (для view=list) ────────────────
+    groups_by_degree = defaultdict(list)
+    for item in groups_with_students:
+        groups_by_degree[item['group']['degree_level']].append(item)
+    for deg in groups_by_degree:
+        groups_by_degree[deg].sort(
+            key=lambda i: (i['group']['name'], i['group']['start_year'] or '')
+        )
+
+    # ── 5. Зведені таблиці (для view=summary) ──────────────────
+    # 5.1 По групах
     summary_rows = []
-    grand_totals = {name: 0 for name in license_names}
-    grand_totals['—'] = 0  # без ліцензії
-    grand_total_all = 0
+    for item in groups_with_students:
+        counts = dict(item['counts'])
+        total = sum(counts.values())
+        summary_rows.append({
+            'group': item['group'],
+            'counts': counts,
+            'total': total,
+        })
+    summary_rows.sort(
+        key=lambda r: (r['group']['degree_level'],
+                       r['group']['name'],
+                       r['group']['start_year'] or '')
+    )
 
-    # Підсумки по (ступінь + форма навчання) - як блоки "Бакалавр
-    # денна"/"Бакалавр заочна" тощо у власноруч веденій таблиці
-    breakdown = {}
-    # Підсумки просто по курсах, незалежно від спеціальності/ступеня
-    course_breakdown = {}
+    # 5.2 Загальні підсумки по ліцензіях
+    grand_totals = defaultdict(int)
+    for item in groups_with_students:
+        for lic, cnt in item['counts'].items():
+            grand_totals[lic] += cnt
+    grand_total_all = sum(grand_totals.values())
 
-    for g in groups:
-        students = conn.execute("""
-            SELECT s.id, TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name,
-                   l.short_name_ua AS license_short_name, s.archived, s.program_credits_override
-            FROM students s LEFT JOIN institution_licenses l ON l.id = s.license_id
-            WHERE s.group_id = ? {archived_cond}
-            ORDER BY s.last_name_UA COLLATE UKRAINIAN
-        """.format(archived_cond="" if include_archived else "AND COALESCE(s.archived,0)=0"), (g['id'],)).fetchall()
+    # 5.3 По курсах
+    course_agg = defaultdict(lambda: defaultdict(int))
+    for item in groups_with_students:
+        course = item['group']['course']
+        if course is None:
+            continue
+        for lic, cnt in item['counts'].items():
+            course_agg[course][lic] += cnt
+    course_breakdown_rows = []
+    for course in sorted(course_agg.keys(), key=lambda c: (c is None, c)):
+        counts = dict(course_agg[course])
+        course_breakdown_rows.append({
+            'course': course,
+            'counts': counts,
+            'total': sum(counts.values()),
+        })
 
-        counts = {name: 0 for name in license_names}
-        counts['—'] = 0
-        for s in students:
-            key = s['license_short_name'] or '—'
-            counts[key] = counts.get(key, 0) + 1
-            grand_totals[key] = grand_totals.get(key, 0) + 1
-            grand_total_all += 1
-
-        groups_with_students.append({'group': g, 'students': students, 'counts': {k: v for k, v in counts.items() if v}})
-
-        group_total = sum(counts.values())
-        summary_rows.append({'group': g, 'counts': counts, 'total': group_total})
-
-        breakdown_key = (g['degree_level'] or '—', g['study_form'] or '—')
-        if breakdown_key not in breakdown:
-            breakdown[breakdown_key] = {name: 0 for name in license_names}
-            breakdown[breakdown_key]['—'] = 0
-        for name, cnt in counts.items():
-            breakdown[breakdown_key][name] = breakdown[breakdown_key].get(name, 0) + cnt
-
-        course_key = g['course']
-        if course_key not in course_breakdown:
-            course_breakdown[course_key] = {name: 0 for name in license_names}
-            course_breakdown[course_key]['—'] = 0
-        for name, cnt in counts.items():
-            course_breakdown[course_key][name] = course_breakdown[course_key].get(name, 0) + cnt
+    # 5.4 По ступенях + формах навчання
+    bd_agg = defaultdict(lambda: defaultdict(int))
+    for item in groups_with_students:
+        key = (item['group']['degree_level'] or '—',
+               item['group']['study_form'] or '—')
+        for lic, cnt in item['counts'].items():
+            bd_agg[key][lic] += cnt
+    breakdown_rows = []
+    for (degree, study_form) in sorted(bd_agg.keys()):
+        counts = dict(bd_agg[(degree, study_form)])
+        breakdown_rows.append({
+            'degree_level': degree,
+            'study_form': study_form,
+            'counts': counts,
+            'total': sum(counts.values()),
+        })
 
     conn.close()
 
-    # Групуємо для компактного вигляду в режимі "Список": ступінь -> список груп
-    groups_by_degree_raw = {}
-    for item in groups_with_students:
-        groups_by_degree_raw.setdefault(item['group']['degree_level'] or 'Без ступеня', []).append(item)
-    groups_by_degree = {
-        degree_level: groups_by_degree_raw[degree_level]
-        for degree_level in sorted(groups_by_degree_raw.keys(), key=lambda d: (degree_order.get(d, 999), d))
-    }
-
-    breakdown_rows = [
-        {'degree_level': k[0], 'study_form': k[1], 'counts': v, 'total': sum(v.values())}
-        for k, v in sorted(breakdown.items())
-    ]
-    course_breakdown_rows = [
-        {'course': k, 'counts': v, 'total': sum(v.values())}
-        for k, v in sorted(course_breakdown.items())
-    ]
-
     return render_template(
-        "license_report.html",
+        'license_report.html',
         view=view,
         include_archived=include_archived,
-        license_names=license_names,
         groups_with_students=groups_with_students,
-        groups_by_degree=groups_by_degree,
+        groups_by_degree=dict(groups_by_degree),
+        license_names=license_names,
         summary_rows=summary_rows,
+        grand_totals=dict(grand_totals),
+        grand_total_all=grand_total_all,
         course_breakdown_rows=course_breakdown_rows,
         breakdown_rows=breakdown_rows,
-        grand_totals=grand_totals,
-        grand_total_all=grand_total_all,
     )
-
 
 @admin_bp.route('/admin/license_report/export_word')
 @permission_required('license_report')

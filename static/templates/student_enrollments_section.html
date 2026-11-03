@@ -1,5 +1,5 @@
 {# Підключення: {% include 'student_enrollments_section.html' %}
-   Потрібні змінні: student, enrollments, all_groups #}
+   Потрібні змінні: student, enrollments, all_groups, licenses_available #}
 <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
         <strong><i class="bi bi-mortarboard me-1"></i> Навчання (групи)</strong>
@@ -13,9 +13,10 @@
                     <tr>
                         <th>Група</th>
                         <th>Ступінь</th>
+                        <th>Ліцензія</th>
                         <th>Статус</th>
                         <th></th>
-                        <th class="text-end" style="width:220px;">Дії</th>
+                        <th class="text-end" style="width:260px;">Дії</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -30,6 +31,39 @@
                             </div>
                         </td>
                         <td class="small">{{ e.degree_level or '—' }}</td>
+                        <td>
+                            {% if e.license_short_name_ua %}
+                            <span class="badge bg-info-subtle text-info-emphasis"
+                                  title="{{ e.license_name_ua or e.license_short_name_ua }}">
+                                <i class="bi bi-award me-1"></i>{{ e.license_short_name_ua }}
+                            </span>
+                            {% elif e.license_id %}
+                            <span class="badge bg-secondary">ID {{ e.license_id }}</span>
+                            {% else %}
+                            <span class="text-muted small">не вказано</span>
+                            {% endif %}
+
+                            {% if e.status == 'active' %}
+                            <form method="POST"
+                                  action="{{ url_for('students.enrollment_update_license',
+                                                     student_id=student.id, group_id=e.group_id) }}"
+                                  class="d-flex gap-1 align-items-center mt-1"
+                                  onsubmit="return true;">
+                                <select name="license_id"
+                                        class="form-select form-select-sm"
+                                        style="min-width: 140px;"
+                                        onchange="this.form.submit()">
+                                    <option value="">— без ліцензії —</option>
+                                    {% for l in (licenses_available|default([])) %}
+                                    <option value="{{ l.id }}"
+                                            {% if l.id == e.license_id %}selected{% endif %}>
+                                        {{ l.short_name_ua or l.name_ua }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if e.status == 'active' %}
                             <span class="badge text-bg-success">active</span>
@@ -89,8 +123,10 @@
         {% endif %}
     </div>
     <div class="card-footer">
-        <form method="POST" action="{{ url_for('students.enrollment_add', student_id=student.id) }}" class="row g-2 align-items-end">
-            <div class="col-md-6">
+        <form method="POST"
+              action="{{ url_for('students.enrollment_add', student_id=student.id) }}"
+              class="row g-2 align-items-end">
+            <div class="col-md-5">
                 <label class="form-label small mb-0">Додати паралельне навчання</label>
                 <select name="group_id" class="form-select form-select-sm" required>
                     <option value="">— група —</option>
@@ -102,19 +138,29 @@
                 </select>
             </div>
             <div class="col-md-3">
+                <label class="form-label small mb-0">Ліцензія</label>
+                <select name="license_id" class="form-select form-select-sm">
+                    <option value="">— як у студента —</option>
+                    {% for l in (licenses_available|default([])) %}
+                    <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
                 <div class="form-check mt-4">
                     <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="enrollPrimary">
-                    <label class="form-check-label small" for="enrollPrimary">Зробити основним</label>
+                    <label class="form-check-label small" for="enrollPrimary">Основна</label>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <button type="submit" class="btn btn-sm btn-primary w-100">
                     <i class="bi bi-plus-lg me-1"></i>Додати
                 </button>
             </div>
         </form>
         <div class="form-text small mt-1">
-            Друга група (наприклад бакалавр при молодшому бакалаврі) — без галочки «основним».
+            Друга група (наприклад бакалавр при молодшому бакалаврі) — без галочки «Основна».
+            Ліцензія визначає, від якого закладу йде документ для цієї групи.
         </div>
     </div>
 </div>

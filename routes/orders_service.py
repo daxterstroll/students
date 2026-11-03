@@ -63,16 +63,18 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
 
     Для expulsion: «з групи КН-21 (2022, Денна); причина».
     Для course_transfer: «курс 1 → 2».
-    Для license_transfer: «ліцензія A → B».
+    Для license_transfer: «ліцензія Львівська → Польська».
     Для enrollment: «у групу КН-21 (2022, Денна)».
     Інакше — `key=value, …`.
     """
     if not payload:
         return ''
+
     if order_type == 'course_transfer':
         a, b = payload.get('course_from'), payload.get('course_to')
         if a is not None and b is not None:
             return f'курс {a} → {b}'
+
     if order_type == 'expulsion':
         parts = []
         prev_gid = payload.get('previous_group_id')
@@ -91,11 +93,24 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
         if reason:
             parts.append(str(reason))
         return '; '.join(parts) if parts else ''
+
     if order_type == 'license_transfer':
+        def _lic_name(lid):
+            if not lid:
+                return '—'
+            row = conn.execute(
+                "SELECT short_name_ua, name_ua FROM institution_licenses WHERE id = ?",
+                (lid,),
+            ).fetchone()
+            if not row:
+                return f'#{lid}'
+            return row['short_name_ua'] or row['name_ua']
+
         return (
-            f"ліцензія {payload.get('previous_license_id')} → "
-            f"{payload.get('new_license_id')}"
+            f"ліцензія {_lic_name(payload.get('previous_license_id'))} → "
+            f"{_lic_name(payload.get('new_license_id'))}"
         )
+
     if order_type == 'enrollment' and payload.get('group_id'):
         row = conn.execute(
             "SELECT name, start_year, study_form FROM groups WHERE id = ?",
@@ -104,11 +119,13 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
         if row:
             return f'у групу {row["name"]} ({row["start_year"]}, {row["study_form"]})'
         return f"група id={payload['group_id']}"
+
     if order_type == 'graduation' and payload.get('action'):
         return str(payload['action'])
+
     parts = [f'{k}={v}' for k, v in payload.items() if v is not None and v != '']
     return ', '.join(parts)
-
+    
 def create_order(
     order_type: str,
     order_number: str,
@@ -312,6 +329,68 @@ def list_orders(
             ).fetchone()[0]
             d['items_count'] = cnt
             result.append(d)
+
+        # ── Обогащение: license_summary для license_transfer-наказов ──
+        # Показываем "Львівська → Київська" прямо в списке наказов,
+        # чтобы админу не нужно было открывать каждую карточку.
+        license_summary_by_order = {}
+        lt_order_ids = [
+            d['id'] for d in result if d['order_type'] == 'license_transfer'
+        ]
+        if lt_order_ids:
+            placeholders = ','.join('?' for _ in lt_order_ids)
+            items_rows = conn.execute(
+                f"SELECT order_id, payload FROM order_items "
+                f"WHERE order_id IN ({placeholders})",
+                lt_order_ids,
+            ).fetchall()
+
+            per_order = {}
+            for ir in items_rows:
+                payload = _payload_loads(ir['payload'])
+                prev_id = payload.get('previous_license_id')
+                new_id = payload.get('new_license_id')
+                if new_id is None and prev_id is None:
+                    continue
+                per_order.setdefault(ir['order_id'], set()).add((prev_id, new_id))
+
+            license_ids_needed = set()
+            for pairs in per_order.values():
+                for p, n in pairs:
+                    if p:
+                        license_ids_needed.add(int(p))
+                    if n:
+                        license_ids_needed.add(int(n))
+
+            lic_names = {}
+            if license_ids_needed:
+                l_ph = ','.join('?' for _ in license_ids_needed)
+                for lr in conn.execute(
+                    f"SELECT id, short_name_ua, name_ua FROM institution_licenses "
+                    f"WHERE id IN ({l_ph})",
+                    list(license_ids_needed),
+                ).fetchall():
+                    lic_names[lr['id']] = lr['short_name_ua'] or lr['name_ua']
+
+            for order_id, pairs in per_order.items():
+                prevs = {p for p, _ in pairs if p}
+                news = {n for _, n in pairs if n}
+                new_str = (
+                    '/'.join(lic_names.get(n, f'#{n}') for n in sorted(news))
+                    if news else '—'
+                )
+                if len(prevs) == 1 and len(news) == 1:
+                    prev = next(iter(prevs))
+                    prev_str = lic_names.get(prev, f'#{prev}')
+                    license_summary_by_order[order_id] = f'{prev_str} → {new_str}'
+                elif news:
+                    license_summary_by_order[order_id] = f'→ {new_str}'
+                else:
+                    license_summary_by_order[order_id] = ''
+
+        for d in result:
+            d['license_summary'] = license_summary_by_order.get(d['id'], '')
+
         return result
     finally:
         if own_conn:
