@@ -1,5 +1,8 @@
-**/static/style/**
-static/style/**
+**/static/style/bootstrap-5.3.8-dist**
+static/style/bootstrap-5.3.8-dist**
+
+**/static/style/bootstrap-icons-1.13.2**
+static/style/bootstrap-icons-1.13.2**
 
 **/docs/**
 docs/**
