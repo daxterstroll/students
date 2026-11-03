@@ -1,166 +1,488 @@
 {# Підключення: {% include 'student_enrollments_section.html' %}
    Потрібні змінні: student, enrollments, all_groups, licenses_available #}
-<div class="card mb-3">
-    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <strong><i class="bi bi-mortarboard me-1"></i> Навчання (групи)</strong>
-        <span class="badge text-bg-secondary">{{ enrollments|length }}</span>
-    </div>
-    <div class="card-body p-0">
-        {% if enrollments %}
-        <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>Група</th>
-                        <th>Ступінь</th>
-                        <th>Ліцензія</th>
-                        <th>Статус</th>
-                        <th></th>
-                        <th class="text-end" style="width:260px;">Дії</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for e in enrollments %}
-                    <tr class="{% if e.status != 'active' %}table-secondary{% endif %}">
-                        <td>
-                            <strong>{{ e.group_name or ('#' ~ e.group_id) }}</strong>
-                            <div class="small text-muted">
-                                {{ e.start_year or '' }}
-                                {% if e.study_form %} · {{ e.study_form }}{% endif %}
-                                {% if e.course %} · {{ e.course }} курс{% endif %}
-                            </div>
-                        </td>
-                        <td class="small">{{ e.degree_level or '—' }}</td>
-                        <td>
-                            {% if e.license_short_name_ua %}
-                            <span class="badge bg-info-subtle text-info-emphasis"
-                                  title="{{ e.license_name_ua or e.license_short_name_ua }}">
-                                <i class="bi bi-award me-1"></i>{{ e.license_short_name_ua }}
-                            </span>
-                            {% elif e.license_id %}
-                            <span class="badge bg-secondary">ID {{ e.license_id }}</span>
-                            {% else %}
-                            <span class="text-muted small">не вказано</span>
-                            {% endif %}
 
-                            {% if e.status == 'active' %}
-                            <form method="POST"
-                                  action="{{ url_for('students.enrollment_update_license',
-                                                     student_id=student.id, group_id=e.group_id) }}"
-                                  class="d-flex gap-1 align-items-center mt-1"
-                                  onsubmit="return true;">
-                                <select name="license_id"
-                                        class="form-select form-select-sm"
-                                        style="min-width: 140px;"
-                                        onchange="this.form.submit()">
-                                    <option value="">— без ліцензії —</option>
-                                    {% for l in (licenses_available|default([])) %}
-                                    <option value="{{ l.id }}"
-                                            {% if l.id == e.license_id %}selected{% endif %}>
-                                        {{ l.short_name_ua or l.name_ua }}
-                                    </option>
-                                    {% endfor %}
-                                </select>
-                            </form>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if e.status == 'active' %}
-                            <span class="badge text-bg-success">active</span>
-                            {% elif e.status == 'expelled' %}
-                            <span class="badge text-bg-danger">{{ e.status }}</span>
-                            {% else %}
-                            <span class="badge text-bg-secondary">{{ e.status }}</span>
-                            {% endif %}
-                            {% if e.is_primary %}
-                            <span class="badge text-bg-primary">основне</span>
-                            {% endif %}
-                        </td>
-                        <td class="small text-muted">{{ e.notes or '' }}</td>
-                        <td class="text-end text-nowrap">
-                            {% if e.status == 'active' %}
-                                {% if not e.is_primary %}
-                                <form method="POST"
-                                      action="{{ url_for('students.enrollment_set_primary', student_id=student.id) }}"
-                                      class="d-inline">
-                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
-                                    <button type="submit" class="btn btn-sm btn-outline-primary" title="Зробити основним">
-                                        <i class="bi bi-star"></i>
-                                    </button>
-                                </form>
+{% macro status_label(status) -%}
+{%- if status == 'active' -%}Активне
+{%- elif status == 'completed' -%}Завершено
+{%- elif status == 'expelled' -%}Відраховано
+{%- elif status == 'graduated' -%}Випущено
+{%- elif status == 'frozen' -%}Заморожено
+{%- else -%}{{ status }}{%- endif -%}
+{%- endmacro %}
+
+<div class="accordion-item border-0 shadow-sm mb-3 enrollments-section" style="border-radius: 12px; overflow: hidden;">
+    <h2 class="accordion-header">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse"
+                data-bs-target="#enrollmentsCollapse" aria-expanded="true"
+                aria-controls="enrollmentsCollapse">
+            <i class="bi bi-mortarboard-fill me-3 fs-4" style="color: var(--brass);"></i>
+            <span class="flex-grow-1 text-start">
+                Навчання (групи)
+                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-2">
+                    {{ enrollments|length }}
+                </span>
+            </span>
+        </button>
+    </h2>
+    <div id="enrollmentsCollapse" class="accordion-collapse collapse show"
+         data-bs-parent="#studentDetailsAccordion">
+        <div class="accordion-body p-0">
+
+            {% if enrollments %}
+                {% for e in enrollments %}
+                <div class="enrollment-card {% if e.status != 'active' %}enrollment-card--inactive{% endif %}">
+                    <div class="enrollment-card__top">
+                        <div class="enrollment-card__main">
+                            <div class="enrollment-card__title">
+                                <i class="bi bi-mortarboard text-muted"></i>
+                                <strong>{{ e.group_name or ('#' ~ e.group_id) }}</strong>
+                                {% if e.is_primary %}
+                                <span class="enrollment-badge enrollment-badge--primary"
+                                      title="Основна група студента">основне</span>
+                                {% else %}
+                                <span class="enrollment-badge enrollment-badge--parallel"
+                                      title="Паралельне навчання">паралельне</span>
                                 {% endif %}
-                                <form method="POST"
-                                      action="{{ url_for('students.enrollment_end', student_id=student.id) }}"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Завершити навчання в цій групі?');">
-                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
-                                    <input type="hidden" name="status" value="completed">
-                                    <button type="submit" class="btn btn-sm btn-outline-secondary" title="Завершити">
-                                        <i class="bi bi-check2"></i>
-                                    </button>
-                                </form>
-                                <form method="POST"
-                                      action="{{ url_for('students.enrollment_end', student_id=student.id) }}"
-                                      class="d-inline"
-                                      onsubmit="return confirm('Позначити відрахування з цієї групи?');">
-                                    <input type="hidden" name="group_id" value="{{ e.group_id }}">
-                                    <input type="hidden" name="status" value="expelled">
-                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Відраховано з групи">
-                                        <i class="bi bi-x-lg"></i>
-                                    </button>
-                                </form>
-                            {% else %}
-                                <span class="text-muted small">—</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% else %}
-        <div class="p-3 text-muted small">Записів про навчання ще немає (лише students.group_id).</div>
-        {% endif %}
-    </div>
-    <div class="card-footer">
-        <form method="POST"
-              action="{{ url_for('students.enrollment_add', student_id=student.id) }}"
-              class="row g-2 align-items-end">
-            <div class="col-md-5">
-                <label class="form-label small mb-0">Додати паралельне навчання</label>
-                <select name="group_id" class="form-select form-select-sm" required>
-                    <option value="">— група —</option>
-                    {% for g in all_groups %}
-                    <option value="{{ g.id }}">
-                        {{ g.display_name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-0">Ліцензія</label>
-                <select name="license_id" class="form-select form-select-sm">
-                    <option value="">— як у студента —</option>
-                    {% for l in (licenses_available|default([])) %}
-                    <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <div class="form-check mt-4">
-                    <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="enrollPrimary">
-                    <label class="form-check-label small" for="enrollPrimary">Основна</label>
+                            </div>
+                            <div class="enrollment-card__meta">
+                                {% if e.start_year %}<span><i class="bi bi-calendar3"></i> {{ e.start_year }}</span>{% endif %}
+                                {% if e.study_form %}<span><i class="bi bi-book"></i> {{ e.study_form }}</span>{% endif %}
+                                {% if e.course %}<span><i class="bi bi-list-ol"></i> {{ e.course }} курс</span>{% endif %}
+                                {% if e.degree_level %}<span><i class="bi bi-award"></i> {{ e.degree_level }}</span>{% endif %}
+                            </div>
+                        </div>
+                        <span class="enrollment-status enrollment-status--{{ e.status }}">
+                            {{ status_label(e.status) }}
+                        </span>
+                    </div>
+
+                    <div class="enrollment-card__license">
+                        <i class="bi bi-building text-muted"></i>
+                        <span class="text-muted small">Ліцензія:</span>
+                        {% if e.license_short_name_ua %}
+                            <span class="enrollment-badge enrollment-badge--license"
+                                  title="{{ e.license_name_ua or e.license_short_name_ua }}">
+                                {{ e.license_short_name_ua }}
+                            </span>
+                        {% elif e.license_id %}
+                            <span class="enrollment-badge enrollment-badge--parallel">ID {{ e.license_id }}</span>
+                        {% else %}
+                            <span class="text-muted fst-italic small">не вказано</span>
+                        {% endif %}
+                    </div>
+
+                    {% if e.status == 'active' %}
+                    <div class="enrollment-card__actions">
+                        {% if not e.is_primary %}
+                        <form method="POST"
+                              action="{{ url_for('students.enrollment_set_primary', student_id=student.id) }}"
+                              class="d-inline">
+                            <input type="hidden" name="group_id" value="{{ e.group_id }}">
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                    title="Позначити цю групу основною (metadata, без наказу)">
+                                <i class="bi bi-star"></i> Зробити основною
+                            </button>
+                        </form>
+                        {% endif %}
+                        <button type="button" class="btn btn-sm btn-outline-info js-change-license"
+                                data-group-id="{{ e.group_id }}"
+                                data-group-name="{{ e.group_name or '' }}">
+                            <i class="bi bi-award"></i> Змінити ліцензію
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-success js-end-enrollment"
+                                data-group-id="{{ e.group_id }}"
+                                data-action-type="graduate"
+                                data-group-name="{{ e.group_name or '' }}">
+                            <i class="bi bi-mortarboard"></i> Оформити випуск
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger js-end-enrollment"
+                                data-group-id="{{ e.group_id }}"
+                                data-action-type="expel"
+                                data-group-name="{{ e.group_name or '' }}">
+                            <i class="bi bi-person-x"></i> Відрахувати
+                        </button>
+                    </div>
+                    {% endif %}
                 </div>
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-sm btn-primary w-100">
-                    <i class="bi bi-plus-lg me-1"></i>Додати
-                </button>
-            </div>
-        </form>
-        <div class="form-text small mt-1">
-            Друга група (наприклад бакалавр при молодшому бакалаврі) — без галочки «Основна».
-            Ліцензія визначає, від якого закладу йде документ для цієї групи.
+                {% endfor %}
+            {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                    Записів про навчання ще немає.
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="enrollment-footer">
+            <button type="button" class="btn btn-sm btn-primary"
+                    data-bs-toggle="modal" data-bs-target="#addEnrollmentModal">
+                <i class="bi bi-plus-lg me-1"></i> Додати паралельне навчання
+            </button>
+            <span class="text-muted small ms-2">
+                <i class="bi bi-info-circle me-1"></i>
+                Усі зміни навчання оформлюються наказом
+            </span>
         </div>
     </div>
 </div>
+
+{# ═══════════════════════════════════════════════════════════════════
+   Модальні вікна — всі дії створюють наказ
+   ═══════════════════════════════════════════════════════════════════ #}
+
+<!-- Додати паралельне навчання -->
+<div class="modal fade" id="addEnrollmentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" enctype="multipart/form-data"
+                  action="{{ url_for('students.enrollment_add', student_id=student.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Додати паралельне навчання</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Додавання навчання оформлюється <strong>наказом про зарахування</strong>.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Група <span class="text-danger">*</span></label>
+                        <select name="group_id" class="form-select" required>
+                            <option value="">— оберіть групу —</option>
+                            {% for g in all_groups %}
+                            <option value="{{ g.id }}">{{ g.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Ліцензія</label>
+                        <select name="license_id" class="form-select">
+                            <option value="">— як у студента —</option>
+                            {% for l in (licenses_available or []) %}
+                            <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="is_primary" value="1" id="newEnrollPrimary">
+                        <label class="form-check-label small" for="newEnrollPrimary">
+                            Зробити цю групу основною
+                        </label>
+                    </div>
+
+                    <hr>
+                    <h6 class="text-muted small text-uppercase mb-3">Наказ про зарахування</h6>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                            <input type="text" name="order_number" class="form-control form-control-sm"
+                                   placeholder="напр. 45/2026" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                            <input type="text" name="order_date" class="form-control form-control-sm"
+                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Скан наказу</label>
+                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Оформити наказ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Змінити ліцензію -->
+<div class="modal fade" id="changeLicenseModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="changeLicenseForm" enctype="multipart/form-data">
+                <input type="hidden" name="action_type" value="change_license">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-award me-2"></i>Змінити ліцензію</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Зміна ліцензії оформлюється
+                        <strong>наказом про переведення між ліцензіями</strong>.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Нова ліцензія <span class="text-danger">*</span></label>
+                        <select name="new_license_id" class="form-select" required>
+                            <option value="">— оберіть ліцензію —</option>
+                            {% for l in (licenses_available or []) %}
+                            <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <hr>
+                    <h6 class="text-muted small text-uppercase mb-3">Наказ про переведення</h6>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                            <input type="text" name="order_number" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                            <input type="text" name="order_date" class="form-control form-control-sm"
+                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Скан наказу</label>
+                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Оформити наказ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Завершення навчання (випуск / відрахування) -->
+<div class="modal fade" id="endEnrollmentModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="endEnrollmentForm" enctype="multipart/form-data">
+                <input type="hidden" name="action_type" id="endActionType">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="endEnrollmentTitle">Завершити навчання</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <span id="endEnrollmentHintText"></span>
+                    </div>
+                    <div class="mb-3" id="endReasonWrap" style="display:none;">
+                        <label class="form-label small fw-semibold">Причина відрахування <span class="text-danger">*</span></label>
+                        <input type="text" name="reason" id="endReason" class="form-control"
+                               placeholder="напр. за власним бажанням">
+                    </div>
+                    <hr>
+                    <h6 class="text-muted small text-uppercase mb-3">Реквізити наказу</h6>
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                            <input type="text" name="order_number" class="form-control form-control-sm" required>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                            <input type="text" name="order_date" class="form-control form-control-sm"
+                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Скан наказу</label>
+                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary" id="endSubmitBtn">
+                        <i class="bi bi-check-lg me-1"></i>Оформити наказ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    .enrollments-section .enrollment-card {
+        padding: 1rem 1.25rem;
+        border-bottom: 1px solid var(--line);
+        transition: background .15s ease;
+    }
+    .enrollments-section .enrollment-card:last-child { border-bottom: none; }
+    .enrollments-section .enrollment-card:hover { background: var(--brass-soft); }
+    .enrollments-section .enrollment-card--inactive { opacity: .65; }
+    .enrollments-section .enrollment-card--inactive:hover { background: transparent; }
+
+    .enrollment-card__top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .75rem;
+        margin-bottom: .35rem;
+    }
+    .enrollment-card__main { flex: 1; min-width: 0; }
+    .enrollment-card__title {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+        font-size: 1.02rem;
+        margin-bottom: .25rem;
+        color: var(--ink-text);
+    }
+    .enrollment-card__meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .75rem;
+        font-size: .82rem;
+        color: var(--muted);
+    }
+    .enrollment-card__meta i { margin-right: .15rem; }
+
+    .enrollment-card__license {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        font-size: .85rem;
+        margin-bottom: .75rem;
+        flex-wrap: wrap;
+    }
+
+    .enrollment-card__actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        margin-top: .5rem;
+    }
+    .enrollment-card__actions .btn { white-space: nowrap; }
+
+    .enrollment-status {
+        font-size: .75rem;
+        font-weight: 700;
+        padding: .3rem .7rem;
+        border-radius: 999px;
+        white-space: nowrap;
+        flex-shrink: 0;
+        letter-spacing: .02em;
+    }
+    .enrollment-status--active {
+        background: rgba(79, 122, 82, .16);
+        color: #3f7556;
+        border: 1px solid rgba(79, 122, 82, .35);
+    }
+    .enrollment-status--expelled,
+    .enrollment-status--frozen {
+        background: var(--stamp-soft);
+        color: var(--stamp);
+        border: 1px solid var(--stamp-semi);
+    }
+    .enrollment-status--completed,
+    .enrollment-status--graduated {
+        background: var(--brass-soft);
+        color: #8a6a1a;
+        border: 1px solid var(--brass-semi);
+    }
+    html[data-theme="dark"] .enrollment-status--active {
+        background: rgba(79, 122, 82, .28);
+        color: #bfe3c2;
+        border-color: rgba(79, 122, 82, .5);
+    }
+    html[data-theme="dark"] .enrollment-status--completed,
+    html[data-theme="dark"] .enrollment-status--graduated {
+        color: var(--brass-lt);
+    }
+
+    .enrollment-badge {
+        padding: .2rem .6rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+    }
+    .enrollment-badge--primary { background: var(--brass); color: var(--ink); }
+    .enrollment-badge--parallel {
+        background: var(--paper-2);
+        color: var(--muted);
+        border: 1px solid var(--line);
+    }
+    .enrollment-badge--license {
+        background: var(--brass-soft);
+        color: var(--ink-text);
+        border: 1px solid var(--brass-semi);
+    }
+    html[data-theme="dark"] .enrollment-badge--license { color: var(--brass-lt); }
+
+    .enrollment-footer {
+        padding: .9rem 1.25rem;
+        border-top: 1px solid var(--line);
+        background: var(--paper-2);
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    @media (max-width: 575.98px) {
+        .enrollments-section .enrollment-card { padding: .85rem 1rem; }
+        .enrollment-card__title { font-size: .92rem; gap: .35rem; }
+        .enrollment-card__meta { font-size: .74rem; gap: .45rem; }
+        .enrollment-card__actions { gap: .3rem; }
+        .enrollment-card__actions .btn { font-size: .78rem; padding: .28rem .55rem; }
+        .enrollment-status { font-size: .68rem; padding: .22rem .55rem; }
+        .enrollment-footer { padding: .75rem 1rem; }
+        .enrollment-footer .text-muted { display: block; margin-left: 0 !important; margin-top: .35rem; }
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const studentId = {{ student.id }};
+    const actionUrlTemplate = '/students/' + studentId + '/enrollments/__GID__/action';
+
+    // Зміна ліцензії
+    document.querySelectorAll('.js-change-license').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const gid = btn.dataset.groupId;
+            const form = document.getElementById('changeLicenseForm');
+            form.action = actionUrlTemplate.replace('__GID__', gid);
+            const m = new bootstrap.Modal(document.getElementById('changeLicenseModal'));
+            m.show();
+        });
+    });
+
+    // Завершення навчання (випуск / відрахування)
+    document.querySelectorAll('.js-end-enrollment').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const gid = btn.dataset.groupId;
+            const actionType = btn.dataset.actionType;
+            const groupName = btn.dataset.groupName || '';
+            const form = document.getElementById('endEnrollmentForm');
+            form.action = actionUrlTemplate.replace('__GID__', gid);
+            document.getElementById('endActionType').value = actionType;
+
+            const title = document.getElementById('endEnrollmentTitle');
+            const hint = document.getElementById('endEnrollmentHintText');
+            const reasonWrap = document.getElementById('endReasonWrap');
+            const reasonInput = document.getElementById('endReason');
+
+            if (actionType === 'graduate') {
+                title.innerHTML = '<i class="bi bi-mortarboard me-2"></i>Оформити випуск з групи';
+                hint.textContent = 'Буде створено наказ про випуск, навчання в групі «'
+                    + groupName + '» — завершено зі статусом «Випущено».';
+                reasonWrap.style.display = 'none';
+                reasonInput.required = false;
+                reasonInput.value = '';
+            } else if (actionType === 'expel') {
+                title.innerHTML = '<i class="bi bi-person-x me-2"></i>Відрахувати з групи';
+                hint.textContent = 'Буде створено наказ про відрахування, навчання в групі «'
+                    + groupName + '» — завершено зі статусом «Відраховано».';
+                reasonWrap.style.display = '';
+                reasonInput.required = true;
+            }
+
+            const m = new bootstrap.Modal(document.getElementById('endEnrollmentModal'));
+            m.show();
+        });
+    });
+});
+</script>

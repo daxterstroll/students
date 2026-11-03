@@ -27,6 +27,7 @@ import os
 import uuid
 import secrets
 import json
+from routes.orders_service import get_student_orders, orders_tables_ready, create_order
 from routes.passport_types import PASSPORT_TYPES_ID_STYLE, passport_template_context
 from routes.orders_service import get_student_orders, orders_tables_ready
 from routes.user_scope import get_allowed_group_ids
@@ -798,6 +799,17 @@ def student_details(student_id):
         # Коротка назва групи (без " (2022, Денна, 240 кредитів)")
         short_name = (enr.get('group_name') or '').split(' (')[0].strip()
 
+        # Періоди навчання для КОЖНОЇ групи окремо (як предмети й оцінки).
+        # Fallback на group_id IS NULL — старі періоди без прив'язки
+        # показуються у всіх групах студента (легасі-поведінка).
+        group_study_periods = conn.execute("""
+            SELECT id, filiya, filiya_en, group_name, start_date, end_date,
+                   period_order, note, group_id
+            FROM student_study_periods
+            WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
+            ORDER BY period_order ASC, start_date ASC
+        """, (student_id, gid)).fetchall()
+
         groups_data.append({
             'group_id': gid,
             'group_name': enr.get('group_name') or '',
@@ -906,7 +918,15 @@ def student_details(student_id):
 @students_bp.route('/students/<int:student_id>/study_periods', methods=['GET', 'POST'])
 @permission_required('study_periods')
 def manage_study_periods(student_id):
-    """CRUD-сторінка періодів навчання конкретного студента."""
+    """
+    CRUD-сторінка періодів навчання студента.
+
+    Період прив'язується до конкретного enrollment'а (group_id). Якщо
+    group_id не вказано — період вважається «загальним для студента»
+    (легасі, трапляється у старих записах).
+    """
+    from routes.enrollments_service import list_student_enrollments
+
     db = get_db()
     cursor = db.cursor()
 
@@ -919,6 +939,13 @@ def manage_study_periods(student_id):
         flash('Студента не знайдено', 'danger')
         return redirect(url_for('admin.manage_education_documents'))
 
+    # Активні (та історичні) enrollment'и — для випадаючого списку груп
+    try:
+        enrollments = list_student_enrollments(student_id, conn=db)
+        enrollments = [e for e in enrollments if e.get('group_id')]
+    except Exception:
+        enrollments = []
+
     if request.method == 'POST':
         action = request.form.get('action')
 
@@ -929,22 +956,39 @@ def manage_study_periods(student_id):
             start_date = (request.form.get('start_date') or '').strip() or None
             end_date = (request.form.get('end_date') or '').strip() or None
             note = (request.form.get('note') or '').strip() or None
+            group_id = request.form.get('group_id', type=int)
 
             if not filiya:
                 flash('Потрібно вказати філію', 'danger')
             else:
-                next_order = cursor.execute(
-                    "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods WHERE student_id = ?",
-                    (student_id,)
-                ).fetchone()[0]
+                # period_order рахуємо в межах ПАРИ (студент + група), щоб
+                # у кожного enrollment'а була своя нумерація.
+                if group_id:
+                    next_order = cursor.execute(
+                        "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods "
+                        "WHERE student_id = ? AND group_id = ?",
+                        (student_id, group_id),
+                    ).fetchone()[0]
+                else:
+                    next_order = cursor.execute(
+                        "SELECT COALESCE(MAX(period_order), 0) + 1 FROM student_study_periods "
+                        "WHERE student_id = ? AND group_id IS NULL",
+                        (student_id,),
+                    ).fetchone()[0]
+
                 cursor.execute("""
                     INSERT INTO student_study_periods
-                        (student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (student_id, filiya, filiya_en, group_name, start_date, end_date, next_order, note))
+                        (student_id, group_id, filiya, filiya_en, group_name,
+                         start_date, end_date, period_order, note)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (student_id, group_id, filiya, filiya_en, group_name,
+                      start_date, end_date, next_order, note))
                 db.commit()
-                log_action(current_username(),
-                           f"додав період навчання студенту ID {student_id}: {filiya}")
+                grp_label = f" для групи ID {group_id}" if group_id else " (без прив'язки до групи)"
+                log_action(
+                    current_username(),
+                    f"додав період навчання студенту ID {student_id}{grp_label}: {filiya}",
+                )
                 flash('Період навчання додано', 'success')
 
         elif action == 'edit':
@@ -956,46 +1000,55 @@ def manage_study_periods(student_id):
             end_date = (request.form.get('end_date') or '').strip() or None
             period_order = request.form.get('period_order', type=int) or 0
             note = (request.form.get('note') or '').strip() or None
+            group_id = request.form.get('group_id', type=int)
 
             if not filiya:
                 flash('Потрібно вказати філію', 'danger')
             else:
                 cursor.execute("""
                     UPDATE student_study_periods SET
-                        filiya=?, filiya_en=?, group_name=?, start_date=?, end_date=?, period_order=?, note=?
-                    WHERE id=? AND student_id=?
-                """, (filiya, filiya_en, group_name, start_date, end_date, period_order, note, period_id, student_id))
+                        group_id = ?, filiya = ?, filiya_en = ?, group_name = ?,
+                        start_date = ?, end_date = ?, period_order = ?, note = ?
+                    WHERE id = ? AND student_id = ?
+                """, (group_id, filiya, filiya_en, group_name,
+                      start_date, end_date, period_order, note,
+                      period_id, student_id))
                 db.commit()
-                log_action(current_username(),
-                           f"оновив період навчання ID {period_id} студенту ID {student_id}")
+                log_action(
+                    current_username(),
+                    f"оновив період навчання ID {period_id} студенту ID {student_id}",
+                )
                 flash('Період навчання оновлено', 'success')
 
         elif action == 'delete':
             period_id = request.form.get('period_id')
             cursor.execute("""
-                DELETE FROM student_study_periods WHERE id=? AND student_id=?
+                DELETE FROM student_study_periods WHERE id = ? AND student_id = ?
             """, (period_id, student_id))
             db.commit()
-            log_action(current_username(),
-                       f"видалив період навчання ID {period_id} студенту ID {student_id}")
+            log_action(
+                current_username(),
+                f"видалив період навчання ID {period_id} студенту ID {student_id}",
+            )
             flash('Період навчання видалено', 'success')
 
         return redirect(url_for('students.manage_study_periods', student_id=student_id))
 
     cursor.execute("""
-        SELECT id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
+        SELECT id, group_id, filiya, filiya_en, group_name, start_date, end_date,
+               period_order, note
         FROM student_study_periods
         WHERE student_id = ?
-        ORDER BY period_order ASC, start_date ASC
+        ORDER BY group_id IS NULL, group_id, period_order ASC, start_date ASC
     """, (student_id,))
     periods = cursor.fetchall()
 
     return render_template(
         'manage_study_periods.html',
         student=student,
-        periods=periods
+        periods=periods,
+        enrollments=enrollments,
     )
-
 
 @students_bp.route('/students/add', methods=['GET', 'POST'])
 @login_required('')
@@ -1828,24 +1881,217 @@ def generate(student_id):
     )
     
 @students_bp.route('/students/<int:student_id>/enrollments/add', methods=['POST'])
-@login_required('')
+@permission_required('manage_students')
 def enrollment_add(student_id):
-    """Додати паралельне навчання в іншу групу."""
+    """Додати паралельне навчання — через наказ про зарахування."""
+    from routes.enrollments_service import add_enrollment
+    from routes.orders_service import create_order
+
     group_id = request.form.get('group_id', type=int)
-    is_primary = request.form.get('is_primary') == '1'
     license_id = request.form.get('license_id', type=int) or None
+    is_primary = request.form.get('is_primary') == '1'
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date = (request.form.get('order_date') or '').strip()
 
     if not group_id:
         flash('Оберіть групу', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
+    if not order_number or not order_date:
+        flash('Заповніть номер і дату наказу про зарахування', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
 
-    from routes.enrollments_service import add_enrollment
-    ok, msg = add_enrollment(
-        student_id, group_id,
-        is_primary=is_primary, license_id=license_id,
-    )
-    flash(msg, 'success' if ok else 'warning')
-    return redirect(url_for('students.student_details', student_id=student_id))
+    scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
+
+    conn = get_db()
+    try:
+        order_id = create_order(
+            'enrollment', order_number, order_date,
+            [{
+                'entity_type': 'student',
+                'entity_id': student_id,
+                'payload': {'group_id': group_id},
+            }],
+            created_by=current_username(),
+            files=scan_files or None,
+            upload_subdir='orders',
+            conn=conn,
+        )
+        ok, msg = add_enrollment(
+            student_id, group_id,
+            is_primary=is_primary, license_id=license_id,
+            order_id=order_id, conn=conn,
+        )
+        if not ok:
+            conn.rollback()
+            conn.close()
+            flash(f'Не вдалося додати навчання: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        conn.commit()
+        conn.close()
+
+        log_action(
+            current_username(),
+            f'додав паралельне навчання: student={student_id} group={group_id} '
+            f'(наказ №{order_number} від {order_date}, order_id={order_id})',
+        )
+        flash(
+            f'Навчання додано. Створено наказ про зарахування №{order_number}.',
+            'success',
+        )
+        return redirect(url_for('admin.order_detail', order_id=order_id))
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f'enrollment_add failed (student={student_id}): {e}', exc_info=True)
+        flash(f'Помилка створення наказу: {e}', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route(
+    '/students/<int:student_id>/enrollments/<int:group_id>/action',
+    methods=['POST'],
+)
+@permission_required('manage_students')
+def enrollment_action(student_id, group_id):
+    """Єдина точка зміни існуючого навчання — завжди через наказ.
+
+    action_type:
+      - 'change_license' → наказ license_transfer + зміна ліцензії
+      - 'graduate'       → наказ graduation + end_enrollment(status='graduated')
+      - 'expel'          → наказ expulsion + end_enrollment(status='expelled')
+    """
+    from routes.enrollments_service import end_enrollment, update_enrollment_license
+    from routes.orders_service import create_order
+
+    action_type = request.form.get('action_type') or ''
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date = (request.form.get('order_date') or '').strip()
+    reason = (request.form.get('reason') or '').strip()
+
+    if action_type not in ('change_license', 'graduate', 'expel'):
+        flash('Невідома дія', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+    if not order_number or not order_date:
+        flash('Заповніть номер і дату наказу', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+    if action_type == 'expel' and not reason:
+        flash('Вкажіть причину відрахування', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    try:
+        enrollment = conn.execute(
+            "SELECT id, license_id FROM student_enrollments "
+            "WHERE student_id = ? AND group_id = ? AND status = 'active'",
+            (student_id, group_id),
+        ).fetchone()
+        if not enrollment:
+            conn.close()
+            flash('Активне навчання в цій групі не знайдено', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        order_id = None
+        ok, msg = False, ''
+
+        if action_type == 'change_license':
+            new_license_id = request.form.get('new_license_id', type=int)
+            if new_license_id == enrollment['license_id']:
+                conn.close()
+                flash('Обрана ліцензія збігається з поточною', 'warning')
+                return redirect(url_for('students.student_details', student_id=student_id))
+
+            order_id = create_order(
+                'license_transfer', order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {
+                        'previous_license_id': enrollment['license_id'],
+                        'new_license_id': new_license_id,
+                        'group_id': group_id,
+                    },
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+            ok, msg = update_enrollment_license(
+                student_id, group_id, new_license_id, conn=conn,
+            )
+
+        elif action_type == 'graduate':
+            order_id = create_order(
+                'graduation', order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {'action': 'graduated', 'group_id': group_id},
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+            ok, msg = end_enrollment(
+                student_id, group_id, status='graduated', conn=conn,
+            )
+
+        elif action_type == 'expel':
+            order_id = create_order(
+                'expulsion', order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {
+                        'previous_group_id': group_id,
+                        'reason': reason,
+                    },
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+            ok, msg = end_enrollment(
+                student_id, group_id, status='expelled', conn=conn,
+            )
+
+        if not ok:
+            conn.rollback()
+            conn.close()
+            flash(f'Не вдалося виконати дію: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        conn.commit()
+        conn.close()
+
+        action_labels = {
+            'change_license': 'змінив ліцензію навчання',
+            'graduate': 'оформив випуск',
+            'expel': 'відрахував',
+        }
+        log_action(
+            current_username(),
+            f"{action_labels[action_type]}: student={student_id} group={group_id} "
+            f"(наказ №{order_number} від {order_date}, order_id={order_id})",
+            details=reason if action_type == 'expel' else None,
+        )
+        flash(
+            f'Дію виконано. Створено наказ №{order_number} від {order_date}.',
+            'success',
+        )
+        return redirect(url_for('admin.order_detail', order_id=order_id))
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f'enrollment_action failed (student={student_id}): {e}', exc_info=True)
+        flash(f'Помилка: {e}', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
 
 
 @students_bp.route('/students/<int:student_id>/enrollments/<int:group_id>/license',

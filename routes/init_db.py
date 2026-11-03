@@ -402,6 +402,7 @@ CREATE INDEX IF NOT EXISTS "idx_attachments_entity" ON "attachments" ("entity_ty
 CREATE TABLE IF NOT EXISTS "student_study_periods" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    group_id INTEGER REFERENCES groups(id),
     filiya TEXT NOT NULL,
     filiya_en TEXT NOT NULL,
     group_name TEXT,
@@ -675,6 +676,26 @@ print("── Міграція схеми ──")
 _add_column_if_missing('students', 'gender', "TEXT CHECK(gender IN ('M', 'F'))")
 _add_column_if_missing('students', 'address_of_residence', 'TEXT')
 _add_column_if_missing('students', 'dismissed_at', 'TEXT')
+
+# student_study_periods — привязка періодів до конкретного enrollment'а
+_add_column_if_missing('student_study_periods', 'group_id', 'INTEGER REFERENCES groups(id)')
+cur.execute("CREATE INDEX IF NOT EXISTS idx_study_periods_group ON student_study_periods(group_id)")
+
+# Одноразове заповнення: старі періоди (без group_id) прив'язуємо до
+# ОСНОВНОЇ групи студента на момент міграції — далі студент зможе
+# змінити це вручну в картці студента.
+cur.execute("""
+    UPDATE student_study_periods
+    SET group_id = (SELECT s.group_id FROM students s WHERE s.id = student_study_periods.student_id)
+    WHERE group_id IS NULL
+      AND EXISTS (
+          SELECT 1 FROM students s
+          WHERE s.id = student_study_periods.student_id
+            AND s.group_id IS NOT NULL
+      )
+""")
+if cur.rowcount:
+    print(f"➕ study_periods: прив'язано до групи {cur.rowcount} записів")
 
 # diplomas — ключ тепер (student_id, group_id), а не просто student_id
 _add_column_if_missing('diplomas', 'group_id', 'INTEGER')
