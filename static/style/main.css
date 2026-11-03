@@ -1,19 +1,29 @@
 :root {
-            --ink:        #0e1b2c;
-            --ink-2:      #16283f;
-            --paper:      #f4efe3;
-            --paper-2:    #e9e0cc;
-            --ink-text:   #1f2a3a;
-            --muted:      #8a8071;
-            --brass:      #c8a24a;
-            --brass-lt:   #e3c87a;
-            --brass-soft: rgba(200,162,74,.16);
-            --brass-semi: rgba(200,162,74,.32);
-            --stamp:      #a23b2e;
-            --stamp-soft: rgba(162,59,46,.12);
-            --stamp-semi: rgba(162,59,46,.35);
-            --line:       rgba(31,42,58,.16);
-        }
+    --ink:        #0e1b2c;
+    --ink-2:      #16283f;
+    --paper:      #f4efe3;
+    --paper-2:    #e9e0cc;
+    --ink-text:   #1f2a3a;
+    --muted:      #8a8071;
+    --brass:      #c8a24a;
+    --brass-lt:   #e3c87a;
+    --brass-soft: rgba(200,162,74,.16);
+    --brass-semi: rgba(200,162,74,.32);
+    --stamp:      #a23b2e;
+    --stamp-soft: rgba(162,59,46,.12);
+    --stamp-semi: rgba(162,59,46,.35);
+    --line:       rgba(31,42,58,.16);
+
+    /* NEW: семантичні змінні — використовуйте їх замість хардкоду #fff / #000 */
+    --heading:    var(--ink);      /* колір заголовків секцій */
+    --surface:    #ffffff;         /* біла "піднята" поверхня: інпути, картки,
+                                      тулбари, chip-кнопки тощо. У dark-темі
+                                      стає світлішою за --paper-2, щоб
+                                      зберігався ефект "elevation". */
+
+    color-scheme: light;           /* нативні контроли (скролбари, date-picker,
+                                      select) — у світлому стилі */
+}
 
         * { box-sizing: border-box; }
 
@@ -452,6 +462,11 @@ main.container {
             --muted:      #9aa3ad;
             --line:       rgba(231,226,214,.14);
             --brass-soft: rgba(200,162,74,.10);
+			--surface:    #1e2936;         /* картки/інпути трохи світліші за --paper-2,
+											щоб ефект "elevation" читався */
+			--heading:    var(--brass-lt); /* заголовки — золоті */
+
+			color-scheme: dark;            /* нативні контроли — темні */
             /* --ink/--ink-2 навмисно НЕ перевизначаємо тут - вони й далі
                потрібні темними для навбару/шапки сторінки/кнопок на
                золотому фоні. Для тексту, який раніше спирався на
@@ -911,4 +926,245 @@ html[data-theme="dark"] .text-bg-warning {
 html[data-theme="dark"] .text-bg-secondary {
     background-color: rgba(231,226,214,.22) !important;
     color: var(--ink-text) !important;
+}
+
+/* ======================================================================
+   THEME EXTENSIONS — dark mode gap-fillers
+   ----------------------------------------------------------------------
+   Правило для майбутнього: для будь-якого кольору в шаблоні чи модулі
+   використовуйте змінну з :root, а не хардкод. Доступні:
+
+     --ink / --ink-2         темні "чорнильні" кольори (навбар, hero) —
+                             однакові в обох темах (бренд-стабільні)
+     --paper / --paper-2     фон сторінки / фон карток-обгорток
+     --surface               біла (light) / піднята-темна (dark) поверхня:
+                             для форм, chip-кнопок, дрібних карток
+     --ink-text / --heading  основний текст / заголовки секцій
+     --muted                 другорядний текст
+     --line                  межі та роздільники
+     --brass / --brass-lt / --brass-soft / --brass-semi
+     --stamp / --stamp-soft / --stamp-semi
+
+   Якщо потрібен новий колір — спершу додайте змінну в :root
+   і її dark-значення в html[data-theme="dark"]. Не пишіть hex напряму.
+   ====================================================================== */
+
+/* ── Alert-danger: у dark тема контраст тексту замалий ───────────── */
+html[data-theme="dark"] .alert-danger,
+html[data-theme="dark"] .alert-error {
+    color: #f0b3ab;
+}
+
+/* ── Alert-light: прибираємо "білу пляму" на темному ──────────────── */
+html[data-theme="dark"] .alert-light {
+    background-color: var(--paper-2);
+    color: var(--ink-text);
+    border-color: var(--line);
+}
+
+/* ── Progress: типовий Bootstrap-фон #e9ecef — світло-сіра смуга ──── */
+html[data-theme="dark"] .progress,
+html[data-theme="dark"] .progress-stacked {
+    --bs-progress-bg: rgba(231,226,214,.10);
+    background-color: var(--bs-progress-bg);
+}
+
+/* ── Outline-кнопки у темній темі ──────────────────────────────────── */
+html[data-theme="dark"] .btn-outline-success {
+    --bs-btn-color: #a8d4ad;
+    --bs-btn-border-color: rgba(79,122,82,.55);
+    --bs-btn-hover-bg: #a8d4ad;
+    --bs-btn-hover-border-color: #a8d4ad;
+    --bs-btn-hover-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-warning {
+    --bs-btn-color: var(--brass-lt);
+    --bs-btn-border-color: var(--brass-semi);
+    --bs-btn-hover-bg: var(--brass);
+    --bs-btn-hover-border-color: var(--brass);
+    --bs-btn-hover-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-info {
+    --bs-btn-color: #a9c2e8;
+    --bs-btn-border-color: rgba(74,110,168,.55);
+    --bs-btn-hover-bg: #a9c2e8;
+    --bs-btn-hover-border-color: #a9c2e8;
+    --bs-btn-hover-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-danger {
+    --bs-btn-color: #f0b3ab;
+    --bs-btn-border-color: var(--stamp-semi);
+    --bs-btn-hover-bg: var(--stamp);
+    --bs-btn-hover-border-color: var(--stamp);
+    --bs-btn-hover-color: #fff;
+}
+html[data-theme="dark"] .btn-outline-dark {
+    --bs-btn-color: var(--ink-text);
+    --bs-btn-border-color: var(--line);
+    --bs-btn-hover-bg: var(--ink-text);
+    --bs-btn-hover-border-color: var(--ink-text);
+    --bs-btn-hover-color: #0e1b2c;
+}
+
+/* ── Modal: header/footer не завжди мають явний фон ───────────────── */
+html[data-theme="dark"] .modal-header,
+html[data-theme="dark"] .modal-footer {
+    border-color: var(--line);
+}
+
+/* ── Nav-pills: неактивні посилання — світлий дефолтний синій ──────── */
+html[data-theme="dark"] .nav-pills .nav-link:not(.active) {
+    color: var(--ink-text);
+}
+html[data-theme="dark"] .nav-pills .nav-link:not(.active):hover {
+    background: var(--brass-soft);
+    color: var(--ink-text);
+}
+
+/* ── Dropdown-menu — явний фон для випадків поза #mainNavbar ───────── */
+html[data-theme="dark"] .dropdown-menu:not(#mainNavbar .dropdown-menu) {
+    --bs-dropdown-bg: var(--paper-2);
+    --bs-dropdown-link-color: var(--ink-text);
+    --bs-dropdown-link-hover-bg: var(--brass-soft);
+    --bs-dropdown-link-hover-color: var(--ink-text);
+    --bs-dropdown-divider-bg: var(--line);
+    --bs-dropdown-border-color: var(--line);
+}
+html[data-theme="dark"] .dropdown-item-text {
+    color: var(--muted);
+}
+
+/* ── Toast / Tooltip / Popover ─────────────────────────────────────── */
+html[data-theme="dark"] .toast {
+    --bs-toast-bg: var(--paper-2);
+    --bs-toast-color: var(--ink-text);
+    --bs-toast-border-color: var(--line);
+    --bs-toast-header-bg: var(--paper);
+    --bs-toast-header-color: var(--ink-text);
+    --bs-toast-header-border-color: var(--line);
+}
+html[data-theme="dark"] .tooltip {
+    --bs-tooltip-bg: #2a3647;
+    --bs-tooltip-color: #f4efe3;
+}
+html[data-theme="dark"] .popover {
+    --bs-popover-bg: var(--paper-2);
+    --bs-popover-border-color: var(--line);
+    --bs-popover-header-bg: var(--paper);
+    --bs-popover-header-color: var(--ink-text);
+    --bs-popover-body-color: var(--ink-text);
+}
+
+/* ── Form-range (слайдер) ──────────────────────────────────────────── */
+html[data-theme="dark"] .form-range::-webkit-slider-runnable-track {
+    background-color: rgba(231,226,214,.15);
+}
+html[data-theme="dark"] .form-range::-moz-range-track {
+    background-color: rgba(231,226,214,.15);
+}
+
+/* ── Breadcrumb — за замовчуванням синій на світлому ───────────────── */
+html[data-theme="dark"] .breadcrumb {
+    --bs-breadcrumb-divider-color: var(--muted);
+}
+html[data-theme="dark"] .breadcrumb-item a { color: var(--brass-lt); }
+html[data-theme="dark"] .breadcrumb-item.active { color: var(--ink-text); }
+
+/* ── .card-header / .card-footer (Bootstrap default paper-2?) ─────── */
+html[data-theme="dark"] .card-header,
+html[data-theme="dark"] .card-footer {
+    background: var(--paper);
+    border-color: var(--line);
+    color: var(--ink-text);
+}
+
+/* ── Table-striped (Bootstrap клас, що іноді дає світлу смугу) ─────── */
+html[data-theme="dark"] .table-striped > tbody > tr:nth-of-type(odd) > * {
+    --bs-table-accent-bg: rgba(231,226,214,.04);
+    color: var(--ink-text);
+}
+
+/* ── Input-group-text — у темній темі Bootstrap іноді дає світлий фон ─ */
+html[data-theme="dark"] .input-group-text {
+    background-color: var(--paper);
+    color: var(--muted);
+    border-color: var(--line);
+}
+
+/* ── .btn-link: дефолтний синій Bootstrap ──────────────────────────── */
+html[data-theme="dark"] .btn-link {
+    color: var(--brass-lt);
+}
+
+/* ── <mark> і <kbd> ────────────────────────────────────────────────── */
+html[data-theme="dark"] mark,
+html[data-theme="dark"] .mark {
+    background-color: rgba(200,162,74,.30);
+    color: var(--ink-text);
+}
+
+/* ======================================================================
+   Page-header (спільний для більшості сторінок) — не залежить від теми
+   ====================================================================== */
+.page-header {
+    /* Градієнт в обох темах однаковий (бренд), текст — завжди brass-lt */
+}
+
+/* ======================================================================
+   Плавний перехід між темами (щоб не було різкого "миготіння")
+   ====================================================================== */
+html.theme-transition,
+html.theme-transition body,
+html.theme-transition .card,
+html.theme-transition .modal-content {
+    transition: background-color .2s ease, color .2s ease,
+                border-color .2s ease;
+}
+
+/* ======================================================================
+   Скорочена програма — бейдж «скорочена, N кр.»
+   ----------------------------------------------------------------------
+   Навмисно НЕ використовує Bootstrap `text-bg-warning`:
+   в темній темі page-header (де цей бейдж часто з'являється в <h2>)
+   має золотий текст, і жовтий badge на золотому заголовку зливався.
+   Тут badge — плашка з власним фоном + золотою рамкою, тому читається
+   на будь-якому контексті (світла сторінка, темний page-header, картки,
+   вкладки) і в обох темах.
+   ====================================================================== */
+.reduced-program-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .3em;
+    padding: .2em .62em;
+    font-size: .68em;
+    font-weight: 700;
+    line-height: 1.2;
+    border-radius: 999px;
+    vertical-align: middle;
+    white-space: nowrap;
+    /* light theme: світла плашка з тёмно-коричневим текстом і
+       золотою рамкою — контрастна і на світлому фоні сторінки,
+       і на тёмному page-header */
+    background: #fff8e6;
+    color: #6f520c;
+    border: 1px solid rgba(200, 162, 74, .55);
+}
+.reduced-program-badge .bi {
+    font-size: .9em;
+    opacity: .85;
+}
+
+html[data-theme="dark"] .reduced-program-badge {
+    /* dark theme: темна (surface) плашка з золотим текстом і
+       золотою рамкою — НЕ зливається з золотим заголовком у
+       page-header і не світиться на темному фоні */
+    background: #1e2936;
+    color: var(--brass-lt);
+    border-color: rgba(200, 162, 74, .55);
+}
+
+/* Малий варіант — для вкладок / компактних рядків */
+.reduced-program-badge--sm {
+    font-size: .62em;
+    padding: .14em .5em;
 }
