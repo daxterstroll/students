@@ -831,11 +831,19 @@
 				</div>
 				{% endif %}
 
-                <!-- Документи про освіту -->
+                <!-- Документи про освіту — таби по групах (як оцінки) -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#educationDocsCollapse">
-                            <i class="bi bi-file-earmark-text me-3 fs-4" style="color: var(--brass);"></i>Документи про освіту
+                            <i class="bi bi-file-earmark-text me-3 fs-4" style="color: var(--brass);"></i>
+                            <span class="flex-grow-1 text-start">
+                                Документи про освіту
+                                {% if groups_data|length > 1 %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-2">
+                                    {{ groups_data|length }} групи
+                                </span>
+                                {% endif %}
+                            </span>
                         </button>
                     </h2>
                     <div id="educationDocsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
@@ -846,111 +854,161 @@
                                     <i class="bi bi-pencil me-1"></i>Керувати документами
                                 </a>
                             </div>
-                            {% if education_docs %}
-                                {% for doc in education_docs %}
-                                    <div class="border rounded-3 p-4 mb-4">
-                                        <h5>{{ doc.document_type | default('Документ', true) }}</h5>
-                                        <div class="row g-3">
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Тип (EN)</div>
-                                                <div>{{ val(doc.document_type_en) }}</div>
+
+                            {% if groups_data %}
+                                {% if groups_data|length > 1 %}
+                                <ul class="nav nav-tabs mb-3" role="tablist">
+                                    {% for g in groups_data %}
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link {% if loop.first %}active{% endif %}"
+                                                data-bs-toggle="tab"
+                                                data-bs-target="#tab-edudocs-{{ g.group_id }}"
+                                                type="button" role="tab">
+                                            {{ g.short_group_name }}
+                                            {% if g.is_primary %}
+                                            <span class="badge bg-primary ms-1" title="Основна група">осн.</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
+                                            {% endif %}
+                                        </button>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+
+                                <div class="tab-content">
+                                    {% for g in groups_data %}
+                                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                                         id="tab-edudocs-{{ g.group_id }}" role="tabpanel">
+
+                                        {% if g.education_docs %}
+                                            {% for doc in g.education_docs %}
+                                            <div class="border rounded-3 p-4 mb-3">
+                                                <h5 class="d-flex align-items-center justify-content-between">
+                                                    <span>{{ doc.document_type | default('Документ', true) }}</span>
+                                                    {% if not doc.group_id %}
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis"
+                                                          title="Документ без прив'язки до конкретної групи — показується у всіх групах студента">
+                                                        <i class="bi bi-question-circle"></i> загальний
+                                                    </span>
+                                                    {% endif %}
+                                                </h5>
+                                                <div class="row g-3">
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Тип (EN)</div>
+                                                        <div>{{ val(doc.document_type_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Номер</div>
+                                                        <div>{{ val(doc.document_number) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Заклад</div>
+                                                        <div>{{ val(doc.institution_name) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Institution (EN)</div>
+                                                        <div>{{ val(doc.institution_name_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Країна</div>
+                                                        <div>{{ val(doc.country) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Country (EN)</div>
+                                                        <div>{{ val(doc.country_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Дата закінчення</div>
+                                                        <div>{{ val(doc.completion_date) }}</div>
+                                                    </div>
+                                                </div>
+                                                {% if doc.attachments %}
+                                                <div class="mt-3">
+                                                    <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
+                                                    {% for a in doc.attachments %}
+                                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                    </a>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
                                             </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Номер</div>
-                                                <div>{{ val(doc.document_number) }}</div>
+
+                                            {% if doc.reference_number or doc.reference_institution or doc.reference_institution_en or doc.reference_country or doc.reference_country_en or doc.reference_issue_date %}
+                                            <div class="border rounded-3 p-4 mb-3">
+                                                <h5>Академічна довідка</h5>
+                                                <div class="row g-3">
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Номер</div>
+                                                        <div>{{ val(doc.reference_number) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Заклад</div>
+                                                        <div>{{ val(doc.reference_institution) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Reference Institution (EN)</div>
+                                                        <div>{{ val(doc.reference_institution_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Країна</div>
+                                                        <div>{{ val(doc.reference_country) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Reference Country (EN)</div>
+                                                        <div>{{ val(doc.reference_country_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Дата видачі довідки</div>
+                                                        <div>{{ val(doc.reference_issue_date) }}</div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Заклад</div>
-                                                <div>{{ val(doc.institution_name) }}</div>
+                                            {% endif %}
+
+                                            {% if doc.recognition_certificate_number or doc.recognition_issuer or doc.recognition_issuer_en or doc.recognition_date %}
+                                            <div class="border rounded-3 p-4 mb-3">
+                                                <h5>Свідоцтво про визнання в Україні іноземного документа про освіту</h5>
+                                                <div class="row g-3">
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Номер свідоцтва про визнання</div>
+                                                        <div>{{ val(doc.recognition_certificate_number) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Орган, що видав свідоцтво</div>
+                                                        <div>{{ val(doc.recognition_issuer) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Recognition Issuer (EN)</div>
+                                                        <div>{{ val(doc.recognition_issuer_en) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Дата видачі свідоцтва</div>
+                                                        <div>{{ val(doc.recognition_date) }}</div>
+                                                    </div>
+                                                </div>
                                             </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Institution (EN)</div>
-                                                <div>{{ val(doc.institution_name_en) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Країна</div>
-                                                <div>{{ val(doc.country) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Country (EN)</div>
-                                                <div>{{ val(doc.country_en) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Дата закінчення</div>
-                                                <div>{{ val(doc.completion_date) }}</div>
-                                            </div>
-                                        </div>
-                                        {% if doc.attachments %}
-                                        <div class="mt-3">
-                                            <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
-                                            {% for a in doc.attachments %}
-                                            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                                                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-                                            </a>
+                                            {% endif %}
                                             {% endfor %}
-                                        </div>
+                                        {% else %}
+                                            <div class="p-4 text-center text-muted">
+                                                <i class="bi bi-file-earmark-x fs-4 d-block mb-2"></i>
+                                                Для цієї групи документів про освіту ще не додано
+                                            </div>
                                         {% endif %}
                                     </div>
-                                    {% if doc.reference_number or doc.reference_institution or doc.reference_institution_en or doc.reference_country or doc.reference_country_en or doc.reference_issue_date %}
-                                    <div class="border rounded-3 p-4 mb-4">
-                                        <h5>Академічна довідка</h5>
-                                        <div class="row g-3">
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Номер</div>
-                                                <div>{{ val(doc.reference_number) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Заклад</div>
-                                                <div>{{ val(doc.reference_institution) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Reference Institution (EN)</div>
-                                                <div>{{ val(doc.reference_institution_en) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Країна</div>
-                                                <div>{{ val(doc.reference_country) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Reference Country (EN)</div>
-                                                <div>{{ val(doc.reference_country_en) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Дата видачі довідки</div>
-                                                <div>{{ val(doc.reference_issue_date) }}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                    {% if doc.recognition_certificate_number or doc.recognition_issuer or doc.recognition_issuer_en or doc.recognition_date %}
-                                    <div class="border rounded-3 p-4 mb-4">
-                                        <h5>Свідоцтво про визнання в Україні іноземного документа про освіту</h5>
-                                        <div class="row g-3">
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Номер свідоцтва про визнання</div>
-                                                <div>{{ val(doc.recognition_certificate_number) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Орган, що видав свідоцтво</div>
-                                                <div>{{ val(doc.recognition_issuer) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Recognition Issuer (EN)</div>
-                                                <div>{{ val(doc.recognition_issuer_en) }}</div>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <div class="text-muted small">Дата видачі свідоцтва</div>
-                                                <div>{{ val(doc.recognition_date) }}</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    {% endif %}
-                                {% endfor %}
+                                    {% endfor %}
+                                </div>
                             {% else %}
-                                <p class="text-muted text-center py-5">Документи про освіту відсутні</p>
+                                <div class="p-4 text-center text-muted">
+                                    <i class="bi bi-file-earmark-x fs-4 d-block mb-2"></i>
+                                    Документи про освіту відсутні
+                                </div>
                             {% endif %}
+
                             {% if student_attachments %}
-                            <div class="border rounded-3 p-4 mb-4">
+                            <div class="border rounded-3 p-4 mt-3">
                                 <h5><i class="bi bi-paperclip"></i> Інші файли</h5>
                                 <div class="small text-muted mb-2">Без прив'язки до конкретного документа.</div>
                                 {% for a in student_attachments %}

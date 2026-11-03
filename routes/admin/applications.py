@@ -495,12 +495,13 @@ def pending_student_review(pending_id):
             program_credits_override_raw = (request.form.get('program_credits_override') or '').strip()
             program_credits_override = int(program_credits_override_raw) if program_credits_override_raw else None
 
-                        # ── Перевірка: чи студент уже є в базі? ──
+            # ── Перевірка: чи студент уже є в базі? ──
             existing_student = None
             if row['tax_id']:
                 existing_student = conn.execute(
                     "SELECT id FROM students WHERE tax_id = ?", (row['tax_id'],)
                 ).fetchone()
+                
             if not existing_student:
                 existing_student = conn.execute("""
                     SELECT id FROM students
@@ -571,11 +572,12 @@ def pending_student_review(pending_id):
                 doc_number = ' '.join(x for x in [row['document_series'], row['document_number']] if x) or ''
                 cur_doc = conn.execute("""
                     INSERT INTO education_documents (
-                        student_id, document_type, document_type_en, document_number,
+                        student_id, group_id, document_type, document_type_en, document_number,
                         institution_name, institution_name_en, country, country_en, completion_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
+                    student_id, group_id,
+                    row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
                     row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
                     row['document_country'] or '', translate_to_en(row['document_country'] or ''),
                     row['document_date'] or '',
@@ -748,13 +750,21 @@ def pending_student_review(pending_id):
             doc_id_for_scans = None
             if request.form.get('add_document') and (row['document_type'] or row['document_number']):
                 doc_number = ' '.join(x for x in [row['document_series'], row['document_number']] if x) or ''
+                # Документ привязываем к основной группе студента (в
+                # заявке "обновить наявного студента" нет выбора группы).
+                _grp_row = conn.execute(
+                    "SELECT group_id FROM students WHERE id = ?", (existing_id,)
+                ).fetchone()
+                _doc_gid = _grp_row['group_id'] if _grp_row else None
+
                 cur_doc = conn.execute("""
                     INSERT INTO education_documents (
-                        student_id, document_type, document_type_en, document_number,
+                        student_id, group_id, document_type, document_type_en, document_number,
                         institution_name, institution_name_en, country, country_en, completion_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    existing_id, row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
+                    existing_id, _doc_gid,
+                    row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
                     row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
                     row['document_country'] or '', translate_to_en(row['document_country'] or ''),
                     row['document_date'] or '',
@@ -1233,12 +1243,20 @@ def update_request_review(request_id):
 
             if 'education_document' in allowed_fields and d.get('document_type') and request.form.get('apply_education_document'):
                 document_number = ((d.get('series') + ' ') if d.get('series') else '') + (d.get('number') or '')
+
+                # Привязка к основной группе студента (в заявке на
+                # обновление данных группа не указывается).
+                _grp_row = conn.execute(
+                    "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                ).fetchone()
+                _doc_gid = _grp_row['group_id'] if _grp_row else None
+
                 cur_d = conn.execute("""
-                    INSERT INTO education_documents (student_id, document_type, document_type_en, document_number,
+                    INSERT INTO education_documents (student_id, group_id, document_type, document_type_en, document_number,
                         institution_name, institution_name_en, country, country_en, completion_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, d.get('document_type') or '',
+                    student_id, _doc_gid, d.get('document_type') or '',
                     translate_to_en(d.get('document_type') or ''),
                     document_number,
                     d.get('institution') or '', translate_to_en(d.get('institution') or ''),

@@ -76,6 +76,24 @@
         <div class="card-body">
     <form id="addDocumentForm" method="POST" enctype="multipart/form-data">
         <input type="hidden" name="student_id" id="hidden_student_id" value="{{ student.id if student else '' }}">
+		        {% if student_enrollments %}
+        <div class="row g-3 mb-3">
+            <div class="col-md-6">
+                <label for="doc_group_id" class="form-label">Для якої групи</label>
+                <select name="doc_group_id" id="doc_group_id" class="form-select">
+                    <option value="">— загальний (для всіх груп) —</option>
+                    {% for e in student_enrollments %}
+                    <option value="{{ e.group_id }}">
+                        {{ e.group_name or ('#' ~ e.group_id) }}
+                        {% if e.is_primary %} (основна){% endif %}
+                        {% if e.status != 'active' %} (не активна){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">При паралельному навчанні документ для кожної групи свій (напр. диплом бакалавра — для магістратури, атестат — для бакалаврату).</div>
+            </div>
+        </div>
+        {% endif %}
 
         <div class="row g-3">
             <div class="col-md-6">
@@ -206,19 +224,29 @@
                         <div class="accordion-body p-0">
                             <div class="table-responsive">
                                 <table class="table table-bordered table-hover mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Студент</th>
-                                            <th>Тип документа</th>
-                                            <th>Номер</th>
-                                            <th style="width: 40px;"></th>
-                                            <th style="width: 180px;">Дії</th>
-                                        </tr>
-                                    </thead>
+						<thead class="table-light">
+							<tr>
+								<th>Студент</th>
+								<th>Група документа</th>
+								<th>Тип документа</th>
+								<th>Номер</th>
+								<th style="width: 40px;"></th>
+								<th style="width: 180px;">Дії</th>
+							</tr>
+						</thead>
                                     <tbody>
                                         {% for doc in group_data.docs %}
                                             <tr data-student-id="{{ doc.student_id }}">
                                                 <td>{{ doc.last_name_UA }} {{ doc.first_name_UA }}</td>
+												<td class="small">
+													{% if doc.doc_group_id %}
+														{% set _ = namespace(found=false) %}
+														{% for e in student_enrollments %}{% if e.group_id == doc.doc_group_id %}{{ e.group_name }}{% set _ = namespace(found=true) %}{% endif %}{% endfor %}
+														{% if not _['found'] %}Група #{{ doc.doc_group_id }}{% endif %}
+													{% else %}
+														<em class="text-muted">— загальний —</em>
+													{% endif %}
+												</td>
                                                 <td>{{ doc.document_type }}</td>
                                                 <td>{{ doc.document_number }}</td>
                                                 <td>
@@ -312,6 +340,20 @@
 																		<!-- скрыто передаём настоящий id -->
 																		<input type="hidden" name="student_id" value="{{ doc.student_id }}">
 																	</div>
+																	<div class="row g-3">
+																	<div class="col-md-12">
+																		<label for="edit_doc_group_id_{{ doc.doc_id }}" class="form-label">Для якої групи</label>
+																		<select name="doc_group_id" id="edit_doc_group_id_{{ doc.doc_id }}" class="form-select">
+																			<option value="">— загальний (для всіх груп) —</option>
+																			{% for e in student_enrollments %}
+																			<option value="{{ e.group_id }}" {% if doc.doc_group_id == e.group_id %}selected{% endif %}>
+																				{{ e.group_name or ('#' ~ e.group_id) }}
+																				{% if e.is_primary %} (основна){% endif %}
+																			</option>
+																			{% endfor %}
+																		</select>
+																	</div>
+																	<!-- далі йде наявний код форми (Тип документа тощо) -->
                                                                     <div class="col-md-6">
                                                                         <label for="edit_document_type{{ doc.doc_id }}" class="form-label">Тип документа</label>
                                                                         <input type="text" name="document_type" id="edit_document_type{{ doc.doc_id }}" class="form-control" value="{{ doc.document_type }}" data-translate-target="#edit_document_type_en{{ doc.doc_id }}" required>

@@ -112,7 +112,20 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
                      CASE e.status WHEN 'active' THEN 0 ELSE 1 END,
                      e.id
         """, (student_id,)).fetchall()
-        return [dict(r) for r in rows]
+
+        # Дедуплікація: одна пара (student_id, group_id) — один рядок.
+        # Через історичні дані в старій БД без UNIQUE-констрейнту може
+        # бути кілька рядків на ту саму групу; лишаємо перший згідно з
+        # ORDER BY (is_primary DESC, active спочатку, найсвіжіший id).
+        _seen = set()
+        _deduped = []
+        for r in rows:
+            key = (r['student_id'], r['group_id'])
+            if key in _seen:
+                continue
+            _seen.add(key)
+            _deduped.append(dict(r))
+        return _deduped
     finally:
         if own:
             conn.close()

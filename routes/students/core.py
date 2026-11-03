@@ -29,7 +29,6 @@ import secrets
 import json
 from routes.orders_service import get_student_orders, orders_tables_ready, create_order
 from routes.passport_types import PASSPORT_TYPES_ID_STYLE, passport_template_context
-from routes.orders_service import get_student_orders, orders_tables_ready
 from routes.user_scope import get_allowed_group_ids
 from routes.enrollments_service import (
     ensure_enrollments_table,
@@ -731,6 +730,38 @@ def student_details(student_id):
             'program_credits': student['program_credits'],
         })
 
+    # ── Захисна дедуплікація active_enrollments: одна група — один рядок ──
+    # Через історичні дані чи баги в попередніх версіях active_enrollments
+    # міг містити кілька записів з однаковим group_id (наприклад, fallback
+    # нижче додає запис для student.group_id, навіть якщо реальний
+    # enrollment для цієї групи вже є з іншим типом). Якщо так — лишаємо
+    # лише перший, з пріоритетом:
+    #   1) is_primary=1
+    #   2) active
+    #   3) найменший id (стабільність порядку)
+    _seen_gids = set()
+    _deduped_enrollments = []
+    # Спочатку — ті, що з реального enrollment'а (не fallback)
+    for _enr in active_enrollments:
+        _gid = _enr.get('group_id')
+        if _gid is None or _gid in _seen_gids:
+            continue
+        _seen_gids.add(_gid)
+        _deduped_enrollments.append(_enr)
+    active_enrollments = _deduped_enrollments
+
+    # Гарантуємо, що «основна» група рівно одна — інакше обидві таби
+    # виглядають як «осн.», і здається, що це та сама вкладка двічі.
+    _primary_count = sum(1 for _e in active_enrollments if _e.get('is_primary'))
+    if _primary_count > 1:
+        _first_primary = True
+        for _e in active_enrollments:
+            if _e.get('is_primary'):
+                if _first_primary:
+                    _first_primary = False
+                else:
+                    _e['is_primary'] = 0
+
     groups_data = []
     for enr in active_enrollments:
         gid = enr['group_id']
@@ -796,12 +827,6 @@ def student_details(student_id):
             for a in att_rows
         ]
 
-        # Коротка назва групи (без " (2022, Денна, 240 кредитів)")
-        short_name = (enr.get('group_name') or '').split(' (')[0].strip()
-
-        # Періоди навчання для КОЖНОЇ групи окремо (як предмети й оцінки).
-        # Fallback на group_id IS NULL — старі періоди без прив'язки
-        # показуються у всіх групах студента (легасі-поведінка).
         group_study_periods = conn.execute("""
             SELECT id, filiya, filiya_en, group_name, start_date, end_date,
                    period_order, note, group_id
@@ -809,6 +834,26 @@ def student_details(student_id):
             WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
             ORDER BY period_order ASC, start_date ASC
         """, (student_id, gid)).fetchall()
+
+        group_edu_docs = conn.execute("""
+            SELECT ed.id, ed.group_id, ed.document_type, ed.document_type_en,
+                   ed.document_number, ed.institution_name, ed.institution_name_en,
+                   ed.country, ed.country_en, ed.completion_date,
+                   fed.reference_number, fed.reference_institution, fed.reference_institution_en,
+                   fed.reference_country, fed.reference_country_en, fed.reference_issue_date,
+                   fed.recognition_certificate_number, fed.recognition_issuer,
+                   fed.recognition_issuer_en, fed.recognition_date
+            FROM education_documents ed
+            LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
+            WHERE ed.student_id = ?
+              AND (ed.group_id = ? OR ed.group_id IS NULL)
+            ORDER BY ed.completion_date DESC, ed.id DESC
+        """, (student_id, gid)).fetchall()
+        group_edu_docs = [dict(d) for d in group_edu_docs]
+        for d in group_edu_docs:
+            d['attachments'] = get_attachments(conn, 'education_document', d['id'])
+
+        short_name = (enr.get('group_name') or '').split(' (')[0].strip()
 
         groups_data.append({
             'group_id': gid,
@@ -822,7 +867,21 @@ def student_details(student_id):
             'practices': practices_list,
             'courseworks': courseworks_list,
             'attestations': attestations_list,
+            'study_periods': [dict(p) for p in group_study_periods],
+            'education_docs': group_edu_docs,
         })
+
+    # ── Захисна дедуплікація groups_data (на випадок, якщо вище
+    # випадково лишився ще один groups_data.append зі старої версії) ──
+    _seen_gids2 = set()
+    _deduped_groups = []
+    for _g in groups_data:
+        if _g['group_id'] in _seen_gids2:
+            continue
+        _seen_gids2.add(_g['group_id'])
+        _deduped_groups.append(_g)
+    groups_data = _deduped_groups
+    
 
     # ── Backward compatibility: старі змінні → на ОСНОВНУ групу ──
     _primary = next(
@@ -2094,17 +2153,6 @@ def enrollment_action(student_id, group_id):
         return redirect(url_for('students.student_details', student_id=student_id))
 
 
-@students_bp.route('/students/<int:student_id>/enrollments/<int:group_id>/license',
-                   methods=['POST'])
-@login_required('')
-def enrollment_update_license(student_id, group_id):
-    """Змінити ліцензію для конкретного enrollment."""
-    license_id = request.form.get('license_id', type=int) or None
-    from routes.enrollments_service import update_enrollment_license
-    ok, msg = update_enrollment_license(student_id, group_id, license_id)
-    flash(msg, 'success' if ok else 'error')
-    return redirect(url_for('students.student_details', student_id=student_id))
-
 @students_bp.route('/students/<int:student_id>/enrollments/set_primary', methods=['POST'])
 @permission_required('manage_students')
 def enrollment_set_primary(student_id):
@@ -2122,23 +2170,3 @@ def enrollment_set_primary(student_id):
         )
     return redirect(url_for('students.student_details', student_id=student_id))
 
-
-@students_bp.route('/students/<int:student_id>/enrollments/end', methods=['POST'])
-@permission_required('manage_students')
-def enrollment_end(student_id):
-    group_id = request.form.get('group_id', type=int)
-    status = request.form.get('status') or 'completed'
-    if status not in ('completed', 'expelled'):
-        status = 'completed'
-    if not group_id:
-        flash('Не вказано групу.', 'error')
-        return redirect(url_for('students.student_details', student_id=student_id))
-
-    ok, msg = end_enrollment(student_id, group_id, status=status)
-    flash(msg, 'success' if ok else 'error')
-    if ok:
-        log_action(
-            current_username(),
-            f"завершив навчання student={student_id} group={group_id} status={status}",
-        )
-    return redirect(url_for('students.student_details', student_id=student_id))
