@@ -557,10 +557,22 @@ def manage_groups():
                g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
                g.program_includes_reduced, g.program_includes_reduced_en,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS display_name,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id) AS student_count,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = g.id
-                    AND s.program_credits_override IS NOT NULL
-                    AND s.program_credits_override < g.program_credits) AS reduced_count
+               (SELECT COUNT(DISTINCT s.id) FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = g.id
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = g.id)) AS student_count,
+               (SELECT COUNT(DISTINCT s.id) FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = g.id
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = g.id)
+                  AND s.program_credits_override IS NOT NULL
+                  AND s.program_credits_override < g.program_credits) AS reduced_count
         FROM groups g WHERE g.archived = FALSE ORDER BY {sortable_columns[sort_by]} {sort_order.upper()}
     """).fetchall()
 
@@ -612,10 +624,22 @@ def courses():
     groups = conn.execute("""
         SELECT id, name, course, start_year, study_form, program_credits,
                degree_level, specialty,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0) AS student_count,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0
-                    AND s.program_credits_override IS NOT NULL
-                    AND s.program_credits_override < groups.program_credits) AS reduced_count
+               (SELECT COUNT(DISTINCT s.id) FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = groups.id
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = groups.id)) AS student_count,
+               (SELECT COUNT(DISTINCT s.id) FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = groups.id
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = groups.id)
+                  AND s.program_credits_override IS NOT NULL
+                  AND s.program_credits_override < groups.program_credits) AS reduced_count
         FROM groups
         WHERE archived = FALSE
         ORDER BY course, name
@@ -688,10 +712,18 @@ def course_transfer():
         groups_with_students = []
         for g in selected_groups:
             students = conn.execute("""
-                SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name, program_credits_override
-                FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-                ORDER BY last_name_UA COLLATE UKRAINIAN
-            """, (g['id'],)).fetchall()
+                SELECT DISTINCT s.id,
+                       TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name,
+                       s.program_credits_override
+                FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = ?
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = ?)
+                ORDER BY s.last_name_UA COLLATE UKRAINIAN
+            """, (g['id'], g['id'])).fetchall()
             groups_with_students.append({
                 'id': g['id'], 'name': g['name'], 'course': g['course'],
                 'course_to': g['course'] + 1,
@@ -704,7 +736,13 @@ def course_transfer():
 
     groups = conn.execute("""
         SELECT id, name, course, start_year, study_form, degree_level, program_credits,
-               (SELECT COUNT(*) FROM students s WHERE s.group_id = groups.id AND COALESCE(s.archived, 0) = 0) AS student_count
+               (SELECT COUNT(DISTINCT s.id) FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = groups.id
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = groups.id)) AS student_count
         FROM groups WHERE archived = FALSE ORDER BY course, name
     """).fetchall()
     conn.close()
@@ -722,7 +760,12 @@ def course_transfer():
 @admin_bp.route('/admin/course_transfer/confirm', methods=['POST'])
 @permission_required('manage_courses')
 def course_transfer_confirm():
-    """Крок 3: переведення на курс — тільки orders (без course_transfer_*)."""
+    """Крок 3: переведення на курс — тільки orders (без legacy-таблиць).
+
+    Працює з primary + паралельними enrollment'ами. Виключені пари
+    (student_id, group_id) заморожуються через end_enrollment() —
+    паралельний студент залишиться активним у своїй іншій групі.
+    """
     order_number = (request.form.get('order_number') or '').strip()
     order_date = request.form.get('order_date')
     group_ids = [int(x) for x in request.form.getlist('group_ids')]
@@ -739,25 +782,47 @@ def course_transfer_confirm():
         flash("Таблиці наказів не створені. Запустіть migrate_orders.py", "error")
         return redirect(url_for('admin.course_transfer'))
 
-    excluded_students = []  # (student_id, group_id, reason)
+    from routes.enrollments_service import (
+        backfill_primary_from_students, end_enrollment,
+    )
+    backfill_primary_from_students(conn=conn)
+
+    # ── Збір виключених: ключ = (student_id, group_id) ──
+    excluded_pairs = {}
     for group_id in group_ids:
-        students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
-            (group_id,),
+        students_in_group = conn.execute(
+            """
+            SELECT DISTINCT s.id FROM students s
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (
+                  s.group_id = ?
+                  OR EXISTS (
+                      SELECT 1 FROM student_enrollments e
+                      WHERE e.student_id = s.id
+                        AND e.group_id = ?
+                        AND e.status = 'active'
+                  )
+              )
+            """,
+            (group_id, group_id),
         ).fetchall()
-        for s in students:
-            included = request.form.get(f"include_{s['id']}") == '1'
-            if not included:
-                reason = (request.form.get(f"reason_{s['id']}") or '').strip()
-                if not reason:
-                    flash(f"Для виключеного студента (ID {s['id']}) не вказано причину.", "error")
-                    conn.close()
-                    return redirect(url_for('admin.course_transfer'))
-                excluded_students.append((s['id'], group_id, reason))
+        for s in students_in_group:
+            sid = s['id']
+            if request.form.get(f"include_{group_id}_{sid}") == '1':
+                continue
+            reason = (request.form.get(f"reason_{group_id}_{sid}") or '').strip()
+            if not reason:
+                flash(
+                    f"Для виключеного студента (ID {sid}, група ID {group_id}) "
+                    f"не вказано причину.", "error",
+                )
+                conn.close()
+                return redirect(url_for('admin.course_transfer'))
+            excluded_pairs[(sid, group_id)] = reason
 
     scan_files = request.files.getlist('scan_files')
 
-    # Спочатку збираємо payload груп (до зміни course)
+    # Збираємо payload груп ДО зміни course
     group_items = []
     transferred_groups_summary = []
     for group_id in group_ids:
@@ -799,7 +864,6 @@ def course_transfer_confirm():
             conn=conn,
         )
 
-        # Оновлюємо курс/назву груп
         for group_id in group_ids:
             group = conn.execute(
                 "SELECT name, course, specialty_code FROM groups WHERE id = ?",
@@ -823,19 +887,17 @@ def course_transfer_confirm():
                 (course_to, new_name, group_id),
             )
 
-        # Виключені → заморозка (order_id тепер з orders)
-        for student_id, group_id, reason in excluded_students:
+        # Виключені → заморозка через end_enrollment + запис
+        for (sid, gid), reason in excluded_pairs.items():
+            end_enrollment(sid, gid, status='frozen', conn=conn)
             conn.execute(
                 """
                 INSERT INTO frozen_students
-                    (student_id, previous_group_id, order_id, reason, frozen_by)
+                    (student_id, previous_group_id, order_id,
+                     reason, frozen_by)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (student_id, group_id, order_id, reason, current_username()),
-            )
-            conn.execute(
-                "UPDATE students SET group_id = NULL WHERE id = ?",
-                (student_id,),
+                (sid, gid, order_id, reason, current_username()),
             )
 
         conn.commit()
@@ -851,17 +913,16 @@ def course_transfer_confirm():
         current_username(),
         f"наказ про переведення на курс №{order_number} від {order_date} (order_id={order_id})",
         details=(
-            f"груп: {len(group_ids)}, заморожено: {len(excluded_students)} "
+            f"груп: {len(group_ids)}, заморожено: {len(excluded_pairs)} "
             f"| {', '.join(transferred_groups_summary)}"
         ),
     )
     flash(
         f"Переведення оформлено. Груп: {len(group_ids)}, "
-        f"заморожено студентів: {len(excluded_students)}.",
+        f"заморожено студентів: {len(excluded_pairs)}.",
         "success",
     )
     return redirect(url_for('admin.order_detail', order_id=order_id))
-
 
 @admin_bp.route('/admin/frozen_students')
 @permission_required('manage_frozen_students')
@@ -1151,7 +1212,13 @@ def graduation():
 @admin_bp.route('/admin/graduation/confirm', methods=['POST'])
 @permission_required('manage_courses')
 def graduation_confirm():
-    """Підтвердження випуску з обов'язковим наказом (orders)."""
+    """Підтвердження випуску з обов'язковим наказом (orders).
+
+    Працює з тією самою множиною студентів, що й крок перевірки
+    (primary + паралельні enrollment'и). Ключ виключення —
+    (student_id, group_id), а не лише student_id: паралельний студент
+    може бути виключений з однієї групи й успішно випуститись з іншої.
+    """
     group_ids = [int(x) for x in request.form.getlist('group_ids')]
     if not group_ids:
         flash("Оберіть хоча б одну групу.", "error")
@@ -1173,80 +1240,118 @@ def graduation_confirm():
         flash("Таблиці наказів не створені. Запустіть migrate_orders.py", "error")
         return redirect(url_for('admin.graduation'))
 
-    excluded_students = []
-    for group_id in group_ids:
-        students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
-            (group_id,),
-        ).fetchall()
-        for s in students:
-            included = request.form.get(f"include_{s['id']}") == '1'
-            if not included:
-                reason = (request.form.get(f"reason_{s['id']}") or '').strip()
-                if not reason:
-                    flash(f"Для виключеного студента (ID {s['id']}) не вказано причину.", "error")
-                    conn.close()
-                    return redirect(url_for('admin.graduation'))
-                excluded_students.append((s['id'], group_id, reason))
+    from routes.enrollments_service import (
+        backfill_primary_from_students, end_enrollment,
+    )
+    # end_enrollment() для legacy-студента без запису в student_enrollments
+    # нічого не робить — а тоді студент залишиться зі старим group_id після
+    # випуску. Гарантуємо, що в усіх активних студентів є хоча б primary.
+    backfill_primary_from_students(conn=conn)
 
-    excluded_set = {sid for sid, _, _ in excluded_students}
+    # ── Збір виключених: ключ = (student_id, group_id) ──
+    excluded_pairs = {}
+    for group_id in group_ids:
+        students_in_group = conn.execute(
+            """
+            SELECT DISTINCT s.id FROM students s
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (
+                  s.group_id = ?
+                  OR EXISTS (
+                      SELECT 1 FROM student_enrollments e
+                      WHERE e.student_id = s.id
+                        AND e.group_id = ?
+                        AND e.status = 'active'
+                  )
+              )
+            """,
+            (group_id, group_id),
+        ).fetchall()
+        for s in students_in_group:
+            sid = s['id']
+            if request.form.get(f"include_{group_id}_{sid}") == '1':
+                continue
+            reason = (request.form.get(f"reason_{group_id}_{sid}") or '').strip()
+            if not reason:
+                flash(
+                    f"Для виключеного студента (ID {sid}, група ID {group_id}) "
+                    f"не вказано причину.", "error",
+                )
+                conn.close()
+                return redirect(url_for('admin.graduation'))
+            excluded_pairs[(sid, group_id)] = reason
+
     graduated_student_ids = []
     graduated_names = []
 
-    for group_id in group_ids:
-        group = conn.execute("SELECT name FROM groups WHERE id = ?", (group_id,)).fetchone()
-        if not group:
-            continue
+    try:
+        for group_id in group_ids:
+            group = conn.execute(
+                "SELECT name FROM groups WHERE id = ?", (group_id,)
+            ).fetchone()
+            if not group:
+                continue
 
-        for student_id, g_id, reason in excluded_students:
-            if g_id == group_id:
-                conn.execute(
-                    """
-                    INSERT INTO frozen_students
-                        (student_id, previous_group_id, order_id, reason, frozen_by)
-                    VALUES (?, ?, NULL, ?, ?)
-                    """,
-                    (student_id, group_id, reason, current_username()),
-                )
-                conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
+            students_in_group = conn.execute(
+                """
+                SELECT DISTINCT s.id FROM students s
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (
+                      s.group_id = ?
+                      OR EXISTS (
+                          SELECT 1 FROM student_enrollments e
+                          WHERE e.student_id = s.id
+                            AND e.group_id = ?
+                            AND e.status = 'active'
+                      )
+                  )
+                """,
+                (group_id, group_id),
+            ).fetchall()
 
-        remaining = conn.execute(
-            """
-            SELECT id FROM students
-            WHERE group_id = ? AND COALESCE(archived, 0) = 0
-            """,
-            (group_id,),
-        ).fetchall()
-        for r in remaining:
-            if r['id'] not in excluded_set:
-                graduated_student_ids.append(r['id'])
+            for r in students_in_group:
+                sid = r['id']
+                if (sid, group_id) in excluded_pairs:
+                    # Закриваємо enrollment цієї групи зі статусом 'frozen'.
+                    # end_enrollment сам перепризначить primary на іншу
+                    # активну групу студента (якщо вона є) — паралельний
+                    # студент залишиться активним у ній.
+                    end_enrollment(sid, group_id, status='frozen', conn=conn)
+                    conn.execute(
+                        """
+                        INSERT INTO frozen_students
+                            (student_id, previous_group_id, order_id,
+                             reason, frozen_by)
+                        VALUES (?, ?, NULL, ?, ?)
+                        """,
+                        (sid, group_id, excluded_pairs[(sid, group_id)],
+                         current_username()),
+                    )
+                else:
+                    end_enrollment(sid, group_id, status='graduated', conn=conn)
+                    if sid not in graduated_student_ids:
+                        graduated_student_ids.append(sid)
 
-        # Завершуємо навчання в ЦІЙ групі для кожного студента
-        from routes.enrollments_service import end_enrollment
-        remaining_students = conn.execute(
-            "SELECT id FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0",
-            (group_id,),
-        ).fetchall()
-        for r in remaining_students:
-            if r['id'] not in excluded_set:
-                end_enrollment(r['id'], group_id, status='graduated', conn=conn)
-
-        conn.execute("UPDATE groups SET archived = TRUE WHERE id = ?", (group_id,))
-        graduated_names.append(group['name'])
+            conn.execute(
+                "UPDATE groups SET archived = TRUE WHERE id = ?", (group_id,)
+            )
+            graduated_names.append(group['name'])
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f"graduation_confirm: {e}", exc_info=True)
+        flash(f"Помилка оформлення випуску: {e}", "error")
+        return redirect(url_for('admin.graduation'))
 
     order_id = None
     items = [
-        {
-            'entity_type': 'student',
-            'entity_id': sid,
-            'payload': {'action': 'graduated'},
-        }
+        {'entity_type': 'student', 'entity_id': sid,
+         'payload': {'action': 'graduated'}}
         for sid in graduated_student_ids
     ]
     for gid in group_ids:
         items.append({
-            'entity_type': 'group',
-            'entity_id': gid,
+            'entity_type': 'group', 'entity_id': gid,
             'payload': {'action': 'archived_on_graduation'},
         })
 
@@ -1281,18 +1386,17 @@ def graduation_confirm():
         + (f", order_id={order_id}" if order_id else "")
         + ")",
         details=f"випущено студентів: {len(graduated_student_ids)}, "
-                f"заморожено: {len(excluded_students)}",
+                f"заморожено: {len(excluded_pairs)}",
     )
     flash(
         f"Випуск оформлено (наказ №{order_number}). "
         f"Груп: {len(graduated_names)}, випущено: {len(graduated_student_ids)}, "
-        f"заморожено: {len(excluded_students)}.",
+        f"заморожено: {len(excluded_pairs)}.",
         "success",
     )
     if order_id:
         return redirect(url_for('admin.order_detail', order_id=order_id))
     return redirect(url_for('admin.courses'))
-
 
 @admin_bp.route('/admin/expulsion', methods=['GET', 'POST'])
 @permission_required('manage_expulsion')

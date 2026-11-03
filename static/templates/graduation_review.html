@@ -63,14 +63,15 @@
                         {% for s in g.students %}
                         <tr>
                             <td style="width:40px;">
-                                <input type="checkbox" name="include_{{ s.id }}" value="1" checked
-                                       class="form-check-input js-student-toggle" data-student-id="{{ s.id }}">
+								<input type="checkbox" name="include_{{ g.id }}_{{ s.id }}" value="1" checked
+									   class="form-check-input js-student-toggle"
+									   data-reason-id="reason_{{ g.id }}_{{ s.id }}">
                             </td>
                             <td>{{ s.full_name }}</td>
                             <td>
-                                <input type="text" name="reason_{{ s.id }}" id="reason_{{ s.id }}"
-                                       class="form-control form-control-sm d-none"
-                                       placeholder="Причина виключення (обов'язково)">
+                                <input type="text" name="reason_{{ g.id }}_{{ s.id }}" id="reason_{{ g.id }}_{{ s.id }}"
+								   class="form-control form-control-sm d-none"
+								   placeholder="Причина виключення (обов'язково)">
                             </td>
                         </tr>
                         {% endfor %}

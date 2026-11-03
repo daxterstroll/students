@@ -1641,6 +1641,41 @@ def edit_student(student_id):
                 program_credits_override,
                 phone, phone_backup, email, address_of_residence, gender, student_id
             ))
+
+            # ── Синхронізація student_enrollments при зміні основної групи ──
+            # students.group_id = primary enrollment. Якщо групу змінили
+            # через форму редагування, enrollment має оновитись теж,
+            # інакше утворюється розсинхрон: students.group_id=B, а в
+            # student_enrollments — лише A з is_primary=1.
+            if old_group != group_int:
+                try:
+                    from routes.enrollments_service import (
+                        ensure_enrollments_table, add_enrollment,
+                        set_primary_enrollment,
+                    )
+                    ensure_enrollments_table(conn)
+                    has_active = conn.execute(
+                        "SELECT 1 FROM student_enrollments "
+                        "WHERE student_id=? AND group_id=? AND status='active'",
+                        (student_id, group_int),
+                    ).fetchone()
+                    if has_active:
+                        set_primary_enrollment(student_id, group_int, conn=conn)
+                    else:
+                        add_enrollment(student_id, group_int,
+                                       is_primary=True, conn=conn)
+                except Exception as e:
+                    logger.error(
+                        f"edit_student: не вдалося синхронізувати enrollments "
+                        f"для студента {student_id}: {e}",
+                        exc_info=True,
+                    )
+                    conn.rollback()
+                    conn.close()
+                    flash("Не вдалося змінити основну групу студента", "error")
+                    return redirect(url_for(
+                        'students.edit_student', student_id=student_id,
+                    ))
             conn.commit()
 
             details = f"стара група: {old_group} → нова група: {group_int}" if old_group != group_int else f"група: {group_int}"
