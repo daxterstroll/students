@@ -66,27 +66,34 @@ def import_from_excel():
     """
     Імпорт студентів з Excel-файлу.
 
-    Колонки (A→K, 0-базовий індекс):
-        0  A  group_id                  (обов.)
-        1  B  ПІБ повністю (3 слова)    (обов.)
-        2  C  birth_date                (обов.)
-        3  D  edebo_code
-        4  E  license (short_name_ua)
-        5  F  program_credits_override
-        6  G  phone (основний[, резервний])
-        7  H  email
-        8  I  tax_id                    (РНОКПП)
-        9  J  address_of_residence
-        10 K  gender                    (M/F/Ч/Ж; порожнє → авто за по батькові)
+    Колонки A-K — базові (обов'язкові/необов'язкові як раніше).
+    Колонки L-N — нові, ОПЦІОНАЛЬНІ, для безпечної роботи з повторним
+    навчанням / паралельними enrollments:
 
-    last_name_ENG / first_name_ENG НЕ читаються з файлу - генеруються
-    автоматично через generate_english_name() (транслітерація КМУ №55-2010).
-    id / archived / photo теж не імпортуються: id автоінкрементний,
-    archived = FALSE, photo = NULL за замовчуванням.
+        L  student_id          — якщо вказано, студент шукається ТІЛЬКИ
+                                 за цим ID (найнадійніше). Порожньо —
+                                 пошук за tax_id, потім за ПІБ+датою.
+        M  is_primary          — 1/0/порожньо. Якщо "1" — ця група стане
+                                 основною для студента. Порожньо =
+                                 автоопределение: для нового студента
+                                 група стає основною, для існуючого —
+                                 НЕ змінюється.
+        N  update_existing_data — 1/0/порожньо. За замовчуванням "1":
+                                 оновлює ПОРОЖНІ поля картки (телефон,
+                                 email, ІПН, ЄДЕБО, адресу, кредити
+                                 override, стать). НЕ перезаписує
+                                 заповнені — щоб не затерти ручні правки.
 
-    Військові дані з Excel більше НЕ імпортуються - вони заповнюються
-    вручну на картці студента або через PDF «Резерв+» (сторінка
-    «Військові дані» або пакетний імпорт PDF).
+    Підтримується 4 сценарії для вже наявного в базі студента:
+        A. Активний enrollment у цій групі → пропуск (дублікат).
+        B. Enrollment був закритий (expelled/graduated/frozen)
+           → перевідкривається як active.
+        C. Enrollment в іншій групі, у цій немає → паралельне навчання.
+        D. Студент архівний (archived=TRUE) → enrollment створюється,
+           студент разархівується (add_enrollment це робить сам).
+
+    Для всіх B/C/D додатково, якщо update_existing_data != 0 —
+    оновлюються порожні поля картки з файлу.
     """
     _cleanup_old_reports()
     if request.method == 'POST':
@@ -102,9 +109,14 @@ def import_from_excel():
 
         conn = get_db()
         ensure_enrollments_table(conn)
-        enrollments_added = 0  # лічильник паралельних
-        inserted = 0
-        skipped_rows = []  # список dict: {'row': i, 'fio': ..., 'birth_date': ..., 'reason': ...}
+
+        # ── Лічильники ──
+        inserted = 0             # створено нових студентів
+        enrollments_added = 0    # паралельних навчань у наявних
+        enrollments_reactivated = 0  # перевідкрито закритих (B/D)
+        data_updated = 0         # студентів, яким оновили дані картки
+        skipped_rows = []        # [{row, fio, birth_date, reason}]
+        warnings = []            # [{row, fio, reason}] — некритичні
         gender_auto = 0
         gender_missing = 0
 
@@ -113,86 +125,112 @@ def import_from_excel():
 
         if role == 'admin':
             allowed_group_ids = {
-                row['id'] for row in conn.execute("SELECT id FROM groups WHERE archived = FALSE").fetchall()
+                r['id'] for r in conn.execute(
+                    "SELECT id FROM groups WHERE archived = FALSE"
+                ).fetchall()
             }
         else:
             if not user_group_ids:
                 allowed_group_ids = set()
             else:
-                placeholders = ','.join('?' * len(user_group_ids))
+                ph = ','.join('?' * len(user_group_ids))
                 allowed_group_ids = {
-                    row['id'] for row in conn.execute(
-                        f"SELECT id FROM groups WHERE id IN ({placeholders}) AND archived = FALSE",
-                        user_group_ids
+                    r['id'] for r in conn.execute(
+                        f"SELECT id FROM groups WHERE id IN ({ph}) "
+                        f"AND archived = FALSE", user_group_ids
                     ).fetchall()
                 }
 
-        # Каталог ліцензій - для зіставлення тексту з колонки E з
-        # institution_licenses (за short_name_ua, без регістру).
         license_lookup = {}
-        for row in conn.execute("SELECT id, short_name_ua FROM institution_licenses").fetchall():
-            if row['short_name_ua']:
-                license_lookup[row['short_name_ua'].strip().lower()] = row['id']
+        for r in conn.execute(
+                "SELECT id, short_name_ua FROM institution_licenses").fetchall():
+            if r['short_name_ua']:
+                license_lookup[r['short_name_ua'].strip().lower()] = r['id']
 
         try:
             wb = openpyxl.load_workbook(filepath)
             sheet = wb.active
 
-            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            for i, row in enumerate(
+                    sheet.iter_rows(min_row=2, values_only=True), start=2):
                 try:
                     if not row or len(row) < 4:
                         skipped_rows.append({
-                            'row': i,
-                            'fio': '—',
-                            'birth_date': '—',
-                            'reason': 'Порожній рядок або менше 4 колонок'
+                            'row': i, 'fio': '—', 'birth_date': '—',
+                            'reason': 'Порожній рядок або менше 4 колонок',
                         })
                         continue
 
+                    # ── A: ID групи ──
                     group_id = row[0]
+                    # ── B: ПІБ ──
                     full_name = row[1]
+                    # ── C: Дата народження ──
                     birth_date_raw = row[2]
-                    edebo_code = row[3] if len(row) > 3 and row[3] else ''
+                    # ── D: ЄДЕБО ──
+                    edebo_code = (row[3]
+                                  if len(row) > 3 and row[3] else '')
 
-                    # Ліцензія вступу (колонка E, необов'язкова)
+                    # ── E: Ліцензія ──
                     license_id = None
                     if len(row) > 4 and row[4] not in (None, ''):
-                        license_key = str(row[4]).strip().lower()
-                        license_id = license_lookup.get(license_key)
+                        lk = str(row[4]).strip().lower()
+                        license_id = license_lookup.get(lk)
                         if license_id is None:
-                            flash(f"⚠️ Рядок {i}: ліцензію '{row[4]}' не знайдено в каталозі - поле пропущено, студент імпортований без неї")
+                            warnings.append({
+                                'row': i,
+                                'fio': (str(full_name).strip()
+                                        if full_name else '—'),
+                                'reason': (f"Ліцензію '{row[4]}' не знайдено "
+                                           f"в каталозі — enrollment створено "
+                                           f"без ліцензії"),
+                            })
 
-                    # Кредити скороченої програми (колонка F, необов'язкова)
+                    # ── F: Кредити скороченої ──
                     program_credits_override = None
                     if len(row) > 5 and row[5] not in (None, ''):
                         try:
                             program_credits_override = int(row[5])
                         except (ValueError, TypeError):
-                            flash(f"⚠️ Рядок {i}: некоректне значення кредитів скороченої програми '{row[5]}' - поле пропущено, студент імпортований без нього")
+                            warnings.append({
+                                'row': i,
+                                'fio': (str(full_name).strip()
+                                        if full_name else '—'),
+                                'reason': (f"Некоректне значення кредитів "
+                                           f"скороченої програми '{row[5]}' "
+                                           f"— поле пропущено"),
+                            })
 
-                    # Телефон (колонка G, необов'язкова) - основний і
-                    # резервний номер через кому.
+                    # ── G: Телефон ──
                     phone = None
                     phone_backup = None
                     if len(row) > 6 and row[6] not in (None, ''):
-                        phone_parts = [p.strip() for p in str(row[6]).split(',') if p.strip()]
-                        if phone_parts:
-                            phone = phone_parts[0]
-                        if len(phone_parts) > 1:
-                            phone_backup = phone_parts[1]
+                        parts = [p.strip()
+                                 for p in str(row[6]).split(',') if p.strip()]
+                        if parts:
+                            phone = parts[0]
+                        if len(parts) > 1:
+                            phone_backup = parts[1]
 
-                    # Email (колонка H, необов'язкова)
-                    email = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
+                    # ── H: Email ──
+                    email = (str(row[7]).strip()
+                             if len(row) > 7 and row[7] not in (None, '')
+                             else None)
 
-                    # Ідентифікаційний код / РНОКПП (колонка I, необов'язкова)
-                    tax_id = str(row[8]).strip() if len(row) > 8 and row[8] not in (None, '') else None
+                    # ── I: ІПН ──
+                    tax_id = (str(row[8]).strip()
+                              if len(row) > 8 and row[8] not in (None, '')
+                              else None)
 
-                    # Адреса проживання (колонка J, необов'язкова)
-                    address_of_residence = str(row[9]).strip() if len(row) > 9 and row[9] not in (None, '') else None
+                    # ── J: Адреса ──
+                    address_of_residence = (
+                        str(row[9]).strip()
+                        if len(row) > 9 and row[9] not in (None, '')
+                        else None)
 
-                    # Стать (колонка K, необов'язкова) — нормалізуємо або
-                    # визначаємо за по батькові нижче
-                    gender = _normalize_gender(row[10]) if len(row) > 10 else None
+                    # ── K: Стать ──
+                    gender = (_normalize_gender(row[10])
+                              if len(row) > 10 else None)
 
                     if not full_name:
                         continue
@@ -202,33 +240,36 @@ def import_from_excel():
                     except (ValueError, TypeError):
                         skipped_rows.append({
                             'row': i,
-                            'fio': full_name.strip() if full_name else '—',
+                            'fio': (str(full_name).strip()
+                                    if full_name else '—'),
                             'birth_date': str(birth_date_raw or '').strip(),
-                            'reason': f"Некоректний ID групи: '{row[0]}'"
+                            'reason': f"Некоректний ID групи: '{row[0]}'",
                         })
                         continue
 
                     if group_id not in allowed_group_ids:
                         skipped_rows.append({
                             'row': i,
-                            'fio': full_name.strip() if full_name else '—',
+                            'fio': (str(full_name).strip()
+                                    if full_name else '—'),
                             'birth_date': str(birth_date_raw or '').strip(),
-                            'reason': f"Група ID {group_id} не існує або недоступна"
+                            'reason': f"Група ID {group_id} не існує "
+                                      f"або недоступна",
                         })
                         continue
 
-                    name_parts = full_name.strip().split()
+                    name_parts = str(full_name).strip().split()
                     if len(name_parts) != 3:
                         skipped_rows.append({
                             'row': i,
-                            'fio': full_name.strip(),
+                            'fio': str(full_name).strip(),
                             'birth_date': str(birth_date_raw or '').strip(),
-                            'reason': f"Невірний формат ПІБ: «{full_name}» (очікується рівно 3 слова через пробіл)"
+                            'reason': (f"Невірний формат ПІБ: «{full_name}» "
+                                       f"(очікується 3 слова через пробіл)"),
                         })
                         continue
                     last_name, first_name, middle_name = name_parts
 
-                    # Якщо стать не вказана в Excel — визначаємо за по батькові
                     if gender is None:
                         gender = detect_gender_from_middle_name(middle_name)
                         if gender is None:
@@ -241,90 +282,227 @@ def import_from_excel():
                     else:
                         birth_date = str(birth_date_raw).strip()
 
-                    # Пошук існуючої людини: спочатку ІПН, потім ПІБ+дата
-                    existing = None
-                    if tax_id:
-                        existing = conn.execute(
-                            "SELECT id, group_id FROM students WHERE tax_id = ?",
-                            (tax_id,),
-                        ).fetchone()
-                    if not existing:
-                        existing = conn.execute("""
-                            SELECT id, group_id FROM students
-                            WHERE last_name_UA=? AND first_name_UA=?
-                              AND middle_name_UA=? AND birth_date=?
-                        """, (last_name, first_name, middle_name, birth_date)).fetchone()
+                    # ══════════════════════════════════════════════════════
+                    # ── НОВІ опціональні колонки L-N ──
+                    # ══════════════════════════════════════════════════════
 
-                    if existing:
-                        sid = existing['id']
-                        # Уже в цій групі (primary або enrollment)?
-                        in_group = conn.execute("""
-                            SELECT 1 FROM student_enrollments
-                            WHERE student_id = ? AND group_id = ? AND status = 'active'
-                        """, (sid, group_id)).fetchone()
-                        if not in_group and existing['group_id'] == group_id:
-                            in_group = True
-
-                        if in_group:
+                    # L: student_id — прямий ID (найнадійніше)
+                    force_student_id = None
+                    if len(row) > 11 and row[11] not in (None, ''):
+                        try:
+                            force_student_id = int(row[11])
+                        except (ValueError, TypeError):
                             skipped_rows.append({
                                 'row': i,
-                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'fio': (str(full_name).strip()
+                                        if full_name else '—'),
                                 'birth_date': birth_date,
-                                'reason': f"Уже в групі {group_id} (ID {sid})",
+                                'reason': (f"Некоректний student_id у колонці L: "
+                                           f"'{row[11]}' — очікується ціле число"),
                             })
                             continue
 
-                        # Та сама людина, інша група → паралельне навчання
-                        ok, msg = add_enrollment(
-                            sid, group_id, is_primary=False,
-                            license_id=license_id,  # з колонки E файлу — НЕ успадковувати
-                            conn=conn,
-                        )
-                        if ok:
-                            enrollments_added += 1
-                        else:
+                    # M: is_primary — чи робити цю групу основною
+                    force_is_primary = None
+                    if len(row) > 12 and row[12] not in (None, ''):
+                        raw = str(row[12]).strip().lower()
+                        if raw in ('1', 'true', 'yes', 'так'):
+                            force_is_primary = True
+                        elif raw in ('0', 'false', 'no', 'ні'):
+                            force_is_primary = False
+
+                    # N: update_existing_data — оновлювати чи ні дані картки
+                    update_existing_data = True
+                    if len(row) > 13 and row[13] not in (None, ''):
+                        raw = str(row[13]).strip().lower()
+                        if raw in ('0', 'false', 'no', 'ні'):
+                            update_existing_data = False
+
+                    # ══════════════════════════════════════════════════════
+                    # ── Пошук існуючого студента ──
+                    # ══════════════════════════════════════════════════════
+                    SELECT_EXISTING = """
+                        SELECT id, group_id, archived,
+                               phone, phone_backup, email, tax_id,
+                               edebo_code, address_of_residence, gender,
+                               program_credits_override, license_id,
+                               last_name_UA, first_name_UA, middle_name_UA,
+                               birth_date
+                        FROM students
+                    """
+                    existing = None
+
+                    # L задано → шукаємо тільки по ID
+                    if force_student_id is not None:
+                        existing = conn.execute(
+                            SELECT_EXISTING + " WHERE id = ?",
+                            (force_student_id,),
+                        ).fetchone()
+                        if not existing:
                             skipped_rows.append({
                                 'row': i,
-                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'fio': (str(full_name).strip()
+                                        if full_name else '—'),
                                 'birth_date': birth_date,
-                                'reason': msg,
+                                'reason': (f"student_id={force_student_id} "
+                                           f"не існує в базі"),
                             })
+                            continue
+                    else:
+                        # tax_id → точний збіг
+                        if tax_id:
+                            existing = conn.execute(
+                                SELECT_EXISTING + " WHERE tax_id = ?",
+                                (tax_id,),
+                            ).fetchone()
+                        # fallback: ПІБ + дата
+                        if not existing:
+                            existing = conn.execute(
+                                SELECT_EXISTING + """
+                                WHERE last_name_UA=? AND first_name_UA=?
+                                  AND middle_name_UA=? AND birth_date=?
+                                """,
+                                (last_name, first_name, middle_name,
+                                 birth_date),
+                            ).fetchone()
+
+                    # ══════════════════════════════════════════════════════
+                    # ── СЦЕНАРІЙ 1: новий студент ──
+                    # ══════════════════════════════════════════════════════
+                    if not existing:
+                        last_name_eng, first_name_eng = generate_english_name(
+                            last_name, first_name)
+                        conn.execute("""
+                            INSERT INTO students (
+                                last_name_UA, first_name_UA, middle_name_UA,
+                                last_name_ENG, first_name_ENG, birth_date,
+                                group_id, edebo_code, license_id,
+                                program_credits_override, phone, phone_backup,
+                                email, tax_id, address_of_residence, gender
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            last_name, first_name, middle_name,
+                            last_name_eng, first_name_eng, birth_date,
+                            group_id, edebo_code, license_id,
+                            program_credits_override, phone, phone_backup,
+                            email, tax_id, address_of_residence, gender,
+                        ))
+                        new_id = conn.execute(
+                            "SELECT last_insert_rowid()").fetchone()[0]
+                        # Для нового студента ця група — завжди основна
+                        add_enrollment(
+                            new_id, group_id,
+                            is_primary=True,
+                            license_id=license_id,
+                            conn=conn,
+                        )
+                        inserted += 1
                         continue
 
-                    # Нова людина — INSERT як раніше (код нижче без змін)
+                    # ══════════════════════════════════════════════════════
+                    # ── СЦЕНАРІЙ 2: людина вже в базі ──
+                    # ══════════════════════════════════════════════════════
+                    sid = existing['id']
+                    was_archived = bool(existing['archived'])
 
-                    # Автоматична генерація англійських ПІБ (КМУ №55-2010) -
-                    # з Excel ці поля НЕ читаються.
-                    last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
+                    # Перевіряємо поточний enrollment у цій групі
+                    enroll_row = conn.execute("""
+                        SELECT status FROM student_enrollments
+                        WHERE student_id = ? AND group_id = ?
+                    """, (sid, group_id)).fetchone()
 
-                    conn.execute("""
-                        INSERT INTO students (
-                            last_name_UA, first_name_UA, middle_name_UA,
-                            last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code,
-                            license_id, program_credits_override, phone, phone_backup, email,
-                            tax_id, address_of_residence, gender
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        last_name, first_name, middle_name,
-                        last_name_eng, first_name_eng, birth_date, group_id, edebo_code,
-                        license_id, program_credits_override, phone, phone_backup, email,
-                        tax_id, address_of_residence, gender,
-                    ))
+                    # Сценарій A: активний enrollment → дублікат
+                    if enroll_row and enroll_row['status'] == 'active':
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'birth_date': birth_date,
+                            'reason': (f"Вже активно навчається в цій групі "
+                                       f"(студент ID {sid})"),
+                        })
+                        continue
 
-                    inserted += 1
-                    
-                    new_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-                    add_enrollment(
-                        new_id, group_id, is_primary=True, conn=conn,
+                    # Сценарії B/C/D: створюємо / перевідкриваємо enrollment
+                    was_reactivation = bool(
+                        enroll_row and enroll_row['status'] != 'active'
+                    )
+                    is_primary = (
+                        force_is_primary if force_is_primary is not None
+                        else False  # наявного — primary не змінюємо автоматично
                     )
 
+                    ok, msg = add_enrollment(
+                        sid, group_id,
+                        is_primary=is_primary,
+                        license_id=license_id,
+                        conn=conn,
+                    )
+                    if not ok:
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'birth_date': birth_date,
+                            'reason': msg,
+                        })
+                        continue
+
+                    if was_reactivation:
+                        enrollments_reactivated += 1
+                    else:
+                        enrollments_added += 1
+
+                    # ── Оновлення порожніх полів картки ──
+                    if update_existing_data:
+                        updates = {}
+                        # ВАЖЛИВО: оновлюємо ТІЛЬКИ порожні поля — не
+                        # затираємо те, що адмін вже вписав вручну.
+                        if phone and not (existing['phone'] or '').strip():
+                            updates['phone'] = phone
+                        if phone_backup and not (existing['phone_backup'] or '').strip():
+                            updates['phone_backup'] = phone_backup
+                        if email and not (existing['email'] or '').strip():
+                            updates['email'] = email
+                        if tax_id and not (existing['tax_id'] or '').strip():
+                            updates['tax_id'] = tax_id
+                        if edebo_code and not (existing['edebo_code'] or '').strip():
+                            updates['edebo_code'] = edebo_code
+                        if address_of_residence and not (existing['address_of_residence'] or '').strip():
+                            updates['address_of_residence'] = address_of_residence
+                        if (program_credits_override
+                                and not existing['program_credits_override']):
+                            updates['program_credits_override'] = program_credits_override
+                        if gender and not (existing['gender'] or '').strip():
+                            updates['gender'] = gender
+
+                        if updates:
+                            set_clause = ', '.join(f"{k} = ?"
+                                                   for k in updates)
+                            conn.execute(
+                                f"UPDATE students SET {set_clause} "
+                                f"WHERE id = ?",
+                                list(updates.values()) + [sid],
+                            )
+                            data_updated += 1
+
+                    # ── Попередження про реактивацію з архіву ──
+                    if was_archived:
+                        warnings.append({
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'reason': (f"Студент був в архіві (ID {sid}) — "
+                                       f"enrollment створено, студент "
+                                       f"разархівовано"),
+                        })
+
                 except Exception as e:
-                    logger.debug(f"Пропущено рядок {i} при імпорті студентів з Excel: {e}")
+                    logger.debug(
+                        f"Пропущено рядок {i} при імпорті: {e}")
                     skipped_rows.append({
                         'row': i,
-                        'fio': full_name.strip() if full_name else '—',
+                        'fio': (full_name.strip()
+                                if full_name else '—'),
                         'birth_date': str(birth_date_raw or '').strip(),
-                        'reason': f"Помилка обробки: {e}"
+                        'reason': f"Помилка обробки: {e}",
                     })
                     continue
 
@@ -333,32 +511,48 @@ def import_from_excel():
 
         except Exception as e:
             conn.rollback()
-            logger.error(f"Помилка при імпорті студентів з Excel (файл: {filename}): {e}", exc_info=True)
+            logger.error(
+                f"Помилка при імпорті студентів з Excel "
+                f"(файл: {filename}): {e}", exc_info=True)
             flash(f"⚠️ Помилка при читанні файлу: {e}")
         finally:
             conn.close()
 
         log_action(
             current_username(),
-            f"імпорт студентів з Excel: додано {inserted}, пропущено {len(skipped_rows)}",
-            details=f"файл: {filename}, стать авто: {gender_auto}, без статі: {gender_missing}"
+            f"імпорт студентів з Excel: нових {inserted}, "
+            f"паралельних {enrollments_added}, "
+            f"реактивовано {enrollments_reactivated}, "
+            f"оновлено {data_updated}, пропущено {len(skipped_rows)}",
+            details=f"файл: {filename}, стать авто: {gender_auto}, "
+                    f"без статі: {gender_missing}, "
+                    f"попереджень: {len(warnings)}",
         )
 
-        # Підсумкове повідомлення з деталями по статі
-        summary = f"✅ Імпорт завершено. Додано нових: {inserted}, паралельних навчань: {enrollments_added}, пропущено: {len(skipped_rows)}"
-        if gender_auto:
-            summary += f", стать визначено автоматично: {gender_auto}"
-        if gender_missing:
-            summary += f", без статі: {gender_missing} (заповніть вручну)"
-        flash(summary)
+        # ── Фінальне повідомлення ──
+        summary_parts = [
+            f"нових: {inserted}",
+            f"паралельних навчань: {enrollments_added}",
+        ]
+        if enrollments_reactivated:
+            summary_parts.append(f"реактивовано: {enrollments_reactivated}")
+        if data_updated:
+            summary_parts.append(f"оновлено карток: {data_updated}")
+        summary_parts.append(f"пропущено: {len(skipped_rows)}")
+        flash("✅ Імпорт завершено. " + ", ".join(summary_parts), "success")
 
+        if gender_auto:
+            flash(f"Стать визначено автоматично: {gender_auto}", "info")
         if gender_missing:
-            flash(f"⚠️ {gender_missing} студентів без по батькові — стать не визначена. "
-                  f"Знайдіть їх через фільтр у списку студентів (або в картці кожного) та заповніть вручну.",
+            flash(f"⚠️ {gender_missing} студентів без по батькові — стать "
+                  f"не визначена. Знайдіть їх у картці та заповніть вручну.",
+                  "warning")
+        if warnings:
+            flash(f"⚠️ {len(warnings)} попереджень — див. детальний звіт.",
                   "warning")
 
-        # Якщо є пропущені — показуємо детальний звіт, а не одразу список
-        if skipped_rows:
+        # ── Детальний звіт, якщо є пропуски або попередження ──
+        if skipped_rows or warnings:
             import uuid as _uuid
             os.makedirs(REPORTS_DIR, exist_ok=True)
             report_id = _uuid.uuid4().hex
@@ -367,12 +561,17 @@ def import_from_excel():
                 json.dump({
                     'filename': filename,
                     'inserted': inserted,
+                    'enrollments_added': enrollments_added,
+                    'enrollments_reactivated': enrollments_reactivated,
+                    'data_updated': data_updated,
                     'skipped_rows': skipped_rows,
+                    'warnings': warnings,
                     'gender_auto': gender_auto,
                     'gender_missing': gender_missing,
                     'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
                 }, f, ensure_ascii=False)
-            return redirect(url_for('students.import_report', report_id=report_id))
+            return redirect(url_for(
+                'students.import_report', report_id=report_id))
 
         return redirect(url_for('students.student_list'))
 

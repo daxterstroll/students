@@ -982,10 +982,31 @@ def import_documents_preview(file_path, db):
         if not fio or not document_text:
             preview_rows.append({"row_index": row_index, "error": "Пусті дані"})
             continue
+
         student_id, matched_name, score = fuzzy_find_student(cursor, fio)
+
+        # ── Колонка E (опційна): ID групи документа ──
+        # Порожньо → як і раніше, прив'язка до primary-групи студента.
+        # Вказано → документ прив'яжеться до цієї групи (корисно для
+        # паралельного навчання: диплом бакалавра → магістратура,
+        # атестат → бакалаврат).
+        doc_group_id_raw = row[4] if len(row) > 4 else None
+        requested_group_id = None
+        if doc_group_id_raw not in (None, ''):
+            try:
+                requested_group_id = int(doc_group_id_raw)
+            except (ValueError, TypeError):
+                preview_rows.append({
+                    "row_index": row_index,
+                    "error": (f"Некоректний ID групи документа: "
+                              f"'{doc_group_id_raw}'"),
+                })
+                continue
+
         if not student_id:
             preview_rows.append({"row_index": row_index, "error": f"Студент не знайдений: {fio}"})
             continue
+
         data = parse_document(document_text)
         if not data:
             preview_rows.append({"row_index": row_index, "error": f"Не вдалося розпізнати документ: {document_text}"})
@@ -994,7 +1015,6 @@ def import_documents_preview(file_path, db):
         data.update(parse_reference_cell_ua(reference_ua_text))
         data.update(parse_recognition_cell_ua(recognition_ua_text))
 
-
         cursor.execute("""
             SELECT id, document_type, document_type_en, document_number, completion_date,
                    institution_name, institution_name_en, country, country_en
@@ -1002,7 +1022,14 @@ def import_documents_preview(file_path, db):
         """, (student_id,))
         existing_doc = cursor.fetchone()
 
-        row_data = {"row_index": row_index, "student_id": student_id, "matched_name": matched_name, "score": score, **data}
+        row_data = {
+            "row_index": row_index,
+            "student_id": student_id,
+            "matched_name": matched_name,
+            "score": score,
+            "requested_group_id": requested_group_id,
+            **data,
+        }
 
         if existing_doc:
             row_data.update({
@@ -1041,11 +1068,13 @@ def import_documents_preview(file_path, db):
                     "old_recognition_date": existing_foreign["recognition_date"] or "",
                 })
         else:
-            row_data.update({"status": "Новий", "status_class": "text-success", "existing_info": "", "has_document": False})
+            row_data.update({
+                "status": "Новий", "status_class": "text-success",
+                "existing_info": "", "has_document": False,
+            })
 
         preview_rows.append(row_data)
     return preview_rows
-
 
 @admin_bp.route('/admin/import_education_docs_preview', methods=['GET', 'POST'])
 @permission_required('import_education_docs')
@@ -1066,7 +1095,22 @@ def import_docs_preview():
         preview = import_documents_preview(path, db)
         preview_id = save_preview_to_file(preview)
 
-        return render_template("import_education_preview.html", preview=preview, preview_id=preview_id)
+        # Список усіх активних груп — для випадаючого списку
+        # «Група документа» в модалці предпросмотра (важливо для
+        # паралельного навчання: диплом бакалавра → магістратура).
+        cursor = db.cursor()
+        cursor.execute(
+            "SELECT id, name FROM groups WHERE archived = FALSE "
+            "ORDER BY name COLLATE UKRAINIAN"
+        )
+        all_groups = [dict(r) for r in cursor.fetchall()]
+
+        return render_template(
+            "import_education_preview.html",
+            preview=preview,
+            preview_id=preview_id,
+            all_groups=all_groups,
+        )
 
     return render_template("import_education_upload.html")
 
@@ -1085,6 +1129,20 @@ def import_docs_commit():
         row_index = row["row_index"]
         if f"add_{row_index}" not in request.form:
             continue
+
+        # ── Переопределение группы документа из модалки ──
+        # (важно для параллельного обучения: позволяет сменить группу
+        # без повторного импорта Excel — прямо на шаге предпросмотра)
+        form_doc_group_id = request.form.get(f"doc_group_id_{row_index}")
+        if form_doc_group_id is not None:
+            form_doc_group_id = form_doc_group_id.strip()
+            if form_doc_group_id == '':
+                row["requested_group_id"] = None
+            else:
+                try:
+                    row["requested_group_id"] = int(form_doc_group_id)
+                except (ValueError, TypeError):
+                    pass  # некорректне — лишаємо як є
 
         if not row.get("error"):
             row["document_type"]       = request.form.get(f"document_type_{row_index}",       row["document_type"])
@@ -1130,14 +1188,44 @@ def import_docs_commit():
                       row["institution_name"], inst_name_en, row["country"], row["country_en"], education_doc_id))
                 updated += 1
             else:
-                # Група для нового документа — ОСНОВНА група студента
-                # (у масовага імпорту немає як вибрати групу для кожної
-                # людини; якщо потрібно прив'язати до іншої — адмін
-                # змінить у картці студента після імпорту).
+                # Група для нового документа:
+                # 1. Якщо в рядку Excel вказано ID групи (колонка E) —
+                #    використовуємо його (важливо для паралельного
+                #    навчання: диплом бакалавра → магістратура).
+                # 2. Інакше — primary-група студента (як раніше).
+                requested_gid = row.get("requested_group_id")
+                if requested_gid is not None:
+                    # Перевіряємо, що це справді активна група студента
+                    ok_group = cursor.execute("""
+                        SELECT 1 FROM groups g WHERE g.id = ?
+                          AND (g.archived = 0)
+                          AND (
+                              ? = (SELECT group_id FROM students WHERE id = ?)
+                              OR EXISTS (
+                                  SELECT 1 FROM student_enrollments e
+                                  WHERE e.student_id = ?
+                                    AND e.group_id = ?
+                                    AND e.status = 'active'
+                              )
+                          )
+                    """, (requested_gid, requested_gid, row["student_id"],
+                          row["student_id"], requested_gid)).fetchone()
+                    if not ok_group:
+                        flash(
+                            f"Рядок {row_index}: студент не має активної групи "
+                            f"ID {requested_gid} — документ прив'язано до "
+                            f"основної групи студента.",
+                            "warning",
+                        )
+                        requested_gid = None
                 primary_row = cursor.execute(
-                    "SELECT group_id FROM students WHERE id = ?", (row["student_id"],)
+                    "SELECT group_id FROM students WHERE id = ?",
+                    (row["student_id"],)
                 ).fetchone()
-                primary_gid = primary_row["group_id"] if primary_row else None
+                primary_gid = (
+                    requested_gid if requested_gid is not None
+                    else (primary_row["group_id"] if primary_row else None)
+                )
 
                 cursor.execute("""
                     INSERT INTO education_documents (
