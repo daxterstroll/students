@@ -92,7 +92,7 @@ def _iso_to_ua_date(value):
 
 def _validate_scan_files(files, max_files, label):
     if len(files) > max_files:
-        return f"Забагато файлів{label} (максимум {max_files})."
+        return f"Забагато файлів{label} за одну загрузку (максимум {max_files})."
     for sf in files:
         ext = os.path.splitext(sf.filename)[1].lower()
         if ext not in ALLOWED_SCAN_EXTENSIONS:
@@ -237,7 +237,7 @@ def _parse_pdf_ajax():
 
 @public_apply_bp.before_request
 def _limit_request_size():
-    max_total = 80 * 1024 * 1024
+    max_total = 90 * 1024 * 1024
     if request.content_length and request.content_length > max_total:
         return render_template(
             'public_apply.html',

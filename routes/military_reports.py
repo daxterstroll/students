@@ -910,6 +910,7 @@ def group_list(category):
             'annual': _format_date_ua(dates['annual']),
             'current': _format_date_ua(dates['current']),
         },
+        report_year=report_date.year, 
         groups=groups,
         tck_offices=tck_offices,
     )

@@ -287,6 +287,8 @@ def manage_education_documents():
                 db.commit()
 
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
+                if len(new_scans) > MAX_FILES:
+                    raise ValueError(f"Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку")
                 if new_scans:
                     save_multiple_attachments(db, 'education_document', doc_id, new_scans, 'education_documents', current_username())
                     db.commit()
@@ -372,6 +374,8 @@ def manage_education_documents():
                 )
 
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
+                if len(new_scans) > MAX_FILES:
+                    raise ValueError(f"Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку")
                 if new_scans:
                     save_multiple_attachments(db, 'education_document', education_doc_id, new_scans, 'education_documents', current_username())
                     db.commit()
@@ -405,6 +409,8 @@ def manage_passport_documents():
     без підтаблиці "іноземний документ" і з лімітом 5 сканів на запис."""
     db = get_db()
     cursor = db.cursor()
+    # Ліміт лише на ОДНУ загрузку. Загальна кількість сканів на
+    # запис не обмежується — можна додавати новими партіями.
     MAX_FILES = 5
 
     cursor.execute("""
@@ -540,12 +546,12 @@ def manage_passport_documents():
                 if document_type not in PASSPORT_TYPES:
                     raise ValueError("Невірний тип документа")
 
-                existing_count = cursor.execute(
-                    "SELECT COUNT(*) FROM attachments WHERE entity_type='passport_document' AND entity_id=?", (doc_id,)
-                ).fetchone()[0]
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
-                if existing_count + len(new_scans) > MAX_FILES:
-                    flash(f'Забагато файлів - максимум {MAX_FILES} на запис (вже є {existing_count}).', 'error')
+                # Ліміт — лише на одноразову загрузку (не більше
+                # MAX_FILES нових файлів за раз). Загальна кількість
+                # сканів на запис не обмежується.
+                if len(new_scans) > MAX_FILES:
+                    flash(f'Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку (обрано {len(new_scans)}).', 'error')
                     return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
 
                 # "Дійсний до" стосується лише ID-картки (книжка в Україні
@@ -594,7 +600,7 @@ def manage_passport_documents():
 
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
                 if len(new_scans) > MAX_FILES:
-                    raise ValueError(f"Забагато файлів - максимум {MAX_FILES} на запис")
+                    raise ValueError(f"Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку")
 
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
 

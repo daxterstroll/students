@@ -50,6 +50,10 @@ from routes.photo import (
 )
 from routes.config import PROJECT_ROOT
 
+# Ліміт на ОДНОРАЗОВУ загрузку — скільки файлів можна обрати в
+# одному <input type="file" multiple> / надіслати в одному POST.
+# Загальна кількість збережених сканів у студента НЕ обмежується:
+# можна завантажувати новими партіями.
 MAX_FILES = 5
 
 # Тимчасові папки — тепер усередині static/uploads/, як і решта
@@ -348,11 +352,14 @@ def military_data(student_id):
     military = _current_military(conn, student_id)
 
     if request.method == 'POST':
-        existing_attachments = get_attachments(conn, 'military', military['id']) if military else []
         new_scans = [f for f in request.files.getlist('military_scans') if f and f.filename]
-        if len(existing_attachments) + len(new_scans) > MAX_FILES:
+        # Ліміт — лише на ОДНОРАЗОВУ загрузку (не більше MAX_FILES
+        # нових файлів за один POST). Загальна кількість збережених
+        # сканів у студента не обмежується — можна завантажувати
+        # новими партіями.
+        if len(new_scans) > MAX_FILES:
             conn.close()
-            flash(f'Забагато файлів — максимум {MAX_FILES} (вже є {len(existing_attachments)}).', 'error')
+            flash(f'Забагато файлів за раз — максимум {MAX_FILES} за одну загрузку (обрано {len(new_scans)}).', 'error')
             return redirect(url_for('students.military_data', student_id=student_id))
 
         data = _collect_form_data(request.form)
@@ -434,12 +441,9 @@ def military_upload_pdf(student_id):
         return redirect(url_for('students.student_list'))
 
     military = _current_military(conn, student_id)
-    existing_attachments = get_attachments(conn, 'military', military['id']) if military else []
-    if len(existing_attachments) + 1 > MAX_FILES:
-        conn.close()
-        flash(f'Забагато файлів — максимум {MAX_FILES} (вже є {len(existing_attachments)}). '
-              f'Видаліть непотрібні скани перед завантаженням нового PDF.', 'error')
-        return redirect(url_for('students.military_data', student_id=student_id))
+    # PDF — це один файл за одну загрузку. Ліміт MAX_FILES тут
+    # фізично не може бути перевищений, а загальна кількість сканів
+    # у студента більше не обмежується.
 
     # Тимчасова папка — тепер усередині static/uploads/
     os.makedirs(TMP_MILITARY_PDF_DIR, exist_ok=True)
@@ -1071,20 +1075,22 @@ def military_bulk_import_apply(token):
             if apply_pdf_scan and mil_id and r.get('pdf_saved_path'):
                 pdf_abs = os.path.join(PROJECT_ROOT, r['pdf_saved_path'].replace('/', os.sep))
                 if os.path.exists(pdf_abs):
-                    existing = get_attachments(conn, 'military', mil_id)
-                    if len(existing) < MAX_FILES:
-                        upload_dir = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'military_records')
-                        os.makedirs(upload_dir, exist_ok=True)
-                        safe_name = f"{uuid.uuid4().hex}.pdf"
-                        dest = os.path.join(upload_dir, safe_name)
-                        shutil.copy2(pdf_abs, dest)
-                        rel = f"uploads/military_records/{safe_name}"
-                        conn.execute(
-                            "INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_by) "
-                            "VALUES (?, ?, ?, ?, ?)",
-                            ('military', mil_id, rel, r['filename'], current_username())
-                        )
-                        pdf_attached = True
+                    # Без обмеження на загальну кількість сканів у
+                    # студента — файл переноситься з пакетного імпорту,
+                    # ліміт MAX_FILES стосується лише однієї інтерактивної
+                    # загрузки через форму.
+                    upload_dir = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'military_records')
+                    os.makedirs(upload_dir, exist_ok=True)
+                    safe_name = f"{uuid.uuid4().hex}.pdf"
+                    dest = os.path.join(upload_dir, safe_name)
+                    shutil.copy2(pdf_abs, dest)
+                    rel = f"uploads/military_records/{safe_name}"
+                    conn.execute(
+                        "INSERT INTO attachments (entity_type, entity_id, file_path, original_name, uploaded_by) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        ('military', mil_id, rel, r['filename'], current_username())
+                    )
+                    pdf_attached = True
 
             conn.commit()
             applied += 1

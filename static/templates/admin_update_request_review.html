@@ -115,11 +115,15 @@
                     <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.passport.document_type or '-' }}</td></tr>
                     <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.passport.series ~ ' ' if submitted.passport.series else '') ~ (submitted.passport.number or '') }}</td></tr>
                     <tr><th class="text-muted">Ким видано</th><td>{{ submitted.passport.issued_by or '-' }}</td></tr>
-                    {% if submitted.passport.document_type == 'ID-картка' %}
-                    <tr><th class="text-muted">Дата видачі / Дійсний до</th><td>{{ submitted.passport.issue_date or '-' }} / {{ submitted.passport.valid_until or '-' }}</td></tr>
-                    {% else %}
-                    <tr><th class="text-muted">Дата видачі</th><td>{{ submitted.passport.issue_date or '-' }}</td></tr>
-                    {% endif %}
+					{% if submitted.passport.document_type and (
+							'безконтактним електронним носієм' in submitted.passport.document_type
+							or submitted.passport.document_type in passport_types_id_style
+							or submitted.passport.document_type == 'ID-картка'
+					) %}
+					<tr><th class="text-muted">Дата видачі / Дійсний до</th><td>{{ submitted.passport.issue_date or '-' }} / {{ submitted.passport.valid_until or '-' }}</td></tr>
+					{% else %}
+					<tr><th class="text-muted">Дата видачі</th><td>{{ submitted.passport.issue_date or '-' }}</td></tr>
+					{% endif %}
                     {% if submitted.passport.unique_number %}<tr><th class="text-muted">Номер запису в ЄДДР</th><td>{{ submitted.passport.unique_number }}</td></tr>{% endif %}
                 </tbody>
             </table>

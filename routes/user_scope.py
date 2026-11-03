@@ -10,14 +10,16 @@ def ensure_user_scope_tables(conn):
         CREATE TABLE IF NOT EXISTS user_specialties (
             user_id INTEGER NOT NULL,
             specialty_code TEXT NOT NULL,
-            PRIMARY KEY (user_id, specialty_code)
+            PRIMARY KEY (user_id, specialty_code),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS user_degree_levels (
             user_id INTEGER NOT NULL,
             degree_level TEXT NOT NULL,
-            PRIMARY KEY (user_id, degree_level)
+            PRIMARY KEY (user_id, degree_level),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     """)
 

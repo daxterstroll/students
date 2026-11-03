@@ -1427,4 +1427,5 @@ def update_request_review(request_id):
         'admin_update_request_review.html',
         row=row, allowed_fields=allowed_fields, submitted=submitted, applied_fields=applied_fields,
         passport_scans=passport_scans, education_scans=education_scans, military_scans=military_scans,
+        **passport_template_context(),
     )

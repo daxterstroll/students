@@ -49,7 +49,7 @@ SECTION_LABELS = {
 
 def _validate_scan_files(files, max_files, label):
     if len(files) > max_files:
-        return f"Забагато файлів{label} (максимум {max_files})."
+        return f"Забагато файлів{label} за одну загрузку (максимум {max_files})."
     for sf in files:
         ext = os.path.splitext(sf.filename)[1].lower()
         if ext not in ALLOWED_SCAN_EXTENSIONS:
