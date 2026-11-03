@@ -16,16 +16,23 @@
     <link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style/css/main.css') }}" rel="stylesheet">
 
-    <script>
-        /* Застосовуємо збережену тему ДО відображення сторінки, щоб
-           уникнути "спалаху" світлої теми при перезавантаженні. */
-        (function () {
-            try {
-                var saved = localStorage.getItem('theme');
-                if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-            } catch (e) { /* localStorage може бути недоступний - тоді просто світла тема */ }
-        })();
-    </script>
+<script>
+    /* Застосовуємо збережену тему ДО відображення сторінки, щоб
+       уникнути "спалаху" світлої теми при перезавантаженні.
+       data-theme - наш кастомний атрибут для main.css;
+       data-bs-theme - офіційний атрибут Bootstrap 5.3, без якого
+       progress-бари, таблиці, alert-light і bg-*-subtle лишаються
+       світлими на тёмній темі (помітно, зокрема, на /admin/analytics). */
+    (function () {
+        try {
+            var saved = localStorage.getItem('theme');
+            if (saved === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.documentElement.setAttribute('data-bs-theme', 'dark');
+            }
+        } catch (e) { /* localStorage може бути недоступний - тоді просто світла тема */ }
+    })();
+</script>
 </head>
 <body>
 
@@ -275,9 +282,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         if (isDark) {
             document.documentElement.removeAttribute('data-theme');
+            document.documentElement.removeAttribute('data-bs-theme');
             try { localStorage.setItem('theme', 'light'); } catch (e) {}
         } else {
             document.documentElement.setAttribute('data-theme', 'dark');
+            document.documentElement.setAttribute('data-bs-theme', 'dark');
             try { localStorage.setItem('theme', 'dark'); } catch (e) {}
         }
         applyThemeIcon();
