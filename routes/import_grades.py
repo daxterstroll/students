@@ -471,8 +471,18 @@ def mapping(token):
         "SELECT id, name, type, full_program_only, reduced_only FROM subjects WHERE group_id = ? ORDER BY position, id", (state['group_id'],)
     ).fetchall()]
     db_students = [dict(r) for r in conn.execute(
-        """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
-           FROM students WHERE group_id = ? ORDER BY last_name_UA""", (state['group_id'],)
+        """SELECT DISTINCT s.id,
+                  TRIM(s.last_name_UA || ' ' || s.first_name_UA || ' '
+                       || COALESCE(s.middle_name_UA,'')) AS full_name
+           FROM students s
+           LEFT JOIN student_enrollments e
+                  ON e.student_id = s.id
+                 AND e.group_id = ?
+                 AND e.status = 'active'
+           WHERE COALESCE(s.archived, 0) = 0
+             AND (e.id IS NOT NULL OR s.group_id = ?)
+           ORDER BY s.last_name_UA COLLATE UKRAINIAN""",
+        (state['group_id'], state['group_id'])
     ).fetchall()]
     group = conn.execute("SELECT name FROM groups WHERE id = ?", (state['group_id'],)).fetchone()
     conn.close()
@@ -557,8 +567,18 @@ def preview(token):
     reduced_only_subject_ids = {r['id'] for r in conn.execute(
         "SELECT id FROM subjects WHERE group_id = ? AND reduced_only = 1", (state['group_id'],)).fetchall()}
     stud_names = {r['id']: r['full_name'] for r in conn.execute(
-        """SELECT id, TRIM(last_name_UA || ' ' || first_name_UA || ' ' || COALESCE(middle_name_UA,'')) AS full_name
-           FROM students WHERE group_id = ?""", (state['group_id'],)).fetchall()}
+        """SELECT DISTINCT s.id,
+                  TRIM(s.last_name_UA || ' ' || s.first_name_UA || ' '
+                       || COALESCE(s.middle_name_UA,'')) AS full_name
+           FROM students s
+           LEFT JOIN student_enrollments e
+                  ON e.student_id = s.id
+                 AND e.group_id = ?
+                 AND e.status = 'active'
+           WHERE COALESCE(s.archived, 0) = 0
+             AND (e.id IS NOT NULL OR s.group_id = ?)""",
+        (state['group_id'], state['group_id'])
+    ).fetchall()}
 
     parsed = state['parsed']
     subj_map = {int(k): v for k, v in state['subj_map'].items()}

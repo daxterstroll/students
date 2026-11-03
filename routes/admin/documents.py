@@ -108,12 +108,17 @@ def manage_education_documents():
     students_without_docs = []
     if selected_group_id:
         cursor.execute("""
-            SELECT s.id, s.last_name_UA, s.first_name_UA
+            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
             FROM students s
-            WHERE s.group_id = ? AND s.archived = FALSE
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
               AND s.id NOT IN (SELECT student_id FROM education_documents)
-            ORDER BY s.last_name_UA, s.first_name_UA
-        """, (selected_group_id,))
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
+        """, (selected_group_id, selected_group_id))
         students_without_docs = cursor.fetchall()
 
     # Основний запит документів
@@ -464,15 +469,21 @@ def manage_passport_documents():
 
     students_without_docs = []
     if selected_group_id:
+        # УВАГА: паспорти прив'язані до студента (passport_documents.student_id),
+        # а не до групи — тому перевіряємо наявність БУДЬ-ЯКОГО паспорта.
+        # Раніше тут помилково запитувалась education_documents (копіпаст),
+        # через що дропдаун показував не тих студентів.
         cursor.execute("""
-            SELECT s.id, s.last_name_UA, s.first_name_UA
+            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
             FROM students s
-            WHERE s.group_id = ? AND s.archived = FALSE
-              AND s.id NOT IN (
-                  SELECT student_id FROM education_documents
-                  WHERE group_id = ? OR group_id IS NULL
-              )
-            ORDER BY s.last_name_UA, s.first_name_UA
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+              AND s.id NOT IN (SELECT student_id FROM passport_documents)
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
         """, (selected_group_id, selected_group_id))
         students_without_docs = cursor.fetchall()
 

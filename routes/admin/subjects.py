@@ -44,7 +44,15 @@ def manage_subjects():
         cursor.execute('SELECT * FROM subjects WHERE group_id = ? ORDER BY position', (selected_group_id,))
         subjects = cursor.fetchall()
         if selected_subject_id:
-            cursor.execute('SELECT * FROM students WHERE group_id = ?', (selected_group_id,))
+            cursor.execute("""
+                SELECT DISTINCT s.* FROM students s
+                LEFT JOIN student_enrollments e
+                       ON e.student_id = s.id
+                      AND e.group_id = ?
+                      AND e.status = 'active'
+                WHERE COALESCE(s.archived, 0) = 0
+                  AND (e.id IS NOT NULL OR s.group_id = ?)
+            """, (selected_group_id, selected_group_id))
             students = cursor.fetchall()
             selected_subject = cursor.execute('SELECT full_program_only, reduced_only FROM subjects WHERE id = ?', (selected_subject_id,)).fetchone()
             if selected_subject:
@@ -193,7 +201,15 @@ def manage_subjects():
                 subject_id = request.form['subject_id']
                 subj_row = cursor.execute('SELECT name FROM subjects WHERE id=?', (subject_id,)).fetchone()
                 subj_name = subj_row['name'] if subj_row else subject_id
-                cursor.execute('SELECT id FROM students WHERE group_id=?', (group_id,))
+                cursor.execute("""
+                    SELECT DISTINCT s.id FROM students s
+                    LEFT JOIN student_enrollments e
+                           ON e.student_id = s.id
+                          AND e.group_id = ?
+                          AND e.status = 'active'
+                    WHERE COALESCE(s.archived, 0) = 0
+                      AND (e.id IS NOT NULL OR s.group_id = ?)
+                """, (group_id, group_id))
                 student_ids = [row['id'] for row in cursor.fetchall()]
                 filled = 0
                 for sid in student_ids:
@@ -271,7 +287,15 @@ def manage_activities():
                 if selected_entity_id:
                     try:
                         selected_entity_id = int(selected_entity_id)
-                        cursor.execute('SELECT * FROM students WHERE group_id=?', (selected_group_id,))
+                        cursor.execute("""
+                            SELECT DISTINCT s.* FROM students s
+                            LEFT JOIN student_enrollments e
+                                   ON e.student_id = s.id
+                                  AND e.group_id = ?
+                                  AND e.status = 'active'
+                            WHERE COALESCE(s.archived, 0) = 0
+                              AND (e.id IS NOT NULL OR s.group_id = ?)
+                        """, (selected_group_id, selected_group_id))
                         students = cursor.fetchall()
                         selected_entity = cursor.execute(f'SELECT full_program_only, reduced_only FROM {entity_table} WHERE id = ?', (selected_entity_id,)).fetchone()
                         if selected_entity:
@@ -436,7 +460,15 @@ def manage_activities():
                 entity_id = request.form['entity_id']
                 entity_row = cursor.execute(f'SELECT name FROM {entity_table} WHERE id=?', (entity_id,)).fetchone()
                 entity_name = entity_row['name'] if entity_row else entity_id
-                cursor.execute('SELECT id FROM students WHERE group_id=?', (group_id,))
+                cursor.execute("""
+                    SELECT DISTINCT s.id FROM students s
+                    LEFT JOIN student_enrollments e
+                           ON e.student_id = s.id
+                          AND e.group_id = ?
+                          AND e.status = 'active'
+                    WHERE COALESCE(s.archived, 0) = 0
+                      AND (e.id IS NOT NULL OR s.group_id = ?)
+                """, (group_id, group_id))
                 student_ids = [row['id'] for row in cursor.fetchall()]
                 filled = 0
                 for sid in student_ids:

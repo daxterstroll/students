@@ -157,9 +157,16 @@ def bulk_upload():
             return redirect(url_for('photo_bulk.bulk_upload'))
 
         db_students = [dict(r) for r in conn.execute("""
-            SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name
-            FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-        """, (group_id,)).fetchall()]
+            SELECT DISTINCT s.id,
+                   TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+        """, (group_id, group_id)).fetchall()]
         conn.close()
 
         if not db_students:
@@ -230,10 +237,17 @@ def match(token):
 
     conn = get_db()
     db_students = [dict(r) for r in conn.execute("""
-        SELECT id, TRIM(last_name_UA || ' ' || first_name_UA) AS full_name
-        FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-        ORDER BY last_name_UA
-    """, (manifest['group_id'],)).fetchall()]
+        SELECT DISTINCT s.id,
+               TRIM(s.last_name_UA || ' ' || s.first_name_UA) AS full_name
+        FROM students s
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id
+              AND e.group_id = ?
+              AND e.status = 'active'
+        WHERE COALESCE(s.archived, 0) = 0
+          AND (e.id IS NOT NULL OR s.group_id = ?)
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN
+    """, (manifest['group_id'], manifest['group_id'])).fetchall()]
     group = conn.execute("SELECT name FROM groups WHERE id = ?", (manifest['group_id'],)).fetchone()
     conn.close()
 
@@ -340,9 +354,15 @@ def confirm(token):
         return redirect(url_for('photo_bulk.bulk_upload'))
 
     conn = get_db()
-    valid_ids = {r['id'] for r in conn.execute(
-        "SELECT id FROM students WHERE group_id = ?", (manifest['group_id'],)
-    ).fetchall()}
+    valid_ids = {r['id'] for r in conn.execute("""
+        SELECT DISTINCT s.id FROM students s
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id
+              AND e.group_id = ?
+              AND e.status = 'active'
+        WHERE COALESCE(s.archived, 0) = 0
+          AND (e.id IS NOT NULL OR s.group_id = ?)
+    """, (manifest['group_id'], manifest['group_id'])).fetchall()}
 
     from PIL import Image
     saved = 0
