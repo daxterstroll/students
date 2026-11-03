@@ -847,6 +847,13 @@ def student_details(student_id):
         WHERE COALESCE(archived, 0) = 0
         ORDER BY start_year DESC, name COLLATE UKRAINIAN
     """).fetchall()
+    
+    # ── Ліцензії для випадаючого списку на картці студента ──
+    licenses_available = conn.execute(
+        "SELECT id, short_name_ua, name_ua FROM institution_licenses "
+        "WHERE COALESCE(is_active, 1) = 1 "
+        "ORDER BY COALESCE(short_name_ua, name_ua)"
+    ).fetchall()
 
     conn.close()
 
@@ -857,6 +864,7 @@ def student_details(student_id):
         military_attachments=military_attachments,
         enrollments=enrollments,
         all_groups=all_groups,
+        licenses_available=licenses_available,
         groups_data=groups_data,
         military_history=military_history,
         field_label=_field_label,
@@ -1642,18 +1650,8 @@ def generate_update_link(student_id):
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
 @login_required('')
 def generate(student_id):
-    """Генерація .docx-документа для одного студента за обраним шаблоном.
-
-    2-кроковий сценарій для паралельного навчання:
-      1. Якщо груп декілька — вибір групи (group_id не вказано).
-      2. Після вибору — форма з шаблоном; генерація з даними обраної
-         групи (предмети, практики, кредити, освітня програма тощо).
-    Якщо група одна — форма з шаблоном одразу.
-
-    ВАЖЛИВО: student_dict['group_id'] перезаписується на вибрану
-    групу перед викликом gen_doc() — саме звідти gen_doc бере
-    subjects/practices/courseworks/attestations.
-    """
+    """Генерація документа. 2-кроковий вибір групи для паралельного
+    навчання + ліцензія з enrollment обраної групи."""
     conn = get_db()
 
     student_basic = conn.execute(
@@ -1674,7 +1672,7 @@ def generate(student_id):
         flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))
 
-    # ── Визначаємо обрану групу ────────────────────────────────
+    # ── Обрана група ────────────────────────────────────────────
     if request.method == 'POST':
         selected_group_id = request.form.get('group_id', type=int)
     else:
@@ -1704,7 +1702,10 @@ def generate(student_id):
 
     gid = selected_group['id']
 
-    # ── Повні дані студента + обрана група + ліцензія ──────────
+    # ── Повні дані студента + обрана група + ліцензія З ENROLLMENT ──
+    # Ключова відмінність: institution_name_and_status і
+    # license_short_name_* беруться з e.license_id (per-enrollment),
+    # з fallback на s.license_id, якщо в enrollment ліцензія не вказана.
     student = conn.execute("""
         SELECT s.*,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', '
@@ -1727,7 +1728,10 @@ def generate(student_id):
                g.program_includes_reduced,       g.program_includes_reduced_en
         FROM students s
         LEFT JOIN groups g ON g.id = ?
-        LEFT JOIN institution_licenses il ON s.license_id = il.id
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id AND e.group_id = g.id
+        LEFT JOIN institution_licenses il
+               ON il.id = COALESCE(e.license_id, s.license_id)
         WHERE s.id = ?
     """, (gid, student_id)).fetchone()
 
@@ -1740,7 +1744,6 @@ def generate(student_id):
         is_admin=session.get('is_admin', False),
     )
 
-    # ── POST: генерація ────────────────────────────────────────
     if request.method == 'POST':
         template = (request.form.get('template') or '').strip()
         allowed_paths = {t['path'] for t in available_templates}
@@ -1756,7 +1759,6 @@ def generate(student_id):
         ).fetchone()
 
         student_dict = dict(student)
-        # ── Ключовий рядок: підміняємо primary-групу на обрану ──
         student_dict['group_id'] = gid
 
         military_dict = dict(military) if military else {}
@@ -1802,24 +1804,36 @@ def generate(student_id):
     )
     
 @students_bp.route('/students/<int:student_id>/enrollments/add', methods=['POST'])
-@permission_required('manage_students')
+@login_required('')
 def enrollment_add(student_id):
+    """Додати паралельне навчання в іншу групу."""
     group_id = request.form.get('group_id', type=int)
     is_primary = request.form.get('is_primary') == '1'
+    license_id = request.form.get('license_id', type=int) or None
+
     if not group_id:
-        flash('Оберіть групу.', 'error')
+        flash('Оберіть групу', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
-    ok, msg = add_enrollment(student_id, group_id, is_primary=is_primary)
-    flash(msg, 'success' if ok else 'error')
-    if ok:
-        log_action(
-            current_username(),
-            f"додав навчання student={student_id} → group={group_id}",
-            details=f"primary={is_primary}",
-        )
+    from routes.enrollments_service import add_enrollment
+    ok, msg = add_enrollment(
+        student_id, group_id,
+        is_primary=is_primary, license_id=license_id,
+    )
+    flash(msg, 'success' if ok else 'warning')
     return redirect(url_for('students.student_details', student_id=student_id))
 
+
+@students_bp.route('/students/<int:student_id>/enrollments/<int:group_id>/license',
+                   methods=['POST'])
+@login_required('')
+def enrollment_update_license(student_id, group_id):
+    """Змінити ліцензію для конкретного enrollment."""
+    license_id = request.form.get('license_id', type=int) or None
+    from routes.enrollments_service import update_enrollment_license
+    ok, msg = update_enrollment_license(student_id, group_id, license_id)
+    flash(msg, 'success' if ok else 'error')
+    return redirect(url_for('students.student_details', student_id=student_id))
 
 @students_bp.route('/students/<int:student_id>/enrollments/set_primary', methods=['POST'])
 @permission_required('manage_students')

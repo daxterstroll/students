@@ -336,13 +336,13 @@ def delete_template(filename):
 @admin_bp.route('/admin/export_photos', methods=['GET', 'POST'])
 @permission_required('group_export')
 def export_photos():
-    """
-    Масове вивантаження фото студентів групи одним ZIP-архівом - для
-    друку студентських квитків тощо. Можна забрати всіх студентів
-    групи з фото одразу, або зняти позначку з окремих і завантажити
-    лише вибраних. Кожен файл у архіві називається "Прізвище_Ім'я_По
-    батькові.jpg" (по батькові пропускається, якщо не вказано) - готово
-    вставляти в будь-яку програму верстки квитків без перейменування.
+    """Масове вивантаження фото студентів групи одним ZIP-архівом — для
+    друку студентських квитків тощо.
+
+    Студенти для групи обираються через АКТИВНИЙ enrollment
+    (student_enrollments), а не лише через students.group_id — тому
+    студент із паралельним навчанням у 2 групах доступний для
+    експорту в обох.
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -354,6 +354,31 @@ def export_photos():
             flash('Оберіть хоча б одного студента з фото', 'error')
             return redirect(url_for('admin.export_photos', group_id=group_id))
 
+        # ── Валідація: student_ids мають бути в обраній групі ──
+        # (захист від підміни форми; для кожного студента має бути
+        # активний enrollment у цій групі або, як fallback,
+        # students.group_id = ця група)
+        valid_students_q = conn.execute(f"""
+            SELECT DISTINCT s.id
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id AND e.group_id = ? AND e.status = 'active'
+            WHERE s.id IN ({','.join('?' for _ in student_ids)})
+              AND COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+        """, [group_id] + list(student_ids) + [group_id]).fetchall()
+        valid_ids = {r['id'] for r in valid_students_q}
+
+        invalid = [sid for sid in student_ids if int(sid) not in valid_ids]
+        if invalid:
+            flash(
+                f"Деякі вибрані студенти не належать до цієї групи: "
+                f"{', '.join(invalid[:5])}{'…' if len(invalid) > 5 else ''}",
+                'error',
+            )
+            return redirect(url_for('admin.export_photos', group_id=group_id))
+
+        student_ids = [int(sid) for sid in student_ids]
         placeholders = ','.join('?' for _ in student_ids)
         students = conn.execute(f"""
             SELECT id, last_name_UA, first_name_UA, middle_name_UA, photo
@@ -372,7 +397,8 @@ def export_photos():
             id_card_student_ids = [s['id'] for s in students]
             passport_by_student = {}
             for pd_row in conn.execute(f"""
-                SELECT student_id, series, number, issued_by, issue_date, valid_until, unique_number
+                SELECT student_id, series, number, issued_by, issue_date,
+                       valid_until, unique_number
                 FROM passport_documents
                 WHERE student_id IN ({id_card_placeholders})
                 ORDER BY id DESC
@@ -421,9 +447,6 @@ def export_photos():
                 if s['middle_name_UA']:
                     name_parts.append(s['middle_name_UA'])
                 base_name = '_'.join(p.strip() for p in name_parts if p and p.strip())
-                # Про всяк випадок - якщо в групі раптом двоє тезок з
-                # однаковим ПІБ, другий файл не повинен мовчки
-                # перезаписати перший у архіві.
                 arcname = f"{base_name}{ext}"
                 if arcname in used_names:
                     used_names[arcname] += 1
@@ -437,15 +460,21 @@ def export_photos():
                     id_card_rows,
                     group_name=(group['name'] if group else ''),
                     degree_level=(group['degree_level'] if group else ''),
-                    course=(group['course'] if group else '')
+                    course=(group['course'] if group else ''),
                 )
                 zf.writestr('Інформація_для_студентських_квитків.docx', id_card_doc.read())
 
         buffer.seek(0)
-        log_action(current_username(), f"вивантажив фото студентів (ZIP): {len(students)} шт., група ID {group_id}")
+        log_action(
+            current_username(),
+            f"вивантажив фото студентів (ZIP): {len(students)} шт., група ID {group_id}",
+        )
         safe_group_name = (group['name'] if group else 'group').replace(' ', '_')
         download_name = f"Фото_{safe_group_name}_{datetime.now().strftime('%Y-%m-%d')}.zip"
-        return send_file(buffer, as_attachment=True, download_name=download_name, mimetype='application/zip')
+        return send_file(
+            buffer, as_attachment=True, download_name=download_name,
+            mimetype='application/zip',
+        )
 
     # ====================== GET ======================
     groups = conn.execute("""
@@ -457,19 +486,32 @@ def export_photos():
     selected_group_id = request.args.get('group_id', type=int)
     students = []
     if selected_group_id:
+        # Студент входить до групи, якщо має АКТИВНИЙ enrollment у ній
+        # (паралельне навчання) АБО (legacy fallback) students.group_id =
+        # ця група і немає активних enrollment'ів взагалі.
+        # DISTINCT — щоб уникнути дублів, якщо обидві умови виконані.
         students = conn.execute("""
-            SELECT id, last_name_UA, first_name_UA, middle_name_UA, photo
-            FROM students WHERE group_id = ? AND COALESCE(archived, 0) = 0
-            ORDER BY last_name_UA COLLATE UKRAINIAN
-        """, (selected_group_id,)).fetchall()
-        students = sort_ukrainian(students, key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}")
+            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA,
+                            s.middle_name_UA, s.photo
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+        """, (selected_group_id, selected_group_id)).fetchall()
+
+        students = sort_ukrainian(
+            students,
+            key_func=lambda s: f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA']}",
+        )
 
     conn.close()
     return render_template(
         'export_photos.html',
         groups=groups, selected_group_id=selected_group_id, students=students,
     )
-
 
 @admin_bp.route('/admin/group_export', methods=['GET', 'POST'])
 @permission_required('group_export')
@@ -608,7 +650,8 @@ def generate_group_docs():
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form, g.start_year, g.program_credits,
                g.qualification_name, g.degree_level, g.specialty, g.educational_program, g.knowledge_area,
-               g.qualification_name_en, g.degree_level_en, g.specialty_en, g.isced_f_ua, g.isced_f_en, g.educational_program_en, g.knowledge_area_en,
+               g.qualification_name_en, g.degree_level_en, g.specialty_en, g.isced_f_ua, g.isced_f_en,
+               g.educational_program_en, g.knowledge_area_en,
                il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
                il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
                g.entry_requirements, g.entry_requirements_en,
@@ -616,13 +659,20 @@ def generate_group_docs():
                g.entry_requirements_reduced, g.entry_requirements_reduced_en,
                g.learning_outcomes_reduced, g.learning_outcomes_reduced_en,
                g.program_includes_reduced, g.program_includes_reduced_en
-        FROM students s LEFT JOIN groups g ON s.group_id = g.id
-                         LEFT JOIN institution_licenses il ON s.license_id = il.id
+        FROM students s
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id AND e.status = 'active'
+        LEFT JOIN groups g
+               ON g.id = COALESCE(e.group_id, s.group_id)
+        LEFT JOIN institution_licenses il
+               ON il.id = COALESCE(e.license_id, s.license_id)
         WHERE s.archived = FALSE
     """
     params = []
     if group_id:
-        base_query += " AND s.group_id=?"
+        # Студенти, які мають АКТИВНИЙ enrollment у цій групі
+        # (а не лише s.group_id = primary)
+        base_query += " AND g.id = ?"
         params.append(group_id)
     if birth_year:
         base_query += " AND SUBSTR(s.birth_date, 7, 4) >= ?"
@@ -630,6 +680,18 @@ def generate_group_docs():
 
     try:
         students = conn.execute(base_query, params).fetchall()
+        # Дедуплікація: один студент = один документ.
+        # Якщо в студента 2 enrollment, а ми генеруємо для всіх груп одразу
+        # (без group_id), SQL поверне 2 рядки — залишаємо тільки перший
+        # (primary enrollment).
+        seen_ids = set()
+        unique_students = []
+        for row in students:
+            if row['id'] in seen_ids:
+                continue
+            seen_ids.add(row['id'])
+            unique_students.append(row)
+        students = unique_students        
         if not students:
             conn.close()
             return "Студенты не найдены по заданным фильтрам", 404

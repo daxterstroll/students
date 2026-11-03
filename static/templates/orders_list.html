@@ -100,15 +100,23 @@
                         <tr>
                             <td class="font-monospace small text-muted">{{ o.id }}</td>
                             <td class="font-monospace small">{{ o.order_date }}</td>
-                            <td>
-                                <a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
-                                   class="text-decoration-none fw-semibold">
-                                    {{ o.order_number }}
-                                </a>
-                                {% if o.notes %}
-                                <div class="small text-muted">{{ o.notes[:80] }}{% if o.notes|length > 80 %}…{% endif %}</div>
-                                {% endif %}
-                            </td>
+							<td>
+								<a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
+								   class="text-decoration-none fw-semibold">
+									{{ o.order_number }}
+								</a>
+								{% if o.license_summary %}
+								<div class="small mt-1">
+									<span class="badge bg-info-subtle text-info-emphasis"
+										  title="Ліцензії: було → стало">
+										<i class="bi bi-award me-1"></i>{{ o.license_summary }}
+									</span>
+								</div>
+								{% endif %}
+								{% if o.notes %}
+								<div class="small text-muted">{{ o.notes[:80] }}{% if o.notes|length > 80 %}…{% endif %}</div>
+								{% endif %}
+							</td>
                             <td>
                                 <span class="badge bg-secondary-subtle text-secondary-emphasis">
                                     {{ o.type_label }}
