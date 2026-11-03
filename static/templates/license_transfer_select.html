@@ -7,6 +7,36 @@
 
     {{ ui.page_header('bi-award', 'Перевести між ліцензіями', 'Оберіть ліцензію призначення, потім групи і/або окремих студентів для переведення') }}
 
+<div class="card mb-4 border-primary">
+    <div class="card-body">
+        <label class="form-label fw-bold mb-2">
+            <i class="bi bi-signpost-split me-1"></i>Що саме перевести?
+        </label>
+        <div class="form-check mb-2">
+            <input type="radio" name="transfer_scope" value="all_enrollments"
+                   id="scope_all" class="form-check-input" checked>
+            <label for="scope_all" class="form-check-label">
+                <strong>Усі активні навчання</strong> обраних студентів
+                <div class="small text-muted">
+                    Якщо студент паралельно вчиться в кількох групах —
+                    ліцензія зміниться в усіх його групах.
+                </div>
+            </label>
+        </div>
+        <div class="form-check">
+            <input type="radio" name="transfer_scope" value="enrollments_in_groups"
+                   id="scope_groups" class="form-check-input">
+            <label for="scope_groups" class="form-check-label">
+                <strong>Лише навчання у вибраних групах вище</strong>
+                <div class="small text-muted">
+                    Решта навчань студента збережуть свою поточну ліцензію.
+                    Обов'язково оберіть хоча б одну групу в таблиці «З активних груп».
+                </div>
+            </label>
+        </div>
+    </div>
+</div>
+
     <form method="POST">
         <div class="card mb-4">
             <div class="card-body">

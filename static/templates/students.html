@@ -446,12 +446,13 @@
 
                         <div class="col-6 col-lg-2">
                             <label class="form-label small text-muted mb-1">Ліцензія</label>
-                            <select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                                <option value="">Всі</option>
-                                {% for l in licenses_available %}
-                                <option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
-                                {% endfor %}
-                            </select>
+							<select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
+								<option value="">Всі</option>
+								{% for l in licenses_available %}
+								<option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
+								{% endfor %}
+								<option value="none" {% if license_id == 'none' %}selected{% endif %}>— без ліцензії —</option>
+							</select>
                         </div>
 
                         <div class="col-6 col-lg-2">
@@ -508,11 +509,15 @@
                 {% if degree_level %}<span class="filter-chip">Ступінь: {{ degree_level }}</span>{% endif %}
                 {% if study_form %}<span class="filter-chip">Форма: {{ study_form }}</span>{% endif %}
                 {% if course %}<span class="filter-chip">Курс: {{ course }}</span>{% endif %}
-                {% if license_id %}
-                    {% for l in licenses_available %}
-                        {% if l.id == license_id %}<span class="filter-chip">Ліцензія: {{ l.short_name_ua }}</span>{% endif %}
-                    {% endfor %}
-                {% endif %}
+				{% if license_id == 'none' %}
+					<span class="filter-chip" style="background: var(--stamp-soft); border-color: var(--stamp-semi);">
+						<i class="bi bi-exclamation-triangle"></i> Без ліцензії (потребує заповнення)
+					</span>
+				{% elif license_id %}
+					{% for l in licenses_available %}
+						{% if l.id == license_id %}<span class="filter-chip">Ліцензія: {{ l.short_name_ua }}</span>{% endif %}
+					{% endfor %}
+				{% endif %}
                 {% if reduced == '1' %}<span class="filter-chip">Лише скорочена програма</span>{% endif %}
                 {% if reduced == '0' %}<span class="filter-chip">Лише повна програма</span>{% endif %}
                 {% if include_frozen %}<span class="filter-chip"><i class="bi bi-snow"></i> + Заморожені</span>{% endif %}

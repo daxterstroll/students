@@ -281,7 +281,16 @@ def student_list():
     degree_level = request.args.get('degree_level', '')
     study_form = request.args.get('study_form', '')
     course = request.args.get('course', type=int)
-    license_id = request.args.get('license_id', type=int)
+    _lic_raw = request.args.get('license_id', '')
+    if _lic_raw == 'none':
+        license_id = 'none'
+    elif _lic_raw:
+        try:
+            license_id = int(_lic_raw)
+        except (ValueError, TypeError):
+            license_id = ''
+    else:
+        license_id = ''
     reduced = request.args.get('reduced', '')
     include_frozen = '1' if request.args.get('include_frozen') == '1' else ''
     include_archived = '1' if request.args.get('include_archived') == '1' else ''
@@ -402,8 +411,22 @@ def student_list():
         where_clauses.append("g.course = ?")
         params.append(course)
 
-    if license_id:
-        where_clauses.append("s.license_id = ?")
+    if license_id == 'none':
+        where_clauses.append("""
+            NOT EXISTS (
+                SELECT 1 FROM student_enrollments e
+                WHERE e.student_id = s.id AND e.status = 'active'
+                  AND e.license_id IS NOT NULL
+            )
+        """)
+    elif license_id:
+        where_clauses.append("""
+            EXISTS (
+                SELECT 1 FROM student_enrollments e
+                WHERE e.student_id = s.id AND e.status = 'active'
+                  AND e.license_id = ?
+            )
+        """)
         params.append(license_id)
 
     if reduced == '1':
@@ -1192,7 +1215,8 @@ def add_student():
               birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
               license_id, phone, phone_backup, email, address_of_residence, gender))
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        add_enrollment(student_id, group_int, is_primary=True, conn=conn)
+        add_enrollment(student_id, group_int, is_primary=True,
+                       license_id=license_id, conn=conn)
         conn.commit()
 
         military_fields_list = [
@@ -1467,7 +1491,7 @@ def edit_student(student_id):
                 return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
             old_group = student['group_id']
-            license_id = request.form.get('license_id') or None
+            # license_id — НЕ обновляем здесь (управляется через enrollments).
             phone = (request.form.get('phone') or '').strip() or None
             phone_backup = (request.form.get('phone_backup') or '').strip() or None
             email = (request.form.get('email') or '').strip() or None
@@ -1494,7 +1518,7 @@ def edit_student(student_id):
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, edebo_code=?, tax_id=?, license_id=?, program_credits_override=?,
+                    group_id=?, edebo_code=?, tax_id=?, program_credits_override=?,
                     phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
                 WHERE id=?
             """, (
@@ -1502,7 +1526,7 @@ def edit_student(student_id):
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
                 group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
-                license_id, program_credits_override,
+                program_credits_override,
                 phone, phone_backup, email, address_of_residence, gender, student_id
             ))
             conn.commit()

@@ -131,10 +131,14 @@
                             <div class="text-muted small">Ідентифікаційний код</div>
                             <div class="font-monospace">{{ val(student.tax_id) }}</div>
                         </div>
-                        <div class="col-6">
-                            <div class="text-muted small">Ліцензія вступу</div>
-                            <div>{{ val(student.license_short_name_ua or student.license_name_ua) }}</div>
-                        </div>
+						<div class="col-6">
+							<div class="text-muted small">
+								Основна ліцензія
+								<i class="bi bi-info-circle" style="font-size:.7rem;"
+								   title="Це ліцензія ОСНОВНОГО навчання. Усі ліцензії по кожній групі — у блоці «Навчання (групи)» нижче."></i>
+							</div>
+							<div>{{ val(student.license_short_name_ua or student.license_name_ua) }}</div>
+						</div>
                         <div class="col-6">
                             <div class="text-muted small">Стать</div>
                             <div>

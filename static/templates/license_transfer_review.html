@@ -7,6 +7,19 @@
 
     {{ ui.page_header('bi-award', 'Перевірка перед переведенням', 'Ліцензія призначення: ' ~ (target_license.short_name_ua or target_license.name_ua)) }}
 
+	{% if transfer_scope == 'enrollments_in_groups' %}
+	<div class="alert alert-info small mb-3">
+		<i class="bi bi-info-circle me-1"></i>
+		Переводимо <strong>лише навчання у вибраних групах</strong>.
+		Якщо в студента є інші активні групи — їхні ліцензії не зміняться.
+	</div>
+	{% else %}
+	<div class="alert alert-light border small mb-3">
+		<i class="bi bi-info-circle me-1"></i>
+		Переводимо <strong>усі активні навчання</strong> обраних студентів.
+	</div>
+	{% endif %}
+
     <form method="POST" action="{{ url_for('admin.license_transfer_confirm') }}" enctype="multipart/form-data"
           onsubmit="return confirm('Перевести {{ students|length }} студент(ів) на ліцензію «{{ target_license.short_name_ua or target_license.name_ua }}»?');">
         <input type="hidden" name="target_license_id" value="{{ target_license.id }}">

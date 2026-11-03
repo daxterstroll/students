@@ -22,6 +22,18 @@ student_list()) - щоб цифри тут і там завжди узгоджу
 "права на відзнаку" - та сама, що й у gen_docx.py. Формула end_year -
 та сама, що й у gen_docx.py (щоб прогноз випуску збігався з тим, що
 реально піде в документи).
+
+ПІСЛЯ ПЕРЕХОДУ НА ENROLLMENT-BASED ЛІЦЕНЗІЇ ТА ДИПЛОМИ:
+  - diplomas зберігається з ключем (student_id, group_id) — у студента
+    для КОЖНОЇ групи СВІЙ, УНІКАЛЬНИЙ номер диплома/додатка;
+  - якщо студент паралельно вчиться у двох групах і випускається з обох —
+    у нього має бути ДВА різних номери (по одному на кожну групу);
+  - метрики «номер диплома призначено» та «номер додатка призначено»
+    рахуються по ПАРАХ (студент × активна група): якщо у студента дві
+    групи і заповнено тільки один номер — це 50%, а не 100%;
+  - перевірка «дублікати номерів» вважає ПОМИЛКОЮ будь-яке повторення
+    номера в системі, навіть якщо це один і той самий студент у двох
+    групах (у кожної групи має бути свій окремий номер).
 """
 from flask import Blueprint, render_template, session, request
 from routes.db import get_db
@@ -118,7 +130,7 @@ def dashboard():
     # заповненість, оцінки тощо) - так само, як архівні студенти/групи
     # виключаються за замовчуванням. Показуються лише коли галочку
     # "Враховувати заморожених студентів" увімкнено.
-        # Виключаємо студента зі статистики, лише якщо ВІН ЗАМОРОЖЕНИЙ ПОВНІСТЮ:
+    # Виключаємо студента зі статистики, лише якщо ВІН ЗАМОРОЖЕНИЙ ПОВНІСТЮ:
     #   1. є активний frozen_students запис
     #   2. І немає жодного активного student_enrollments (тобто він ніде не вчиться).
     # Для паралельника, замороженого з однієї групи, але активного в іншій -
@@ -342,21 +354,32 @@ def dashboard():
             edu_doc_by_student.setdefault(row['student_id'], dict(row))
     edu_doc_students = set(edu_doc_by_student.keys())
 
-    diploma_by_student = {}
+    # ── Дипломи: ключ (student_id, group_id) — у студента ДЛЯ КОЖНОЇ ──
+    # групи СВІЙ, УНІКАЛЬНИЙ номер диплома/додатка. Один диплом на дві
+    # групи неможливий — тому diplomas_by_student зберігає СПИСОК усіх
+    # записів студента (по одному на кожну групу), і метрики нижче
+    # рахують заповненість по кожній парі окремо.
+    diplomas_by_student = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
         for row in conn.execute(f"""
-            SELECT student_id, diploma_number, appendix_number
+            SELECT student_id, group_id, diploma_number, appendix_number
             FROM diplomas WHERE student_id IN ({placeholders})
             ORDER BY id DESC
         """, student_ids):
-            diploma_by_student.setdefault(row['student_id'], dict(row))
+            diplomas_by_student.setdefault(row['student_id'], []).append(dict(row))
 
     # ================= Обчислення заповненості по кожному студенту (+ по групах окремо) =================
     personal_pcts, military_pcts, grades_pcts, activities_pcts = [], [], [], []
     passport_pcts, edu_doc_pcts = [], []
-    has_military_cnt = has_edu_doc_cnt = has_diploma_num_cnt = has_appendix_num_cnt = 0
-    has_passport_cnt = has_photo_cnt = 0
+    has_military_cnt = has_edu_doc_cnt = has_photo_cnt = 0
+    has_passport_cnt = 0
+    # Для метрик «номер диплома/додатка призначено» рахуємо по ПАРАХ
+    # (студент × активна група), а не по студентах — у студента з 2
+    # групами має бути 2 різних номери.
+    total_group_pairs = 0
+    diploma_num_pairs_filled = 0
+    appendix_num_pairs_filled = 0
     readiness_scores = []
     all_letters = []
     honor_eligible = 0
@@ -397,7 +420,7 @@ def dashboard():
             passport_filled = sum(1 for f in passport_fields if passport.get(f) and str(passport.get(f)).strip())
             passport_pcts.append(passport_filled / len(passport_fields) * 100)
 
-                # ── Заповненість оцінок рахуємо per-group, а не «усі оцінки / предмети primary» ──
+        # ── Заповненість оцінок рахуємо per-group, а не «усі оцінки / предмети primary» ──
         # Для паралельника: 20 предметів у КН-2 + 10 у КБ-1 = дві незалежні
         # пропорції, обидві входять у загальне середнє по студенту.
         group_ids_for_student = active_enrollment_group_ids.get(st['id']) or ([gid] if gid else [])
@@ -434,20 +457,40 @@ def dashboard():
             edu_doc = edu_doc_by_student[st['id']]
             edu_filled = sum(1 for f in EDU_DOC_FIELDS if edu_doc.get(f) and str(edu_doc.get(f)).strip())
             edu_doc_pcts.append(edu_filled / len(EDU_DOC_FIELDS) * 100)
-        dip = diploma_by_student.get(st['id'], {})
-        if dip.get('diploma_number'):
-            has_diploma_num_cnt += 1
-        if dip.get('appendix_number'):
-            has_appendix_num_cnt += 1
+
+        # ── Дипломи: рахуємо по кожній активній групі окремо ──
+        # У кожної пари (студент, група) має бути СВІЙ номер. Студент із
+        # двома групами і одним номером → 1 із 2 пар заповнена (50%).
+        # Якщо в групи немає активного enrollment'а (legacy group_id) —
+        # теж вважаємо пару, щоб студент без enrollment'ів не випав.
+        dip_by_group = {}
+        for d in diplomas_by_student.get(st['id'], []):
+            dip_by_group[d.get('group_id')] = d
+        student_dip_pairs_filled = 0
+        student_app_pairs_filled = 0
+        for pair_gid in group_ids_for_student:
+            total_group_pairs += 1
+            d = dip_by_group.get(pair_gid)
+            if d and (d.get('diploma_number') or '').strip():
+                diploma_num_pairs_filled += 1
+                student_dip_pairs_filled += 1
+            if d and (d.get('appendix_number') or '').strip():
+                appendix_num_pairs_filled += 1
+                student_app_pairs_filled += 1
+
+        # Для readiness використовуємо «усе заповнено для всіх груп» (100%) або 0
+        all_dips_filled = (
+            bool(group_ids_for_student)
+            and student_dip_pairs_filled == len(group_ids_for_student)
+        )
 
         dims = [personal_pct]
         if grades_pct is not None:
             dims.append(grades_pct)
         dims.append(100 if has_edu else 0)
-        dims.append(100 if dip.get('diploma_number') else 0)
+        dims.append(100 if all_dips_filled else 0)
         readiness_scores.append(sum(dims) / len(dims))
 
-        st_grades = grades_by_student.get(st['id'], [])
         st_grades = grades_by_student.get(st['id'], [])
         letters = [(_grade_letter(g['grade']), g) for g in st_grades]
 
@@ -502,6 +545,10 @@ def dashboard():
         return round(sum(lst) / len(lst), 1) if lst else None
 
     n = len(students_raw) or 1
+    # Метрики «номер диплома/додатка призначено» — відсоток ПАР
+    # (студент × активна група), а не студентів. Студент із двома
+    # групами і одним номером дає 50%, а не 100%.
+    total_pairs_or_1 = total_group_pairs or 1
     completeness = {
         'personal_avg': _avg(personal_pcts),
         'military_avg': _avg(military_pcts),
@@ -513,8 +560,8 @@ def dashboard():
         'edu_doc_avg': _avg(edu_doc_pcts),
         'edu_doc_have_pct': round(has_edu_doc_cnt / n * 100, 1),
         'photo_pct': round(has_photo_cnt / n * 100, 1),
-        'diploma_num_pct': round(has_diploma_num_cnt / n * 100, 1),
-        'appendix_num_pct': round(has_appendix_num_cnt / n * 100, 1),
+        'diploma_num_pct': round(diploma_num_pairs_filled / total_pairs_or_1 * 100, 1),
+        'appendix_num_pct': round(appendix_num_pairs_filled / total_pairs_or_1 * 100, 1),
     }
 
     # Заповненість по кожній групі окремо (а не лише загальний середній)
@@ -588,6 +635,12 @@ def dashboard():
             if (g['degree_level'], g['specialty']) not in accreditation_pairs:
                 missing_accreditation.append(g['name'])
 
+    # ── Дублікати номерів диплома/додатка ──
+    # У КОЖНОЇ пари (студент, група) має бути СВІЙ УНІКАЛЬНИЙ номер.
+    # Тому будь-яке повторення номера в системі — помилка: COUNT(*) > 1.
+    # (Раніше тут було DISTINCT student_id — це припускало, що
+    # один студент може мати один номер для двох груп, але за новою
+    # моделлю такий сценарій неможливий: у кожної групи свій диплом.)
     duplicate_diploma_numbers, duplicate_appendix_numbers = [], []
     if is_admin:
         for row in conn.execute("""
@@ -762,7 +815,7 @@ def dashboard():
         required_credits = groups_by_id.get(gid, {}).get('program_credits')
 
         student_row = next((s for s in student_options if s['id'] == selected_student_id), None)
-        
+
         student_detail = {
             'id': selected_student_id,
             'full_name': student_row['full_name'] if student_row else '',

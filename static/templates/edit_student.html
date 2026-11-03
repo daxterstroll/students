@@ -68,17 +68,14 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Ліцензія вступу</label>
-                        <select name="license_id" class="form-select">
-                            <option value="" {% if not student.license_id %}selected{% endif %}>— не вказано —</option>
-                            {% for l in licenses|default([]) %}
-                                <option value="{{ l.id }}" {% if l.id == student.license_id %}selected{% endif %}>
-                                    {{ l.short_name_ua or l.name_ua }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                    </div>
+					<div class="col-12">
+						<div class="alert alert-light border small mb-0">
+							<i class="bi bi-info-circle me-1"></i>
+							<strong>Ліцензія</strong> тепер задається окремо для кожного навчання
+							(адже студент може вчитися в кількох групах під різними ліцензіями).
+							Керуйте нею в картці студента — блок <em>«Навчання (групи)»</em>.
+						</div>
+					</div>
                     <div class="col-md-6">
                         <label class="form-label">Кредити (скорочена програма)</label>
                         <input type="number" name="program_credits_override" class="form-control"

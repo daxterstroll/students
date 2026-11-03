@@ -505,7 +505,12 @@ def pending_student_review(pending_id):
                 conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
 
                 from routes.enrollments_service import add_enrollment
-                add_enrollment(student_id, group_id, is_primary=False, conn=conn)
+                add_enrollment(
+                    student_id, group_id,
+                    is_primary=False,
+                    license_id=license_id,  # з форми, не з картки студента
+                    conn=conn,
+                )
 
                 # Далі — та сама логіка перенесення сканів/документів,
                 # але БЕЗ повторного INSERT INTO students.
@@ -518,6 +523,14 @@ def pending_student_review(pending_id):
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (...))
                 student_id = cur.lastrowid
+            # ── Створюємо запис enrollment (тепер це джерело істини для ліцензії/групи) ──
+            from routes.enrollments_service import add_enrollment
+            add_enrollment(
+                student_id, group_id,
+                is_primary=True,
+                license_id=license_id,  # те, що обрано в формі approve
+                conn=conn,
+)
 
             # Фото — копіюємо байти з "карантинної" папки
             if row['photo_path']:
