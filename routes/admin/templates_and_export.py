@@ -552,13 +552,21 @@ def group_export():
                                     active_students=','.join(active_students)))
 
     if selected_group_id or selected_year:
-        base_query = "SELECT * FROM students WHERE archived = FALSE"
+        base_query = """
+            SELECT DISTINCT s.*
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+        """
         params = []
         if selected_group_id:
-            base_query += " AND group_id=?"
+            # студент належить групі, якщо вона його основна АБО є активний enrollment у ній
+            base_query += " AND (s.group_id = ? OR e.group_id = ?)"
+            params.append(selected_group_id)
             params.append(selected_group_id)
         if selected_year:
-            base_query += " AND SUBSTR(birth_date, 7, 4) >= ?"
+            base_query += " AND SUBSTR(s.birth_date, 7, 4) >= ?"
             params.append(str(selected_year))
         try:
             students = conn.execute(base_query, params).fetchall()
@@ -648,6 +656,7 @@ def generate_group_docs():
     base_query = """
         SELECT s.*,
                COALESCE(e.edebo_code, s.edebo_code) AS enrollment_edebo_code,
+               COALESCE(e.group_id, s.group_id)     AS enrollment_group_id,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form, g.start_year, g.program_credits,
                g.qualification_name, g.degree_level, g.specialty, g.educational_program, g.knowledge_area,
@@ -679,6 +688,8 @@ def generate_group_docs():
         base_query += " AND SUBSTR(s.birth_date, 7, 4) >= ?"
         params.append(str(birth_year))
 
+    base_query += " ORDER BY s.id, e.is_primary DESC, e.id"
+    
     try:
         students = conn.execute(base_query, params).fetchall()
         # Дедуплікація: один студент = один документ.
@@ -717,11 +728,13 @@ def generate_group_docs():
     students_data = []
     for student in students:
         student_dict = dict(student)
-        # students.edebo_code — кеш primary; для документа конкретної
-        # групи беремо код ЄДЕБО САМЕ цього enrollment'а (COALESCE у
-        # SQL вище), з fallback на кеш.
         if student_dict.get('enrollment_edebo_code'):
             student_dict['edebo_code'] = student_dict['enrollment_edebo_code']
+        # Група документа — з enrollment'а (який вже відфільтрований запитом),
+        # а не з students.group_id (основна група). Інакше при фільтрі по
+        # паралельній групі B предмети/дипломи підтягнуться з A.
+        if student_dict.get('enrollment_group_id'):
+            student_dict['group_id'] = student_dict['enrollment_group_id']
         military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
         students_data.append((student_dict, dict(military) if military else {}))
     conn.close()
