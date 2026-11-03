@@ -107,7 +107,7 @@ def _permissions_by_group():
 _LOG_ENTRY_RE = re.compile(
     r'(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2}:\d{2})\s*\|\s*(\w+)\s*\|\s*(.*)'
 )
-_LOG_USER_RE = re.compile(r'👤\s*([^\s-][^-]*?)\s+-\s+(.*)')
+_LOG_USER_RE = re.compile(r'👤\s+(.+?)\s+-\s+(.*)$')
 
 
 def _parse_log_file(path):

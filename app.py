@@ -128,7 +128,12 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PREFERRED_URL_SCHEME=PREFERRED_URL_SCHEME,
-    MAX_CONTENT_LENGTH=32 * 1024 * 1024,
+    # 90 МБ: /apply дозволяє до 5 файлів × 15 МБ (документ про освіту)
+    # + 5 × 15 МБ (паспорт) + 5 × 15 МБ (військовий облік) + фото + PDF,
+    # але реально завантажують рідко більше 40–50 МБ за раз.
+    # Обмеження 32 МБ різало запити ДО того, як спрацьовував
+    # before_request із перевіркою сумарного розміру в /apply.
+    MAX_CONTENT_LENGTH=90 * 1024 * 1024,
 )
 
 

@@ -347,6 +347,16 @@ def pending_students():
             "SELECT COUNT(*) FROM attachments WHERE entity_type='pending_student' AND entity_id=?",
             (r['id'],)
         ).fetchone()[0]
+        # Чи є серед сканів військового обліку саме PDF «Резерв+» -
+        # для окремого бейджа «PDF» у списку заявок (окремо від
+        # звичайних сканів-зображень).
+        r['has_military_scan'] = conn.execute(
+            "SELECT 1 FROM attachments "
+            "WHERE entity_type='pending_student_military' AND entity_id=? "
+            "AND (LOWER(original_name) LIKE '%.pdf' OR LOWER(file_path) LIKE '%.pdf') "
+            "LIMIT 1",
+            (r['id'],)
+        ).fetchone() is not None
 
     duplicates_by_id = {}
     if status_filter == 'new':
@@ -500,21 +510,26 @@ def pending_student_review(pending_id):
                 """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
 
             if existing_student:
-                # Не дублюємо — реактивуємо enrollment і знімаємо з архіву
+                # Не дублюємо — реактивуємо enrollment і знімаємо з архіву.
+                # is_primary=True, якщо в студента ще немає жодного активного
+                # enrollment'а (тоді ця група стане основною), інакше False —
+                # існуюча основна група лишається основною.
                 student_id = existing_student['id']
                 conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
+
+                has_active = conn.execute(
+                    "SELECT 1 FROM student_enrollments "
+                    "WHERE student_id = ? AND status = 'active' LIMIT 1",
+                    (student_id,),
+                ).fetchone() is not None
 
                 from routes.enrollments_service import add_enrollment
                 add_enrollment(
                     student_id, group_id,
-                    is_primary=False,
+                    is_primary=not has_active,
                     license_id=license_id,  # з форми, не з картки студента
                     conn=conn,
                 )
-
-                # Далі — та сама логіка перенесення сканів/документів,
-                # але БЕЗ повторного INSERT INTO students.
-                # (решта коду після цього блоку вже працює зі student_id)
             else:
                 cur = conn.execute("""
                     INSERT INTO students (
@@ -523,14 +538,16 @@ def pending_student_review(pending_id):
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (...))
                 student_id = cur.lastrowid
-            # ── Створюємо запис enrollment (тепер це джерело істини для ліцензії/групи) ──
-            from routes.enrollments_service import add_enrollment
-            add_enrollment(
-                student_id, group_id,
-                is_primary=True,
-                license_id=license_id,  # те, що обрано в формі approve
-                conn=conn,
-)
+
+                # ── Створюємо запис enrollment для нового студента ──
+                # (тепер це джерело істини для ліцензії/групи)
+                from routes.enrollments_service import add_enrollment
+                add_enrollment(
+                    student_id, group_id,
+                    is_primary=True,
+                    license_id=license_id,  # те, що обрано в формі approve
+                    conn=conn,
+                )
 
             # Фото — копіюємо байти з "карантинної" папки
             if row['photo_path']:

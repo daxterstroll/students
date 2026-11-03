@@ -11,12 +11,14 @@ from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
 import os
+import openpyxl
 from routes.utils import filter_students_for_item
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from routes.admin import allowed_file
 import time
 
+UPLOAD_FOLDER = os.path.join('static', 'uploads', 'tmp')
 
 @admin_bp.route('/admin/manage_subjects', methods=['GET', 'POST'])
 @permission_required('manage_subjects')
