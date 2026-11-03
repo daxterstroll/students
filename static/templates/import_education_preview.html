@@ -1,7 +1,7 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Попередній перегляд імпорту{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 <div class="container py-4">
 
@@ -18,11 +18,12 @@
             <tr>
                 <th style="width:5%">Row</th>
                 <th style="width:6%">Додати</th>
-                <th style="width:28%">Студент</th>
-                <th style="width:10%">Збіг</th>
+                <th style="width:26%">Студент</th>
+                <th style="width:8%">Збіг</th>
                 <th style="width:12%">Статус</th>
-                <th style="width:18%">Номер диплома</th>
-                <th style="width:15%">Дії</th>
+                <th style="width:13%">Номер диплома</th>
+                <th style="width:12%">Група документа</th>
+                <th style="width:13%">Дії</th>
             </tr>
         </thead>
         <tbody>
@@ -48,11 +49,32 @@
                     <span class="{{ row.status_class or '' }}">{{ row.status or "—" }}</span>
                 </td>
                 <td>{{ row.document_number or "—" }}</td>
+                <td class="small">
+                    {% if row.status == "Новий" %}
+                        {% if row.requested_group_id %}
+                        <span class="badge bg-success-subtle text-success-emphasis"
+                              title="Документ прив'яжеться до цієї групи">
+                            <i class="bi bi-building me-1"></i>група ID {{ row.requested_group_id }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted fst-italic">основна (авто)</span>
+                        {% endif %}
+                    {% else %}
+                        {% if row.requested_group_id %}
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis"
+                              title="При оновленні існуючого документа прив'язка до групи не змінюється">
+                            <i class="bi bi-lock me-1"></i>група ID {{ row.requested_group_id }}
+                        </span>
+                        {% else %}
+                        <span class="text-muted fst-italic">не змінюється</span>
+                        {% endif %}
+                    {% endif %}
+                </td>
                 <td>
                     {% if not row.error %}
                         <button type="button" class="btn btn-sm btn-outline-primary"
                                 data-bs-toggle="modal" data-bs-target="#editModal{{ row.row_index }}">
-                            Редагувати
+                            <i class="bi bi-pencil me-1"></i>Редагувати
                         </button>
                     {% endif %}
                 </td>
@@ -64,242 +86,275 @@
     </div>
     </div>
 
-    <!-- ==================== МОДАЛЬНІ ВІКНА (винесені за межі table) ==================== -->
-    {% for row in preview %}
-        {% if not row.error %}
-        <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1" aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
-            <div class="modal-dialog modal-xl modal-dialog-centered">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="editModalLabel{{ row.row_index }}">
-                            Редагування рядка {{ row.row_index }} — {{ row.matched_name or "—" }}
-                            <small class="text-muted ms-2">({{ row.status }})</small>
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-
-                    <div class="modal-body">
-                        <div class="row g-3">
-
-                            <!-- Тип документа -->
-                            <div class="col-md-6">
-                                <label class="form-label">Тип документа (укр)</label>
-                                <input type="text" name="document_type_{{ row.row_index }}"
-                                       value="{{ row.document_type or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_document_type %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_document_type }}</small>
-                                {% endif %}
-                            </div>
-
-                            <div class="col-md-6">
-                                <label class="form-label">
-                                    Document type (en)
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="document_type_en_{{ row.row_index }}"
-                                       value="{{ row.document_type_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_document_type_en %}
-                                    <small class="text-muted d-block mt-1">was: {{ row.old_document_type_en }}</small>
-                                {% endif %}
-                            </div>
-
-                            <!-- Навчальний заклад -->
-                            <div class="col-6">
-                                <label class="form-label">Навчальний заклад (укр)</label>
-                                <input type="text" name="institution_name_{{ row.row_index }}"
-                                       value="{{ row.institution_name or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_institution_name %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_institution_name }}</small>
-                                {% endif %}
-                            </div>
-
-                            <div class="col-6">
-                                <label class="form-label">
-                                    Institution (en)
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="institution_name_en_{{ row.row_index }}"
-                                       value="{{ row.institution_name_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_institution_name_en %}
-                                    <small class="text-muted d-block mt-1">was: {{ row.old_institution_name_en }}</small>
-                                {% endif %}
-                            </div>
-
-                            <!-- Номер та дата -->
-                            <div class="col-md-3">
-                                <label class="form-label">Номер документа</label>
-                                <input type="text" name="document_number_{{ row.row_index }}"
-                                       value="{{ row.document_number or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_document_number %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_document_number }}</small>
-                                {% endif %}
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">Дата завершення</label>
-                                <input type="text" name="completion_date_{{ row.row_index }}"
-                                       value="{{ row.completion_date or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_completion_date %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_completion_date }}</small>
-                                {% endif %}
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">Країна</label>
-                                <input type="text" name="country_{{ row.row_index }}"
-                                       value="{{ row.country or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_country %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_country }}</small>
-                                {% endif %}
-                            </div>
-
-                            <div class="col-md-3">
-                                <label class="form-label">
-                                    Country
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="country_en_{{ row.row_index }}"
-                                       value="{{ row.country_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_country_en %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_country_en }}</small>
-                                {% endif %}
-                            </div>
-
-                            <!-- Академічна довідка -->
-                            <div class="col-12 mt-3 border-top pt-3">
-                                <h6 class="mb-2">Академічна довідка</h6>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Номер довідки</label>
-                                <input type="text" name="reference_number_{{ row.row_index }}"
-                                       value="{{ row.reference_number or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_number %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_reference_number }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Заклад довідки (укр)</label>
-                                <input type="text" name="reference_institution_{{ row.row_index }}"
-                                       value="{{ row.reference_institution or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_institution %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_reference_institution }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">
-                                    Reference Institution (en)
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="reference_institution_en_{{ row.row_index }}"
-                                       value="{{ row.reference_institution_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_institution_en %}
-                                    <small class="text-muted d-block mt-1">was: {{ row.old_reference_institution_en }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Країна довідки</label>
-                                <input type="text" name="reference_country_{{ row.row_index }}"
-                                       value="{{ row.reference_country or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_country %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_reference_country }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">
-                                    Reference Country (en)
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="reference_country_en_{{ row.row_index }}"
-                                       value="{{ row.reference_country_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_country_en %}
-                                    <small class="text-muted d-block mt-1">was: {{ row.old_reference_country_en }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Дата видачі довідки</label>
-                                <input type="text" name="reference_issue_date_{{ row.row_index }}"
-                                       value="{{ row.reference_issue_date or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_reference_issue_date %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_reference_issue_date }}</small>
-                                {% endif %}
-                            </div>
-
-                            <!-- Свідоцтво про визнання -->
-                            <div class="col-12 mt-3 border-top pt-3">
-                                <h6 class="mb-2">Свідоцтво про визнання в Україні іноземного документа про освіту</h6>
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Номер свідоцтва</label>
-                                <input type="text" name="recognition_certificate_number_{{ row.row_index }}"
-                                       value="{{ row.recognition_certificate_number or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_recognition_certificate_number %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_recognition_certificate_number }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">Орган, що видав (укр)</label>
-                                <input type="text" name="recognition_issuer_{{ row.row_index }}"
-                                       value="{{ row.recognition_issuer or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_recognition_issuer %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_recognition_issuer }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label">
-                                    Recognition Issuer (en)
-                                    <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                                </label>
-                                <input type="text" name="recognition_issuer_en_{{ row.row_index }}"
-                                       value="{{ row.recognition_issuer_en or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_recognition_issuer_en %}
-                                    <small class="text-muted d-block mt-1">was: {{ row.old_recognition_issuer_en }}</small>
-                                {% endif %}
-                            </div>
-                            <div class="col-md-12">
-                                <label class="form-label">Дата видачі свідоцтва</label>
-                                <input type="text" name="recognition_date_{{ row.row_index }}"
-                                       value="{{ row.recognition_date or '' }}"
-                                       class="form-control" form="importForm">
-                                {% if row.status == "Оновлення" and row.old_recognition_date %}
-                                    <small class="text-muted d-block mt-1">було: {{ row.old_recognition_date }}</small>
-                                {% endif %}
-                            </div>
-
-                        </div>
-                    </div>
-
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
-    {% endfor %}
-    <!-- ==================== кінець модальних вікон ==================== -->
-
     <div class="mt-3">
         <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-2"></i>Додати / Оновити в базу</button>
         <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-outline-secondary">Скасувати</a>
     </div>
 </form>
+
+{# ==================================================================
+   МОДАЛЬНІ ВІКНА — ВИНЕСЕНІ ЗА МЕЖІ <form>
+   ------------------------------------------------------------------
+   Поля всередині мають атрибут form="importForm" — вони будуть
+   надіслані разом з основною формою, навіть попри те, що самі
+   знаходяться ПОЗА нею.
+   Це важливо, бо:
+   1. Enter у полі модалки НЕ відправить форму передчасно.
+   2. Модалка не «з'їдає» HTML-валідацію форми.
+   ================================================================== #}
+{% for row in preview %}
+    {% if not row.error %}
+    <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1" aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editModalLabel{{ row.row_index }}">
+                        Редагування рядка {{ row.row_index }} — {{ row.matched_name or "—" }}
+                        <small class="text-muted ms-2">({{ row.status }})</small>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="row g-3">
+
+                        {# ── Група документа (лише для НОВИХ) ── #}
+                        {% if row.status == "Новий" %}
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">
+                                <i class="bi bi-building me-1"></i>Група документа
+                                <span class="badge bg-light text-secondary border ms-1" title="Важливо для паралельного навчання: диплом бакалавра → магістратура, атестат → бакалаврат">?</span>
+                            </label>
+                            <select name="doc_group_id_{{ row.row_index }}" class="form-select" form="importForm">
+                                <option value="" {% if not row.requested_group_id %}selected{% endif %}>
+                                    — основна група студента (авто) —
+                                </option>
+                                {% for g in (all_groups | default([])) %}
+                                <option value="{{ g.id }}"
+                                        {% if row.requested_group_id == g.id %}selected{% endif %}>
+                                    {{ g.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted d-block mt-1">
+                                Якщо студент вчиться у кількох групах — оберіть, до якої прив'язати документ.
+                            </small>
+                        </div>
+                        <div class="col-12"><hr class="my-1"></div>
+                        {% endif %}
+
+                        {# ── Тип документа ── #}
+                        <div class="col-md-6">
+                            <label class="form-label">Тип документа (укр)</label>
+                            <input type="text" name="document_type_{{ row.row_index }}"
+                                   value="{{ row.document_type or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_document_type %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_document_type }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                Document type (en)
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="document_type_en_{{ row.row_index }}"
+                                   value="{{ row.document_type_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_document_type_en %}
+                                <small class="text-muted d-block mt-1">was: {{ row.old_document_type_en }}</small>
+                            {% endif %}
+                        </div>
+
+                        {# ── Навчальний заклад ── #}
+                        <div class="col-md-6">
+                            <label class="form-label">Навчальний заклад (укр)</label>
+                            <input type="text" name="institution_name_{{ row.row_index }}"
+                                   value="{{ row.institution_name or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_institution_name %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_institution_name }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                Institution (en)
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="institution_name_en_{{ row.row_index }}"
+                                   value="{{ row.institution_name_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_institution_name_en %}
+                                <small class="text-muted d-block mt-1">was: {{ row.old_institution_name_en }}</small>
+                            {% endif %}
+                        </div>
+
+                        {# ── Номер та дата ── #}
+                        <div class="col-md-3">
+                            <label class="form-label">Номер документа</label>
+                            <input type="text" name="document_number_{{ row.row_index }}"
+                                   value="{{ row.document_number or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_document_number %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_document_number }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Дата завершення</label>
+                            <input type="text" name="completion_date_{{ row.row_index }}"
+                                   value="{{ row.completion_date or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_completion_date %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_completion_date }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">Країна</label>
+                            <input type="text" name="country_{{ row.row_index }}"
+                                   value="{{ row.country or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_country %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_country }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-3">
+                            <label class="form-label">
+                                Country
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="country_en_{{ row.row_index }}"
+                                   value="{{ row.country_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_country_en %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_country_en }}</small>
+                            {% endif %}
+                        </div>
+
+                        {# ── Академічна довідка ── #}
+                        <div class="col-12 mt-3 border-top pt-3">
+                            <h6 class="mb-2">Академічна довідка</h6>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Номер довідки</label>
+                            <input type="text" name="reference_number_{{ row.row_index }}"
+                                   value="{{ row.reference_number or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_number %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_number }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Заклад довідки (укр)</label>
+                            <input type="text" name="reference_institution_{{ row.row_index }}"
+                                   value="{{ row.reference_institution or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_institution %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_institution }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                Reference Institution (en)
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="reference_institution_en_{{ row.row_index }}"
+                                   value="{{ row.reference_institution_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_institution_en %}
+                                <small class="text-muted d-block mt-1">was: {{ row.old_reference_institution_en }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Країна довідки</label>
+                            <input type="text" name="reference_country_{{ row.row_index }}"
+                                   value="{{ row.reference_country or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_country %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_country }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                Reference Country (en)
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="reference_country_en_{{ row.row_index }}"
+                                   value="{{ row.reference_country_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_country_en %}
+                                <small class="text-muted d-block mt-1">was: {{ row.old_reference_country_en }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Дата видачі довідки</label>
+                            <input type="text" name="reference_issue_date_{{ row.row_index }}"
+                                   value="{{ row.reference_issue_date or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_reference_issue_date %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_issue_date }}</small>
+                            {% endif %}
+                        </div>
+
+                        {# ── Свідоцтво про визнання ── #}
+                        <div class="col-12 mt-3 border-top pt-3">
+                            <h6 class="mb-2">Свідоцтво про визнання в Україні іноземного документа про освіту</h6>
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Номер свідоцтва</label>
+                            <input type="text" name="recognition_certificate_number_{{ row.row_index }}"
+                                   value="{{ row.recognition_certificate_number or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_recognition_certificate_number %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_certificate_number }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Орган, що видав (укр)</label>
+                            <input type="text" name="recognition_issuer_{{ row.row_index }}"
+                                   value="{{ row.recognition_issuer or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_recognition_issuer %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_issuer }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">
+                                Recognition Issuer (en)
+                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
+                            </label>
+                            <input type="text" name="recognition_issuer_en_{{ row.row_index }}"
+                                   value="{{ row.recognition_issuer_en or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_recognition_issuer_en %}
+                                <small class="text-muted d-block mt-1">was: {{ row.old_recognition_issuer_en }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-12">
+                            <label class="form-label">Дата видачі свідоцтва</label>
+                            <input type="text" name="recognition_date_{{ row.row_index }}"
+                                   value="{{ row.recognition_date or '' }}"
+                                   class="form-control" form="importForm">
+                            {% if row.status == "Оновлення" and row.old_recognition_date %}
+                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_date }}</small>
+                            {% endif %}
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+{% endfor %}
 
 </div>
 {% endblock %}
