@@ -33,10 +33,11 @@
                         </select>
                         <div class="form-text" id="genderHint">Поки обрано «Авто» — стать визначиться автоматично за по батькові.</div>
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Код картки фізичної особи в ЄДЕБО</label>
-                        <input type="text" name="edebo_code" class="form-control" value="{{ request.form.edebo_code or '' }}">
-                    </div>
+					<div class="col-md-4">
+						<label class="form-label">Код ЄДЕБО <span class="text-muted small">(для першого навчання)</span></label>
+						<input type="text" name="edebo_code" class="form-control" value="{{ request.form.edebo_code or '' }}">
+						<div class="form-text">Для паралельного навчання в іншій групі код задається окремо в картці студента.</div>
+					</div>
                     <div class="col-md-4">
                         <label class="form-label">Ідентифікаційний код</label>
                         <input type="text" name="tax_id" class="form-control" value="{{ request.form.tax_id or '' }}">

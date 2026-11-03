@@ -860,7 +860,8 @@ def student_details(student_id):
             'group_name': enr.get('group_name') or '',
             'short_group_name': short_name or f"Група #{gid}",
             'is_primary': bool(enr['is_primary']),
-            'is_reduced': is_reduced_g,
+            'is_reduced': is_reduced_g,   
+            'edebo_code': enr.get('edebo_code') or '',
             'group_program_credits': group_program_credits,
             'student_credits_override': student['program_credits_override'],
             'subjects': subjects_list,
@@ -1249,6 +1250,7 @@ def add_student():
             # переактивується; якщо запису не було — створюється новий).
             ok_enroll, msg_enroll = add_enrollment(
                 existing_id, group_int, is_primary=True, conn=conn,
+                edebo_code=edebo_code_form,    
             )
             if not ok_enroll:
                 conn.rollback()
@@ -1328,7 +1330,7 @@ def add_student():
               license_id, phone, phone_backup, email, address_of_residence, gender))
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         add_enrollment(student_id, group_int, is_primary=True,
-                       license_id=license_id, conn=conn)
+               license_id=license_id, edebo_code=edebo_code_form, conn=conn)
         conn.commit()
 
         military_fields_list = [
@@ -1630,18 +1632,18 @@ def edit_student(student_id):
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, edebo_code=?, tax_id=?, program_credits_override=?,
+                    group_id=?, tax_id=?, program_credits_override=?,
                     phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
                 WHERE id=?
             """, (
                 request.form['last_name_UA'], request.form['first_name_UA'],
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
-                group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
+                group_int, request.form.get('tax_id') or None,
                 program_credits_override,
                 phone, phone_backup, email, address_of_residence, gender, student_id
             ))
-
+            
             # ── Синхронізація student_enrollments при зміні основної групи ──
             # students.group_id = primary enrollment. Якщо групу змінили
             # через форму редагування, enrollment має оновитись теж,
@@ -1879,6 +1881,7 @@ def generate(student_id):
     # з fallback на s.license_id, якщо в enrollment ліцензія не вказана.
     student = conn.execute("""
         SELECT s.*,
+               COALESCE(e.edebo_code, s.edebo_code) AS enrollment_edebo_code,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', '
                     || g.program_credits || ' кредитів)' AS group_name,
                g.study_form, g.start_year, g.program_credits,
@@ -1931,6 +1934,11 @@ def generate(student_id):
 
         student_dict = dict(student)
         student_dict['group_id'] = gid
+        # students.edebo_code — це кеш ОСНОВНОГО enrollment'а.
+        # Для документа конкретної групи використовуємо код ЄДЕБО
+        # САМЕ ЦІЄЇ групи (з COALESCE у SQL вище), з fallback на кеш.
+        if student_dict.get('enrollment_edebo_code'):
+            student_dict['edebo_code'] = student_dict['enrollment_edebo_code']
 
         military_dict = dict(military) if military else {}
 
@@ -1983,6 +1991,7 @@ def enrollment_add(student_id):
 
     group_id = request.form.get('group_id', type=int)
     license_id = request.form.get('license_id', type=int) or None
+    edebo_code = (request.form.get('edebo_code') or '').strip() or None
     is_primary = request.form.get('is_primary') == '1'
     order_number = (request.form.get('order_number') or '').strip()
     order_date = (request.form.get('order_date') or '').strip()
@@ -2013,6 +2022,7 @@ def enrollment_add(student_id):
         ok, msg = add_enrollment(
             student_id, group_id,
             is_primary=is_primary, license_id=license_id,
+            edebo_code=edebo_code,
             order_id=order_id, conn=conn,
         )
         if not ok:
@@ -2041,21 +2051,27 @@ def enrollment_add(student_id):
         flash(f'Помилка створення наказу: {e}', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
-
 @students_bp.route(
     '/students/<int:student_id>/enrollments/<int:group_id>/action',
     methods=['POST'],
 )
 @permission_required('manage_students')
 def enrollment_action(student_id, group_id):
-    """Єдина точка зміни існуючого навчання — завжди через наказ.
+    """Єдина точка зміни існуючого навчання.
 
-    action_type:
-      - 'change_license' → наказ license_transfer + зміна ліцензії
-      - 'graduate'       → наказ graduation + end_enrollment(status='graduated')
-      - 'expel'          → наказ expulsion + end_enrollment(status='expelled')
+    Дії, що вимагають наказу (order_number + order_date):
+      - 'change_license' → наказ license_transfer
+      - 'graduate'       → наказ graduation
+      - 'expel'          → наказ expulsion
+
+    Дії БЕЗ наказу (пряме редагування):
+      - 'change_edebo_code' → зміна коду ЄДЕБО конкретного enrollment'а
     """
-    from routes.enrollments_service import end_enrollment, update_enrollment_license
+    from routes.enrollments_service import (
+        end_enrollment,
+        update_enrollment_license,
+        update_enrollment_edebo_code,
+    )
     from routes.orders_service import create_order
 
     action_type = request.form.get('action_type') or ''
@@ -2063,10 +2079,16 @@ def enrollment_action(student_id, group_id):
     order_date = (request.form.get('order_date') or '').strip()
     reason = (request.form.get('reason') or '').strip()
 
-    if action_type not in ('change_license', 'graduate', 'expel'):
+    if action_type not in (
+        'change_license', 'change_edebo_code', 'graduate', 'expel',
+    ):
         flash('Невідома дія', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
-    if not order_number or not order_date:
+
+    # Наказ обов'язковий лише для дій зі статусом/ліцензією.
+    # change_edebo_code — пряме редагування без наказу.
+    order_required = action_type in ('change_license', 'graduate', 'expel')
+    if order_required and (not order_number or not order_date):
         flash('Заповніть номер і дату наказу', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
     if action_type == 'expel' and not reason:
@@ -2079,7 +2101,7 @@ def enrollment_action(student_id, group_id):
     conn.row_factory = sqlite3.Row
     try:
         enrollment = conn.execute(
-            "SELECT id, license_id FROM student_enrollments "
+            "SELECT id, license_id, edebo_code FROM student_enrollments "
             "WHERE student_id = ? AND group_id = ? AND status = 'active'",
             (student_id, group_id),
         ).fetchone()
@@ -2117,6 +2139,33 @@ def enrollment_action(student_id, group_id):
             ok, msg = update_enrollment_license(
                 student_id, group_id, new_license_id, conn=conn,
             )
+
+        elif action_type == 'change_edebo_code':
+            # БЕЗ наказу — пряме оновлення поля enrollment'а.
+            new_edebo = (request.form.get('new_edebo_code') or '').strip() or None
+            if new_edebo == enrollment['edebo_code']:
+                conn.close()
+                flash('Новий код ЄДЕБО збігається з поточним', 'warning')
+                return redirect(url_for('students.student_details', student_id=student_id))
+
+            ok, msg = update_enrollment_edebo_code(
+                student_id, group_id, new_edebo, conn=conn,
+            )
+            if ok:
+                conn.commit()
+                log_action(
+                    current_username(),
+                    f"змінив код ЄДЕБО навчання: student={student_id} "
+                    f"group={group_id}",
+                    details=(
+                        f"{enrollment['edebo_code'] or '—'} → {new_edebo or '—'}"
+                    ),
+                )
+                flash('Код ЄДЕБО оновлено', 'success')
+            conn.close()
+            if not ok:
+                flash(f'Не вдалося виконати дію: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
 
         elif action_type == 'graduate':
             order_id = create_order(
@@ -2186,8 +2235,7 @@ def enrollment_action(student_id, group_id):
         logger.error(f'enrollment_action failed (student={student_id}): {e}', exc_info=True)
         flash(f'Помилка: {e}', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
-
-
+        
 @students_bp.route('/students/<int:student_id>/enrollments/set_primary', methods=['POST'])
 @permission_required('manage_students')
 def enrollment_set_primary(student_id):

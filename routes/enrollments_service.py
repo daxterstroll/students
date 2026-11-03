@@ -3,6 +3,8 @@
 students.group_id = primary (для сумісності зі старим кодом).
 student_enrollments.license_id = ліцензія, під якою студент вчиться
 в конкретній групі (може відрізнятися від інших груп того ж студента).
+student_enrollments.edebo_code = код ЄДЕБО, під яким студент зарахований
+у конкретній групі (так само може відрізнятися між групами).
 """
 from __future__ import annotations
 
@@ -12,7 +14,7 @@ from routes.db import get_db
 
 
 def ensure_enrollments_table(conn=None) -> None:
-    """CREATE TABLE IF NOT EXISTS + безпечне додавання колонки license_id."""
+    """CREATE TABLE IF NOT EXISTS + безпечне додавання колонок license_id / edebo_code."""
     own = conn is None
     if own:
         conn = get_db()
@@ -25,6 +27,7 @@ def ensure_enrollments_table(conn=None) -> None:
                 is_primary  INTEGER NOT NULL DEFAULT 0,
                 status      TEXT NOT NULL DEFAULT 'active',
                 license_id  INTEGER,
+                edebo_code  TEXT,
                 order_id    INTEGER,
                 notes       TEXT,
                 created_at  TEXT DEFAULT (datetime('now', 'localtime')),
@@ -34,9 +37,13 @@ def ensure_enrollments_table(conn=None) -> None:
                 FOREIGN KEY (license_id) REFERENCES institution_licenses(id)
             )
         """)
-        # На випадок, якщо таблиця вже існує без колонки license_id
+        # На випадок, якщо таблиця вже існує без цих колонок
         try:
             conn.execute("ALTER TABLE student_enrollments ADD COLUMN license_id INTEGER")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE student_enrollments ADD COLUMN edebo_code TEXT")
         except Exception:
             pass
         conn.execute(
@@ -56,7 +63,7 @@ def ensure_enrollments_table(conn=None) -> None:
 
 def backfill_primary_from_students(conn=None) -> int:
     """Для студентів з group_id, яких ще немає в student_enrollments,
-    додає primary-рядок (з копією students.license_id)."""
+    додає primary-рядок (з копією students.license_id та students.edebo_code)."""
     own = conn is None
     if own:
         conn = get_db()
@@ -64,8 +71,8 @@ def backfill_primary_from_students(conn=None) -> int:
         ensure_enrollments_table(conn)
         cur = conn.execute("""
             INSERT OR IGNORE INTO student_enrollments
-                (student_id, group_id, is_primary, status, license_id)
-            SELECT id, group_id, 1, 'active', license_id
+                (student_id, group_id, is_primary, status, license_id, edebo_code)
+            SELECT id, group_id, 1, 'active', license_id, edebo_code
             FROM students
             WHERE group_id IS NOT NULL
         """)
@@ -80,10 +87,10 @@ def backfill_primary_from_students(conn=None) -> int:
 def list_student_enrollments(student_id: int, conn=None) -> list:
     """Повертає ВСІ enrollments студента з назвами групи та ліцензії.
 
-    license_id/назви беруться з enrollment, а якщо там NULL (студент
-    створений до впровадження per-enrollment ліцензій і міграція ще не
-    пройшла) — fallback на students.license_id. Так карточка ніколи не
-    показує «не вказано», якщо ліцензія на рівні студента є.
+    license_id / edebo_code / назви беруться з enrollment, а якщо там NULL
+    (студент створений до впровадження per-enrollment значень і міграція
+    ще не пройшла) — fallback на students.license_id / students.edebo_code.
+    Так карточка ніколи не показує «не вказано», якщо на рівні студента є.
     """
     own = conn is None
     if own:
@@ -93,6 +100,7 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
         rows = conn.execute("""
             SELECT e.id, e.student_id, e.group_id, e.is_primary, e.status,
                    COALESCE(e.license_id, s.license_id) AS license_id,
+                   COALESCE(e.edebo_code, s.edebo_code) AS edebo_code,
                    e.order_id, e.notes, e.created_at,
                    g.name AS group_name, g.start_year, g.study_form,
                    g.degree_level, g.course, g.specialty_code,
@@ -101,7 +109,8 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
                    il.name_ua       AS license_name_ua,
                    il.short_name_en AS license_short_name_en,
                    il.name_en       AS license_name_en,
-                   e.license_id IS NULL AS license_is_inherited
+                   e.license_id IS NULL AS license_is_inherited,
+                   e.edebo_code IS NULL AS edebo_is_inherited
             FROM student_enrollments e
             JOIN students s ON s.id = e.student_id
             LEFT JOIN groups g ON g.id = e.group_id
@@ -113,10 +122,6 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
                      e.id
         """, (student_id,)).fetchall()
 
-        # Дедуплікація: одна пара (student_id, group_id) — один рядок.
-        # Через історичні дані в старій БД без UNIQUE-констрейнту може
-        # бути кілька рядків на ту саму групу; лишаємо перший згідно з
-        # ORDER BY (is_primary DESC, active спочатку, найсвіжіший id).
         _seen = set()
         _deduped = []
         for r in rows:
@@ -129,6 +134,7 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
     finally:
         if own:
             conn.close()
+
 
 def get_active_group_ids_for_student(student_id: int, conn=None) -> list:
     own = conn is None
@@ -190,6 +196,7 @@ def add_enrollment(
     *,
     is_primary: bool = False,
     license_id: Optional[int] = None,
+    edebo_code: Optional[str] = None,
     order_id=None,
     notes=None,
     status: str = 'active',
@@ -203,7 +210,7 @@ def add_enrollment(
         ensure_enrollments_table(conn)
 
         st = conn.execute(
-            "SELECT id, license_id FROM students WHERE id = ?", (student_id,)
+            "SELECT id, license_id, edebo_code FROM students WHERE id = ?", (student_id,)
         ).fetchone()
         if not st:
             return False, 'Студента не знайдено'
@@ -218,14 +225,15 @@ def add_enrollment(
         if license_id is None:
             license_id = st['license_id'] if hasattr(st, 'keys') else st[1]
             if license_id is None:
-                # Останній fallback: базова ліцензія закладу. Так активний
-                # enrollment НІКОЛИ не залишається без ліцензії — краще
-                # підставити базову (видиму в звітах), ніж NULL (невидимий).
                 base_row = conn.execute(
                     "SELECT id FROM institution_licenses WHERE is_base = 1 LIMIT 1"
                 ).fetchone()
                 if base_row:
                     license_id = base_row[0] if not hasattr(base_row, 'keys') else base_row['id']
+
+        # Якщо edebo_code не передано — успадковуємо від студента
+        if edebo_code is None:
+            edebo_code = st['edebo_code'] if hasattr(st, 'keys') else st[2]
 
         existing = conn.execute(
             """
@@ -245,21 +253,23 @@ def add_enrollment(
                 UPDATE student_enrollments
                 SET status = ?, order_id = COALESCE(?, order_id),
                     notes = COALESCE(?, notes), is_primary = ?,
-                    license_id = COALESCE(?, license_id)
+                    license_id = COALESCE(?, license_id),
+                    edebo_code = COALESCE(?, edebo_code)
                 WHERE id = ?
                 """,
-                (status, order_id, notes, 1 if is_primary else 0, license_id, eid),
+                (status, order_id, notes, 1 if is_primary else 0,
+                 license_id, edebo_code, eid),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO student_enrollments
                     (student_id, group_id, is_primary, status,
-                     license_id, order_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                     license_id, edebo_code, order_id, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (student_id, group_id, 1 if is_primary else 0, status,
-                 license_id, order_id, notes),
+                 license_id, edebo_code, order_id, notes),
             )
 
         if is_primary:
@@ -271,12 +281,13 @@ def add_enrollment(
                 (student_id, group_id),
             )
             conn.execute(
-                "UPDATE students SET group_id = ?, license_id = COALESCE(?, license_id) "
+                "UPDATE students SET group_id = ?, "
+                "license_id = COALESCE(?, license_id), "
+                "edebo_code = COALESCE(?, edebo_code) "
                 "WHERE id = ?",
-                (group_id, license_id, student_id),
+                (group_id, license_id, edebo_code, student_id),
             )
 
-        # ── Якщо в студента є хоч один active enrollment — знімаємо з архіву ──
         conn.execute("""
             UPDATE students SET archived = FALSE
             WHERE id = ? AND archived = TRUE
@@ -328,6 +339,42 @@ def update_enrollment_license(student_id: int, group_id: int,
             conn.close()
 
 
+def update_enrollment_edebo_code(student_id: int, group_id: int,
+                                  edebo_code: Optional[str], conn=None):
+    """Змінює код ЄДЕБО конкретного enrollment. Якщо це primary —
+    синхронізує students.edebo_code."""
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        ensure_enrollments_table(conn)
+        row = conn.execute(
+            "SELECT id, is_primary FROM student_enrollments "
+            "WHERE student_id = ? AND group_id = ?",
+            (student_id, group_id),
+        ).fetchone()
+        if not row:
+            return False, 'Запис про навчання в цій групі не знайдено'
+        eid = row['id'] if hasattr(row, 'keys') else row[0]
+        is_primary = bool(row['is_primary'] if hasattr(row, 'keys') else row[1])
+
+        conn.execute(
+            "UPDATE student_enrollments SET edebo_code = ? WHERE id = ?",
+            (edebo_code, eid),
+        )
+        if is_primary:
+            conn.execute(
+                "UPDATE students SET edebo_code = ? WHERE id = ?",
+                (edebo_code, student_id),
+            )
+        if own:
+            conn.commit()
+        return True, 'Код ЄДЕБО оновлено'
+    finally:
+        if own:
+            conn.close()
+
+
 def set_primary_enrollment(student_id: int, group_id: int, conn=None):
     own = conn is None
     if own:
@@ -336,7 +383,7 @@ def set_primary_enrollment(student_id: int, group_id: int, conn=None):
         ensure_enrollments_table(conn)
         row = conn.execute(
             """
-            SELECT id, license_id FROM student_enrollments
+            SELECT id, license_id, edebo_code FROM student_enrollments
             WHERE student_id = ? AND group_id = ? AND status = 'active'
             """,
             (student_id, group_id),
@@ -345,6 +392,7 @@ def set_primary_enrollment(student_id: int, group_id: int, conn=None):
             return False, 'Немає активного навчання в цій групі'
 
         lic = row['license_id'] if hasattr(row, 'keys') else row[1]
+        edc = row['edebo_code'] if hasattr(row, 'keys') else row[2]
 
         conn.execute(
             "UPDATE student_enrollments SET is_primary = 0 WHERE student_id = ?",
@@ -359,8 +407,9 @@ def set_primary_enrollment(student_id: int, group_id: int, conn=None):
         )
         conn.execute(
             "UPDATE students SET group_id = ?, "
-            "license_id = COALESCE(?, license_id) WHERE id = ?",
-            (group_id, lic, student_id),
+            "license_id = COALESCE(?, license_id), "
+            "edebo_code = COALESCE(?, edebo_code) WHERE id = ?",
+            (group_id, lic, edc, student_id),
         )
         if own:
             conn.commit()
@@ -398,7 +447,7 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
         if was_primary:
             nxt = conn.execute(
                 """
-                SELECT group_id, license_id FROM student_enrollments
+                SELECT group_id, license_id, edebo_code FROM student_enrollments
                 WHERE student_id = ? AND status = 'active'
                 ORDER BY id LIMIT 1
                 """,
@@ -407,6 +456,7 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
             if nxt:
                 new_gid = nxt['group_id'] if hasattr(nxt, 'keys') else nxt[0]
                 new_lic = nxt['license_id'] if hasattr(nxt, 'keys') else nxt[1]
+                new_edc = nxt['edebo_code'] if hasattr(nxt, 'keys') else nxt[2]
                 conn.execute(
                     """
                     UPDATE student_enrollments SET is_primary = 1
@@ -416,8 +466,9 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
                 )
                 conn.execute(
                     "UPDATE students SET group_id = ?, "
-                    "license_id = COALESCE(?, license_id) WHERE id = ?",
-                    (new_gid, new_lic, student_id),
+                    "license_id = COALESCE(?, license_id), "
+                    "edebo_code = COALESCE(?, edebo_code) WHERE id = ?",
+                    (new_gid, new_lic, new_edc, student_id),
                 )
             else:
                 conn.execute(
@@ -425,7 +476,6 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
                     (student_id,),
                 )
 
-        # ── Якщо більше немає active enrollment'ів — архівуємо студента ──
         conn.execute("""
             UPDATE students SET archived = TRUE
             WHERE id = ? AND archived = FALSE
@@ -439,7 +489,8 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
     finally:
         if own:
             conn.close()
-            
+
+
 def get_student_licenses(student_id: int, conn=None) -> set:
     """Множина license_id усіх АКТИВНИХ enrollment'ів студента."""
     own = conn is None
@@ -458,7 +509,6 @@ def get_student_licenses(student_id: int, conn=None) -> set:
 
 
 def student_has_license(student_id: int, license_id: int, conn=None) -> bool:
-    """True, якщо студент учиться під цією ліцензією хоч в одній активній групі."""
     if not license_id:
         return False
     return license_id in get_student_licenses(student_id, conn=conn)
@@ -466,17 +516,9 @@ def student_has_license(student_id: int, license_id: int, conn=None) -> bool:
 
 def student_has_base_license(student_id: int, base_license_id: int,
                               conn=None) -> bool:
-    """True, якщо студент має хоч один активний enrollment під базовою
-    ліцензією АБО взагалі не має жодного enrollment'а з ліцензією (щоб
-    адмін побачив його з бейджем «без ліцензії» й міг виправити).
-
-    Це саме та семантика, яка потрібна модулю військового обліку
-    (Постанова №812): показуємо студентів, які мають відношення до
-    базової ліцензії, і тих, чиї дані ще не заповнені.
-    """
     lic_ids = get_student_licenses(student_id, conn=conn)
     if not lic_ids:
-        return True  # показати з бейджем — адмін має заповнити
+        return True
     return base_license_id in lic_ids
 
 

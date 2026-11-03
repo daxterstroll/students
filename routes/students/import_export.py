@@ -394,6 +394,7 @@ def import_from_excel():
                             new_id, group_id,
                             is_primary=True,
                             license_id=license_id,
+                            edebo_code=edebo_code, 
                             conn=conn,
                         )
                         inserted += 1
@@ -435,6 +436,7 @@ def import_from_excel():
                         sid, group_id,
                         is_primary=is_primary,
                         license_id=license_id,
+                        edebo_code=edebo_code,
                         conn=conn,
                     )
                     if not ok:

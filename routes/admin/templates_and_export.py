@@ -647,6 +647,7 @@ def generate_group_docs():
     conn.row_factory = sqlite3.Row
     base_query = """
         SELECT s.*,
+               COALESCE(e.edebo_code, s.edebo_code) AS enrollment_edebo_code,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form, g.start_year, g.program_credits,
                g.qualification_name, g.degree_level, g.specialty, g.educational_program, g.knowledge_area,
@@ -716,6 +717,11 @@ def generate_group_docs():
     students_data = []
     for student in students:
         student_dict = dict(student)
+        # students.edebo_code — кеш primary; для документа конкретної
+        # групи беремо код ЄДЕБО САМЕ цього enrollment'а (COALESCE у
+        # SQL вище), з fallback на кеш.
+        if student_dict.get('enrollment_edebo_code'):
+            student_dict['edebo_code'] = student_dict['enrollment_edebo_code']
         military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
         students_data.append((student_dict, dict(military) if military else {}))
     conn.close()

@@ -64,6 +64,7 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
     Для expulsion: «з групи КН-21 (2022, Денна); причина».
     Для course_transfer: «курс 1 → 2».
     Для license_transfer: «ліцензія Львівська → Польська».
+    Для edebo_code_change: «ЄДЕБО 123 → 456».
     Для enrollment: «у групу КН-21 (2022, Денна)».
     Інакше — `key=value, …`.
     """
