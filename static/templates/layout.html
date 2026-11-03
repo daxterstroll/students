@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="color-scheme" content="light dark">
     <title>{% block title %}База даних студентів Львівської філії ПВНЗ "Європейський університет"{% endblock %}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='style/images/favicon.png') }}" type="image/png">
 
@@ -26,10 +27,12 @@
     (function () {
         try {
             var saved = localStorage.getItem('theme');
-            if (saved === 'dark') {
-                document.documentElement.setAttribute('data-theme', 'dark');
-                document.documentElement.setAttribute('data-bs-theme', 'dark');
-            }
+             if (saved === 'dark') {
+                 document.documentElement.setAttribute('data-theme', 'dark');
+                 document.documentElement.setAttribute('data-bs-theme', 'dark');
+            } else {
+                document.documentElement.setAttribute('data-bs-theme', 'light');
+             }
         } catch (e) { /* localStorage може бути недоступний - тоді просто світла тема */ }
     })();
 </script>
@@ -282,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         if (isDark) {
             document.documentElement.removeAttribute('data-theme');
-            document.documentElement.removeAttribute('data-bs-theme');
+            document.documentElement.setAttribute('data-bs-theme', 'light');
             try { localStorage.setItem('theme', 'light'); } catch (e) {}
         } else {
             document.documentElement.setAttribute('data-theme', 'dark');
