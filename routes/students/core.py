@@ -933,6 +933,18 @@ def student_details(student_id):
     student_orders = []
     if orders_tables_ready(conn=conn):
         student_orders = get_student_orders(student_id, conn=conn)
+    
+    # Історія адмінських корекцій (без наказу) — показується окремим
+    # блоком у вкладці "Накази".
+    enrollment_corrections = conn.execute("""
+        SELECT e.group_id, e.status,
+               e.correction_note, e.correction_by, e.correction_at,
+               g.name AS group_name
+        FROM student_enrollments e
+        LEFT JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ? AND e.is_correction = 1
+        ORDER BY e.correction_at DESC
+    """, (student_id,)).fetchall()
 
     all_groups = conn.execute("""
         SELECT id,
@@ -958,6 +970,7 @@ def student_details(student_id):
         military=military_dict,
         military_attachments=military_attachments,
         enrollments=enrollments,
+        enrollment_corrections=enrollment_corrections,
         all_groups=all_groups,
         licenses_available=licenses_available,
         groups_data=groups_data,
@@ -1511,7 +1524,19 @@ def freeze_student(student_id):
     saved_paths = save_multiple_attachments(conn, 'frozen_student', frozen_id, document_files, 'frozen_students', current_username())
     if saved_paths:
         conn.execute("UPDATE frozen_students SET document_file = ? WHERE id = ?", (saved_paths[0], frozen_id))
-    conn.execute("UPDATE students SET group_id = NULL WHERE id = ?", (student_id,))
+    # Закриваємо enrollment зі статусом 'frozen' — так само, як це вже
+    # роблять course_transfer_confirm() та graduation_confirm(). Без
+    # цього рядок у student_enrollments залишався зі status='active',
+    # і студент далі «просочувався» в ліцензійний звіт, аналітику та
+    # списки груп як активний.
+    #
+    # end_enrollment() автоматично знімає group_id (якщо це був
+    # primary) І може сам виставити archived=TRUE — для заморозки це
+    # неправильно (заморожений ≠ архівний), тому повертаємо
+    # archived=FALSE одразу після.
+    from routes.enrollments_service import end_enrollment
+    end_enrollment(student_id, student['group_id'], status='frozen', conn=conn)
+    conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
     conn.commit()
     conn.close()
 
@@ -1985,7 +2010,13 @@ def generate(student_id):
 @students_bp.route('/students/<int:student_id>/enrollments/add', methods=['POST'])
 @permission_required('manage_students')
 def enrollment_add(student_id):
-    """Додати паралельне навчання — через наказ про зарахування."""
+    """Додати паралельне навчання — через наказ про зарахування.
+
+    Адміністратор може поставити галочку bypass_order=1 — тоді наказ
+    НЕ створюється (типово — для виправлення помилкового зарахування).
+    Такий запис в enrollment'ах позначається is_correction=1 з
+    обов'язковою причиною і автором.
+    """
     from routes.enrollments_service import add_enrollment
     from routes.orders_service import create_order
 
@@ -1996,35 +2027,65 @@ def enrollment_add(student_id):
     order_number = (request.form.get('order_number') or '').strip()
     order_date = (request.form.get('order_date') or '').strip()
 
+    bypass_order = request.form.get('bypass_order') == '1'
+    correction_reason = (request.form.get('correction_reason') or '').strip()
+
     if not group_id:
         flash('Оберіть групу', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
-    if not order_number or not order_date:
-        flash('Заповніть номер і дату наказу про зарахування', 'error')
-        return redirect(url_for('students.student_details', student_id=student_id))
+
+    if bypass_order:
+        if not session.get('is_admin'):
+            flash('Тільки адміністратор може змінювати навчання без наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+        if not correction_reason:
+            flash('Вкажіть причину корекції (без наказу) — це обов’язкове поле.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+    else:
+        if not order_number or not order_date:
+            flash('Заповніть номер і дату наказу про зарахування', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
 
     scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
 
     conn = get_db()
     try:
-        order_id = create_order(
-            'enrollment', order_number, order_date,
-            [{
-                'entity_type': 'student',
-                'entity_id': student_id,
-                'payload': {'group_id': group_id},
-            }],
-            created_by=current_username(),
-            files=scan_files or None,
-            upload_subdir='orders',
-            conn=conn,
-        )
-        ok, msg = add_enrollment(
-            student_id, group_id,
-            is_primary=is_primary, license_id=license_id,
-            edebo_code=edebo_code,
-            order_id=order_id, conn=conn,
-        )
+        order_id = None
+        if bypass_order:
+            ok, msg = add_enrollment(
+                student_id, group_id,
+                is_primary=is_primary, license_id=license_id,
+                edebo_code=edebo_code, conn=conn,
+            )
+            if ok:
+                conn.execute("""
+                    UPDATE student_enrollments
+                    SET is_correction = 1,
+                        correction_note = ?,
+                        correction_by = ?,
+                        correction_at = datetime('now', 'localtime')
+                    WHERE student_id = ? AND group_id = ?
+                """, (correction_reason, current_username(), student_id, group_id))
+        else:
+            order_id = create_order(
+                'enrollment', order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {'group_id': group_id},
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+            ok, msg = add_enrollment(
+                student_id, group_id,
+                is_primary=is_primary, license_id=license_id,
+                edebo_code=edebo_code,
+                order_id=order_id, conn=conn,
+            )
+
         if not ok:
             conn.rollback()
             conn.close()
@@ -2033,6 +2094,19 @@ def enrollment_add(student_id):
 
         conn.commit()
         conn.close()
+
+        if bypass_order:
+            log_action(
+                current_username(),
+                f'КОРЕКЦІЯ (без наказу): додав навчання student={student_id} group={group_id}',
+                details=f'причина: {correction_reason}',
+            )
+            flash(
+                f'Навчання додано БЕЗ наказу (корекція). Причина: {correction_reason}. '
+                f'Дію зафіксовано в журналі.',
+                'success',
+            )
+            return redirect(url_for('students.student_details', student_id=student_id))
 
         log_action(
             current_username(),
@@ -2050,11 +2124,8 @@ def enrollment_add(student_id):
         logger.error(f'enrollment_add failed (student={student_id}): {e}', exc_info=True)
         flash(f'Помилка створення наказу: {e}', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
-
-@students_bp.route(
-    '/students/<int:student_id>/enrollments/<int:group_id>/action',
-    methods=['POST'],
-)
+        
+@students_bp.route('/students/<int:student_id>/enrollments/<int:group_id>/action', methods=['POST'],)
 @permission_required('manage_students')
 def enrollment_action(student_id, group_id):
     """Єдина точка зміни існуючого навчання.
@@ -2066,6 +2137,10 @@ def enrollment_action(student_id, group_id):
 
     Дії БЕЗ наказу (пряме редагування):
       - 'change_edebo_code' → зміна коду ЄДЕБО конкретного enrollment'а
+
+    Адміністратор може поставити bypass_order=1 на будь-яку дію, що
+    вимагає наказу, — тоді наказ не створюється, а enrollment
+    позначається як корекція (is_correction=1 + обов'язкова причина).
     """
     from routes.enrollments_service import (
         end_enrollment,
@@ -2079,6 +2154,9 @@ def enrollment_action(student_id, group_id):
     order_date = (request.form.get('order_date') or '').strip()
     reason = (request.form.get('reason') or '').strip()
 
+    bypass_order = request.form.get('bypass_order') == '1'
+    correction_reason = (request.form.get('correction_reason') or '').strip()
+
     if action_type not in (
         'change_license', 'change_edebo_code', 'graduate', 'expel',
     ):
@@ -2088,9 +2166,18 @@ def enrollment_action(student_id, group_id):
     # Наказ обов'язковий лише для дій зі статусом/ліцензією.
     # change_edebo_code — пряме редагування без наказу.
     order_required = action_type in ('change_license', 'graduate', 'expel')
-    if order_required and (not order_number or not order_date):
-        flash('Заповніть номер і дату наказу', 'error')
-        return redirect(url_for('students.student_details', student_id=student_id))
+    if order_required and bypass_order:
+        if not session.get('is_admin'):
+            flash('Тільки адміністратор може змінювати навчання без наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+        if not correction_reason:
+            flash('Вкажіть причину корекції (без наказу) — це обов’язкове поле.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+    elif order_required:
+        if not order_number or not order_date:
+            flash('Заповніть номер і дату наказу', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
     if action_type == 'expel' and not reason:
         flash('Вкажіть причину відрахування', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
@@ -2120,28 +2207,28 @@ def enrollment_action(student_id, group_id):
                 flash('Обрана ліцензія збігається з поточною', 'warning')
                 return redirect(url_for('students.student_details', student_id=student_id))
 
-            order_id = create_order(
-                'license_transfer', order_number, order_date,
-                [{
-                    'entity_type': 'student',
-                    'entity_id': student_id,
-                    'payload': {
-                        'previous_license_id': enrollment['license_id'],
-                        'new_license_id': new_license_id,
-                        'group_id': group_id,
-                    },
-                }],
-                created_by=current_username(),
-                files=scan_files or None,
-                upload_subdir='orders',
-                conn=conn,
-            )
+            if not bypass_order:
+                order_id = create_order(
+                    'license_transfer', order_number, order_date,
+                    [{
+                        'entity_type': 'student',
+                        'entity_id': student_id,
+                        'payload': {
+                            'previous_license_id': enrollment['license_id'],
+                            'new_license_id': new_license_id,
+                            'group_id': group_id,
+                        },
+                    }],
+                    created_by=current_username(),
+                    files=scan_files or None,
+                    upload_subdir='orders',
+                    conn=conn,
+                )
             ok, msg = update_enrollment_license(
                 student_id, group_id, new_license_id, conn=conn,
             )
 
         elif action_type == 'change_edebo_code':
-            # БЕЗ наказу — пряме оновлення поля enrollment'а.
             new_edebo = (request.form.get('new_edebo_code') or '').strip() or None
             if new_edebo == enrollment['edebo_code']:
                 conn.close()
@@ -2155,11 +2242,8 @@ def enrollment_action(student_id, group_id):
                 conn.commit()
                 log_action(
                     current_username(),
-                    f"змінив код ЄДЕБО навчання: student={student_id} "
-                    f"group={group_id}",
-                    details=(
-                        f"{enrollment['edebo_code'] or '—'} → {new_edebo or '—'}"
-                    ),
+                    f"змінив код ЄДЕБО навчання: student={student_id} group={group_id}",
+                    details=f"{enrollment['edebo_code'] or '—'} → {new_edebo or '—'}",
                 )
                 flash('Код ЄДЕБО оновлено', 'success')
             conn.close()
@@ -2168,38 +2252,40 @@ def enrollment_action(student_id, group_id):
             return redirect(url_for('students.student_details', student_id=student_id))
 
         elif action_type == 'graduate':
-            order_id = create_order(
-                'graduation', order_number, order_date,
-                [{
-                    'entity_type': 'student',
-                    'entity_id': student_id,
-                    'payload': {'action': 'graduated', 'group_id': group_id},
-                }],
-                created_by=current_username(),
-                files=scan_files or None,
-                upload_subdir='orders',
-                conn=conn,
-            )
+            if not bypass_order:
+                order_id = create_order(
+                    'graduation', order_number, order_date,
+                    [{
+                        'entity_type': 'student',
+                        'entity_id': student_id,
+                        'payload': {'action': 'graduated', 'group_id': group_id},
+                    }],
+                    created_by=current_username(),
+                    files=scan_files or None,
+                    upload_subdir='orders',
+                    conn=conn,
+                )
             ok, msg = end_enrollment(
                 student_id, group_id, status='graduated', conn=conn,
             )
 
         elif action_type == 'expel':
-            order_id = create_order(
-                'expulsion', order_number, order_date,
-                [{
-                    'entity_type': 'student',
-                    'entity_id': student_id,
-                    'payload': {
-                        'previous_group_id': group_id,
-                        'reason': reason,
-                    },
-                }],
-                created_by=current_username(),
-                files=scan_files or None,
-                upload_subdir='orders',
-                conn=conn,
-            )
+            if not bypass_order:
+                order_id = create_order(
+                    'expulsion', order_number, order_date,
+                    [{
+                        'entity_type': 'student',
+                        'entity_id': student_id,
+                        'payload': {
+                            'previous_group_id': group_id,
+                            'reason': reason,
+                        },
+                    }],
+                    created_by=current_username(),
+                    files=scan_files or None,
+                    upload_subdir='orders',
+                    conn=conn,
+                )
             ok, msg = end_enrollment(
                 student_id, group_id, status='expelled', conn=conn,
             )
@@ -2210,6 +2296,20 @@ def enrollment_action(student_id, group_id):
             flash(f'Не вдалося виконати дію: {msg}', 'error')
             return redirect(url_for('students.student_details', student_id=student_id))
 
+        # Позначаємо enrollment як корекцію (тільки якщо реально bypass)
+        if bypass_order and order_required:
+            conn.execute("""
+                UPDATE student_enrollments
+                SET is_correction = 1,
+                    correction_note = COALESCE(correction_note || ' | ', '') || ?,
+                    correction_by = ?,
+                    correction_at = datetime('now', 'localtime')
+                WHERE student_id = ? AND group_id = ?
+            """, (
+                f"{action_type}: {correction_reason}",
+                current_username(), student_id, group_id,
+            ))
+
         conn.commit()
         conn.close()
 
@@ -2218,6 +2318,21 @@ def enrollment_action(student_id, group_id):
             'graduate': 'оформив випуск',
             'expel': 'відрахував',
         }
+        if bypass_order:
+            log_action(
+                current_username(),
+                f"КОРЕКЦІЯ (без наказу) — {action_labels[action_type]}: "
+                f"student={student_id} group={group_id}",
+                details=f"причина: {correction_reason}"
+                        + (f"; причина відрахування: {reason}" if action_type == 'expel' else ''),
+            )
+            flash(
+                f'Дію виконано БЕЗ наказу (корекція). Причина: {correction_reason}. '
+                f'Зафіксовано в журналі.',
+                'success',
+            )
+            return redirect(url_for('students.student_details', student_id=student_id))
+
         log_action(
             current_username(),
             f"{action_labels[action_type]}: student={student_id} group={group_id} "
