@@ -1,11 +1,40 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Імпорт документів про освіту{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
+<style>
+    .fmt-cell { font-family: 'JetBrains Mono', monospace; font-size: .82rem; }
+    .col-badge-a { background: var(--ink) !important; color: var(--brass-lt) !important; }
+    .col-badge-e { background: #3f7556 !important; color: #fff !important; }
+    .scenario {
+        border-left: 3px solid var(--brass);
+        padding: .55rem .85rem;
+        margin-bottom: .5rem;
+        background: var(--paper-2);
+        border-radius: 6px;
+        font-size: .86rem;
+    }
+    .scenario--new   { border-left-color: #3f7556; }
+    .scenario--upd   { border-left-color: var(--brass); }
+    .scenario--rebin { border-left-color: #4a6ea8; }
+    .scenario__title {
+        font-weight: 700;
+        margin-bottom: .15rem;
+        display: flex; align-items: center; gap: .4rem;
+    }
+    .scenario--new   .scenario__title { color: #3f7556; }
+    .scenario--upd   .scenario__title { color: #8a6a1a; }
+    .scenario--rebin .scenario__title { color: #2f5f87; }
+    html[data-theme="dark"] .scenario--new   .scenario__title { color: #bfe3c2; }
+    html[data-theme="dark"] .scenario--upd   .scenario__title { color: var(--brass-lt); }
+    html[data-theme="dark"] .scenario--rebin .scenario__title { color: #a9c2e8; }
+</style>
+
 <div class="container py-4">
 
-{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт документів про освіту', 'Розпізнавання документів про освіту студентів із файлу .xlsx') }}
+{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт документів про освіту',
+    'Розпізнавання документів про освіту студентів із файлу .xlsx (атестати, дипломи, свідоцтва)') }}
 
 <div class="row g-4">
 
@@ -30,25 +59,26 @@
 
         <h6 class="mb-2">Що робить імпорт</h6>
         <ul class="list-unstyled small mb-0">
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить студента нечітким пошуком по ПІБ</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить студента нечітким пошуком за ПІБ</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбирає рядок документа на поля автоматично</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбирає (якщо вказані) академічну довідку та свідоцтво про визнання</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Змінює . на / в усіх датах</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає країну та автоматично перекладає заклад/орган англійською</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розпізнає академічну довідку та свідоцтво про визнання</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає країну та перекладає заклад англійською</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i><strong>Прив'язує документ до конкретної групи</strong> (для паралельного навчання)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>При повторному імпорті — оновлює документ <strong>у межах цієї групи</strong></li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує превью — можна відредагувати перед збереженням</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Якщо документ вже є — пропонує оновлення</li>
         </ul>
 
         <hr>
 
-        <a href="{{ url_for('static', filename='example_excel/import_education_docs.xlsx') }}" class="btn btn-outline-secondary btn-sm w-100">
+        <a href="{{ url_for('static', filename='example_excel/import_education_docs.xlsx') }}"
+           class="btn btn-outline-secondary btn-sm w-100">
           <i class="bi bi-download me-1"></i> Завантажити шаблон .xlsx
         </a>
       </div>
     </div>
   </div>
 
-  {# ── Документація формату ── #}
+  {# ── Документація ── #}
   <div class="col-12 col-lg-7">
     <div class="card h-100">
       <div class="card-body">
@@ -56,19 +86,20 @@
 
         <p class="small text-muted mb-3">
           Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
-          Файл містить від двох до чотирьох колонок. Переклад англійською (тип документа, заклад,
-          довідка, свідоцтво) виконується <strong>автоматично</strong> — окремих колонок для англійських
-          назв у файлі не потрібно.
+          Файл містить 2 обов'язкові колонки (A–B), дві опціональні
+          для іноземних документів (C–D) і одну опціональну для прив'язки
+          до групи (E). Переклад англійською виконується <strong>автоматично</strong> —
+          окремих колонок для англійських назв у файлі не потрібно.
         </p>
 
         <div class="table-responsive">
           <table class="table table-sm table-bordered small align-middle mb-4">
-            <thead class="table-dark">
+            <thead>
               <tr>
-                <th style="width:40px">#</th>
-                <th>Колонка</th>
-                <th style="width:90px" class="text-center">Обов'язкова</th>
-                <th>Приклад</th>
+                <th style="width:40px" class="text-center col-badge-a">#</th>
+                <th class="col-badge-a">Колонка</th>
+                <th class="col-badge-a text-center" style="width:100px">Обов'язкова</th>
+                <th class="col-badge-a">Приклад</th>
               </tr>
             </thead>
             <tbody>
@@ -96,47 +127,27 @@
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
                 <td><code>№ N-7916-20; Приватний ВНЗ «Європейський університет»; 12.05.2020</code></td>
               </tr>
+              <tr>
+                <td class="text-center fw-bold col-badge-e">E</td>
+                <td class="col-badge-e">ID групи документа</td>
+                <td class="text-center col-badge-e"><span class="badge bg-secondary">Ні</span></td>
+                <td class="col-badge-e"><code>5</code> — числовий ID групи, до якої прив'язати документ. <strong>Порожньо</strong> — прив'язка до основної групи студента.</td>
+              </tr>
             </tbody>
           </table>
         </div>
 
-        {# Формат рядка документа #}
+        {# ── Колонка A / B: формат рядка документа ── #}
         <h6 class="mb-2">Формат рядка документа (колонка B)</h6>
         <div class="alert alert-secondary small py-2 font-monospace mb-3">
           [Тип]&nbsp;&nbsp;[Номер]&nbsp;&nbsp;;&nbsp;&nbsp;[Дата ДД.ММ.РРРР]&nbsp;&nbsp;;&nbsp;&nbsp;Ким видано:&nbsp;[Заклад]
         </div>
-        <p class="small mb-1">Між типом документа і номером — <strong>два або більше пробіли</strong>. Між частинами — крапка з комою (<code>;</code>).</p>
+        <p class="small mb-1">
+          Між типом документа і номером — <strong>два або більше пробіли</strong>.
+          Між частинами — крапка з комою (<code>;</code>).
+        </p>
 
-        <h6 class="mb-2">Формат колонки C (Академічна довідка)</h6>
-        <div class="alert alert-secondary small py-2 font-monospace mb-1">
-          [Номер довідки]&nbsp;;&nbsp;[Заклад укр]&nbsp;;&nbsp;[Країна укр]&nbsp;;&nbsp;[Дата видачі]
-        </div>
-        <p class="small text-muted mb-3">Заклад та країна англійською перекладаються автоматично.</p>
-
-        <h6 class="mb-2">Формат колонки D (Свідоцтво про визнання)</h6>
-        <div class="alert alert-secondary small py-2 font-monospace mb-1">
-          [Номер свідоцтва]&nbsp;;&nbsp;[Орган укр]&nbsp;;&nbsp;[Дата видачі]
-        </div>
-        <p class="small text-muted mb-0">Орган англійською перекладається автоматично. Колонки C і D необов'язкові.</p>
-
-		<h6 class="mb-2">Формат колонки E (необов'язкова) — група документа</h6>
-		<p class="small mb-2">
-			Для паралельного навчання можна вказати, до якої <strong>конкретної групи</strong>
-			студента прив'язати документ. Наприклад:
-		</p>
-		<ul class="small mb-3">
-			<li>Диплом бакалавра → прив'язати до <strong>магістратури</strong> (або навпаки);</li>
-			<li>Атестат про середню освіту → прив'язати до <strong>бакалаврату</strong>.</li>
-		</ul>
-		<div class="alert alert-secondary small py-2 font-monospace mb-0">
-			[A: ПІБ]&nbsp;|&nbsp;[B: рядок документа]&nbsp;|&nbsp;[C: довідка]&nbsp;|&nbsp;[D: свідоцтво]&nbsp;|&nbsp;[E: ID групи]
-		</div>
-		<p class="small text-muted mt-2 mb-0">
-			Порожньо в колонці E → як і раніше, документ прив'яжеться до
-			<strong>основної групи</strong> студента.
-		</p>
-
-        <div class="table-responsive mb-3 mt-3">
+        <div class="table-responsive mb-3">
           <table class="table table-sm table-bordered small align-middle">
             <thead class="table-secondary">
               <tr>
@@ -170,27 +181,145 @@
           </table>
         </div>
 
-        {# Приклади рядків #}
-        <h6 class="mb-2">Приклади рядків</h6>
-        <ul class="small mb-3">
-          <li class="mb-1">
-            <code>Диплом бакалавра  B24 088726; 20.06.2024; Ким видано: Харківський національний університет</code>
-          </li>
-          <li class="mb-1">
-            <code>Атестат про повну загальну середню освіту  БК 40920464; 15.06.2021; Ким видано: Ліцей №5 м. Одеса</code>
-          </li>
-          <li>
-            <code>Диплом молодшого спеціаліста  КМ 12345678; 30.06.2022; Ким видано: Київський коледж технологій</code>
-          </li>
-        </ul>
+        {# ── Колонки C / D ── #}
+        <h6 class="mb-2">Формат колонки C (Академічна довідка)</h6>
+        <div class="alert alert-secondary small py-2 font-monospace mb-1">
+          [Номер довідки]&nbsp;;&nbsp;[Заклад укр]&nbsp;;&nbsp;[Країна укр]&nbsp;;&nbsp;[Дата видачі]
+        </div>
+        <p class="small text-muted mb-3">Заклад та країна англійською перекладаються автоматично.</p>
 
-        {# Причини пропуску #}
+        <h6 class="mb-2">Формат колонки D (Свідоцтво про визнання)</h6>
+        <div class="alert alert-secondary small py-2 font-monospace mb-1">
+          [Номер свідоцтва]&nbsp;;&nbsp;[Орган укр]&nbsp;;&nbsp;[Дата видачі]
+        </div>
+        <p class="small text-muted mb-4">Орган англійською перекладається автоматично. Колонки C і D необов'язкові.</p>
+
+        {# ── Колонка E: група документа ── #}
+        <h6 class="mb-2 col-badge-e" style="display:inline-block; padding:.2rem .55rem; border-radius:6px;">
+          Колонка E — ID групи документа
+        </h6>
+        <p class="small mb-2">
+          Числовий ID групи, до якої прив'язати документ. <strong>Критично важливо</strong>
+          для паралельного навчання: студент вчиться одночасно в кількох групах,
+          і в кожної групи — свій набір документів (атестат про середню освіту →
+          бакалаврат, диплом бакалавра → магістратура).
+        </p>
+
+        <div class="alert alert-info small mb-3">
+          <i class="bi bi-info-circle-fill me-1"></i>
+          <strong>Де взяти ID групи:</strong> сторінка «Групи» → колонка <code>ID</code>,
+          або на картці студента в блоці «Навчання (групи)». Обидва показують той самий ID.
+        </div>
+
+        {# ── Сценарії обробки ── #}
+        <h6 class="mb-2">Що відбувається з документом (4 сценарії)</h6>
+        <p class="small text-muted mb-2">
+          Залежить від того, чи вже є документ для студента в цій групі, і чи співпадає
+          група з колонки E з тією, до якої документ прив'язаний зараз.
+        </p>
+
+        <div class="mb-4">
+          <div class="scenario scenario--new">
+            <div class="scenario__title">
+              <i class="bi bi-plus-circle-fill"></i>
+              Новий документ
+            </div>
+            У студента ще немає документа для цієї групи → створюється новий запис,
+            прив'язаний до вказаної групи (E) або до основної групи студента (якщо E порожньо).
+          </div>
+
+          <div class="scenario scenario--upd">
+            <div class="scenario__title">
+              <i class="bi bi-arrow-repeat"></i>
+              Оновлення в межах групи
+            </div>
+            У студента вже є документ для цієї групи (E співпадає з існуючим, або E порожньо
+            і документ прив'язаний до основної групи) → <strong>оновлюються всі поля</strong>
+            існуючого документа. Інші документи студента (для інших груп) <strong>не чіпаються</strong>.
+          </div>
+
+          <div class="scenario scenario--rebin">
+            <div class="scenario__title">
+              <i class="bi bi-arrow-left-right"></i>
+              Переприв'язка до іншої групи
+            </div>
+            В Excel вказано <strong>іншу</strong> групу (E), ніж та, до якої документ прив'язаний
+            зараз → документ оновлюється <strong>і переприв'язується</strong> до нової групи.
+            Корисно, якщо при першому імпорті обрали не ту групу.
+            <br><span class="text-muted small">У превью такі рядки показуються бейджем <code>⇄ X → Y</code> і виділяються кольором.</span>
+          </div>
+
+          <div class="scenario scenario--upd">
+            <div class="scenario__title">
+              <i class="bi bi-shield-check"></i>
+              Загальний документ → прив'язка до групи
+            </div>
+            Документ з якоїсь причини не має групи (старі legacy-записи, створені до
+            впровадження per-group документів) → якщо в E вказано групу,
+            документ <strong>буде прив'язано до неї</strong>. Якщо E порожньо —
+            лишиться загальним (видимим у всіх групах студента).
+          </div>
+        </div>
+
+        {# ── Причини пропуску ── #}
         <h6 class="mb-2">Коли рядок позначається як помилковий</h6>
-        <ul class="small mb-0">
+        <ul class="small mb-3">
           <li>Студента з таким ПІБ не знайдено (або схожість менше 80%)</li>
           <li>Рядок документа не відповідає формату (відсутній <code>;</code> або <code>Ким видано:</code>)</li>
           <li>ПІБ або рядок документа (колонки A/B) порожні</li>
+          <li>В колонці E вказано не число (напр. <code>«КН-1»</code> замість <code>«5»</code>)</li>
         </ul>
+
+        {# ── Приклади ── #}
+        <h6 class="mb-2">Приклади рядків</h6>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered small align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:30px">A</th>
+                <th>B (рядок документа)</th>
+                <th style="width:60px">E</th>
+                <th style="width:110px">Що буде</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>Шевченко Іван Олександрович</code></td>
+                <td><code>Диплом бакалавра B24 088726; 20.06.2024; Ким видано: КНУ ім. Шевченка</code></td>
+                <td><code>5</code></td>
+                <td><span class="badge bg-success-subtle text-success-emphasis">Новий</span><br><small class="text-muted">для групи 5</small></td>
+              </tr>
+              <tr>
+                <td><code>Шевченко Іван Олександрович</code></td>
+                <td><code>Диплом бакалавра B24 088726; 20.06.2024; Ким видано: КНУ ім. Шевченка</code></td>
+                <td><code>8</code></td>
+                <td><span class="badge bg-warning-subtle text-warning-emphasis">Переприв'язка</span><br><small class="text-muted">5 → 8</small></td>
+              </tr>
+              <tr>
+                <td><code>Петренко Марія Іванівна</code></td>
+                <td><code>Атестат БК 40920464; 15.06.2021; Ким видано: Ліцей №5 м. Одеса</code></td>
+                <td></td>
+                <td><span class="badge bg-success-subtle text-success-emphasis">Новий</span><br><small class="text-muted">основна (авто)</small></td>
+              </tr>
+              <tr>
+                <td><code>Коваленко Олена Сергіївна</code></td>
+                <td><code>Диплом магістра М24 123456; 30.06.2024; Ким видано: ЛНУ ім. Франка</code></td>
+                <td><code>8</code></td>
+                <td><span class="badge bg-secondary-subtle text-secondary-emphasis">Оновлення</span><br><small class="text-muted">група 8</small></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {# ── Порада ── #}
+        <div class="alert alert-info small mb-0">
+          <i class="bi bi-lightbulb me-1"></i>
+          <strong>Порада:</strong> якщо не знаєте, який ID групи писати —
+          залиште <strong>E порожньою</strong> і після імпорту за потреби
+          переприв'яжіть документ через модалку редагування на кроці превью
+          (там є випадаючий список усіх груп). Або відкрийте картку студента →
+          блок «Навчання (групи)» і перепишіть документ вручну.
+        </div>
 
       </div>
     </div>

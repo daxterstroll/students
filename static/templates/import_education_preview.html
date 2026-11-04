@@ -3,92 +3,239 @@
 {% block title %}Попередній перегляд імпорту{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
+<style>
+    .doc-group-badge {
+        display: inline-flex; align-items: center; gap: .25rem;
+        padding: .2rem .55rem;
+        border-radius: 6px;
+        font-size: .75rem;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    .doc-group-badge--same {
+        background: var(--paper-2); color: var(--muted);
+        border: 1px solid var(--line);
+    }
+    .doc-group-badge--assign {
+        background: rgba(79,122,82,.16); color: #3f7556;
+        border: 1px solid rgba(79,122,82,.35);
+    }
+    .doc-group-badge--rebind {
+        background: rgba(200,162,74,.20); color: #8a6a1a;
+        border: 1px solid var(--brass-semi);
+    }
+    .doc-group-badge--new {
+        background: rgba(63,138,91,.14); color: #2d6644;
+        border: 1px solid rgba(63,138,91,.35);
+    }
+    html[data-theme="dark"] .doc-group-badge--assign { color: #bfe3c2; }
+    html[data-theme="dark"] .doc-group-badge--rebind { color: var(--brass-lt); }
+    html[data-theme="dark"] .doc-group-badge--new    { color: #bfe3c2; }
+
+    .status-cell { min-width: 130px; }
+    .status-cell small { display: block; font-size: .72rem; color: var(--muted); margin-top: .1rem; }
+
+    .summary-pill {
+        display: inline-flex; align-items: center; gap: .35rem;
+        padding: .35rem .8rem; border-radius: 999px;
+        font-size: .82rem; font-weight: 700;
+    }
+    .summary-pill--new   { background: rgba(63,138,91,.14); color: #2d6644; border: 1px solid rgba(63,138,91,.35); }
+    .summary-pill--upd   { background: rgba(200,162,74,.18); color: #8a6a1a; border: 1px solid var(--brass-semi); }
+    .summary-pill--re    { background: rgba(74,110,168,.15); color: #2f5f87; border: 1px solid rgba(74,110,168,.35); }
+    .summary-pill--err   { background: rgba(162,59,46,.12); color: var(--stamp); border: 1px solid var(--stamp-semi); }
+    html[data-theme="dark"] .summary-pill--new { color: #bfe3c2; }
+    html[data-theme="dark"] .summary-pill--upd { color: var(--brass-lt); }
+    html[data-theme="dark"] .summary-pill--re  { color: #a9c2e8; }
+</style>
+
 <div class="container py-4">
 
-{{ ui.page_header('bi-eyeglasses', 'Попередній перегляд імпорту', 'Перевірте розпізнані документи перед збереженням у базу') }}
+{{ ui.page_header('bi-eyeglasses', 'Попередній перегляд імпорту',
+    'Перевірте розпізнані документи перед збереженням у базу') }}
+
+{# ── Лічильники ── #}
+{% set new_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', False) | list | length %}
+{% set upd_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', True) | list | length %}
+{% set err_count = preview | selectattr('error') | list | length %}
+{% set rebind_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', True) | selectattr('existing_group_id', 'defined') | selectattr('requested_group_id', 'defined') | selectattr('requested_group_id', 'ne', None) | selectattr('existing_group_id', 'ne', None) | selectattr('existing_group_id', 'ne', 'requested_group_id') | list | length %}
+
+<div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+    {% if new_count %}
+    <span class="summary-pill summary-pill--new">
+        <i class="bi bi-plus-circle-fill"></i>
+        Нових: {{ new_count }}
+    </span>
+    {% endif %}
+    {% if upd_count %}
+    <span class="summary-pill summary-pill--upd">
+        <i class="bi bi-arrow-repeat"></i>
+        Оновлень: {{ upd_count }}
+    </span>
+    {% endif %}
+    {% if rebind_count %}
+    <span class="summary-pill summary-pill--re">
+        <i class="bi bi-arrow-left-right"></i>
+        Переприв'язок: {{ rebind_count }}
+    </span>
+    {% endif %}
+    {% if err_count %}
+    <span class="summary-pill summary-pill--err">
+        <i class="bi bi-x-circle-fill"></i>
+        Помилок: {{ err_count }}
+    </span>
+    {% endif %}
+
+    <a href="{{ url_for('admin.manage_education_documents') }}"
+       class="btn btn-sm btn-outline-secondary ms-auto">
+        <i class="bi bi-x-circle me-1"></i>Скасувати
+    </a>
+    <button type="submit" form="importForm" class="btn btn-sm btn-primary">
+        <i class="bi bi-check2-circle me-1"></i>Додати / Оновити в базу
+    </button>
+</div>
+
+<div class="alert alert-light border small">
+    <i class="bi bi-info-circle me-1"></i>
+    <strong>Як працює оновлення при паралельному навчанні:</strong>
+    документ про освіту прив'язується до пари <code>(студент + група)</code>.
+    Якщо у студента вже є документ для цієї групи — він <strong>оновлюється</strong>.
+    Якщо в колонці <strong>E</strong> вказано <em>іншу</em> групу — документ
+    буде <strong>переприв'язано</strong> до неї. Якщо E пусто — документ
+    шукається за основною групою студента (або як «загальний» legacy).
+</div>
 
 <form method="post" action="{{ url_for('admin.import_docs_commit') }}" id="importForm">
     <input type="hidden" name="preview_id" value="{{ preview_id }}">
 
     <div class="card mb-4">
-    <div class="card-body p-0">
-    <div class="table-responsive">
-    <table class="table table-hover mb-0 align-middle">
-        <thead class="table-light">
-            <tr>
-                <th style="width:5%">Row</th>
-                <th style="width:6%">Додати</th>
-                <th style="width:26%">Студент</th>
-                <th style="width:8%">Збіг</th>
-                <th style="width:12%">Статус</th>
-                <th style="width:13%">Номер диплома</th>
-                <th style="width:12%">Група документа</th>
-                <th style="width:13%">Дії</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for row in preview %}
-            <tr {% if row.error %}class="table-danger"{% endif %}>
-                <td>{{ row.row_index }}</td>
-                <td>
-                    {% if not row.error %}
-                        <input type="checkbox" name="add_{{ row.row_index }}" checked>
-                    {% endif %}
-                </td>
-                <td>
-                    {% if row.matched_name %}
-                        <input type="text" name="matched_name_{{ row.row_index }}"
-                               value="{{ row.matched_name }}"
-                               class="form-control form-control-sm">
-                    {% else %}
-                        <span class="text-danger">{{ row.error or "" }}</span>
-                    {% endif %}
-                </td>
-                <td>{{ row.score or "—" }}</td>
-                <td>
-                    <span class="{{ row.status_class or '' }}">{{ row.status or "—" }}</span>
-                </td>
-                <td>{{ row.document_number or "—" }}</td>
-                <td class="small">
-                    {% if row.status == "Новий" %}
-                        {% if row.requested_group_id %}
-                        <span class="badge bg-success-subtle text-success-emphasis"
-                              title="Документ прив'яжеться до цієї групи">
-                            <i class="bi bi-building me-1"></i>група ID {{ row.requested_group_id }}
-                        </span>
-                        {% else %}
-                        <span class="text-muted fst-italic">основна (авто)</span>
-                        {% endif %}
-                    {% else %}
-                        {% if row.requested_group_id %}
-                        <span class="badge bg-secondary-subtle text-secondary-emphasis"
-                              title="При оновленні існуючого документа прив'язка до групи не змінюється">
-                            <i class="bi bi-lock me-1"></i>група ID {{ row.requested_group_id }}
-                        </span>
-                        {% else %}
-                        <span class="text-muted fst-italic">не змінюється</span>
-                        {% endif %}
-                    {% endif %}
-                </td>
-                <td>
-                    {% if not row.error %}
-                        <button type="button" class="btn btn-sm btn-outline-primary"
-                                data-bs-toggle="modal" data-bs-target="#editModal{{ row.row_index }}">
-                            <i class="bi bi-pencil me-1"></i>Редагувати
-                        </button>
-                    {% endif %}
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-    </div>
-    </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:5%">Row</th>
+                            <th style="width:6%">Додати</th>
+                            <th style="width:24%">Студент</th>
+                            <th style="width:8%">Збіг</th>
+                            <th style="width:14%">Статус</th>
+                            <th style="width:13%">Номер диплома</th>
+                            <th style="width:16%">Група документа</th>
+                            <th style="width:14%">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in preview %}
+                        <tr {% if row.error %}class="table-danger"{% endif %}>
+                            <td>{{ row.row_index }}</td>
+                            <td>
+                                {% if not row.error %}
+                                    <input type="checkbox" name="add_{{ row.row_index }}" checked>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row.matched_name %}
+                                    <input type="text" name="matched_name_{{ row.row_index }}"
+                                           value="{{ row.matched_name }}"
+                                           class="form-control form-control-sm">
+                                {% else %}
+                                    <span class="text-danger">{{ row.error or "" }}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.score or "—" }}</td>
+                            <td class="status-cell">
+                                <span class="{{ row.status_class or '' }}">{{ row.status or "—" }}</span>
+                                {% if row.has_document and row.existing_group_id is defined and row.existing_group_id %}
+                                <small>
+                                    <i class="bi bi-file-earmark-check"></i>
+                                    для групи ID {{ row.existing_group_id }}
+                                </small>
+                                {% elif row.has_document %}
+                                <small>
+                                    <i class="bi bi-file-earmark-check"></i>
+                                    загальний (без групи)
+                                </small>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.document_number or "—" }}</td>
+                            <td class="small">
+                                {# ── Група документа: 4 можливі стани ── #}
+
+                                {% if row.status == "Новий" %}
+                                    {# Новий документ — показуємо, до якої групи прив'яжеться #}
+                                    {% if row.requested_group_id %}
+                                    <span class="doc-group-badge doc-group-badge--new"
+                                          title="Документ буде створено для цієї групи">
+                                        <i class="bi bi-plus-square"></i>
+                                        група ID {{ row.requested_group_id }}
+                                    </span>
+                                    {% else %}
+                                    <span class="doc-group-badge doc-group-badge--same"
+                                          title="Документ буде прив'язано до основної групи студента">
+                                        <i class="bi bi-magic"></i>
+                                        основна (авто)
+                                    </span>
+                                    {% endif %}
+
+                                {% else %}
+                                    {# Існуючий документ — 3 варіанти #}
+                                    {% set ex_gid = row.existing_group_id if row.existing_group_id is defined else None %}
+                                    {% set req_gid = row.requested_group_id %}
+
+                                    {% if ex_gid and req_gid and ex_gid|int != req_gid|int %}
+                                        {# Перепривязка #}
+                                        <span class="doc-group-badge doc-group-badge--rebind"
+                                              title="Документ буде ПЕРЕПРИВ'ЯЗАНО до іншої групи">
+                                            <i class="bi bi-arrow-left-right"></i>
+                                            {{ ex_gid }} → {{ req_gid }}
+                                        </span>
+                                    {% elif not ex_gid and req_gid %}
+                                        {# Раніше був загальний — прив'яжеться до групи #}
+                                        <span class="doc-group-badge doc-group-badge--assign"
+                                              title="Загальний документ буде прив'язано до групи з Excel">
+                                            <i class="bi bi-arrow-right"></i>
+                                            → {{ req_gid }}
+                                        </span>
+                                    {% elif ex_gid %}
+                                        {# Без змін #}
+                                        <span class="doc-group-badge doc-group-badge--same"
+                                              title="Документ уже прив'язаний до цієї групи — прив'язка не змінюється">
+                                            <i class="bi bi-lock"></i>
+                                            група ID {{ ex_gid }}
+                                        </span>
+                                    {% else %}
+                                        {# Обидва null (загальний, без змін) #}
+                                        <span class="doc-group-badge doc-group-badge--same"
+                                              title="Загальний документ — прив'язка не змінюється">
+                                            <i class="bi bi-lock"></i>
+                                            загальний
+                                        </span>
+                                    {% endif %}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if not row.error %}
+                                    <button type="button" class="btn btn-sm btn-outline-primary"
+                                            data-bs-toggle="modal"
+                                            data-bs-target="#editModal{{ row.row_index }}">
+                                        <i class="bi bi-pencil me-1"></i>Редагувати
+                                    </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
-    <div class="mt-3">
-        <button type="submit" class="btn btn-primary"><i class="bi bi-check2-circle me-2"></i>Додати / Оновити в базу</button>
-        <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-outline-secondary">Скасувати</a>
+    <div class="d-flex flex-wrap gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-check2-circle me-2"></i>Додати / Оновити в базу
+        </button>
+        <a href="{{ url_for('admin.manage_education_documents') }}"
+           class="btn btn-outline-secondary">Скасувати</a>
     </div>
 </form>
 
@@ -104,7 +251,8 @@
    ================================================================== #}
 {% for row in preview %}
     {% if not row.error %}
-    <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1" aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
+    <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1"
+         aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
@@ -116,32 +264,60 @@
                 </div>
 
                 <div class="modal-body">
+                    {# ── Інформаційна плашка для існуючого документа ── #}
+                    {% if row.has_document %}
+                    {% set ex_gid = row.existing_group_id if row.existing_group_id is defined else None %}
+                    <div class="alert alert-info small mb-3">
+                        <i class="bi bi-info-circle-fill me-1"></i>
+                        <strong>Існуючий документ:</strong>
+                        {% if ex_gid %}
+                            прив'язаний до групи ID <strong>{{ ex_gid }}</strong>.
+                        {% else %}
+                            <em>загальний</strong> (без прив'язки до групи).
+                        {% endif %}
+                        {% if ex_gid and row.requested_group_id and ex_gid|int != row.requested_group_id|int %}
+                            <br><strong class="text-warning-emphasis">
+                                Увага: ви обрали іншу групу (ID {{ row.requested_group_id }}) —
+                                документ буде переприв'язано.
+                            </strong>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
                     <div class="row g-3">
 
-                        {# ── Група документа (лише для НОВИХ) ── #}
-                        {% if row.status == "Новий" %}
+                        {# ── Група документа ── #}
                         <div class="col-12">
                             <label class="form-label fw-semibold">
                                 <i class="bi bi-building me-1"></i>Група документа
-                                <span class="badge bg-light text-secondary border ms-1" title="Важливо для паралельного навчання: диплом бакалавра → магістратура, атестат → бакалаврат">?</span>
+                                <span class="badge bg-light text-secondary border ms-1"
+                                      title="Важливо для паралельного навчання: диплом бакалавра → магістратура, атестат → бакалаврат">?</span>
                             </label>
                             <select name="doc_group_id_{{ row.row_index }}" class="form-select" form="importForm">
                                 <option value="" {% if not row.requested_group_id %}selected{% endif %}>
-                                    — основна група студента (авто) —
+                                    {% if row.has_document %}
+                                        — не змінювати прив'язку —
+                                    {% else %}
+                                        — основна група студента (авто) —
+                                    {% endif %}
                                 </option>
                                 {% for g in (all_groups | default([])) %}
                                 <option value="{{ g.id }}"
                                         {% if row.requested_group_id == g.id %}selected{% endif %}>
-                                    {{ g.name }}
+                                    {{ g.name }}{% if row.existing_group_id is defined and row.existing_group_id == g.id %} (поточна){% endif %}
                                 </option>
                                 {% endfor %}
                             </select>
                             <small class="text-muted d-block mt-1">
-                                Якщо студент вчиться у кількох групах — оберіть, до якої прив'язати документ.
+                                {% if row.has_document %}
+                                    Порожньо — прив'язка залишиться як є. Обрати іншу групу — документ буде переприв'язано.
+                                {% else %}
+                                    Оберіть групу, до якої прив'язати новий документ (напр. диплом бакалавра → магістратура).
+                                {% endif %}
                             </small>
                         </div>
+
                         <div class="col-12"><hr class="my-1"></div>
-                        {% endif %}
 
                         {# ── Тип документа ── #}
                         <div class="col-md-6">
