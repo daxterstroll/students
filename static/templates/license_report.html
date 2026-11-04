@@ -59,26 +59,22 @@
                 <select name="study_form" id="formFilter" class="form-select form-select-sm"
                         style="width:auto;" onchange="this.form.submit()">
                     <option value="">Всі</option>
-                    <option value="Денна"  {% if study_form_filter == 'Денна' %}selected{% endif %}>Денна</option>
-                    <option value="Заочна" {% if study_form_filter == 'Заочна' %}selected{% endif %}>Заочна</option>
+                    {% for sf in study_forms_available %}
+                    <option value="{{ sf }}" {% if study_form_filter == sf %}selected{% endif %}>{{ sf }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
             <div class="ms-auto d-flex gap-2">
+                {% for sf in study_forms_available %}
                 <a href="{{ url_for('admin.license_report_export_word',
                         include_archived=1 if include_archived else 0,
                         include_frozen=1 if include_frozen else 0,
-                        study_form='Денна') }}"
+                        study_form=sf) }}"
                    class="btn btn-outline-success btn-sm">
-                    <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Денна)
+                    <i class="bi bi-file-earmark-word me-1"></i>Завантажити ({{ sf }})
                 </a>
-                <a href="{{ url_for('admin.license_report_export_word',
-                        include_archived=1 if include_archived else 0,
-                        include_frozen=1 if include_frozen else 0,
-                        study_form='Заочна') }}"
-                   class="btn btn-outline-success btn-sm">
-                    <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Заочна)
-                </a>
+                {% endfor %}
             </div>
         </form>
     </div>

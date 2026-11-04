@@ -566,6 +566,8 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         study_form_eu = 'Full'
     elif study_form == 'Заочна':
         study_form_eu = 'Part'
+    elif study_form == 'Дистанційна':
+        study_form_eu = 'Distance'
     else:
         study_form_eu = study_form
     # global_logger.debug(f"study_form: {study_form}, study_form_eu: {study_form_eu}")

@@ -126,6 +126,12 @@
                                 data-current-edebo="{{ e.edebo_code or '' }}">
                             <i class="bi bi-upc-scan"></i> Змінити ЄДЕБО
                         </button>
+						<button type="button" class="btn btn-sm btn-outline-primary js-transfer-group"
+                                data-group-id="{{ e.group_id }}"
+                                data-group-name="{{ e.group_name or '' }}"
+                                data-study-form="{{ e.study_form or '' }}">
+                            <i class="bi bi-arrow-left-right"></i> Перевести
+                        </button>
 						<button type="button" class="btn btn-sm btn-outline-info js-change-credits"
                                 data-group-id="{{ e.group_id }}"
                                 data-group-name="{{ e.group_name or '' }}"
@@ -464,6 +470,91 @@
 </div>
 
 
+<!-- Переведення в іншу групу (group_transfer / study_form_transfer) -->
+<div class="modal fade" id="transferGroupModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="transferGroupForm" enctype="multipart/form-data">
+                <input type="hidden" name="from_group_id" id="transferFromGroupId">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-arrow-left-right me-2"></i>Перевести в іншу групу</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Студент буде переведений з поточної групи до обраної. Якщо форми навчання
+                        груп різні — створиться наказ <strong>«Зміна форми навчання»</strong>,
+                        якщо однакові — <strong>«Переведення з групи в групу»</strong>.
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Поточна група</label>
+                        <input type="text" class="form-control form-control-sm" id="transferFromGroupLabel" disabled>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold">Група призначення <span class="text-danger">*</span></label>
+                        <select name="to_group_id" id="transferToGroupSelect" class="form-select form-select-sm" required>
+                            <option value="">— оберіть —</option>
+                            {% for g in all_groups %}
+                            <option value="{{ g.id }}"
+                                    data-study-form="{{ g.study_form or '' }}"
+                                    data-label="{{ g.display_name }}">
+                                {{ g.display_name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text" id="transferTypeHint"></div>
+                    </div>
+
+                    {% if session.get('is_admin') %}
+                    <div class="alert alert-warning small mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input js-bypass-order" type="checkbox"
+                                   name="bypass_order" value="1" id="bypassTransfer">
+                            <label class="form-check-label" for="bypassTransfer">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>Перевести без наказу</strong> (виправлення помилки — тільки для адміна)
+                            </label>
+                        </div>
+                        <div class="mt-2 js-correction-reason-wrap" style="display:none;">
+                            <label class="form-label small fw-semibold">Причина корекції <span class="text-danger">*</span></label>
+                            <input type="text" name="correction_reason"
+                                   class="form-control form-control-sm js-correction-reason">
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="js-order-fields">
+                        <hr>
+                        <h6 class="text-muted small text-uppercase mb-3">Реквізити наказу</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                                <input type="text" name="order_number" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                                <input type="text" name="order_date" class="form-control form-control-sm"
+                                       placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Скан наказу</label>
+                                <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Оформити наказ
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
 <style>
     .enrollments-section .enrollment-card {
         padding: 1rem 1.25rem;
@@ -682,6 +773,52 @@ document.addEventListener('DOMContentLoaded', function () {
             new bootstrap.Modal(document.getElementById('endEnrollmentModal')).show();
         });
     });
+
+    // ── Переведення в іншу групу ──
+    const transferSelect = document.getElementById('transferToGroupSelect');
+    const transferHint = document.getElementById('transferTypeHint');
+
+    function updateTransferHint() {
+        if (!transferSelect || !transferHint) return;
+        const opt = transferSelect.options[transferSelect.selectedIndex];
+        const fromLabel = document.getElementById('transferFromGroupLabel');
+        const fromForm = fromLabel?.dataset.studyForm || '';
+        const toForm = opt?.dataset.studyForm || '';
+        if (!toForm || !fromForm) {
+            transferHint.textContent = '';
+            return;
+        }
+        if (fromForm === toForm) {
+            transferHint.textContent = 'Форма навчання однакова — буде створено наказ «Переведення з групи в групу».';
+            transferHint.className = 'form-text text-muted';
+        } else {
+            transferHint.textContent =
+                'Форма навчання змінюється (' + fromForm + ' → ' + toForm +
+                ') — буде створено наказ «Зміна форми навчання».';
+            transferHint.className = 'form-text text-info';
+        }
+    }
+
+    document.querySelectorAll('.js-transfer-group').forEach(function (transferBtn) {
+        transferBtn.addEventListener('click', function () {
+            const gid = transferBtn.dataset.groupId;
+            const form = document.getElementById('transferGroupForm');
+            form.action = '/students/' + studentId + '/group-transfer';
+            document.getElementById('transferFromGroupId').value = gid;
+
+            const fromLabel = document.getElementById('transferFromGroupLabel');
+            fromLabel.value = transferBtn.dataset.groupName || '';
+            fromLabel.dataset.studyForm = transferBtn.dataset.studyForm || '';
+
+            if (transferSelect) transferSelect.value = '';
+            updateTransferHint();
+            new bootstrap.Modal(document.getElementById('transferGroupModal')).show();
+        });
+    });
+
+    if (transferSelect) {
+        transferSelect.addEventListener('change', updateTransferHint);
+    }
 	    // ── Обхід наказу (тільки для адміна) ──
     // При включенні галочки "Змінити без наказу":
     //   - приховуємо блок полів наказу і знімаємо required

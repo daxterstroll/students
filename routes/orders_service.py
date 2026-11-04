@@ -29,13 +29,16 @@ from routes.utils import save_multiple_attachments
 
 # ── Довідник типів (UI / FAQ / фільтри) ───────────────────────────────
 ORDER_TYPE_LABELS = {
-    'enrollment':       'Зарахування',
-    'course_transfer':  'Переведення на курс',
-    'license_transfer': 'Переведення між ліцензіями',
-    'freeze':           'Заморозка (академовідпустка)',
-    'unfreeze':         'Поновлення після заморозки',
-    'expulsion':        'Відрахування',
-    'graduation':       'Випуск',
+    'enrollment':           'Зарахування',
+    'course_transfer':      'Переведення на курс',
+    'license_transfer':     'Переведення між ліцензіями',
+    'group_transfer':       'Переведення з групи в групу',
+    'study_form_transfer':  'Зміна форми навчання',
+    'name_change':          'Зміна ПІБ',
+    'freeze':               'Заморозка (академовідпустка)',
+    'unfreeze':             'Поновлення після заморозки',
+    'expulsion':            'Відрахування',
+    'graduation':           'Випуск',
 }
 
 ORDER_TYPES = tuple(ORDER_TYPE_LABELS.keys())
@@ -120,6 +123,26 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
         if row:
             return f'у групу {row["name"]} ({row["start_year"]}, {row["study_form"]})'
         return f"група id={payload['group_id']}"
+
+    if order_type in ('group_transfer', 'study_form_transfer'):
+        from_name = payload.get('from_group_name') or f"#{payload.get('from_group_id') or '—'}"
+        to_name = payload.get('to_group_name') or f"#{payload.get('to_group_id') or '—'}"
+        text = f'{from_name} → {to_name}'
+        if order_type == 'study_form_transfer':
+            ff = payload.get('from_form')
+            tf = payload.get('to_form')
+            if ff and tf:
+                text += f' ({ff} → {tf})'
+        return text
+
+    if order_type == 'name_change':
+        old = payload.get('old_name') or {}
+        new = payload.get('new_name') or {}
+        old_pib = ' '.join(x for x in [old.get('last_name_UA'), old.get('first_name_UA'),
+                                        old.get('middle_name_UA')] if x) or '—'
+        new_pib = ' '.join(x for x in [new.get('last_name_UA'), new.get('first_name_UA'),
+                                        new.get('middle_name_UA')] if x) or '—'
+        return f'{old_pib} → {new_pib}'
 
     if order_type == 'graduation' and payload.get('action'):
         return str(payload['action'])

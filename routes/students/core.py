@@ -1351,14 +1351,59 @@ def add_student():
                 conn.close()
                 return render_template('add_student.html', groups=groups, licenses=licenses)
         program_credits_override = request.form.get('program_credits_override', type=int)
+        # ── Новий студент ──
+        # gender / license_id / phone / phone_backup / email /
+        # address_of_residence уже визначені ВИЩЕ (перед перевіркою
+        # "чи вже є такий студент"), тут їх НЕ перевизначаємо.
+        program_credits_override = request.form.get('program_credits_override', type=int)
+        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
+        issued_VOD = None
+        if issued_VOD_raw:
+            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
+            try:
+                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
+                issued_VOD = issued_VOD_clean
+            except ValueError:
+                flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
+                conn.close()
+                return render_template('add_student.html', groups=groups, licenses=licenses)
+
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
-                last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, tax_id, license_id,
+                last_name_ENG, first_name_ENG, birth_date,
+                group_id, edebo_code, tax_id, license_id,
                 phone, phone_backup, email, address_of_residence, gender,
                 program_credits_override
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (last_name_ua, ..., gender, program_credits_override))
+        """, (
+            last_name_ua,
+            first_name_ua,
+            middle_name_ua or '',
+            last_name_eng,
+            first_name_eng,
+            birth_date,
+            group_int,
+            request.form.get('edebo_code') or None,
+            request.form.get('tax_id') or None,
+            license_id,
+            phone,
+            phone_backup,
+            email,
+            address_of_residence,
+            gender,
+            program_credits_override,
+        ))
+        student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        add_enrollment(
+            student_id, group_int,
+            is_primary=True,
+            license_id=license_id,
+            edebo_code=edebo_code_form,
+            program_credits_override=program_credits_override,
+            conn=conn,
+        )
+        conn.commit()
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         add_enrollment(student_id, group_int, is_primary=True,
                license_id=license_id, edebo_code=edebo_code_form,
@@ -2448,4 +2493,322 @@ def enrollment_set_primary(student_id):
             f"змінив основне навчання student={student_id} → group={group_id}",
         )
     return redirect(url_for('students.student_details', student_id=student_id))
+    
 
+
+# ═══════════════════════════════════════════════════════════════════════
+# Зміна ПІБ і переведення між групами (накази, з можливістю обходу адміном)
+# ═══════════════════════════════════════════════════════════════════════
+
+@students_bp.route('/students/<int:student_id>/change-name', methods=['POST'])
+@permission_required('manage_students')
+def change_student_name(student_id):
+    """Зміна ПІБ студента — через наказ. Адмін може bypass_order=1,
+    щоб виправити помилку без наказу (з обов'язковою причиною)."""
+    from routes.orders_service import create_order
+    from routes.utils import generate_english_name
+
+    new_last_ua = (request.form.get('last_name_UA') or '').strip()
+    new_first_ua = (request.form.get('first_name_UA') or '').strip()
+    new_middle_ua = (request.form.get('middle_name_UA') or '').strip()
+    new_last_eng = (request.form.get('last_name_ENG') or '').strip()
+    new_first_eng = (request.form.get('first_name_ENG') or '').strip()
+
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date = (request.form.get('order_date') or '').strip()
+    bypass_order = request.form.get('bypass_order') == '1'
+    correction_reason = (request.form.get('correction_reason') or '').strip()
+    scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
+
+    if not new_last_ua or not new_first_ua:
+        flash("Прізвище та ім'я обов'язкові.", 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    if bypass_order:
+        if not session.get('is_admin'):
+            flash('Тільки адміністратор може змінювати ПІБ без наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+        if not correction_reason:
+            flash('Вкажіть причину корекції (без наказу) — це обов\'язкове поле.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+    else:
+        if not order_number or not order_date:
+            flash('Заповніть номер і дату наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    student = conn.execute(
+        "SELECT last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG "
+        "FROM students WHERE id = ?", (student_id,)
+    ).fetchone()
+    if not student:
+        conn.close()
+        flash('Студента не знайдено', 'error')
+        return redirect(url_for('students.student_list'))
+
+    old_snapshot = {
+        'last_name_UA': student['last_name_UA'] or '',
+        'first_name_UA': student['first_name_UA'] or '',
+        'middle_name_UA': student['middle_name_UA'] or '',
+        'last_name_ENG': student['last_name_ENG'] or '',
+        'first_name_ENG': student['first_name_ENG'] or '',
+    }
+    new_snapshot = {
+        'last_name_UA': new_last_ua,
+        'first_name_UA': new_first_ua,
+        'middle_name_UA': new_middle_ua,
+        'last_name_ENG': new_last_eng,
+        'first_name_ENG': new_first_eng,
+    }
+
+    if old_snapshot == new_snapshot:
+        conn.close()
+        flash('ПІБ не змінилось.', 'warning')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    # Якщо ENG не задано явно — транслітеруємо з нового укр. варіанта
+    if not new_snapshot['last_name_ENG'] or not new_snapshot['first_name_ENG']:
+        auto_l, auto_f = generate_english_name(new_last_ua, new_first_ua)
+        new_snapshot['last_name_ENG'] = new_snapshot['last_name_ENG'] or auto_l
+        new_snapshot['first_name_ENG'] = new_snapshot['first_name_ENG'] or auto_f
+
+    try:
+        order_id = None
+        if not bypass_order:
+            order_id = create_order(
+                'name_change', order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {
+                        'old_name': old_snapshot,
+                        'new_name': new_snapshot,
+                    },
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+
+        conn.execute("""
+            INSERT INTO student_name_history
+                (student_id, order_id, changed_by,
+                 old_last_name_UA, old_first_name_UA, old_middle_name_UA,
+                 old_last_name_ENG, old_first_name_ENG)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            student_id, order_id, current_username(),
+            old_snapshot['last_name_UA'], old_snapshot['first_name_UA'],
+            old_snapshot['middle_name_UA'],
+            old_snapshot['last_name_ENG'], old_snapshot['first_name_ENG'],
+        ))
+
+        conn.execute("""
+            UPDATE students SET
+                last_name_UA=?, first_name_UA=?, middle_name_UA=?,
+                last_name_ENG=?, first_name_ENG=?
+            WHERE id=?
+        """, (
+            new_snapshot['last_name_UA'], new_snapshot['first_name_UA'],
+            new_snapshot['middle_name_UA'] or None,
+            new_snapshot['last_name_ENG'] or None,
+            new_snapshot['first_name_ENG'] or None,
+            student_id,
+        ))
+
+        conn.commit()
+        conn.close()
+
+        old_pib = f"{old_snapshot['last_name_UA']} {old_snapshot['first_name_UA']}"
+        new_pib = f"{new_snapshot['last_name_UA']} {new_snapshot['first_name_UA']}"
+
+        if bypass_order:
+            log_action(
+                current_username(),
+                f'КОРЕКЦІЯ (без наказу): змінив ПІБ студента ID {student_id}',
+                details=f'{old_pib} → {new_pib}; причина: {correction_reason}',
+            )
+            flash(f'ПІБ змінено БЕЗ наказу (корекція). Причина: {correction_reason}. '
+                  f'Дію зафіксовано в журналі.', 'success')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        log_action(
+            current_username(),
+            f'змінив ПІБ студента ID {student_id} (наказ №{order_number} від {order_date}, order_id={order_id})',
+            details=f'{old_pib} → {new_pib}',
+        )
+        flash(f'ПІБ змінено. Створено наказ №{order_number}.', 'success')
+        return redirect(url_for('admin.order_detail', order_id=order_id))
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f'change_student_name failed (student={student_id}): {e}', exc_info=True)
+        flash(f'Помилка: {e}', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+
+@students_bp.route('/students/<int:student_id>/group-transfer', methods=['POST'])
+@permission_required('manage_students')
+def transfer_student_group(student_id):
+    """Переведення студента з однієї групи в іншу.
+
+    Якщо в обох груп однакова study_form — створюється наказ
+    'group_transfer' («Переведення з групи в групу»).
+
+    Якщо study_form різна — створюється наказ 'study_form_transfer'
+    («Зміна форми навчання»).
+
+    Самі групи (їх study_form) НЕ змінюються — змінюється лише
+    приналежність студента: закривається enrollment у from_group,
+    відкривається enrollment у to_group.
+
+    Адмін може bypass_order=1 — виправити помилку без наказу.
+    """
+    from routes.enrollments_service import end_enrollment, add_enrollment
+    from routes.orders_service import create_order
+
+    from_group_id = request.form.get('from_group_id', type=int)
+    to_group_id = request.form.get('to_group_id', type=int)
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date = (request.form.get('order_date') or '').strip()
+    bypass_order = request.form.get('bypass_order') == '1'
+    correction_reason = (request.form.get('correction_reason') or '').strip()
+    scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
+
+    if not from_group_id or not to_group_id:
+        flash('Оберіть групи для переведення.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+    if from_group_id == to_group_id:
+        flash('Група призначення збігається з поточною.', 'warning')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    if bypass_order:
+        if not session.get('is_admin'):
+            flash('Тільки адміністратор може переводити без наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+        if not correction_reason:
+            flash('Вкажіть причину корекції (без наказу) — це обов\'язкове поле.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+    else:
+        if not order_number or not order_date:
+            flash('Заповніть номер і дату наказу.', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    src_enrollment = conn.execute("""
+        SELECT id, is_primary FROM student_enrollments
+        WHERE student_id = ? AND group_id = ? AND status = 'active'
+    """, (student_id, from_group_id)).fetchone()
+    if not src_enrollment:
+        conn.close()
+        flash('Активне навчання в цій групі не знайдено.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    from_group = conn.execute(
+        "SELECT name, study_form FROM groups WHERE id = ?", (from_group_id,)
+    ).fetchone()
+    to_group = conn.execute(
+        "SELECT name, study_form FROM groups WHERE id = ?", (to_group_id,)
+    ).fetchone()
+    if not from_group or not to_group:
+        conn.close()
+        flash('Групу не знайдено.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    same_form = (from_group['study_form'] == to_group['study_form'])
+    order_type = 'group_transfer' if same_form else 'study_form_transfer'
+    type_label = ('Переведення з групи в групу' if same_form
+                  else 'Зміна форми навчання')
+
+    was_primary = bool(src_enrollment['is_primary'])
+
+    try:
+        order_id = None
+        if not bypass_order:
+            order_id = create_order(
+                order_type, order_number, order_date,
+                [{
+                    'entity_type': 'student',
+                    'entity_id': student_id,
+                    'payload': {
+                        'from_group_id': from_group_id,
+                        'to_group_id': to_group_id,
+                        'from_group_name': from_group['name'],
+                        'to_group_name': to_group['name'],
+                        'from_form': from_group['study_form'],
+                        'to_form': to_group['study_form'],
+                    },
+                }],
+                created_by=current_username(),
+                files=scan_files or None,
+                upload_subdir='orders',
+                conn=conn,
+            )
+
+        # 1. Открываем новый enrollment. Если from был primary — to станет primary.
+        ok, msg = add_enrollment(
+            student_id, to_group_id,
+            is_primary=was_primary,
+            conn=conn,
+        )
+        if not ok:
+            conn.rollback()
+            conn.close()
+            flash(f'Не вдалося перевести: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        # 2. Закрываем старый enrollment как 'transferred'
+        ok2, msg2 = end_enrollment(
+            student_id, from_group_id, status='transferred', conn=conn,
+        )
+        if not ok2:
+            conn.rollback()
+            conn.close()
+            flash(f'Не вдалося закрити старе навчання: {msg2}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        # 3. Если bypass — пометить новый enrollment как корекцию
+        if bypass_order:
+            conn.execute("""
+                UPDATE student_enrollments
+                SET is_correction = 1,
+                    correction_note = ?,
+                    correction_by = ?,
+                    correction_at = datetime('now', 'localtime')
+                WHERE student_id = ? AND group_id = ?
+            """, (correction_reason, current_username(), student_id, to_group_id))
+
+        conn.commit()
+        conn.close()
+
+        summary = f'{from_group["name"]} → {to_group["name"]}'
+
+        if bypass_order:
+            log_action(
+                current_username(),
+                f'КОРЕКЦІЯ (без наказу): перевів студента ID {student_id}',
+                details=f'{summary}; причина: {correction_reason}',
+            )
+            flash(f'Переведено БЕЗ наказу (корекція). Причина: {correction_reason}. '
+                  f'Дію зафіксовано в журналі.', 'success')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        log_action(
+            current_username(),
+            f'{type_label}: student ID {student_id} — '
+            f'{summary} (наказ №{order_number} від {order_date}, order_id={order_id})',
+        )
+        flash(f'{type_label}: {summary}. Створено наказ №{order_number}.', 'success')
+        return redirect(url_for('admin.order_detail', order_id=order_id))
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f'transfer_student_group failed (student={student_id}): {e}', exc_info=True)
+        flash(f'Помилка: {e}', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))

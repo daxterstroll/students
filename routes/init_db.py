@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS "groups" (
     "id"    INTEGER,
     "name"  TEXT NOT NULL,
     "start_year"    INTEGER NOT NULL,
-    "study_form"    TEXT NOT NULL CHECK("study_form" IN ('Денна', 'Заочна')),
+    "study_form"    TEXT NOT NULL CHECK("study_form" IN ('Денна', 'Заочна', 'Дистанційна')),
     "program_credits"   INTEGER NOT NULL,
     "degree_level"  TEXT NOT NULL,
     "degree_level_en"   TEXT NOT NULL,
@@ -585,6 +585,21 @@ CREATE TABLE IF NOT EXISTS "military_reports_log" (
 );
 CREATE INDEX IF NOT EXISTS idx_military_reports_log_type_date
     ON military_reports_log (report_type, report_date);
+
+CREATE TABLE IF NOT EXISTS "student_name_history" (
+    "id" INTEGER PRIMARY KEY AUTOINCREMENT,
+    "student_id" INTEGER NOT NULL,
+    "order_id" INTEGER,
+    "changed_at" TEXT DEFAULT (datetime('now', 'localtime')),
+    "changed_by" TEXT,
+    "old_last_name_UA" TEXT, "old_first_name_UA" TEXT, "old_middle_name_UA" TEXT,
+    "old_last_name_ENG" TEXT, "old_first_name_ENG" TEXT,
+    FOREIGN KEY("student_id") REFERENCES "students"("id") ON DELETE CASCADE,
+    FOREIGN KEY("order_id") REFERENCES "orders"("id")
+);
+CREATE INDEX IF NOT EXISTS "idx_student_name_history_student"
+    ON "student_name_history" ("student_id", "id");    
+    
 CREATE TABLE IF NOT EXISTS "military_history" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
@@ -820,6 +835,144 @@ _add_column_if_missing('groups', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_en', 'TEXT')
 
 
+# ── groups.study_form: додати 'Дистанційна' до CHECK ──
+_groups_sql_row = cur.execute(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='groups'"
+).fetchone()
+if _groups_sql_row and "'Дистанційна'" not in (_groups_sql_row[0] or ''):
+    print("🔁 groups: розширюю CHECK для study_form (перезбір таблиці)")
+
+    # На випадок, якщо попередній запуск упав на середині — прибрати недобудовану таблицю.
+    cur.execute('DROP TABLE IF EXISTS "groups_new"')
+
+    # 1. Гарантуємо, що всі NOT NULL-колонки існують і що в них немає NULL.
+    _not_null_fixups = [
+        ('degree_level', "TEXT NOT NULL DEFAULT ''"),
+        ('degree_level_en', "TEXT NOT NULL DEFAULT ''"),
+        ('knowledge_area', "TEXT NOT NULL DEFAULT ''"),
+        ('knowledge_area_en', "TEXT NOT NULL DEFAULT ''"),
+        ('specialty', "TEXT NOT NULL DEFAULT ''"),
+        ('specialty_en', "TEXT NOT NULL DEFAULT ''"),
+        ('educational_program', "TEXT NOT NULL DEFAULT ''"),
+        ('educational_program_en', "TEXT NOT NULL DEFAULT ''"),
+        ('qualification_name', "TEXT NOT NULL DEFAULT ''"),
+        ('qualification_name_en', "TEXT NOT NULL DEFAULT ''"),
+        ('name', "TEXT NOT NULL DEFAULT ''"),
+        ('study_form', "TEXT NOT NULL DEFAULT ''"),
+        ('course', "INTEGER NOT NULL DEFAULT 1"),
+        ('start_year', "INTEGER NOT NULL DEFAULT 0"),
+        ('program_credits', "INTEGER NOT NULL DEFAULT 0"),
+    ]
+    for _col, _coltype in _not_null_fixups:
+        _add_column_if_missing('groups', _col, _coltype)
+    for _col, _ in _not_null_fixups:
+        cur.execute(f'UPDATE "groups" SET "{_col}" = \'\' WHERE "{_col}" IS NULL')
+    cur.execute('UPDATE "groups" SET "course" = 1 WHERE "course" IS NULL')
+    cur.execute('UPDATE "groups" SET "start_year" = 0 WHERE "start_year" IS NULL')
+    cur.execute('UPDATE "groups" SET "program_credits" = 0 WHERE "program_credits" IS NULL')
+
+    # 2. Інші (nullable) колонки, яких може не бути в старій таблиці.
+    _other_cols = [
+        ('isced_f_ua', 'TEXT'),
+        ('isced_f_en', 'TEXT'),
+        ('specialty_code', 'TEXT'),
+        ('institution_name_and_status', 'TEXT'),
+        ('institution_name_and_status_en', 'TEXT'),
+        ('entry_requirements', 'TEXT'),
+        ('entry_requirements_en', 'TEXT'),
+        ('learning_outcomes', 'TEXT'),
+        ('learning_outcomes_en', 'TEXT'),
+        ('program_includes', 'TEXT'),
+        ('program_includes_en', 'TEXT'),
+        ('entry_requirements_reduced', 'TEXT'),
+        ('entry_requirements_reduced_en', 'TEXT'),
+        ('program_includes_reduced', 'TEXT'),
+        ('program_includes_reduced_en', 'TEXT'),
+        ('learning_outcomes_reduced', 'TEXT'),
+        ('learning_outcomes_reduced_en', 'TEXT'),
+        ('archived', 'BOOLEAN DEFAULT FALSE'),
+    ]
+    for _col, _coltype in _other_cols:
+        _add_column_if_missing('groups', _col, _coltype)
+
+    # 3. Явний порядок колонок для INSERT ... SELECT (не SELECT *!).
+    #    Якщо використати зірочку, при різному порядку колонок у старій
+    #    таблиці (через ALTER ADD COLUMN) дані тихо потраплять не в ті
+    #    колонки нової таблиці.
+    _all_cols_ordered = [
+        'id', 'name', 'start_year', 'study_form', 'program_credits',
+        'degree_level', 'degree_level_en', 'knowledge_area', 'knowledge_area_en',
+        'specialty', 'specialty_en', 'isced_f_ua', 'isced_f_en', 'specialty_code',
+        'educational_program', 'educational_program_en',
+        'qualification_name', 'qualification_name_en', 'course',
+        'institution_name_and_status', 'institution_name_and_status_en',
+        'entry_requirements', 'entry_requirements_en',
+        'learning_outcomes', 'learning_outcomes_en',
+        'program_includes', 'program_includes_en',
+        'entry_requirements_reduced', 'entry_requirements_reduced_en',
+        'program_includes_reduced', 'program_includes_reduced_en',
+        'learning_outcomes_reduced', 'learning_outcomes_reduced_en',
+        'archived',
+    ]
+    _existing = {row[1] for row in cur.execute('PRAGMA table_info("groups")')}
+    _cols_csv = ', '.join(f'"{c}"' for c in _all_cols_ordered if c in _existing)
+
+    # 4. Пересборка. PRAGMA foreign_keys = OFF — обов'язково ПОЗА транзакцією.
+    conn.commit()
+    cur.execute("PRAGMA foreign_keys = OFF")
+    try:
+        cur.executescript(f"""
+            CREATE TABLE "groups_new" (
+                "id" INTEGER,
+                "name" TEXT NOT NULL,
+                "start_year" INTEGER NOT NULL,
+                "study_form" TEXT NOT NULL CHECK("study_form" IN ('Денна', 'Заочна', 'Дистанційна')),
+                "program_credits" INTEGER NOT NULL,
+                "degree_level" TEXT NOT NULL,
+                "degree_level_en" TEXT NOT NULL,
+                "knowledge_area" TEXT NOT NULL,
+                "knowledge_area_en" TEXT NOT NULL,
+                "specialty" TEXT NOT NULL,
+                "specialty_en" TEXT NOT NULL,
+                "isced_f_ua" TEXT,
+                "isced_f_en" TEXT,
+                "specialty_code" TEXT,
+                "educational_program" TEXT NOT NULL,
+                "educational_program_en" TEXT NOT NULL,
+                "qualification_name" TEXT NOT NULL,
+                "qualification_name_en" TEXT NOT NULL,
+                "course" INTEGER NOT NULL DEFAULT 1,
+                "institution_name_and_status" TEXT,
+                "institution_name_and_status_en" TEXT,
+                "entry_requirements" TEXT,
+                "entry_requirements_en" TEXT,
+                "learning_outcomes" TEXT,
+                "learning_outcomes_en" TEXT,
+                "program_includes" TEXT,
+                "program_includes_en" TEXT,
+                "entry_requirements_reduced" TEXT,
+                "entry_requirements_reduced_en" TEXT,
+                "program_includes_reduced" TEXT,
+                "program_includes_reduced_en" TEXT,
+                "learning_outcomes_reduced" TEXT,
+                "learning_outcomes_reduced_en" TEXT,
+                "archived" BOOLEAN DEFAULT FALSE,
+                PRIMARY KEY("id" AUTOINCREMENT),
+                UNIQUE("name","start_year","study_form","program_credits")
+            );
+            INSERT INTO "groups_new" ({_cols_csv}) SELECT {_cols_csv} FROM "groups";
+            DROP TABLE "groups";
+            ALTER TABLE "groups_new" RENAME TO "groups";
+        """)
+        conn.commit()
+        _n = cur.execute('SELECT COUNT(*) FROM groups').fetchone()[0]
+        print(f"   ✅ перезбудовано, записів збережено: {_n}")
+    finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        cur.execute("PRAGMA foreign_keys = ON")
 
 # ── student_enrollments: видалити дублікати пар (student_id, group_id) ──
 # Якщо БД створювалась старою версією CREATE TABLE — UNIQUE-констрейнту
