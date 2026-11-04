@@ -22,6 +22,83 @@ import json
 import time
 
 
+def _normalize_date_for_compare(s):
+    """Нормалізує дату ДД.ММ.РРРР для порівняння (ігнорує роздільники)."""
+    if not s:
+        return ''
+    s = str(s).strip()
+    for sep in ('.', '/', '-'):
+        s = s.replace(sep, '')
+    return s
+
+
+def _collect_field_conflicts(existing, new_values):
+    """Порівнює значення з Excel з БД.
+
+    Повертає (updates, conflicts):
+      updates   — dict field → new_value (для порожніх полів БД — 
+                  оновлюються автоматично, як і раніше);
+      conflicts — список {'field', 'label', 'current', 'new'} —
+                  поле заповнено в БД і ВІДРІЗНЯЄТЬСЯ від Excel.
+                  Ці поля не змінюються автоматично — тільки через
+                  кнопку «Замінити» в звіті імпорту.
+    """
+    from routes.db import normalize_name_for_match
+
+    FIELD_LABELS = {
+        'last_name_UA': 'Прізвище (укр.)',
+        'first_name_UA': "Ім'я (укр.)",
+        'middle_name_UA': 'По батькові (укр.)',
+        'birth_date': 'Дата народження',
+        'phone': 'Телефон',
+        'phone_backup': 'Резервний телефон',
+        'email': 'Email',
+        'tax_id': 'ІПН',
+        'edebo_code': 'ЄДЕБО',
+        'address_of_residence': 'Адреса',
+        'gender': 'Стать',
+    }
+
+    updates = {}
+    conflicts = []
+
+    for field, new_val in new_values.items():
+        if not new_val:
+            continue
+
+        cur_raw = existing[field] if existing[field] is not None else ''
+
+        # Нормалізація для порівняння (щоб не було «помилкових» конфліктів)
+        if field == 'birth_date':
+            cur_norm = _normalize_date_for_compare(cur_raw)
+            new_norm = _normalize_date_for_compare(new_val)
+        elif field == 'gender':
+            cur_norm = str(cur_raw).strip().upper()
+            new_norm = str(new_val).strip().upper()
+        elif field in ('last_name_UA', 'first_name_UA', 'middle_name_UA'):
+            # ФІО — через normalize_name_for_match: ігнорує апострофи
+            # різних Unicode-варіантів, дефіс↔пробіл, регістр.
+            cur_norm = normalize_name_for_match(cur_raw)
+            new_norm = normalize_name_for_match(new_val)
+        else:
+            cur_norm = str(cur_raw).strip()
+            new_norm = str(new_val).strip()
+
+        if not cur_norm:
+            # Пусто в БД → обновити автоматично
+            updates[field] = new_val
+        elif cur_norm != new_norm:
+            # Заповнено і ВІДРІЗНЯЄТЬСЯ → конфлікт
+            conflicts.append({
+                'field': field,
+                'label': FIELD_LABELS.get(field, field),
+                'current': str(cur_raw or '—'),
+                'new': str(new_val),
+            })
+        # cur_norm == new_norm → нічого, все співпадає
+
+    return updates, conflicts
+
 def _normalize_gender(raw):
     """
     Нормалізує значення колонки «Стать» з Excel до 'M'/'F' або None.
@@ -119,6 +196,13 @@ def import_from_excel():
         warnings = []            # [{row, fio, reason}] — некритичні
         gender_auto = 0
         gender_missing = 0
+        
+        # ── Детальні списки успішних операцій (щоб бачити КОГО саме
+        #    обробило, а не тільки сумарне число в flash-повідомленні) ──
+        inserted_list = []               # [{row, fio, student_id, group_id}]
+        enrollments_added_list = []      # [{row, fio, student_id, group_id, group_name}]
+        enrollments_reactivated_list = []  # [{row, fio, student_id, group_id, group_name}]
+        data_updated_list = []           # [{row, fio, student_id, fields}]
 
         role = session.get('role')
         user_group_ids = session.get('group_ids', [])
@@ -233,6 +317,12 @@ def import_from_excel():
                               if len(row) > 10 else None)
 
                     if not full_name:
+                        skipped_rows.append({
+                            'row': i,
+                            'fio': '—',
+                            'birth_date': str(birth_date_raw or '').strip() or '—',
+                            'reason': 'Порожнє ПІБ (колонка B) — рядок неможливо обробити',
+                        })
                         continue
 
                     # ── Колонка A (ID групи) може бути порожньою — це
@@ -268,17 +358,31 @@ def import_from_excel():
                             })
                             continue
 
+                    # ПІБ розбираємо з підтримкою 4+ слів — для випадків,
+                    # коли в людини подвійне ім'я через пробіл, напр.
+                    # "Шевченко Анна Марія Петрівна":
+                    #   - перше слово — прізвище;
+                    #   - останнє — по батькові;
+                    #   - все між ними — ім'я.
+                    # Це відповідає тому, як при пошуку NORM_NAME()
+                    # з'єднує поля БД в один рядок — порядок збережено.
                     name_parts = str(full_name).strip().split()
-                    if len(name_parts) != 3:
+                    if len(name_parts) < 3:
                         skipped_rows.append({
                             'row': i,
                             'fio': str(full_name).strip(),
                             'birth_date': str(birth_date_raw or '').strip(),
                             'reason': (f"Невірний формат ПІБ: «{full_name}» "
-                                       f"(очікується 3 слова через пробіл)"),
+                                       f"(очікується мінімум 3 слова через пробіл)"),
                         })
                         continue
-                    last_name, first_name, middle_name = name_parts
+                    last_name = name_parts[0]
+                    middle_name = name_parts[-1]
+                    if len(name_parts) == 3:
+                        first_name = name_parts[1]
+                    else:
+                        # 4+ слів: все між прізвищем і по батькові — ім'я
+                        first_name = ' '.join(name_parts[1:-1])
 
                     if gender is None:
                         gender = detect_gender_from_middle_name(middle_name)
@@ -366,44 +470,105 @@ def import_from_excel():
                             })
                             continue
                     else:
-                        # tax_id → точний збіг
+                        # ──────────────────────────────────────────────
+                        # Пошук студента. Усі порівняння — нормалізовані:
+                        #   - регістр (LOWER_UA обробляє кирилицю);
+                        #   - пробіли по краях (TRIM);
+                        #   - NULL у по батькові (COALESCE(..., ''));
+                        #   - формат дати (. / - / пробіли ігноруються).
+                        # Без цього: "Шевченко" ≠ "шевченко",
+                        # "15.03.2001" ≠ "2001-03-15", NULL ≠ ''.
+                        # ──────────────────────────────────────────────
+
+                        # 1) tax_id → точний збіг
                         if tax_id:
                             existing = conn.execute(
                                 SELECT_EXISTING + " WHERE tax_id = ?",
                                 (tax_id,),
                             ).fetchone()
 
-                        # ФІО + дата (якщо дата вказана)
+                        # 2) ФІО + дата (якщо дата вказана) — з
+                        #    нормалізацією регістру, пробілів і формату
+                        #    дати з обох боків.
                         if not existing and birth_date:
                             existing = conn.execute(
                                 SELECT_EXISTING + """
-                                WHERE last_name_UA=? AND first_name_UA=?
-                                  AND middle_name_UA=? AND birth_date=?
+                                WHERE NORM_NAME(
+                                          last_name_UA || ' ' || first_name_UA
+                                          || ' ' || COALESCE(middle_name_UA, '')
+                                      )
+                                      = NORM_NAME(?)
+                                  AND REPLACE(
+                                          REPLACE(
+                                              REPLACE(COALESCE(birth_date, ''), '-', ''),
+                                              '/', ''),
+                                          '.', '')
+                                      = REPLACE(
+                                          REPLACE(
+                                              REPLACE(?, '-', ''),
+                                              '/', ''),
+                                          '.', '')
                                 """,
-                                (last_name, first_name, middle_name,
-                                 birth_date),
+                                (str(full_name).strip(), birth_date),
                             ).fetchone()
 
-                        # ФІО БЕЗ дати — тільки в update-only режимі,
-                        # і тільки якщо збіг РІВНО один (інакше можна
-                        # оновити не того студента при однакових ФІО).
-                        if (not existing and update_only_mode
-                                and not birth_date):
+                        # 3) ФІО без дати (fallback). Два підсценарії:
+                        #    a) дата в Excel порожня — звичайний фолбек;
+                        #    b) дата в Excel заповнена, але НЕ співпала
+                        #       з БД — пробуємо по ФІО, але з попередженням
+                        #       «дата не співпала, знайдено за ПІБ».
+                        #    Працює ТІЛЬКИ в update-only режимі (без
+                        #    групи), інакше є ризик оновити не того
+                        #    студента при ФІО-дублікаті.
+                        date_mismatch_warning = False
+                        if not existing and update_only_mode:
                             candidates = conn.execute(
                                 SELECT_EXISTING + """
-                                WHERE last_name_UA=? AND first_name_UA=?
-                                  AND middle_name_UA=?
+                                WHERE NORM_NAME(
+                                          last_name_UA || ' ' || first_name_UA
+                                          || ' ' || COALESCE(middle_name_UA, '')
+                                      )
+                                      = NORM_NAME(?)
                                 """,
-                                (last_name, first_name, middle_name),
+                                (str(full_name).strip(),),
                             ).fetchall()
+
                             if len(candidates) == 1:
                                 existing = candidates[0]
+                                # Якщо дата в Excel була, але ми знайшли
+                                # по ФІО — це може бути:
+                                # (а) в БД дата в іншому форматі (рідко);
+                                # (б) в БД дата не заповнена;
+                                # (в) в Excel дата не та (помилка).
+                                # У всіх трьох випадках — попередження
+                                # в звіті, щоб адмін перевірив.
+                                if birth_date:
+                                    date_mismatch_warning = True
+                                    warnings.append({
+                                        'row': i,
+                                        'fio': f"{last_name} {first_name} {middle_name}",
+                                        'reason': (
+                                            f"Точного збігу за ФІО+датою не знайдено, "
+                                            f"але за ПІБ — рівно один студент "
+                                            f"(ID {existing['id']}). "
+                                            f"В Excel дата: «{birth_date}», "
+                                            f"у БД: «{existing['birth_date'] or '—'}». "
+                                            f"Оновлено за ПІБ — перевірте, чи це та людина."
+                                        ),
+                                        # ── Поля для кнопки "Оновити дату в БД"
+                                        #    у звіті імпорту ──
+                                        'action': 'update_birth_date',
+                                        'student_id': existing['id'],
+                                        'new_birth_date': birth_date,
+                                        'current_birth_date': existing['birth_date'] or '',
+                                        'resolved': False,
+                                    })
                             elif len(candidates) > 1:
                                 skipped_rows.append({
                                     'row': i,
                                     'fio': (str(full_name).strip()
                                             if full_name else '—'),
-                                    'birth_date': '—',
+                                    'birth_date': birth_date or '—',
                                     'reason': (f"Знайдено {len(candidates)} "
                                                f"студентів з таким ПІБ — "
                                                f"уточніть дату народження, "
@@ -456,6 +621,12 @@ def import_from_excel():
                             conn=conn,
                         )
                         inserted += 1
+                        inserted_list.append({
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'student_id': new_id,
+                            'group_id': group_id,
+                        })
                         continue
 
                     # ══════════════════════════════════════════════════════
@@ -512,39 +683,67 @@ def import_from_excel():
                             })
                             continue
 
+                        # group_name для відображення в звіті
+                        try:
+                            gr_row = conn.execute(
+                                "SELECT name FROM groups WHERE id = ?",
+                                (group_id,),
+                            ).fetchone()
+                            gr_name = gr_row['name'] if gr_row else f'#{group_id}'
+                        except Exception:
+                            gr_name = f'#{group_id}'
+
+                        entry = {
+                            'row': i,
+                            'fio': f"{last_name} {first_name} {middle_name}",
+                            'student_id': sid,
+                            'group_id': group_id,
+                            'group_name': gr_name,
+                        }
                         if was_reactivation:
                             enrollments_reactivated += 1
+                            enrollments_reactivated_list.append(entry)
                         else:
                             enrollments_added += 1
+                            enrollments_added_list.append(entry)
 
                     # ── Оновлення порожніх полів картки ──
+                    # ── Оновлення картки: пусті поля — автоматично,
+                    #    заповнені-але-різні — в конфлікти (з кнопкою
+                    #    «Замінити» в звіті). ──
                     if update_existing_data:
-                        updates = {}
-                        # ВАЖЛИВО: оновлюємо ТІЛЬКИ порожні поля — не
-                        # затираємо те, що адмін вже вписав вручну.
-                        if phone and not (existing['phone'] or '').strip():
-                            updates['phone'] = phone
-                        if phone_backup and not (existing['phone_backup'] or '').strip():
-                            updates['phone_backup'] = phone_backup
-                        if email and not (existing['email'] or '').strip():
-                            updates['email'] = email
-                        if tax_id and not (existing['tax_id'] or '').strip():
-                            updates['tax_id'] = tax_id
-                        if edebo_code and not (existing['edebo_code'] or '').strip():
-                            updates['edebo_code'] = edebo_code
-                        if address_of_residence and not (existing['address_of_residence'] or '').strip():
-                            updates['address_of_residence'] = address_of_residence
-                        # program_credits_override — per-enrollment, тому
-                        # його можна оновити ТІЛЬКИ коли відомо, до якої
-                        # групи належить запис. У update-only режимі
-                        # (колонка A порожня) group_id = None → оновлювати
-                        # нічого, значення з колонки F ігнорується.
-                        # Якщо потрібно оновити кредити — вкажіть групу
-                        # в колонці A.
+                        # Усі поля, які можна оновити з Excel. ФІО і
+                        # дата народження — теж, бо якщо студент
+                        # знайдено за ФІО+датою, то вони збіглися; якщо
+                        # за student_id/tax_id — можуть відрізнятися
+                        # (напр. виправляємо помилку в даті).
+                        field_candidates = {
+                            'last_name_UA': last_name,
+                            'first_name_UA': first_name,
+                            'middle_name_UA': middle_name,
+                            'birth_date': birth_date,
+                            'phone': phone,
+                            'phone_backup': phone_backup,
+                            'email': email,
+                            'tax_id': tax_id,
+                            'edebo_code': edebo_code,
+                            'address_of_residence': address_of_residence,
+                            'gender': gender,
+                        }
+
+                        updates, conflicts = _collect_field_conflicts(
+                            existing, field_candidates,
+                        )
+
+                        # program_credits_override — per-enrollment,
+                        # оновлюємо окремо (не через UPDATE students).
                         if program_credits_override and not update_only_mode:
-                            from routes.enrollments_service import update_enrollment_program_credits
+                            from routes.enrollments_service import (
+                                update_enrollment_program_credits,
+                            )
                             ok_pc, msg_pc = update_enrollment_program_credits(
-                                sid, group_id, program_credits_override, conn=conn,
+                                sid, group_id, program_credits_override,
+                                conn=conn,
                             )
                             if not ok_pc:
                                 warnings.append({
@@ -552,10 +751,10 @@ def import_from_excel():
                                     'fio': f"{last_name} {first_name} {middle_name}",
                                     'reason': (f"Кредити скороченої програми "
                                                f"не оновлено: {msg_pc}"),
+                                    'action': 'other',
                                 })
-                        if gender and not (existing['gender'] or '').strip():
-                            updates['gender'] = gender
 
+                        # 1) Пусті поля БД — оновлюємо одразу
                         if updates:
                             set_clause = ', '.join(f"{k} = ?"
                                                    for k in updates)
@@ -565,6 +764,29 @@ def import_from_excel():
                                 list(updates.values()) + [sid],
                             )
                             data_updated += 1
+                            data_updated_list.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'student_id': sid,
+                                'fields': list(updates.keys()),
+                            })
+
+                        # 2) Заповнені-але-різні — conflict-warning з
+                        #    кнопками «Замінити вибірково» в звіті.
+                        if conflicts:
+                            warnings.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'reason': (
+                                    f"Студент ID {sid} — {len(conflicts)} "
+                                    f"розбіжностей з БД. Можна замінити "
+                                    f"вибірково."
+                                ),
+                                'action': 'replace_fields',
+                                'student_id': sid,
+                                'conflicts': conflicts,
+                                'resolved': False,
+                            })
 
                     # ── Попередження про реактивацію з архіву ──
                     if was_archived:
@@ -651,6 +873,11 @@ def import_from_excel():
                     'gender_auto': gender_auto,
                     'gender_missing': gender_missing,
                     'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
+                    # ── Нове: детальні списки замість голих счётчиків ──
+                    'inserted_list': inserted_list,
+                    'enrollments_added_list': enrollments_added_list,
+                    'enrollments_reactivated_list': enrollments_reactivated_list,
+                    'data_updated_list': data_updated_list,
                 }, f, ensure_ascii=False)
             return redirect(url_for(
                 'students.import_report', report_id=report_id))
@@ -676,4 +903,428 @@ def import_report(report_id):
         return redirect(url_for('students.import_from_excel'))
     with open(report_path, encoding='utf-8') as f:
         report = json.load(f)
-    return render_template('import_excel_report.html', report=report)
+    return render_template(
+        'import_excel_report.html',
+        report=report,
+        report_id=report_id,
+    )
+
+
+@students_bp.route('/import_from_excel/report/<report_id>/apply-birth-date', methods=['POST'],)
+@permission_required('import_from_excel')
+def import_report_apply_birth_date(report_id):
+    """Підтвердити оновлення дати народження в БД за звітом імпорту.
+
+    Використовується для тих рядків, де при імпорті не співпала дата
+    (напр. у БД була порожня, а в Excel — заповнена). Замість
+    повторного імпорту Excel адмін натискає кнопку в звіті — і ми
+    записуємо конкретну дату конкретному студенту.
+
+    Захист: тільки для warnings з action='update_birth_date';
+    resolved-записи не перезаписуються (ідемпотентно).
+    """
+    report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
+    report_path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+    if not report_id or not os.path.isfile(report_path):
+        flash('Звіт про імпорт не знайдено або він застарів', 'warning')
+        return redirect(url_for('students.import_from_excel'))
+
+    row_num = request.form.get('row', type=int)
+    if not row_num:
+        flash('Не вказано рядок звіту', 'error')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    with open(report_path, encoding='utf-8') as f:
+        report = json.load(f)
+
+    # Знайти саме той warning
+    target = None
+    for w in report.get('warnings', []):
+        if w.get('row') == row_num and w.get('action') == 'update_birth_date':
+            target = w
+            break
+
+    if not target:
+        flash('Запис для цього рядка не знайдено або він не підтримує '
+              'оновлення дати', 'warning')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    if target.get('resolved'):
+        flash('Дату вже було оновлено раніше — повторно не змінюємо', 'info')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    sid = target.get('student_id')
+    new_bd = target.get('new_birth_date')
+    if not sid or not new_bd:
+        flash('Некоректні дані запису (немає student_id або new_birth_date)',
+              'error')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    conn = get_db()
+    try:
+        student = conn.execute(
+            "SELECT last_name_UA, first_name_UA, birth_date "
+            "FROM students WHERE id = ?",
+            (sid,),
+        ).fetchone()
+        if not student:
+            flash(f'Студента ID {sid} не знайдено (можливо, видалений)', 'error')
+            return redirect(url_for('students.import_report', report_id=report_id))
+
+        # Перечитуємо СВІЖЕ значення з БД (а не з звіту) — на випадок,
+        # якщо хтось уже виправив дату вручну після імпорту.
+        old_bd = (student['birth_date'] or '').strip()
+
+        if old_bd == new_bd:
+            # Уже актуально — просто позначаємо resolved, не UPDATE.
+            target['resolved'] = True
+            target['resolved_at'] = datetime.now().strftime('%d.%m.%Y %H:%M')
+            target['resolved_by'] = current_username()
+            target['resolution_note'] = 'Дата в БД вже така сама'
+            with open(report_path, 'w', encoding='utf-8') as f:
+                json.dump(report, f, ensure_ascii=False)
+            flash('Дата в БД вже така сама, як у Excel — нічого не змінено',
+                  'info')
+            return redirect(url_for('students.import_report', report_id=report_id))
+
+        conn.execute(
+            "UPDATE students SET birth_date = ? WHERE id = ?",
+            (new_bd, sid),
+        )
+        conn.commit()
+
+        target['resolved'] = True
+        target['resolved_at'] = datetime.now().strftime('%d.%m.%Y %H:%M')
+        target['resolved_by'] = current_username()
+        target['old_birth_date_at_apply'] = old_bd
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False)
+
+        fio = f"{student['last_name_UA']} {student['first_name_UA']}".strip()
+        log_action(
+            current_username(),
+            f'оновив дату народження студента {fio} (ID {sid}) '
+            f'за звітом імпорту',
+            details=f'{old_bd or "—"} → {new_bd}',
+        )
+        flash(f'Дату народження оновлено: «{old_bd or "—"}» → «{new_bd}»',
+              'success')
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(
+            f'import_report_apply_birth_date failed '
+            f'(report={report_id}, student={sid}): {e}',
+            exc_info=True,
+        )
+        flash(f'Помилка оновлення: {e}', 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('students.import_report', report_id=report_id))
+    
+@students_bp.route(
+    '/import_from_excel/report/<report_id>/apply-fields',
+    methods=['POST'],
+)
+@permission_required('import_from_excel')
+def import_report_apply_fields(report_id):
+    """Замінити вибрані поля з конфліктів (action='replace_fields').
+
+    Адмін у звіті бачить таблицю конфліктів для кожного студента:
+        Поле | Було в БД | Стане (з Excel) | ☑
+    Обирає чекбоксами, що замінити, і натискає «Замінити обрані».
+
+    ФІО оновлюється разом з ENG-варіантами (транслітерація).
+    """
+    report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
+    report_path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+    if not report_id or not os.path.isfile(report_path):
+        flash('Звіт не знайдено або застарів', 'warning')
+        return redirect(url_for('students.import_from_excel'))
+
+    row_num = request.form.get('row', type=int)
+    fields_to_apply = request.form.getlist('fields')
+
+    if not row_num or not fields_to_apply:
+        flash('Не обрано жодного поля для заміни', 'warning')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    with open(report_path, encoding='utf-8') as f:
+        report = json.load(f)
+
+    target = None
+    for w in report.get('warnings', []):
+        if w.get('row') == row_num and w.get('action') == 'replace_fields':
+            target = w
+            break
+
+    if not target:
+        flash('Запис не знайдено', 'warning')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    sid = target.get('student_id')
+    if not sid:
+        flash('Некоректний запис (немає student_id)', 'error')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    conflicts_by_field = {c['field']: c for c in (target.get('conflicts') or [])}
+    to_apply = {
+        f: conflicts_by_field[f]['new']
+        for f in fields_to_apply
+        if f in conflicts_by_field
+    }
+
+    if not to_apply:
+        flash('Жодного поля для заміни не знайдено', 'warning')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    conn = get_db()
+    try:
+        student = conn.execute(
+            "SELECT last_name_UA, first_name_UA FROM students WHERE id = ?",
+            (sid,),
+        ).fetchone()
+        if not student:
+            flash(f'Студента ID {sid} не знайдено (можливо, видалений)', 'error')
+            return redirect(url_for('students.import_report', report_id=report_id))
+
+        # Якщо міняємо укр. ФІО — перерахувати англійські варіанти
+        new_last = to_apply.get('last_name_UA') or student['last_name_UA'] or ''
+        new_first = to_apply.get('first_name_UA') or student['first_name_UA'] or ''
+        if 'last_name_UA' in to_apply or 'first_name_UA' in to_apply:
+            last_eng, first_eng = generate_english_name(new_last, new_first)
+            to_apply['last_name_ENG'] = last_eng
+            to_apply['first_name_ENG'] = first_eng
+
+        set_clause = ', '.join(f"{k} = ?" for k in to_apply)
+        conn.execute(
+            f"UPDATE students SET {set_clause} WHERE id = ?",
+            list(to_apply.values()) + [sid],
+        )
+        conn.commit()
+
+        # Позначаємо, що саме застосували
+        applied = target.setdefault('applied_fields', [])
+        applied.extend(to_apply.keys())
+
+        # Прибираємо застосовані конфлікти
+        remaining = [
+            c for c in (target.get('conflicts') or [])
+            if c['field'] not in to_apply
+        ]
+        target['conflicts'] = remaining
+
+        if remaining:
+            target['reason'] = (
+                f"Студент ID {sid} — залишилось {len(remaining)} розбіжностей "
+                f"(вирішено {len(to_apply)})"
+            )
+        else:
+            target['resolved'] = True
+            target['resolved_at'] = datetime.now().strftime('%d.%m.%Y %H:%M')
+            target['resolved_by'] = current_username()
+
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False)
+
+        log_action(
+            current_username(),
+            f'замінив поля студента ID {sid} за звітом імпорту',
+            details=f'поля: {", ".join(to_apply.keys())}',
+        )
+        flash(
+            f'Оновлено поля: {", ".join(to_apply.keys())}',
+            'success',
+        )
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(
+            f'import_report_apply_fields failed '
+            f'(report={report_id}, student={sid}): {e}',
+            exc_info=True,
+        )
+        flash(f'Помилка оновлення: {e}', 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('students.import_report', report_id=report_id))
+    
+@students_bp.route(
+    '/import_from_excel/report/<report_id>/apply-all-fields',
+    methods=['POST'],
+)
+@permission_required('import_from_excel')
+def import_report_apply_all_fields(report_id):
+    """Замінити ВСІ обрані галочками поля у ВСІХ конфліктах одним POST.
+
+    Приймає payload — JSON виду {row_num: [field1, field2, ...]}.
+    Обробляє тільки warnings з action='replace_fields'.
+    Для кожного студента — один UPDATE з усіма його полями.
+
+    Ключове: на відміну від одиночного apply-fields, обробляє
+    декілька студентів за один запит — зручно, коли у звіті 10+
+    рядків з розбіжностями.
+    """
+    report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
+    report_path = os.path.join(REPORTS_DIR, f"{report_id}.json")
+    if not report_id or not os.path.isfile(report_path):
+        flash('Звіт не знайдено або застарів', 'warning')
+        return redirect(url_for('students.import_from_excel'))
+
+    payload_raw = (request.form.get('payload') or '').strip()
+    if not payload_raw:
+        flash('Не обрано жодного поля для заміни', 'warning')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    try:
+        payload = json.loads(payload_raw)
+    except (ValueError, TypeError):
+        flash('Некоректний формат даних', 'error')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    if not isinstance(payload, dict) or not payload:
+        flash('Некоректний формат даних', 'error')
+        return redirect(url_for('students.import_report', report_id=report_id))
+
+    with open(report_path, encoding='utf-8') as f:
+        report = json.load(f)
+
+    warnings_list = report.get('warnings') or []
+    warning_by_row = {
+        w.get('row'): w
+        for w in warnings_list
+        if w.get('action') == 'replace_fields' and not w.get('resolved')
+    }
+
+    conn = get_db()
+    applied_rows = []
+    failed_rows = []
+    total_fields = 0
+
+    try:
+        for row_key, fields in payload.items():
+            try:
+                row_num = int(row_key)
+            except (ValueError, TypeError):
+                continue
+
+            warning = warning_by_row.get(row_num)
+            if not warning:
+                continue
+
+            if not isinstance(fields, list) or not fields:
+                continue
+
+            sid = warning.get('student_id')
+            if not sid:
+                failed_rows.append((row_num, 'немає student_id'))
+                continue
+
+            # Фільтруємо тільки ті поля, що реально є в conflicts
+            # (захист від підміни форми через DevTools)
+            conflicts_by_field = {
+                c['field']: c for c in (warning.get('conflicts') or [])
+            }
+            to_apply = {
+                f: conflicts_by_field[f]['new']
+                for f in fields
+                if f in conflicts_by_field
+            }
+            if not to_apply:
+                continue
+
+            student = conn.execute(
+                "SELECT last_name_UA, first_name_UA FROM students WHERE id = ?",
+                (sid,),
+            ).fetchone()
+            if not student:
+                failed_rows.append((row_num, f'студент ID {sid} не знайдено'))
+                continue
+
+            # ФІО: якщо міняємо укр. прізвище/ім'я — перегенерувати ENG
+            new_last = (
+                to_apply.get('last_name_UA')
+                or student['last_name_UA'] or ''
+            )
+            new_first = (
+                to_apply.get('first_name_UA')
+                or student['first_name_UA'] or ''
+            )
+            if 'last_name_UA' in to_apply or 'first_name_UA' in to_apply:
+                last_eng, first_eng = generate_english_name(new_last, new_first)
+                to_apply['last_name_ENG'] = last_eng
+                to_apply['first_name_ENG'] = first_eng
+
+            set_clause = ', '.join(f"{k} = ?" for k in to_apply)
+            conn.execute(
+                f"UPDATE students SET {set_clause} WHERE id = ?",
+                list(to_apply.values()) + [sid],
+            )
+
+            # Оновлюємо warning у звіті
+            applied = warning.setdefault('applied_fields', [])
+            applied.extend(to_apply.keys())
+            remaining = [
+                c for c in (warning.get('conflicts') or [])
+                if c['field'] not in to_apply
+            ]
+            warning['conflicts'] = remaining
+            if remaining:
+                warning['reason'] = (
+                    f"Студент ID {sid} — залишилось {len(remaining)} "
+                    f"розбіжностей (вирішено {len(to_apply)})"
+                )
+            else:
+                warning['resolved'] = True
+                warning['resolved_at'] = datetime.now().strftime('%d.%m.%Y %H:%M')
+                warning['resolved_by'] = current_username()
+
+            applied_rows.append((row_num, sid, list(to_apply.keys())))
+            total_fields += len(to_apply)
+
+        conn.commit()
+
+        # Перезаписуємо JSON-звіт
+        with open(report_path, 'w', encoding='utf-8') as f:
+            json.dump(report, f, ensure_ascii=False)
+
+        if applied_rows:
+            log_action(
+                current_username(),
+                f'масово замінив поля за звітом імпорту: '
+                f'{len(applied_rows)} студент(ів), {total_fields} полів',
+                details='; '.join(
+                    f'рядок {r} → ID {sid} ({", ".join(flds)})'
+                    for r, sid, flds in applied_rows
+                ),
+            )
+            flash(
+                f'Оновлено {len(applied_rows)} студент(ів), '
+                f'замінено {total_fields} полів',
+                'success',
+            )
+        else:
+            flash('Жодного поля не оновлено', 'warning')
+
+        if failed_rows:
+            flash(
+                'Не вдалося обробити: ' + '; '.join(
+                    f'рядок {r} ({msg})' for r, msg in failed_rows
+                ),
+                'warning',
+            )
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(
+            f'import_report_apply_all_fields failed '
+            f'(report={report_id}): {e}',
+            exc_info=True,
+        )
+        flash(f'Помилка: {e}', 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('students.import_report', report_id=report_id))
