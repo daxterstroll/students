@@ -79,6 +79,8 @@ def build_group_name(conn, specialty_short_name, degree_level, study_form, cours
 
     if study_form == 'Заочна':
         suffix += 'з'
+    elif study_form == 'Дистанційна':
+        suffix += 'д'
 
     return f"{specialty_short_name}{suffix}-{course}"
     
@@ -223,8 +225,8 @@ def manage_groups():
                 flash("Для цієї спеціальності й року вступу ще не додано освітню програму - додайте її на сторінці «Освітня програма».", "error")
             elif not qualification_name:
                 flash("Для цієї спеціальності, ступеня і року вступу ще не додано назву кваліфікації - додайте її на сторінці «Назва кваліфікації».", "error")
-            elif study_form not in ['Денна', 'Заочна']:
-                flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
+            elif study_form not in ['Денна', 'Заочна', 'Дистанційна']:
+                flash("Форма навчання має бути 'Денна', 'Заочна' або 'Дистанційна'.", "error")
             elif program_credits not in ['90', '120', '180', '240']:
                 flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:
@@ -366,8 +368,8 @@ def manage_groups():
                 flash("Для цієї спеціальності, ступеня і року вступу ще не додано назву кваліфікації - додайте її на сторінці «Назва кваліфікації».", "error")
             elif not course.isdigit() or int(course) < 1 or int(course) > 6:
                 flash("Курс має бути числом від 1 до 6.", "error")
-            elif study_form not in ['Денна', 'Заочна']:
-                flash("Форма навчання має бути 'Денна' або 'Заочна'.", "error")
+            elif study_form not in ['Денна', 'Заочна', 'Дистанційна']:
+                flash("Форма навчання має бути 'Денна', 'Заочна' або 'Дистанційна'.", "error")
             elif program_credits not in ['90', '120', '180', '240']:
                 flash("Кількість кредитів має бути 90, 120, 180 або 240.", "error")
             else:

@@ -1030,7 +1030,7 @@ def license_report():
 
     # Фільтр по формі навчання — 'Денна' / 'Заочна' / '' (всі)
     study_form_filter = (request.args.get('study_form') or '').strip()
-    if study_form_filter not in ('Денна', 'Заочна'):
+    if study_form_filter not in ('Денна', 'Заочна', 'Дистанційна'):
         study_form_filter = ''
 
     # ── 1. Усі активні ліцензії (для колонок звіту) ─────────────
@@ -1226,6 +1226,17 @@ def license_report():
         })
 
     conn.close()
+    
+    # Перелік форм навчання, які реально є в активних групах відбору —
+    # для dropdown «Форма» у шаблоні та для кнопок «Завантажити (X)»,
+    # щоб не плодити зайвих варіантів, поки такої форми немає в жодній
+    # групі. Використовуємо вкладене r['group']['study_form'], бо
+    # groups_with_students — це список {'group': {...}, 'students': [...]}.
+    study_forms_available = sorted({
+        item['group']['study_form']
+        for item in groups_with_students
+        if item['group'].get('study_form')
+    })
 
     return render_template(
         'license_report.html',
@@ -1233,6 +1244,7 @@ def license_report():
         include_archived=include_archived,
         include_frozen=include_frozen,
         license_id_filter=license_id_filter,
+        study_forms_available=study_forms_available,
         study_form_filter=study_form_filter,
         licenses_available=license_rows,
         groups_with_students=groups_with_students,
@@ -1267,8 +1279,8 @@ def license_report_export_word():
     include_archived = request.args.get('include_archived') == '1'
     include_frozen = request.args.get('include_frozen') == '1'
     study_form = request.args.get('study_form')
-    if study_form not in ('Денна', 'Заочна'):
-        flash("Оберіть форму навчання (Денна чи Заочна) для вивантаження.", "error")
+    if study_form not in ('Денна', 'Заочна', 'Дистанційна'):
+        flash("Оберіть форму навчання (Денна, Заочна чи Дистанційна) для вивантаження.", "error")
         return redirect(url_for('admin.license_report'))
 
     conn = get_db()
@@ -1347,7 +1359,8 @@ def license_report_export_word():
         section.right_margin = Cm(1)
 
     study_form_text = {'Денна': 'денна форма навчання',
-                       'Заочна': 'заочна форма навчання'}.get(study_form, study_form)
+                       'Заочна': 'заочна форма навчання',
+                       'Дистанційна': 'дистанційна форма навчання'}.get(study_form, study_form)
 
     for degree_key in ordered_degrees:
         degree_label = DEGREE_LABELS.get(degree_key, degree_key.upper())
@@ -1413,7 +1426,10 @@ def license_report_export_word():
     doc.save(output_path)
 
     log_action(current_username(), f"вивантажив звіт по ліцензіях у Word ({study_form})")
-    download_name = f"Списки_студентів_{'денна' if study_form == 'Денна' else 'заочна'}.docx"
+    _form_slug = {'Денна': 'денна', 'Заочна': 'заочна', 'Дистанційна': 'дистанційна'}.get(
+        study_form, study_form.lower()
+    )
+    download_name = f"Списки_студентів_{_form_slug}.docx"
     return send_file(output_path, as_attachment=True, download_name=download_name)
 
 

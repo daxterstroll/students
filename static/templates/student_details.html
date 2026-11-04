@@ -76,7 +76,7 @@
 
                 <p class="mb-0 opacity-90">
                     {% if student.status == 'frozen' and student.frozen_previous_group_name %}
-                        <span class="text-warning-emphasis">
+                        <span style="color: var(--brass-lt);">
                             <i class="bi bi-snow"></i>
                             Був(ла) у групі <strong>{{ student.frozen_previous_group_name }}</strong>
                             {% if student.frozen_at %} — з {{ student.frozen_at }}{% endif %}
@@ -182,11 +182,15 @@
             <div class="card h-100 shadow-sm border-0" style="border-radius: 16px; overflow: hidden;">
                 <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-4 pb-3">
                     <h4 class="mb-0"><i class="bi bi-info-circle-fill me-2" style="color: var(--brass);"></i>Основна інформація</h4>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 flex-wrap">
                         <a href="{{ url_for('students.generate_update_link', student_id=student.id) }}"
                            class="btn btn-sm btn-outline-secondary" title="Створити посилання для студента">
                             <i class="bi bi-link-45deg"></i> Посилання для оновлення
                         </a>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                data-bs-toggle="modal" data-bs-target="#changeNameModal">
+                            <i class="bi bi-person-vcard"></i> Змінити ПІБ
+                        </button>
                         <a href="{{ url_for('students.edit_student', student_id=student.id) }}"
                            class="btn btn-sm btn-outline-primary">
                             <i class="bi bi-pencil"></i> Редагувати
@@ -1568,4 +1572,110 @@
         </div>
     </div>
 </div>
+
+<!-- Модальне вікно зміни ПІБ -->
+<div class="modal fade" id="changeNameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <form method="POST" enctype="multipart/form-data"
+                  action="{{ url_for('students.change_student_name', student_id=student.id) }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-person-vcard me-2"></i>Зміна ПІБ</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-12">
+                            <label class="form-label small text-muted mb-1">Поточне ПІБ</label>
+                            <div class="p-2 bg-light rounded border small font-monospace">
+                                {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
+                                {% if student.last_name_ENG or student.first_name_ENG %}
+                                <div class="text-muted">
+                                    {{ student.last_name_ENG or '' }} {{ student.first_name_ENG or '' }}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Нове прізвище (укр.) <span class="text-danger">*</span></label>
+                            <input type="text" name="last_name_UA" class="form-control form-control-sm"
+                                   value="{{ student.last_name_UA }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Нове ім'я (укр.) <span class="text-danger">*</span></label>
+                            <input type="text" name="first_name_UA" class="form-control form-control-sm"
+                                   value="{{ student.first_name_UA }}" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">По батькові (укр.)</label>
+                            <input type="text" name="middle_name_UA" class="form-control form-control-sm"
+                                   value="{{ student.middle_name_UA or '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Прізвище (англ.)</label>
+                            <input type="text" name="last_name_ENG" class="form-control form-control-sm"
+                                   value="{{ student.last_name_ENG or '' }}"
+                                   placeholder="Порожньо — транслітерується автоматично">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Ім'я (англ.)</label>
+                            <input type="text" name="first_name_ENG" class="form-control form-control-sm"
+                                   value="{{ student.first_name_ENG or '' }}"
+                                   placeholder="Порожньо — транслітерується автоматично">
+                        </div>
+                    </div>
+
+                    {% if session.get('is_admin') %}
+                    <div class="alert alert-warning small mt-3 mb-0">
+                        <div class="form-check">
+                            <input class="form-check-input js-bypass-order" type="checkbox"
+                                   name="bypass_order" value="1" id="bypassNameChange">
+                            <label class="form-check-label" for="bypassNameChange">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>Змінити без наказу</strong> (виправлення помилки — тільки для адміна)
+                            </label>
+                        </div>
+                        <div class="mt-2 js-correction-reason-wrap" style="display:none;">
+                            <label class="form-label small fw-semibold">Причина корекції <span class="text-danger">*</span></label>
+                            <input type="text" name="correction_reason"
+                                   class="form-control form-control-sm js-correction-reason">
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="js-order-fields mt-3">
+                        <hr>
+                        <h6 class="text-muted small text-uppercase mb-3">Наказ про зміну ПІБ</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                                <input type="text" name="order_number" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                                <input type="text" name="order_date" class="form-control form-control-sm"
+                                       placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Скан наказу</label>
+                                <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Зберегти
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
 {% endblock %}

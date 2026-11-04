@@ -43,6 +43,7 @@
                 <select name="study_form" id="study_form" class="form-select" required onchange="fillGroupName('')">
                     <option value="Денна">Денна</option>
                     <option value="Заочна">Заочна</option>
+                    <option value="Дистанційна">Дистанційна</option>
                 </select>
             </div>
             <div class="col-md-2">
@@ -508,6 +509,7 @@
                                         <select name="study_form" id="study_form{{ group.id }}" class="form-select" required onchange="fillGroupName('{{ group.id }}')">
                                             <option value="Денна" {% if group.study_form == 'Денна' %}selected{% endif %}>Денна</option>
                                             <option value="Заочна" {% if group.study_form == 'Заочна' %}selected{% endif %}>Заочна</option>
+                                            <option value="Дистанційна" {% if group.study_form == 'Дистанційна' %}selected{% endif %}>Дистанційна</option>
                                         </select>
                                     </div>
                                     <div class="col-md-6">
@@ -758,6 +760,7 @@ function fillGroupName(suffix) {
 		if (degreeSuffix) effectiveShortName += degreeSuffix;
 	}
 	if (effectiveShortName && studyForm === 'Заочна') effectiveShortName += 'з';
+	if (effectiveShortName && studyForm === 'Дистанційна') effectiveShortName += 'д';
 
     if (effectiveShortName && course) {
         nameField.value = effectiveShortName + '-' + course;
