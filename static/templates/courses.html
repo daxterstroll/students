@@ -106,7 +106,15 @@
                 <div class="course-column__body">
                     {% for g in section.groups_by_course[course] %}
                     <div class="course-group-card">
-                        <div class="course-group-card__name">{{ g.name }}</div>
+                        <div class="course-group-card__name">
+                            {{ g.name }}
+                            {% if g.stale_course %}
+                            <span class="badge text-bg-warning ms-1"
+                                  title="Курс у БД: {{ g.stored_course }}, за часом уже: {{ g.effective_course }} — група «застрягла» між переведеннями. Випуск доступний через «Оформити випуск».">
+                                <i class="bi bi-exclamation-triangle"></i> {{ g.stored_course }}→{{ g.effective_course }}
+                            </span>
+                            {% endif %}
+                        </div>
                         <div class="course-group-card__meta">{{ g.specialty }}</div>
                         <div class="course-group-card__meta">{{ g.study_form }} · вступ {{ g.start_year }}</div>
                         <div class="course-group-card__students">
