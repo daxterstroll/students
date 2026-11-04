@@ -193,6 +193,10 @@ CREATE TABLE IF NOT EXISTS student_enrollments (
     edebo_code  TEXT,                    -- ЄДЕБО для ЦЬОГО навчання
     order_id    INTEGER,
     notes       TEXT,
+    is_correction INTEGER NOT NULL DEFAULT 0,
+    correction_note TEXT,
+    correction_by TEXT,
+    correction_at TEXT,
     created_at  TEXT DEFAULT (datetime('now', 'localtime')),
     UNIQUE (student_id, group_id),
     FOREIGN KEY (student_id) REFERENCES students(id),
@@ -687,6 +691,12 @@ cur.execute("CREATE INDEX IF NOT EXISTS idx_study_periods_group ON student_study
 
 # student_enrollments — ЄДЕБО на рівні навчання
 _add_column_if_missing('student_enrollments', 'edebo_code', 'TEXT')
+
+# Позначка «додано/змінено без наказу» (адмінська корекція помилки).
+_add_column_if_missing('student_enrollments', 'is_correction', 'INTEGER NOT NULL DEFAULT 0')
+_add_column_if_missing('student_enrollments', 'correction_note', 'TEXT')
+_add_column_if_missing('student_enrollments', 'correction_by', 'TEXT')
+_add_column_if_missing('student_enrollments', 'correction_at', 'TEXT')
 
 # Одноразовий backfill: старий edebo_code з students → у primary enrollment.
 # Робимо ЛИШЕ якщо в enrollment ще порожньо, і тільки для primary

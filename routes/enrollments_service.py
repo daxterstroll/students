@@ -29,6 +29,10 @@ def ensure_enrollments_table(conn=None) -> None:
                 license_id  INTEGER,
                 edebo_code  TEXT,
                 order_id    INTEGER,
+                is_correction INTEGER NOT NULL DEFAULT 0,
+                correction_note TEXT,
+                correction_by TEXT,
+                correction_at TEXT,
                 notes       TEXT,
                 created_at  TEXT DEFAULT (datetime('now', 'localtime')),
                 UNIQUE (student_id, group_id),
@@ -46,6 +50,16 @@ def ensure_enrollments_table(conn=None) -> None:
             conn.execute("ALTER TABLE student_enrollments ADD COLUMN edebo_code TEXT")
         except Exception:
             pass
+        for _col, _type in (
+            ('is_correction', 'INTEGER NOT NULL DEFAULT 0'),
+            ('correction_note', 'TEXT'),
+            ('correction_by', 'TEXT'),
+            ('correction_at', 'TEXT'),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE student_enrollments ADD COLUMN {_col} {_type}")
+            except Exception:
+                pass
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_enrollments_student "
             "ON student_enrollments(student_id)"
@@ -102,6 +116,7 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
                    COALESCE(e.license_id, s.license_id) AS license_id,
                    COALESCE(e.edebo_code, s.edebo_code) AS edebo_code,
                    e.order_id, e.notes, e.created_at,
+                   e.is_correction, e.correction_note, e.correction_by, e.correction_at,
                    g.name AS group_name, g.start_year, g.study_form,
                    g.degree_level, g.course, g.specialty_code,
                    g.program_credits,

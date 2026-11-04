@@ -7,34 +7,82 @@
 
     {{ ui.page_header('bi-award', 'Звіт по ліцензіях', 'Розподіл студентів по ліцензіях у кожній групі') }}
 
-    <div class="card mb-4">
-        <div class="card-body py-2">
-            <form method="GET" class="d-flex align-items-center gap-3 flex-wrap">
-                <input type="hidden" name="view" value="{{ view }}">
-                <div class="btn-group btn-group-sm" role="group">
-                    <a href="{{ url_for('admin.license_report', view='list', include_archived=1 if include_archived else 0) }}"
-                       class="btn btn-outline-primary {% if view == 'list' %}active{% endif %}">Список</a>
-                    <a href="{{ url_for('admin.license_report', view='summary', include_archived=1 if include_archived else 0) }}"
-                       class="btn btn-outline-primary {% if view == 'summary' %}active{% endif %}">Підсумки</a>
-                </div>
-                <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" name="include_archived" value="1" id="includeArchived"
-                           {% if include_archived %}checked{% endif %} onchange="this.form.submit()">
-                    <label class="form-check-label small" for="includeArchived">Враховувати архівні групи</label>
-                </div>
-                <div class="ms-auto d-flex gap-2">
-                    <a href="{{ url_for('admin.license_report_export_word', include_archived=1 if include_archived else 0, study_form='Денна') }}"
-                       class="btn btn-outline-success btn-sm">
-                        <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Денна)
-                    </a>
-                    <a href="{{ url_for('admin.license_report_export_word', include_archived=1 if include_archived else 0, study_form='Заочна') }}"
-                       class="btn btn-outline-success btn-sm">
-                        <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Заочна)
-                    </a>
-                </div>
-            </form>
-        </div>
+<div class="card mb-4">
+    <div class="card-body py-2">
+        <form method="GET" class="d-flex align-items-center gap-3 flex-wrap">
+            <input type="hidden" name="view" value="{{ view }}">
+
+            <div class="btn-group btn-group-sm" role="group">
+                <a href="{{ url_for('admin.license_report', view='list',
+                        include_archived=1 if include_archived else 0,
+                        include_frozen=1 if include_frozen else 0,
+                        license_id=license_id_filter or '',
+                        study_form=study_form_filter or '') }}"
+                   class="btn btn-outline-primary {% if view == 'list' %}active{% endif %}">Список</a>
+                <a href="{{ url_for('admin.license_report', view='summary',
+                        include_archived=1 if include_archived else 0,
+                        include_frozen=1 if include_frozen else 0,
+                        license_id=license_id_filter or '',
+                        study_form=study_form_filter or '') }}"
+                   class="btn btn-outline-primary {% if view == 'summary' %}active{% endif %}">Підсумки</a>
+            </div>
+
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" name="include_archived" value="1"
+                       id="includeArchived" {% if include_archived %}checked{% endif %}
+                       onchange="this.form.submit()">
+                <label class="form-check-label small" for="includeArchived">Архівні</label>
+            </div>
+
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" name="include_frozen" value="1"
+                       id="includeFrozen" {% if include_frozen %}checked{% endif %}
+                       onchange="this.form.submit()">
+                <label class="form-check-label small" for="includeFrozen">Заморожені</label>
+            </div>
+
+            <div class="d-flex align-items-center gap-1">
+                <label class="small text-muted mb-0" for="licFilter">Ліцензія:</label>
+                <select name="license_id" id="licFilter" class="form-select form-select-sm"
+                        style="width:auto;" onchange="this.form.submit()">
+                    <option value="">Всі</option>
+                    {% for l in licenses_available %}
+                    <option value="{{ l.id }}" {% if license_id_filter == l.id %}selected{% endif %}>
+                        {{ l.short_name_ua or l.name_ua }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="d-flex align-items-center gap-1">
+                <label class="small text-muted mb-0" for="formFilter">Форма:</label>
+                <select name="study_form" id="formFilter" class="form-select form-select-sm"
+                        style="width:auto;" onchange="this.form.submit()">
+                    <option value="">Всі</option>
+                    <option value="Денна"  {% if study_form_filter == 'Денна' %}selected{% endif %}>Денна</option>
+                    <option value="Заочна" {% if study_form_filter == 'Заочна' %}selected{% endif %}>Заочна</option>
+                </select>
+            </div>
+
+            <div class="ms-auto d-flex gap-2">
+                <a href="{{ url_for('admin.license_report_export_word',
+                        include_archived=1 if include_archived else 0,
+                        include_frozen=1 if include_frozen else 0,
+                        study_form='Денна') }}"
+                   class="btn btn-outline-success btn-sm">
+                    <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Денна)
+                </a>
+                <a href="{{ url_for('admin.license_report_export_word',
+                        include_archived=1 if include_archived else 0,
+                        include_frozen=1 if include_frozen else 0,
+                        study_form='Заочна') }}"
+                   class="btn btn-outline-success btn-sm">
+                    <i class="bi bi-file-earmark-word me-1"></i>Завантажити (Заочна)
+                </a>
+            </div>
+        </form>
     </div>
+</div>
 
     {% if view == 'list' %}
     {# ================= РЕЖИМ "СПИСОК" ================= #}

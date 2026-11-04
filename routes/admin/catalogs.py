@@ -1019,6 +1019,19 @@ def license_report():
     if view not in ('list', 'summary'):
         view = 'list'
     include_archived = request.args.get('include_archived', '0') == '1'
+    include_frozen = request.args.get('include_frozen', '0') == '1'
+
+    # Фільтр по конкретній ліцензії — ID або '' (всі)
+    _lid = (request.args.get('license_id') or '').strip()
+    try:
+        license_id_filter = int(_lid) if _lid else None
+    except ValueError:
+        license_id_filter = None
+
+    # Фільтр по формі навчання — 'Денна' / 'Заочна' / '' (всі)
+    study_form_filter = (request.args.get('study_form') or '').strip()
+    if study_form_filter not in ('Денна', 'Заочна'):
+        study_form_filter = ''
 
     # ── 1. Усі активні ліцензії (для колонок звіту) ─────────────
     license_rows = conn.execute("""
@@ -1039,6 +1052,29 @@ def license_report():
     # задвоюється.
     student_archive_filter = "" if include_archived else " AND COALESCE(s.archived, 0) = 0"
     group_archive_filter = "" if include_archived else " AND COALESCE(g.archived, 0) = 0"
+
+    # НЕ показуємо заморожених (активна заявка в frozen_students, ще
+    # не вирішена) — так само, як у students.html / analytics.html.
+    # Раніше в звіті вони рахувались як звичайні активні, бо
+    # freeze_student() не закривав enrollment (див. Зміну 1 вище).
+    frozen_filter = "" if include_frozen else """
+        AND NOT EXISTS (
+            SELECT 1 FROM frozen_students fz
+            WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
+        )
+    """
+
+    license_filter_sql = ""
+    license_filter_params = []
+    if license_id_filter is not None:
+        license_filter_sql = " AND eff.license_id = ?"
+        license_filter_params.append(license_id_filter)
+
+    study_form_filter_sql = ""
+    study_form_filter_params = []
+    if study_form_filter:
+        study_form_filter_sql = " AND g.study_form = ?"
+        study_form_filter_params.append(study_form_filter)
 
     flat_rows = conn.execute(f"""
         SELECT
@@ -1076,7 +1112,10 @@ def license_report():
         WHERE 1=1
               {student_archive_filter}
               {group_archive_filter}
-    """).fetchall()
+              {frozen_filter}
+              {license_filter_sql}
+              {study_form_filter_sql}
+    """, license_filter_params + study_form_filter_params).fetchall()
 
     # ── 3. Групуємо: група → студенти + лічильники ліцензій ────
     by_group = {}   # gid -> {group: {...}, students: [...], counts: {...}}
@@ -1192,6 +1231,10 @@ def license_report():
         'license_report.html',
         view=view,
         include_archived=include_archived,
+        include_frozen=include_frozen,
+        license_id_filter=license_id_filter,
+        study_form_filter=study_form_filter,
+        licenses_available=license_rows,
         groups_with_students=groups_with_students,
         groups_by_degree=dict(groups_by_degree),
         license_names=license_names,
@@ -1222,7 +1265,8 @@ def license_report_export_word():
     from collections import OrderedDict
 
     include_archived = request.args.get('include_archived') == '1'
-    study_form = request.args.get('study_form')  # 'Денна' або 'Заочна' — обов'язково
+    include_frozen = request.args.get('include_frozen') == '1'
+    study_form = request.args.get('study_form')
     if study_form not in ('Денна', 'Заочна'):
         flash("Оберіть форму навчання (Денна чи Заочна) для вивантаження.", "error")
         return redirect(url_for('admin.license_report'))
@@ -1231,6 +1275,12 @@ def license_report_export_word():
     conn.row_factory = sqlite3.Row
     group_cond = "" if include_archived else "AND COALESCE(g.archived, 0) = 0"
     student_cond = "" if include_archived else "AND COALESCE(s.archived, 0) = 0"
+    frozen_cond = "" if include_frozen else """
+        AND NOT EXISTS (
+            SELECT 1 FROM frozen_students fz
+            WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
+        )
+    """
 
     rows = conn.execute(f"""
         SELECT
@@ -1259,7 +1309,7 @@ def license_report_export_word():
         JOIN students s ON s.id = eff.student_id
         LEFT JOIN specialties sp ON sp.code = g.specialty_code
         LEFT JOIN institution_licenses il ON il.id = eff.license_id
-        WHERE g.study_form = ? {group_cond} {student_cond}
+        WHERE g.study_form = ? {group_cond} {student_cond} {frozen_cond}
         ORDER BY g.start_year DESC, g.course,
                  g.name COLLATE UKRAINIAN,
                  s.last_name_UA COLLATE UKRAINIAN

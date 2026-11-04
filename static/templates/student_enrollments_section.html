@@ -51,9 +51,17 @@
                                 {% if e.degree_level %}<span><i class="bi bi-award"></i> {{ e.degree_level }}</span>{% endif %}
                             </div>
                         </div>
-                        <span class="enrollment-status enrollment-status--{{ e.status }}">
-                            {{ status_label(e.status) }}
-                        </span>
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="enrollment-status enrollment-status--{{ e.status }}">
+                                {{ status_label(e.status) }}
+                            </span>
+                            {% if e.is_correction %}
+                            <span class="enrollment-badge enrollment-badge--correction"
+                                  title="Додано/змінено без наказу (корекція)&#10;Причина: {{ e.correction_note }}&#10;Хто: {{ e.correction_by }}&#10;Коли: {{ e.correction_at }}">
+                                <i class="bi bi-tools"></i> корекція
+                            </span>
+                            {% endif %}
+                        </div>
                     </div>
 
                     <div class="enrollment-card__license">
@@ -136,7 +144,12 @@
             </button>
             <span class="text-muted small ms-2">
                 <i class="bi bi-info-circle me-1"></i>
-                Усі зміни навчання оформлюються наказом
+                Усі зміни навчання оформлюються наказом.
+                {% if session.get('is_admin') %}
+                <span class="text-warning-emphasis">
+                    <i class="bi bi-tools"></i> Адмін може змінити без наказу (виправлення помилки) — галочка в діалозі.
+                </span>
+                {% endif %}
             </span>
         </div>
     </div>
@@ -187,22 +200,44 @@
                         </label>
                     </div>
 
-                    <hr>
-                    <h6 class="text-muted small text-uppercase mb-3">Наказ про зарахування</h6>
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
-                            <input type="text" name="order_number" class="form-control form-control-sm"
-                                   placeholder="напр. 45/2026" required>
+                    {% if session.get('is_admin') %}
+                    <div class="alert alert-warning small mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input js-bypass-order" type="checkbox"
+                                   name="bypass_order" value="1" id="bypassAddEnroll">
+                            <label class="form-check-label" for="bypassAddEnroll">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>Змінити без наказу</strong> (виправлення помилки — тільки для адміна)
+                            </label>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
-                            <input type="text" name="order_date" class="form-control form-control-sm"
-                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        <div class="mt-2 js-correction-reason-wrap" style="display:none;">
+                            <label class="form-label small fw-semibold">Причина корекції <span class="text-danger">*</span></label>
+                            <input type="text" name="correction_reason"
+                                   class="form-control form-control-sm js-correction-reason"
+                                   placeholder="напр. студента помилково зараховано не в ту групу">
+                            <div class="form-text">Дію буде зафіксовано в журналі як «КОРЕКЦІЯ (без наказу)».</div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-semibold">Скан наказу</label>
-                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    {% endif %}
+
+                    <div class="js-order-fields">
+                        <hr>
+                        <h6 class="text-muted small text-uppercase mb-3">Наказ про зарахування</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                                <input type="text" name="order_number" class="form-control form-control-sm"
+                                       placeholder="напр. 45/2026" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                                <input type="text" name="order_date" class="form-control form-control-sm"
+                                       placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Скан наказу</label>
+                                <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -242,21 +277,41 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <hr>
-                    <h6 class="text-muted small text-uppercase mb-3">Наказ про переведення</h6>
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
-                            <input type="text" name="order_number" class="form-control form-control-sm" required>
+                    {% if session.get('is_admin') %}
+                    <div class="alert alert-warning small mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input js-bypass-order" type="checkbox"
+                                   name="bypass_order" value="1" id="bypassChangeLicense">
+                            <label class="form-check-label" for="bypassChangeLicense">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>Змінити без наказу</strong> (виправлення помилки — тільки для адміна)
+                            </label>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
-                            <input type="text" name="order_date" class="form-control form-control-sm"
-                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        <div class="mt-2 js-correction-reason-wrap" style="display:none;">
+                            <label class="form-label small fw-semibold">Причина корекції <span class="text-danger">*</span></label>
+                            <input type="text" name="correction_reason"
+                                   class="form-control form-control-sm js-correction-reason">
                         </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-semibold">Скан наказу</label>
-                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    {% endif %}
+
+                    <div class="js-order-fields">
+                        <hr>
+                        <h6 class="text-muted small text-uppercase mb-3">Наказ про переведення</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                                <input type="text" name="order_number" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                                <input type="text" name="order_date" class="form-control form-control-sm"
+                                       placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Скан наказу</label>
+                                <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -482,6 +537,19 @@
         .enrollment-footer { padding: .75rem 1rem; }
         .enrollment-footer .text-muted { display: block; margin-left: 0 !important; margin-top: .35rem; }
     }
+	.enrollment-badge--correction {
+        background: rgba(200, 162, 74, .18);
+        border: 1px dashed var(--brass);
+        color: #8a6a1a;
+        font-size: .72rem;
+        padding: .2rem .55rem;
+        border-radius: 999px;
+        cursor: help;
+    }
+    html[data-theme="dark"] .enrollment-badge--correction {
+        background: rgba(200, 162, 74, .15);
+        color: var(--brass-lt);
+    }
 </style>
 
 <script>
@@ -541,6 +609,43 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             new bootstrap.Modal(document.getElementById('endEnrollmentModal')).show();
+        });
+    });
+	    // ── Обхід наказу (тільки для адміна) ──
+    // При включенні галочки "Змінити без наказу":
+    //   - приховуємо блок полів наказу і знімаємо required
+    //   - показуємо блок причини корекції і ставимо required
+    // При виключенні — навпаки.
+    document.querySelectorAll('.js-bypass-order').forEach(function (cb) {
+        cb.addEventListener('change', function () {
+            const form = cb.closest('form');
+            if (!form) return;
+            const orderBlock = form.querySelector('.js-order-fields');
+            const reasonWrap = form.querySelector('.js-correction-reason-wrap');
+            const reasonInput = form.querySelector('.js-correction-reason');
+            const orderInputs = form.querySelectorAll('.js-order-fields [required], .js-order-fields [name="order_number"], .js-order-fields [name="order_date"]');
+
+            if (cb.checked) {
+                if (orderBlock) orderBlock.style.display = 'none';
+                orderInputs.forEach(el => {
+                    el.dataset.wasRequired = el.hasAttribute('required') ? '1' : '0';
+                    el.removeAttribute('required');
+                });
+                if (reasonWrap) reasonWrap.style.display = '';
+                if (reasonInput) reasonInput.setAttribute('required', 'required');
+            } else {
+                if (orderBlock) orderBlock.style.display = '';
+                orderInputs.forEach(el => {
+                    if (el.dataset.wasRequired === '1' || el.name === 'order_number' || el.name === 'order_date') {
+                        el.setAttribute('required', 'required');
+                    }
+                });
+                if (reasonWrap) reasonWrap.style.display = 'none';
+                if (reasonInput) {
+                    reasonInput.removeAttribute('required');
+                    reasonInput.value = '';
+                }
+            }
         });
     });
 });
