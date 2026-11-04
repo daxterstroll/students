@@ -160,12 +160,24 @@ def manage_education_documents():
     for row in rows:
         gid = row['group_id']
         if gid not in documents_by_group:
-            documents_by_group[gid] = {'group_name': row['group_name'], 'docs': []}
+            documents_by_group[gid] = {
+                'group_name': row['group_name'] or 'Без групи',
+                'docs': [],
+            }
         doc = dict(row)
         doc['attachments'] = get_attachments(db, 'education_document', doc['doc_id'])
         documents_by_group[gid]['docs'].append(doc)
 
-    sorted_documents_by_group = sorted(documents_by_group.items(), key=lambda x: x[1]['group_name'])
+    # ── Безпечне сортування ──
+    # group_name може бути None, якщо:
+    #   - студент без групи (заморожений, в архіві), і
+    #   - документ не прив'язаний до групи (group_id IS NULL у education_documents);
+    #   - групу, до якої був прив'язаний документ, видалили, а FK не спрацював.
+    # Без цього `sorted` падає з TypeError: '<' not supported between str and None.
+    sorted_documents_by_group = sorted(
+        documents_by_group.items(),
+        key=lambda x: (x[1]['group_name'] or '').lower(),
+    )
 
     # Перевіряємо doc_id для студента
     student_doc_id = None
@@ -1172,24 +1184,53 @@ def import_docs_commit():
     added = 0
     updated = 0
 
+    # ── Парсимо edits_json (усі ручні редагування з модалки) ──
+    # Формат: {"2": {"document_number": "...", "document_type": "..."},
+    #          "5": {...}}
+    import json as _json
+    try:
+        edits_json = _json.loads(request.form.get("edits_json") or "{}")
+    except (ValueError, TypeError):
+        edits_json = {}
+    if not isinstance(edits_json, dict):
+        edits_json = {}
+
     for row in preview:
         row_index = row["row_index"]
         if f"add_{row_index}" not in request.form:
             continue
 
-        # ── Переопределение группы документа из модалки ──
-        # (важно для параллельного обучения: позволяет сменить группу
-        # без повторного импорта Excel — прямо на шаге предпросмотра)
-        form_doc_group_id = request.form.get(f"doc_group_id_{row_index}")
-        if form_doc_group_id is not None:
-            form_doc_group_id = form_doc_group_id.strip()
-            if form_doc_group_id == '':
+        # ── Застосовуємо редагування з нової спільної модалки ──
+        # (edits_json — один hidden input з усіма відредагованими
+        # рядками; замість N×30 полів, які при 500+ рядках давали
+        # 1–7 МБ POST і nginx повертав 413).
+        edits_for_row = edits_json.get(str(row_index)) or edits_json.get(row_index)
+        if edits_for_row:
+            # Група документа
+            grp_val = edits_for_row.get('doc_group_id', '')
+            grp_val = (grp_val or '').strip() if isinstance(grp_val, str) else str(grp_val or '').strip()
+            if grp_val == '':
                 row["requested_group_id"] = None
             else:
                 try:
-                    row["requested_group_id"] = int(form_doc_group_id)
+                    row["requested_group_id"] = int(grp_val)
                 except (ValueError, TypeError):
-                    pass  # некорректне — лишаємо як є
+                    pass
+
+            # Решта полів — перезаписуємо у row (вони підуть у commit)
+            for _field in (
+                'document_type', 'document_type_en',
+                'institution_name', 'institution_name_en',
+                'document_number', 'completion_date',
+                'country', 'country_en',
+                'reference_number', 'reference_institution',
+                'reference_institution_en', 'reference_country',
+                'reference_country_en', 'reference_issue_date',
+                'recognition_certificate_number', 'recognition_issuer',
+                'recognition_issuer_en', 'recognition_date',
+            ):
+                if _field in edits_for_row:
+                    row[_field] = edits_for_row[_field]
 
         if not row.get("error"):
             row["document_type"]       = request.form.get(f"document_type_{row_index}",       row["document_type"])

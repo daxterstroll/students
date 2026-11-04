@@ -6,33 +6,17 @@
 <style>
     .doc-group-badge {
         display: inline-flex; align-items: center; gap: .25rem;
-        padding: .2rem .55rem;
-        border-radius: 6px;
-        font-size: .75rem;
-        font-weight: 600;
-        white-space: nowrap;
+        padding: .2rem .55rem; border-radius: 6px;
+        font-size: .75rem; font-weight: 600; white-space: nowrap;
     }
-    .doc-group-badge--same {
-        background: var(--paper-2); color: var(--muted);
-        border: 1px solid var(--line);
-    }
-    .doc-group-badge--assign {
-        background: rgba(79,122,82,.16); color: #3f7556;
-        border: 1px solid rgba(79,122,82,.35);
-    }
-    .doc-group-badge--rebind {
-        background: rgba(200,162,74,.20); color: #8a6a1a;
-        border: 1px solid var(--brass-semi);
-    }
-    .doc-group-badge--new {
-        background: rgba(63,138,91,.14); color: #2d6644;
-        border: 1px solid rgba(63,138,91,.35);
-    }
+    .doc-group-badge--same   { background: var(--paper-2); color: var(--muted); border: 1px solid var(--line); }
+    .doc-group-badge--assign { background: rgba(79,122,82,.16); color: #3f7556; border: 1px solid rgba(79,122,82,.35); }
+    .doc-group-badge--rebind { background: rgba(200,162,74,.20); color: #8a6a1a; border: 1px solid var(--brass-semi); }
+    .doc-group-badge--new    { background: rgba(63,138,91,.14); color: #2d6644; border: 1px solid rgba(63,138,91,.35); }
     html[data-theme="dark"] .doc-group-badge--assign { color: #bfe3c2; }
     html[data-theme="dark"] .doc-group-badge--rebind { color: var(--brass-lt); }
     html[data-theme="dark"] .doc-group-badge--new    { color: #bfe3c2; }
 
-    .status-cell { min-width: 130px; }
     .status-cell small { display: block; font-size: .72rem; color: var(--muted); margin-top: .1rem; }
 
     .summary-pill {
@@ -40,13 +24,17 @@
         padding: .35rem .8rem; border-radius: 999px;
         font-size: .82rem; font-weight: 700;
     }
-    .summary-pill--new   { background: rgba(63,138,91,.14); color: #2d6644; border: 1px solid rgba(63,138,91,.35); }
-    .summary-pill--upd   { background: rgba(200,162,74,.18); color: #8a6a1a; border: 1px solid var(--brass-semi); }
-    .summary-pill--re    { background: rgba(74,110,168,.15); color: #2f5f87; border: 1px solid rgba(74,110,168,.35); }
-    .summary-pill--err   { background: rgba(162,59,46,.12); color: var(--stamp); border: 1px solid var(--stamp-semi); }
+    .summary-pill--new { background: rgba(63,138,91,.14); color: #2d6644; border: 1px solid rgba(63,138,91,.35); }
+    .summary-pill--upd { background: rgba(200,162,74,.18); color: #8a6a1a; border: 1px solid var(--brass-semi); }
+    .summary-pill--err { background: rgba(162,59,46,.12); color: var(--stamp); border: 1px solid var(--stamp-semi); }
     html[data-theme="dark"] .summary-pill--new { color: #bfe3c2; }
     html[data-theme="dark"] .summary-pill--upd { color: var(--brass-lt); }
-    html[data-theme="dark"] .summary-pill--re  { color: #a9c2e8; }
+
+    .row-edited {
+        background: rgba(200,162,74,.10) !important;
+        box-shadow: inset 3px 0 0 var(--brass);
+    }
+    html[data-theme="dark"] .row-edited { background: rgba(200,162,74,.16) !important; }
 </style>
 
 <div class="container py-4">
@@ -54,40 +42,16 @@
 {{ ui.page_header('bi-eyeglasses', 'Попередній перегляд імпорту',
     'Перевірте розпізнані документи перед збереженням у базу') }}
 
-{# ── Лічильники ── #}
 {% set new_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', False) | list | length %}
 {% set upd_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', True) | list | length %}
 {% set err_count = preview | selectattr('error') | list | length %}
-{% set rebind_count = preview | rejectattr('error') | selectattr('has_document', 'equalto', True) | selectattr('existing_group_id', 'defined') | selectattr('requested_group_id', 'defined') | selectattr('requested_group_id', 'ne', None) | selectattr('existing_group_id', 'ne', None) | selectattr('existing_group_id', 'ne', 'requested_group_id') | list | length %}
 
 <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
-    {% if new_count %}
-    <span class="summary-pill summary-pill--new">
-        <i class="bi bi-plus-circle-fill"></i>
-        Нових: {{ new_count }}
-    </span>
-    {% endif %}
-    {% if upd_count %}
-    <span class="summary-pill summary-pill--upd">
-        <i class="bi bi-arrow-repeat"></i>
-        Оновлень: {{ upd_count }}
-    </span>
-    {% endif %}
-    {% if rebind_count %}
-    <span class="summary-pill summary-pill--re">
-        <i class="bi bi-arrow-left-right"></i>
-        Переприв'язок: {{ rebind_count }}
-    </span>
-    {% endif %}
-    {% if err_count %}
-    <span class="summary-pill summary-pill--err">
-        <i class="bi bi-x-circle-fill"></i>
-        Помилок: {{ err_count }}
-    </span>
-    {% endif %}
+    {% if new_count %}<span class="summary-pill summary-pill--new"><i class="bi bi-plus-circle-fill"></i> Нових: {{ new_count }}</span>{% endif %}
+    {% if upd_count %}<span class="summary-pill summary-pill--upd"><i class="bi bi-arrow-repeat"></i> Оновлень: {{ upd_count }}</span>{% endif %}
+    {% if err_count %}<span class="summary-pill summary-pill--err"><i class="bi bi-x-circle-fill"></i> Помилок: {{ err_count }}</span>{% endif %}
 
-    <a href="{{ url_for('admin.manage_education_documents') }}"
-       class="btn btn-sm btn-outline-secondary ms-auto">
+    <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-sm btn-outline-secondary ms-auto">
         <i class="bi bi-x-circle me-1"></i>Скасувати
     </a>
     <button type="submit" form="importForm" class="btn btn-sm btn-primary">
@@ -97,16 +61,16 @@
 
 <div class="alert alert-light border small">
     <i class="bi bi-info-circle me-1"></i>
-    <strong>Як працює оновлення при паралельному навчанні:</strong>
-    документ про освіту прив'язується до пари <code>(студент + група)</code>.
-    Якщо у студента вже є документ для цієї групи — він <strong>оновлюється</strong>.
-    Якщо в колонці <strong>E</strong> вказано <em>іншу</em> групу — документ
-    буде <strong>переприв'язано</strong> до неї. Якщо E пусто — документ
-    шукається за основною групою студента (або як «загальний» legacy).
+    <strong>Як працює оновлення:</strong>
+    документ прив'язується до пари <code>(студент + група)</code>.
+    Якщо для цієї групи вже є документ — він оновлюється. Якщо в колонці E вказано
+    <em>іншу</em> групу — документ буде <strong>переприв'язано</strong> до неї.
+    Якщо E порожньо — шукається за основною групою студента (або загальний legacy).
 </div>
 
 <form method="post" action="{{ url_for('admin.import_docs_commit') }}" id="importForm">
     <input type="hidden" name="preview_id" value="{{ preview_id }}">
+    <input type="hidden" name="edits_json" id="editsJson" value="{}">
 
     <div class="card mb-4">
         <div class="card-body p-0">
@@ -126,7 +90,8 @@
                     </thead>
                     <tbody>
                     {% for row in preview %}
-                        <tr {% if row.error %}class="table-danger"{% endif %}>
+                        <tr data-row-index="{{ row.row_index }}"
+                            {% if row.error %}class="table-danger"{% endif %}>
                             <td>{{ row.row_index }}</td>
                             <td>
                                 {% if not row.error %}
@@ -135,9 +100,7 @@
                             </td>
                             <td>
                                 {% if row.matched_name %}
-                                    <input type="text" name="matched_name_{{ row.row_index }}"
-                                           value="{{ row.matched_name }}"
-                                           class="form-control form-control-sm">
+                                    <span class="fw-semibold">{{ row.matched_name }}</span>
                                 {% else %}
                                     <span class="text-danger">{{ row.error or "" }}</span>
                                 {% endif %}
@@ -146,78 +109,50 @@
                             <td class="status-cell">
                                 <span class="{{ row.status_class or '' }}">{{ row.status or "—" }}</span>
                                 {% if row.has_document and row.existing_group_id is defined and row.existing_group_id %}
-                                <small>
-                                    <i class="bi bi-file-earmark-check"></i>
-                                    для групи ID {{ row.existing_group_id }}
-                                </small>
+                                    <small><i class="bi bi-file-earmark-check"></i> для групи ID {{ row.existing_group_id }}</small>
                                 {% elif row.has_document %}
-                                <small>
-                                    <i class="bi bi-file-earmark-check"></i>
-                                    загальний (без групи)
-                                </small>
+                                    <small><i class="bi bi-file-earmark-check"></i> загальний (без групи)</small>
                                 {% endif %}
                             </td>
-                            <td>{{ row.document_number or "—" }}</td>
-                            <td class="small">
-                                {# ── Група документа: 4 можливі стани ── #}
-
+                            <td class="doc-number-cell">{{ row.document_number or "—" }}</td>
+                            <td class="small group-cell">
                                 {% if row.status == "Новий" %}
-                                    {# Новий документ — показуємо, до якої групи прив'яжеться #}
                                     {% if row.requested_group_id %}
-                                    <span class="doc-group-badge doc-group-badge--new"
-                                          title="Документ буде створено для цієї групи">
-                                        <i class="bi bi-plus-square"></i>
-                                        група ID {{ row.requested_group_id }}
-                                    </span>
+                                        <span class="doc-group-badge doc-group-badge--new">
+                                            <i class="bi bi-plus-square"></i> група ID {{ row.requested_group_id }}
+                                        </span>
                                     {% else %}
-                                    <span class="doc-group-badge doc-group-badge--same"
-                                          title="Документ буде прив'язано до основної групи студента">
-                                        <i class="bi bi-magic"></i>
-                                        основна (авто)
-                                    </span>
+                                        <span class="doc-group-badge doc-group-badge--same">
+                                            <i class="bi bi-magic"></i> основна (авто)
+                                        </span>
                                     {% endif %}
-
                                 {% else %}
-                                    {# Існуючий документ — 3 варіанти #}
                                     {% set ex_gid = row.existing_group_id if row.existing_group_id is defined else None %}
                                     {% set req_gid = row.requested_group_id %}
-
                                     {% if ex_gid and req_gid and ex_gid|int != req_gid|int %}
-                                        {# Перепривязка #}
-                                        <span class="doc-group-badge doc-group-badge--rebind"
-                                              title="Документ буде ПЕРЕПРИВ'ЯЗАНО до іншої групи">
-                                            <i class="bi bi-arrow-left-right"></i>
-                                            {{ ex_gid }} → {{ req_gid }}
+                                        <span class="doc-group-badge doc-group-badge--rebind">
+                                            <i class="bi bi-arrow-left-right"></i> {{ ex_gid }} → {{ req_gid }}
                                         </span>
                                     {% elif not ex_gid and req_gid %}
-                                        {# Раніше був загальний — прив'яжеться до групи #}
-                                        <span class="doc-group-badge doc-group-badge--assign"
-                                              title="Загальний документ буде прив'язано до групи з Excel">
-                                            <i class="bi bi-arrow-right"></i>
-                                            → {{ req_gid }}
+                                        <span class="doc-group-badge doc-group-badge--assign">
+                                            <i class="bi bi-arrow-right"></i> → {{ req_gid }}
                                         </span>
                                     {% elif ex_gid %}
-                                        {# Без змін #}
-                                        <span class="doc-group-badge doc-group-badge--same"
-                                              title="Документ уже прив'язаний до цієї групи — прив'язка не змінюється">
-                                            <i class="bi bi-lock"></i>
-                                            група ID {{ ex_gid }}
+                                        <span class="doc-group-badge doc-group-badge--same">
+                                            <i class="bi bi-lock"></i> група ID {{ ex_gid }}
                                         </span>
                                     {% else %}
-                                        {# Обидва null (загальний, без змін) #}
-                                        <span class="doc-group-badge doc-group-badge--same"
-                                              title="Загальний документ — прив'язка не змінюється">
-                                            <i class="bi bi-lock"></i>
-                                            загальний
+                                        <span class="doc-group-badge doc-group-badge--same">
+                                            <i class="bi bi-lock"></i> загальний
                                         </span>
                                     {% endif %}
                                 {% endif %}
                             </td>
                             <td>
                                 {% if not row.error %}
-                                    <button type="button" class="btn btn-sm btn-outline-primary"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#editModal{{ row.row_index }}">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-primary js-edit-row"
+                                            data-row-index="{{ row.row_index }}">
                                         <i class="bi bi-pencil me-1"></i>Редагувати
                                     </button>
                                 {% endif %}
@@ -240,297 +175,242 @@
 </form>
 
 {# ==================================================================
-   МОДАЛЬНІ ВІКНА — ВИНЕСЕНІ ЗА МЕЖІ <form>
-   ------------------------------------------------------------------
-   Поля всередині мають атрибут form="importForm" — вони будуть
-   надіслані разом з основною формою, навіть попри те, що самі
-   знаходяться ПОЗА нею.
-   Це важливо, бо:
-   1. Enter у полі модалки НЕ відправить форму передчасно.
-   2. Модалка не «з'їдає» HTML-валідацію форми.
+   ОДНА спільна модалка — замість N модалок у таблиці.
+   Це головний фікс 413: при 500+ рядках N×30 полів давали 1–7 МБ
+   POST. Тепер у формі завжди лише 30 полів + один маленький
+   hidden edits_json з реально відредагованими рядками.
    ================================================================== #}
-{% for row in preview %}
-    {% if not row.error %}
-    <div class="modal fade" id="editModal{{ row.row_index }}" tabindex="-1"
-         aria-labelledby="editModalLabel{{ row.row_index }}" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="editModalLabel{{ row.row_index }}">
-                        Редагування рядка {{ row.row_index }} — {{ row.matched_name or "—" }}
-                        <small class="text-muted ms-2">({{ row.status }})</small>
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
+<div class="modal fade" id="editRowModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    Редагування рядка <span id="editRowNum"></span>
+                    — <span id="editRowName" class="text-muted"></span>
+                    <small class="text-muted ms-2" id="editRowStatus"></small>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="editInfoPanel" class="alert alert-info small mb-3 d-none"></div>
 
-                <div class="modal-body">
-                    {# ── Інформаційна плашка для існуючого документа ── #}
-                    {% if row.has_document %}
-                    {% set ex_gid = row.existing_group_id if row.existing_group_id is defined else None %}
-                    <div class="alert alert-info small mb-3">
-                        <i class="bi bi-info-circle-fill me-1"></i>
-                        <strong>Існуючий документ:</strong>
-                        {% if ex_gid %}
-                            прив'язаний до групи ID <strong>{{ ex_gid }}</strong>.
-                        {% else %}
-                            <em>загальний</strong> (без прив'язки до групи).
-                        {% endif %}
-                        {% if ex_gid and row.requested_group_id and ex_gid|int != row.requested_group_id|int %}
-                            <br><strong class="text-warning-emphasis">
-                                Увага: ви обрали іншу групу (ID {{ row.requested_group_id }}) —
-                                документ буде переприв'язано.
-                            </strong>
-                        {% endif %}
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-semibold">
+                            <i class="bi bi-building me-1"></i>Група документа
+                        </label>
+                        <select id="editField_doc_group_id" class="form-select">
+                            <option value="">— не змінювати прив'язку —</option>
+                            {% for g in (all_groups | default([])) %}
+                            <option value="{{ g.id }}">{{ g.name }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
-                    {% endif %}
 
-                    <div class="row g-3">
+                    <div class="col-12"><hr class="my-1"></div>
 
-                        {# ── Група документа ── #}
-                        <div class="col-12">
-                            <label class="form-label fw-semibold">
-                                <i class="bi bi-building me-1"></i>Група документа
-                                <span class="badge bg-light text-secondary border ms-1"
-                                      title="Важливо для паралельного навчання: диплом бакалавра → магістратура, атестат → бакалаврат">?</span>
-                            </label>
-                            <select name="doc_group_id_{{ row.row_index }}" class="form-select" form="importForm">
-                                <option value="" {% if not row.requested_group_id %}selected{% endif %}>
-                                    {% if row.has_document %}
-                                        — не змінювати прив'язку —
-                                    {% else %}
-                                        — основна група студента (авто) —
-                                    {% endif %}
-                                </option>
-                                {% for g in (all_groups | default([])) %}
-                                <option value="{{ g.id }}"
-                                        {% if row.requested_group_id == g.id %}selected{% endif %}>
-                                    {{ g.name }}{% if row.existing_group_id is defined and row.existing_group_id == g.id %} (поточна){% endif %}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <small class="text-muted d-block mt-1">
-                                {% if row.has_document %}
-                                    Порожньо — прив'язка залишиться як є. Обрати іншу групу — документ буде переприв'язано.
-                                {% else %}
-                                    Оберіть групу, до якої прив'язати новий документ (напр. диплом бакалавра → магістратура).
-                                {% endif %}
-                            </small>
-                        </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Тип документа (укр)</label>
+                        <input type="text" id="editField_document_type" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Document type (en)</label>
+                        <input type="text" id="editField_document_type_en" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Навчальний заклад (укр)</label>
+                        <input type="text" id="editField_institution_name" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Institution (en)</label>
+                        <input type="text" id="editField_institution_name_en" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Номер документа</label>
+                        <input type="text" id="editField_document_number" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Дата завершення</label>
+                        <input type="text" id="editField_completion_date" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Країна</label>
+                        <input type="text" id="editField_country" class="form-control">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Country (en)</label>
+                        <input type="text" id="editField_country_en" class="form-control">
+                    </div>
 
-                        <div class="col-12"><hr class="my-1"></div>
+                    <div class="col-12 mt-2 border-top pt-3">
+                        <h6 class="mb-2">Академічна довідка</h6>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Номер довідки</label>
+                        <input type="text" id="editField_reference_number" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Заклад довідки (укр)</label>
+                        <input type="text" id="editField_reference_institution" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Reference Institution (en)</label>
+                        <input type="text" id="editField_reference_institution_en" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Країна довідки</label>
+                        <input type="text" id="editField_reference_country" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Reference Country (en)</label>
+                        <input type="text" id="editField_reference_country_en" class="form-control">
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Дата видачі довідки</label>
+                        <input type="text" id="editField_reference_issue_date" class="form-control">
+                    </div>
 
-                        {# ── Тип документа ── #}
-                        <div class="col-md-6">
-                            <label class="form-label">Тип документа (укр)</label>
-                            <input type="text" name="document_type_{{ row.row_index }}"
-                                   value="{{ row.document_type or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_document_type %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_document_type }}</small>
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">
-                                Document type (en)
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="document_type_en_{{ row.row_index }}"
-                                   value="{{ row.document_type_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_document_type_en %}
-                                <small class="text-muted d-block mt-1">was: {{ row.old_document_type_en }}</small>
-                            {% endif %}
-                        </div>
-
-                        {# ── Навчальний заклад ── #}
-                        <div class="col-md-6">
-                            <label class="form-label">Навчальний заклад (укр)</label>
-                            <input type="text" name="institution_name_{{ row.row_index }}"
-                                   value="{{ row.institution_name or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_institution_name %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_institution_name }}</small>
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label">
-                                Institution (en)
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="institution_name_en_{{ row.row_index }}"
-                                   value="{{ row.institution_name_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_institution_name_en %}
-                                <small class="text-muted d-block mt-1">was: {{ row.old_institution_name_en }}</small>
-                            {% endif %}
-                        </div>
-
-                        {# ── Номер та дата ── #}
-                        <div class="col-md-3">
-                            <label class="form-label">Номер документа</label>
-                            <input type="text" name="document_number_{{ row.row_index }}"
-                                   value="{{ row.document_number or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_document_number %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_document_number }}</small>
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label">Дата завершення</label>
-                            <input type="text" name="completion_date_{{ row.row_index }}"
-                                   value="{{ row.completion_date or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_completion_date %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_completion_date }}</small>
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label">Країна</label>
-                            <input type="text" name="country_{{ row.row_index }}"
-                                   value="{{ row.country or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_country %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_country }}</small>
-                            {% endif %}
-                        </div>
-
-                        <div class="col-md-3">
-                            <label class="form-label">
-                                Country
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="country_en_{{ row.row_index }}"
-                                   value="{{ row.country_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_country_en %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_country_en }}</small>
-                            {% endif %}
-                        </div>
-
-                        {# ── Академічна довідка ── #}
-                        <div class="col-12 mt-3 border-top pt-3">
-                            <h6 class="mb-2">Академічна довідка</h6>
-                        </div>
-                        <div class="col-md-12">
-                            <label class="form-label">Номер довідки</label>
-                            <input type="text" name="reference_number_{{ row.row_index }}"
-                                   value="{{ row.reference_number or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_number %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_number }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Заклад довідки (укр)</label>
-                            <input type="text" name="reference_institution_{{ row.row_index }}"
-                                   value="{{ row.reference_institution or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_institution %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_institution }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">
-                                Reference Institution (en)
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="reference_institution_en_{{ row.row_index }}"
-                                   value="{{ row.reference_institution_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_institution_en %}
-                                <small class="text-muted d-block mt-1">was: {{ row.old_reference_institution_en }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Країна довідки</label>
-                            <input type="text" name="reference_country_{{ row.row_index }}"
-                                   value="{{ row.reference_country or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_country %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_country }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">
-                                Reference Country (en)
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="reference_country_en_{{ row.row_index }}"
-                                   value="{{ row.reference_country_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_country_en %}
-                                <small class="text-muted d-block mt-1">was: {{ row.old_reference_country_en }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-12">
-                            <label class="form-label">Дата видачі довідки</label>
-                            <input type="text" name="reference_issue_date_{{ row.row_index }}"
-                                   value="{{ row.reference_issue_date or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_reference_issue_date %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_reference_issue_date }}</small>
-                            {% endif %}
-                        </div>
-
-                        {# ── Свідоцтво про визнання ── #}
-                        <div class="col-12 mt-3 border-top pt-3">
-                            <h6 class="mb-2">Свідоцтво про визнання в Україні іноземного документа про освіту</h6>
-                        </div>
-                        <div class="col-md-12">
-                            <label class="form-label">Номер свідоцтва</label>
-                            <input type="text" name="recognition_certificate_number_{{ row.row_index }}"
-                                   value="{{ row.recognition_certificate_number or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_recognition_certificate_number %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_certificate_number }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Орган, що видав (укр)</label>
-                            <input type="text" name="recognition_issuer_{{ row.row_index }}"
-                                   value="{{ row.recognition_issuer or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_recognition_issuer %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_issuer }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">
-                                Recognition Issuer (en)
-                                <span class="badge bg-light text-secondary border ms-1" title="Перекладено автоматично">авто</span>
-                            </label>
-                            <input type="text" name="recognition_issuer_en_{{ row.row_index }}"
-                                   value="{{ row.recognition_issuer_en or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_recognition_issuer_en %}
-                                <small class="text-muted d-block mt-1">was: {{ row.old_recognition_issuer_en }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-12">
-                            <label class="form-label">Дата видачі свідоцтва</label>
-                            <input type="text" name="recognition_date_{{ row.row_index }}"
-                                   value="{{ row.recognition_date or '' }}"
-                                   class="form-control" form="importForm">
-                            {% if row.status == "Оновлення" and row.old_recognition_date %}
-                                <small class="text-muted d-block mt-1">було: {{ row.old_recognition_date }}</small>
-                            {% endif %}
-                        </div>
-
+                    <div class="col-12 mt-2 border-top pt-3">
+                        <h6 class="mb-2">Свідоцтво про визнання</h6>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Номер свідоцтва</label>
+                        <input type="text" id="editField_recognition_certificate_number" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Орган, що видав (укр)</label>
+                        <input type="text" id="editField_recognition_issuer" class="form-control">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Recognition Issuer (en)</label>
+                        <input type="text" id="editField_recognition_issuer_en" class="form-control">
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label">Дата видачі свідоцтва</label>
+                        <input type="text" id="editField_recognition_date" class="form-control">
                     </div>
                 </div>
-
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" class="btn btn-primary" id="editSaveBtn">
+                    <i class="bi bi-check-lg me-1"></i>Застосувати до рядка
+                </button>
             </div>
         </div>
     </div>
-    {% endif %}
-{% endfor %}
+</div>
+
+<script>
+(function () {
+    // ── Дані рядків передаємо з Python у JS (без DOM-парсингу) ──
+    const PREVIEW_ROWS = {{ preview | tojson }};
+    const ROWS_BY_INDEX = {};
+    PREVIEW_ROWS.forEach(function (r) { ROWS_BY_INDEX[r.row_index] = r; });
+
+    // ── Редаговані рядки: {row_index: {field: value, ...}} ──
+    const editedRows = {};
+    let currentRowIndex = null;
+
+    const EDITABLE_FIELDS = [
+        'doc_group_id',
+        'document_type', 'document_type_en',
+        'institution_name', 'institution_name_en',
+        'document_number', 'completion_date',
+        'country', 'country_en',
+        'reference_number', 'reference_institution', 'reference_institution_en',
+        'reference_country', 'reference_country_en', 'reference_issue_date',
+        'recognition_certificate_number', 'recognition_issuer',
+        'recognition_issuer_en', 'recognition_date',
+    ];
+
+    const modalEl = document.getElementById('editRowModal');
+    const modal = new bootstrap.Modal(modalEl);
+    const saveBtn = document.getElementById('editSaveBtn');
+
+    document.querySelectorAll('.js-edit-row').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const idx = parseInt(btn.dataset.rowIndex, 10);
+            const row = ROWS_BY_INDEX[idx];
+            if (!row) return;
+            currentRowIndex = idx;
+
+            // Заголовок
+            document.getElementById('editRowNum').textContent = idx;
+            document.getElementById('editRowName').textContent = row.matched_name || '—';
+            document.getElementById('editRowStatus').textContent = '(' + (row.status || '') + ')';
+
+            // Інфо-плашка для існуючого документа
+            const infoPanel = document.getElementById('editInfoPanel');
+            infoPanel.classList.add('d-none');
+            infoPanel.innerHTML = '';
+            if (row.has_document) {
+                let html = '<i class="bi bi-info-circle-fill me-1"></i><strong>Існуючий документ:</strong> ';
+                if (row.existing_group_id) {
+                    html += 'прив\'язаний до групи ID <strong>' + row.existing_group_id + '</strong>.';
+                } else {
+                    html += '<em>загальний</em> (без прив\'язки до групи).';
+                }
+                if (row.existing_group_id && row.requested_group_id
+                        && row.existing_group_id != row.requested_group_id) {
+                    html += '<br><strong class="text-warning-emphasis">'
+                          + '⚠ Увага: в Excel вказано іншу групу (ID ' + row.requested_group_id
+                          + ') — якщо залишите як є, документ буде переприв\'язано.</strong>';
+                }
+                infoPanel.innerHTML = html;
+                infoPanel.classList.remove('d-none');
+            }
+
+            // Заповнення полів — з відредагованого варіанта (якщо є) або з preview
+            const source = Object.assign({}, row, editedRows[idx] || {});
+
+            EDITABLE_FIELDS.forEach(function (field) {
+                const el = document.getElementById('editField_' + field);
+                if (!el) return;
+                let val = source[field];
+                if (val === null || val === undefined) val = '';
+                el.value = val;
+            });
+
+            modal.show();
+        });
+    });
+
+    saveBtn.addEventListener('click', function () {
+        if (currentRowIndex === null) return;
+
+        const values = {};
+        EDITABLE_FIELDS.forEach(function (field) {
+            const el = document.getElementById('editField_' + field);
+            if (!el) return;
+            values[field] = (el.value || '').trim();
+        });
+
+        editedRows[currentRowIndex] = values;
+
+        // Позначаємо рядок у таблиці як відредагований
+        const tr = document.querySelector('tr[data-row-index="' + currentRowIndex + '"]');
+        if (tr) {
+            tr.classList.add('row-edited');
+            // Оновлюємо номер диплома в таблиці — щоб адмін бачив ефект
+            const docNumCell = tr.querySelector('.doc-number-cell');
+            if (docNumCell && values.document_number) {
+                docNumCell.textContent = values.document_number;
+            }
+        }
+
+        modal.hide();
+    });
+
+    // ── Перед submit основної форми — серіалізуємо edits_json ──
+    document.getElementById('importForm').addEventListener('submit', function (e) {
+        // Безпека: якщо є зміни, але user не закрив модалку — не даємо
+        // загубити (не повинно бути, але про всяк)
+        document.getElementById('editsJson').value =
+            JSON.stringify(editedRows);
+    });
+})();
+</script>
 
 </div>
 {% endblock %}
