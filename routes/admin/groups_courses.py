@@ -648,7 +648,16 @@ def courses():
     """).fetchall()
     groups = [dict(g) for g in groups]
     for g in groups:
-        g['is_final_course'] = g['course'] >= compute_program_total_years(g['degree_level'], g['program_credits'])
+        total_years = compute_program_total_years(g['degree_level'], g['program_credits'])
+        stored_course = g['course'] or 1
+        computed_course = compute_current_course(
+            g['start_year'], g['degree_level'], g['program_credits']
+        ) or 1
+        effective_course = max(stored_course, computed_course)
+        g['is_final_course']  = effective_course >= total_years
+        g['stale_course']     = effective_course > stored_course
+        g['effective_course'] = effective_course
+        g['stored_course']    = stored_course
 
     # Порядок ступенів - за їхнім id в каталозі degree_levels (природна
     # ієрархія: молодший бакалавр -> бакалавр -> магістр -> доктор
@@ -1188,7 +1197,7 @@ def graduation():
         return render_template("graduation_review.html", groups_with_students=groups_with_students)
 
     groups = conn.execute("""
-        SELECT id, name, course, degree_level, program_credits,
+        SELECT id, name, course, start_year, degree_level, program_credits,
                (SELECT COUNT(*) FROM students s
                 WHERE COALESCE(s.archived, 0) = 0
                   AND (
@@ -1202,11 +1211,28 @@ def graduation():
     """).fetchall()
     conn.close()
 
-    # Показуємо лише групи, які ВЖЕ на останньому курсі своєї програми
-    final_groups = [
-        g for g in groups
-        if g['course'] >= compute_program_total_years(g['degree_level'], g['program_credits'])
-    ]
+    # Курс для перевірки = max(збережений у БД, обчислений за start_year).
+    # Друге значення потрібне, якщо проміжний крок «Перевести на наступний
+    # курс» забули зробити: напр. група магістратури на 90 кредитів, рік
+    # вступу 2024 — при створенні в БД зберігся course=1, а час випуску вже
+    # настав. Без цього підхоплення така група не потрапляла б у список.
+    final_groups = []
+    for g in groups:
+        total_years = compute_program_total_years(g['degree_level'], g['program_credits'])
+        stored_course = g['course'] or 1
+        computed_course = compute_current_course(
+            g['start_year'], g['degree_level'], g['program_credits']
+        ) or 1
+        effective_course = max(stored_course, computed_course)
+
+        if effective_course >= total_years:
+            g_dict = dict(g)
+            g_dict['effective_course'] = effective_course
+            g_dict['stored_course'] = stored_course
+            g_dict['total_years'] = total_years
+            # True → курс «підтягнуто» обчисленням (у БД він менший)
+            g_dict['stale_course'] = effective_course > stored_course
+            final_groups.append(g_dict)
 
     return render_template("graduation_select.html", groups=final_groups)
 

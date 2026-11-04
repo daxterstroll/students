@@ -30,7 +30,17 @@
                             <tr>
                                 <td><input type="checkbox" name="group_ids" value="{{ g.id }}" class="form-check-input"></td>
                                 <td class="fw-semibold">{{ g.name }}</td>
-                                <td>{{ g.course }}</td>
+                                <td>
+                                    {% if g.stale_course %}
+                                        <span class="text-muted">{{ g.stored_course }}</span>
+                                        <i class="bi bi-arrow-right small mx-1"></i>
+                                        <strong class="text-warning">{{ g.effective_course }}</strong>
+                                        <i class="bi bi-exclamation-triangle-fill text-warning ms-1"
+                                           title="Курс у БД ({{ g.stored_course }}) відстає від обчисленого за роком вступу ({{ g.effective_course }}) — можливо, забули зробити «Перевести на наступний курс». Випуск усе одно доступний."></i>
+                                    {% else %}
+                                        {{ g.course }}
+                                    {% endif %}
+                                </td>
                                 <td>{{ g.study_form }}</td>
                                 <td>{{ g.start_year }}</td>
                                 <td class="text-end">{{ g.student_count }}</td>
