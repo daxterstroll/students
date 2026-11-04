@@ -3,9 +3,53 @@
 {% block title %}Імпорт студентів з Excel{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
+<style>
+    .mode-card {
+        border: 1px solid var(--line, #e5e5e5);
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        height: 100%;
+        background: var(--surface, #fff);
+        transition: box-shadow .2s ease;
+    }
+    .mode-card:hover { box-shadow: 0 6px 18px -10px rgba(0,0,0,.2); }
+    .mode-card__title {
+        display: flex; align-items: center; gap: .5rem;
+        font-weight: 700; margin-bottom: .55rem;
+        color: var(--heading, var(--ink));
+    }
+    .mode-card__icon {
+        width: 26px; height: 26px; border-radius: 6px;
+        display: inline-flex; align-items: center; justify-content: center;
+        font-size: .85rem; flex-shrink: 0;
+    }
+    .mode-card--with-group .mode-card__icon { background: rgba(200,162,74,.2); color: #8a6a1a; }
+    .mode-card--no-group   .mode-card__icon { background: rgba(79,122,82,.18); color: #3f7556; }
+    html[data-theme="dark"] .mode-card--with-group .mode-card__icon { color: var(--brass-lt); }
+    html[data-theme="dark"] .mode-card--no-group .mode-card__icon   { color: #bfe3c2; }
+    .mode-card ul { margin: 0; padding-left: 1.15rem; font-size: .85rem; }
+    .mode-card li { margin-bottom: .2rem; }
+
+    .col-head-a { background: var(--ink) !important; color: var(--brass-lt) !important; }
+    .col-head-l { background: #3f7556 !important; color: #fff !important; }
+    .col-group-a { border-left: 3px solid var(--brass) !important; }
+    .col-group-l { border-left: 3px solid #3f7556 !important; }
+
+    .search-order {
+        display: flex; flex-wrap: wrap; align-items: center; gap: .4rem;
+        font-size: .85rem;
+    }
+    .search-order__step {
+        background: var(--paper-2); padding: .25rem .65rem; border-radius: 6px;
+        border: 1px solid var(--line, #e5e5e5);
+        font-family: 'JetBrains Mono', monospace; font-size: .8rem;
+    }
+    .search-order__arrow { color: var(--muted); }
+</style>
+
 <div class="container py-4">
 
-{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт студентів з Excel', 'Масове додавання студентів з файлу .xlsx') }}
+{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт студентів з Excel', 'Масове додавання нових студентів, паралельних навчань або оновлення полів карток без створення навчання') }}
 
 <div class="row g-4">
 
@@ -29,26 +73,23 @@
 
         <h6 class="mb-2">Що робить імпорт</h6>
         <ul class="list-unstyled small mb-0">
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбиває ПІБ на прізвище, ім'я та по батькові</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Автоматично транслітерує прізвище та ім'я англійською (КМУ №55-2010)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить наявного студента за <code>student_id</code> → <code>tax_id</code> → ФІО+дата → ФІО (тільки якщо збіг рівно один)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Створює нового студента з транслітерацією ПІБ (КМУ №55-2010)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Додає/перевідкриває enrollment у вказаній групі (паралельне навчання, реактивація з архіву)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Без групи в колонці A — оновлює лише порожні поля картки, не чіпаючи навчання</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Оновлює <strong>лише порожні</strong> поля — заповнені вручну не перезаписує</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає стать — з колонки K або автоматично за по батькові</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Перевіряє групу — пропускає рядок якщо група не існує або недоступна</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Пропускає дублікати (ПІБ + дата народження)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Зіставляє ліцензію вступу з каталогом за короткою назвою — необов'язкова колонка E</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Підтримує позначку "скорочена програма" (вступ з визнанням частини кредитів) — необов'язкова колонка F</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Розбиває телефон на основний і резервний через кому — необов'язкова колонка G</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Імпортує email (H), ідентифікаційний код (I) і адресу проживання (J)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує помилки по кожному рядку окремо</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує детальний звіт: хто оброблений, хто пропущений і чому</li>
         </ul>
 
         <hr>
 
         <div class="alert alert-light border small mb-0">
           <i class="bi bi-info-circle me-1"></i>
-          <strong>Військові дані з Excel більше не імпортуються.</strong>
+          <strong>Військові дані з Excel не імпортуються.</strong>
           Вони заповнюються вручну на картці студента (розділ «Військові дані»)
-          або автоматично з PDF «Резерв+» — по одному (картка студента) чи пакетно
-          (<em>Імпорт → PDF «Резерв+» (пакетно)</em>).
+          або автоматично з PDF «Резерв+» — по одному (картка студента) чи
+          пакетно (<em>Імпорт → PDF «Резерв+» (пакетно)</em>).
         </div>
 
         <a href="{{ url_for('static', filename='example_excel/import.xlsx') }}" class="btn btn-outline-secondary btn-sm w-100 mt-3">
@@ -58,114 +99,273 @@
     </div>
   </div>
 
-  {# ── Документація формату ── #}
+  {# ── Документація ── #}
   <div class="col-12 col-lg-7">
     <div class="card h-100">
       <div class="card-body">
-        <h5 class="card-title mb-3">Формат файлу</h5>
 
+        <h5 class="card-title mb-3">Два режими роботи</h5>
         <p class="small text-muted mb-3">
-          Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.<br>
-          Порядок колонок фіксований, порожні клітинки допустимі для необов'язкових полів.
+          Режим визначається тим, чи заповнена <strong>колонка A (ID групи)</strong>.
+          Це дозволяє одним файлом і додавати нових студентів, і масово правити
+          дані по вже наявній базі — без ризику зачепити навчання.
         </p>
 
-        {# Таблиця колонок #}
-        <div class="table-responsive">
-          <table class="table table-sm table-bordered small align-middle mb-4">
-            <thead class="table-dark">
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="mode-card mode-card--with-group">
+              <div class="mode-card__title">
+                <span class="mode-card__icon"><i class="bi bi-mortarboard"></i></span>
+                A заповнено — з групою
+              </div>
+              <ul>
+                <li>Новий студент → створюється + enrollment</li>
+                <li>Є в іншій групі → паралельне навчання</li>
+                <li>Був відрахований/випущений → перевідкривається</li>
+                <li>Був в архіві → розархівовується</li>
+                <li>Вже активний у цій групі → <strong>пропуск</strong> (дублікат)</li>
+                <li>+ оновлення порожніх полів картки</li>
+              </ul>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="mode-card mode-card--no-group">
+              <div class="mode-card__title">
+                <span class="mode-card__icon"><i class="bi bi-pencil-square"></i></span>
+                A порожньо — тільки оновлення
+              </div>
+              <ul>
+                <li>Студент <strong>знайдено</strong> → оновлюються лише порожні поля картки (телефон, email, ІПН, ЄДЕБО, адреса, стать)</li>
+                <li>Enrollment, ліцензія, група, кредити, архів — <strong>не чіпаються</strong></li>
+                <li>Студент <strong>не знайдено</strong> → пропуск з поясненням «для нового група обов'язкова»</li>
+                <li>Колонка F (кредити override) <strong>ігнорується</strong> — немає прив'язки до групи</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <h5 class="card-title mb-2">Порядок пошуку студента</h5>
+        <p class="small text-muted mb-2">
+          Перший збіг «виграє» — наступні кроки не виконуються:
+        </p>
+        <div class="search-order mb-4">
+          <span class="search-order__step">1. student_id (L)</span>
+          <i class="bi bi-arrow-right search-order__arrow"></i>
+          <span class="search-order__step">2. tax_id (I)</span>
+          <i class="bi bi-arrow-right search-order__arrow"></i>
+          <span class="search-order__step">3. ФІО + дата (B + C)</span>
+          <i class="bi bi-arrow-right search-order__arrow"></i>
+          <span class="search-order__step">4. ФІО без дати*</span>
+        </div>
+        <p class="small text-muted mb-4" style="font-size:.78rem;">
+          * крок 4 виконується <strong>тільки</strong> якщо: (а) колонка A порожня (update-only режим);
+          (б) колонка C порожня; (в) знайдено <strong>рівно одного</strong> студента з таким ПІБ.
+          Якщо знайдено 2+ — рядок пропускається з підказкою «уточніть дату народження, ІПН або student_id».
+        </p>
+
+        <h5 class="card-title mb-3">Формат файлу</h5>
+        <p class="small text-muted mb-3">
+          Перший рядок — заголовки (ігноруються). Дані починаються з рядка 2.
+        </p>
+
+        <h6 class="mb-2"><i class="bi bi-1-circle-fill me-1" style="color: var(--brass);"></i>Базові колонки A–K</h6>
+        <div class="table-responsive mb-4">
+          <table class="table table-sm table-bordered small align-middle mb-0">
+            <thead>
               <tr>
-                <th style="width:40px"><center>#</center></th>
-                <th>Колонка</th>
-                <th style="width:90px" class="text-center">Обов'язкова</th>
-                <th>Приклад / Формат</th>
+                <th style="width:40px" class="text-center col-head-a">#</th>
+                <th class="col-head-a">Колонка</th>
+                <th class="col-head-a" style="width:90px" class="text-center">Обов'язкова</th>
+                <th class="col-head-a">Приклад / Формат</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">A</td>
                 <td>ID групи</td>
-                <td class="text-center"><span class="badge bg-danger">Так</span></td>
-                <td><code>1</code> — числовий ID з таблиці груп</td>
+                <td class="text-center"><span class="badge bg-secondary">Умовно</span></td>
+                <td><code>1</code> — числовий ID групи. <strong>Порожньо</strong> = режим «тільки оновити» (без створення enrollment).</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">B</td>
                 <td>ПІБ повністю</td>
                 <td class="text-center"><span class="badge bg-danger">Так</span></td>
                 <td><code>Шевченко Іван Олександрович</code> — рівно 3 слова через пробіл</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">C</td>
                 <td>Дата народження</td>
-                <td class="text-center"><span class="badge bg-danger">Так</span></td>
-                <td><code>15.03.2001</code> або дата Excel (формат ДД.ММ.РРРР)</td>
+                <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
+                <td><code>15.03.2001</code> або клітинка Excel з форматом ДД.ММ.РРРР. Порожньо — пошук за ФІО (тільки якщо збіг один).</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">D</td>
                 <td>Код ЄДЕБО</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
                 <td><code>12345678</code></td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">E</td>
-                <td>Ліцензія вступу</td>
+                <td>Ліцензія</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
-                <td><code>Львівська</code> — коротка назва з каталогу ліцензій (сторінка «Ліцензії»), без урахування регістру. Не знайдено в каталозі — поле пропускається з попередженням.</td>
+                <td><code>Львівська</code> — коротка назва з каталогу «Ліцензії», без урахування регістру</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">F</td>
-                <td>Кредити (скорочена програма)</td>
+                <td>Кредити скороченої програми</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
-                <td><code>180</code> — лише якщо студент вступив з визнанням частини кредитів попереднього диплома (менше за кредити групи). Порожньо = звичайний студент за програмою групи.</td>
+                <td><code>180</code> — менше за програму групи. <strong>Ігнорується</strong>, якщо A порожня.</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">G</td>
                 <td>Телефон</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
-                <td><code>+380991234567, +380991234568</code> — основний і резервний через кому; резервний необов'язковий.</td>
+                <td><code>+380991234567, +380991234568</code> — основний[, резервний] через кому</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">H</td>
                 <td>Email</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
                 <td><code>student@example.com</code></td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">I</td>
-                <td>Ідентифікаційний код (РНОКПП)</td>
+                <td>ІПН (РНОКПП)</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
-                <td><code>1234567890</code> — зберігається як рядок (не втрачаються провідні нулі)</td>
+                <td><code>1234567890</code> — зберігається як рядок</td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">J</td>
-                <td>Адреса проживання</td>
+                <td>Адреса</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
                 <td><code>м. Львів, вул. Шевченка 1, кв. 5</code></td>
               </tr>
-              <tr>
+              <tr class="col-group-a">
                 <td class="text-center fw-bold">K</td>
                 <td>Стать</td>
                 <td class="text-center"><span class="badge bg-secondary">Ні</span></td>
-                <td><code>Ч</code>/<code>Ж</code>/<code>M</code>/<code>F</code> — або порожньо (тоді визначиться автоматично за по батькові: <code>-івна</code>/<code>-ївна</code> → жіноча)</td>
+                <td><code>Ч</code>/<code>Ж</code>/<code>M</code>/<code>F</code> — або порожньо (авто за по батькові)</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        {# Причини пропуску рядка #}
+        <h6 class="mb-2"><i class="bi bi-2-circle-fill me-1" style="color: #3f7556;"></i>Опціональні колонки L–N</h6>
+        <p class="small text-muted mb-2">
+          Керують пошуком і поведінкою при знайденому студенті. Можна залишити порожніми — тоді діють налаштування за замовчуванням.
+        </p>
+        <div class="table-responsive mb-4">
+          <table class="table table-sm table-bordered small align-middle mb-0">
+            <thead>
+              <tr>
+                <th style="width:40px" class="text-center col-head-l">#</th>
+                <th class="col-head-l">Колонка</th>
+                <th class="col-head-l" style="width:90px" class="text-center">За замовчуванням</th>
+                <th class="col-head-l">Приклад / Формат</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="col-group-l">
+                <td class="text-center fw-bold">L</td>
+                <td>student_id</td>
+                <td class="text-center"><span class="badge bg-secondary">—</span></td>
+                <td><code>1234</code> — прямий ID студента в БД. Найнадійніший спосіб влучити саме в потрібного студента (пріоритетніший за tax_id та ФІО).</td>
+              </tr>
+              <tr class="col-group-l">
+                <td class="text-center fw-bold">M</td>
+                <td>is_primary</td>
+                <td class="text-center"><span class="badge bg-secondary">auto</span></td>
+                <td><code>1</code> — зробити цю групу основною. <code>0</code> — не змінювати. Порожньо: для нового студента група стає основною; для існуючого — не змінюється.</td>
+              </tr>
+              <tr class="col-group-l">
+                <td class="text-center fw-bold">N</td>
+                <td>update_existing_data</td>
+                <td class="text-center"><span class="badge bg-success-subtle text-success-emphasis">1</span></td>
+                <td><code>1</code> (або порожньо) — оновлювати порожні поля картки наявного студента. <code>0</code> — не оновлювати нічого (тільки enrollment).</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <h6 class="mb-2">Коли рядок пропускається</h6>
-        <ul class="small mb-0">
+        <ul class="small mb-3">
           <li>ПІБ містить не рівно 3 слова</li>
-          <li>ID групи не існує в системі або група заархівована</li>
-          <li>ID групи недоступний поточному користувачу</li>
-          <li>Студент з таким самим ПІБ і датою народження вже є в базі</li>
-          <li>Рядок містить менше 4 заповнених колонок</li>
+          <li>A вказана, але ID групи не існує, заархівована або недоступна користувачу</li>
+          <li>Студент вже <strong>активно</strong> навчається в цій групі (дублікат)</li>
+          <li><strong>A порожня</strong>, а студента не знайдено в базі («для нового група обов'язкова»)</li>
+          <li><strong>A порожня</strong>, C порожня, і з таким ПІБ знайдено 2+ студентів (уточніть дату/ІПН/student_id)</li>
+          <li>Вказано неіснуючий <code>student_id</code> у колонці L</li>
         </ul>
 
-        <div class="alert alert-info small mt-3 mb-0">
+        <h6 class="mb-2">Приклади рядків</h6>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered small mb-0">
+            <thead class="table-light">
+              <tr>
+                <th style="width:60px">A</th>
+                <th>B</th>
+                <th style="width:100px">C</th>
+                <th style="width:110px">G</th>
+                <th style="width:90px">L</th>
+                <th style="width:60px">M</th>
+                <th>Результат</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>1</code></td>
+                <td>Іваненко Іван Петрович</td>
+                <td><code>15.03.2001</code></td>
+                <td>+380991234567</td>
+                <td></td>
+                <td></td>
+                <td class="text-success"><i class="bi bi-plus-circle"></i> Новий студент + enrollment у групі 1</td>
+              </tr>
+              <tr>
+                <td><code>5</code></td>
+                <td>Петренко Марія Іванівна</td>
+                <td><code>22.08.1999</code></td>
+                <td></td>
+                <td><code>42</code></td>
+                <td><code>0</code></td>
+                <td class="text-info"><i class="bi bi-people"></i> Паралельне навчання (студент ID 42 вже в іншій групі)</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td>Коваленко Олена Сергіївна</td>
+                <td></td>
+                <td>+380671112233</td>
+                <td></td>
+                <td></td>
+                <td class="text-success"><i class="bi bi-pencil-square"></i> Тільки оновлення телефону (пошук за ФІО)</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td>Шевченко Іван Петрович</td>
+                <td><code>10.05.2000</code></td>
+                <td></td>
+                <td><code>7</code></td>
+                <td></td>
+                <td class="text-success"><i class="bi bi-pencil-square"></i> Оновлення картки студента ID 7 (пошук за ID)</td>
+              </tr>
+              <tr>
+                <td></td>
+                <td>Нова Людина</td>
+                <td><code>01.01.2005</code></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="text-danger"><i class="bi bi-x-circle"></i> Пропущено: немає в базі + немає групи</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="alert alert-info small mb-0">
           <i class="bi bi-lightbulb me-1"></i>
-          <strong>Порада по колонці «Стать»:</strong> можна залишити порожньою для всіх —
-          система сама визначить за по батькові. Якщо в когось по батькові відсутнє
-          (іноземці, неповні дані) — впишіть вручну <code>Ч</code> або <code>Ж</code>.
+          <strong>Порада:</strong> для масової правки телефонів/ІПН/адрес по всій базі —
+          залишайте A порожньою, а в L вказуйте ID студентів. Це найшвидший і
+          найбезпечніший спосіб — enrollment, ліцензія, група й архів не зміняться.
         </div>
       </div>
     </div>
