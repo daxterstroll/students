@@ -528,27 +528,27 @@ def pending_student_review(pending_id):
                 add_enrollment(
                     student_id, group_id,
                     is_primary=not has_active,
-                    license_id=license_id,  # з форми, не з картки студента
+                    license_id=license_id,
                     edebo_code=row['edebo_code'],
+                    program_credits_override=program_credits_override,
                     conn=conn,
                 )
             else:
                 cur = conn.execute("""
                     INSERT INTO students (
                         last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
-                        group_id, license_id, phone, phone_backup, email, program_credits_override
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        group_id, license_id, phone, phone_backup, email
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (...))
                 student_id = cur.lastrowid
 
-                # ── Створюємо запис enrollment для нового студента ──
-                # (тепер це джерело істини для ліцензії/групи)
                 from routes.enrollments_service import add_enrollment
                 add_enrollment(
                     student_id, group_id,
                     is_primary=True,
-                    license_id=license_id,  # те, що обрано в формі approve
+                    license_id=license_id,
                     edebo_code=row['edebo_code'],
+                    program_credits_override=program_credits_override,
                     conn=conn,
                 )
 

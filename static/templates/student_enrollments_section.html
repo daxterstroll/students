@@ -88,6 +88,19 @@
                             <span class="text-muted fst-italic small">не вказано</span>
                         {% endif %}
                     </div>
+					
+				    {% if e.program_credits_override %}
+                    <div class="enrollment-card__license" style="margin-top:-.35rem;">
+                        <i class="bi bi-signpost-split text-muted"></i>
+                        <span class="text-muted small">Скорочена програма:</span>
+                        <span class="enrollment-badge enrollment-badge--license">
+                            {{ e.program_credits_override }} кр.
+                        </span>
+                        <span class="text-muted small">
+                            (з {{ e.program_credits or '—' }} за програмою групи)
+                        </span>
+                    </div>
+                    {% endif %}
 
                     {% if e.status == 'active' %}
                     <div class="enrollment-card__actions">
@@ -112,6 +125,13 @@
                                 data-group-name="{{ e.group_name or '' }}"
                                 data-current-edebo="{{ e.edebo_code or '' }}">
                             <i class="bi bi-upc-scan"></i> Змінити ЄДЕБО
+                        </button>
+						<button type="button" class="btn btn-sm btn-outline-info js-change-credits"
+                                data-group-id="{{ e.group_id }}"
+                                data-group-name="{{ e.group_name or '' }}"
+                                data-current-credits="{{ e.program_credits_override or '' }}"
+                                data-group-credits="{{ e.program_credits or '' }}">
+                            <i class="bi bi-signpost-split"></i> Скорочена програма
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-success js-end-enrollment"
                                 data-group-id="{{ e.group_id }}"
@@ -408,6 +428,42 @@
     </div>
 </div>
 
+<!-- Змінити кредити скороченої програми (без наказу) -->
+<div class="modal fade" id="changeCreditsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" id="changeCreditsForm">
+                <input type="hidden" name="action_type" value="change_program_credits">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-signpost-split me-2"></i>Кредити скороченої програми</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-light border small mb-3">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Вкажіть, скільки кредитів студент має освоїти <strong>саме в цій групі</strong>
+                        (менше за програму групи — якщо вступив з визнанням частини кредитів попереднього диплома).
+                        Порожньо — повна програма. <strong>Це не потребує наказу</strong>, зміна набирає чинності одразу.
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label small fw-semibold">Кредити (порожньо = повна програма)</label>
+                        <input type="number" name="new_program_credits_override" id="newCreditsInput"
+                               class="form-control" min="1" max="400">
+                        <div class="form-text" id="creditsHint"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Зберегти
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+
 <style>
     .enrollments-section .enrollment-card {
         padding: 1rem 1.25rem;
@@ -577,6 +633,21 @@ document.addEventListener('DOMContentLoaded', function () {
 			new bootstrap.Modal(document.getElementById('changeEdeboModal')).show();
 		});
 	});
+	
+	// Зміна кредитів скороченої програми (без наказу)
+    document.querySelectorAll('.js-change-credits').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const gid = btn.dataset.groupId;
+            const form = document.getElementById('changeCreditsForm');
+            form.action = actionUrlTemplate.replace('__GID__', gid);
+            document.getElementById('newCreditsInput').value = btn.dataset.currentCredits || '';
+            const grpCredits = btn.dataset.groupCredits || '';
+            document.getElementById('creditsHint').textContent = grpCredits
+                ? 'Програма групи: ' + grpCredits + ' кредитів. Менше значення = скорочена програма.'
+                : '';
+            new bootstrap.Modal(document.getElementById('changeCreditsModal')).show();
+        });
+    });
 
     // Завершення навчання (випуск / відрахування)
     document.querySelectorAll('.js-end-enrollment').forEach(function (btn) {

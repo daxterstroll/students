@@ -531,27 +531,33 @@ def get_attachments(conn, entity_type, entity_id):
         "WHERE entity_type = ? AND entity_id = ? ORDER BY id",
         (entity_type, entity_id)
     ).fetchall()
+    
 def is_student_on_reduced_program(conn, student_id, group_id):
-    """Чи навчається студент за скороченою програмою відносно своєї
-    групи (program_credits_override менше за program_credits групи -
-    напр. вступив одразу на 2 курс з визнанням частини кредитів
-    попереднього диплома). Єдине місце з цією перевіркою - решта коду
-    (список студентів, картка студента, форма оцінок, генерація
-    додатку) викликає саме цю функцію, а не дублює порівняння, щоб не
-    розходилось по різних місцях, як уже одного разу сталось.
+    """Чи навчається студент за скороченою програмою відносно КОНКРЕТНОЇ
+    групи (override менше за program_credits групи).
+
+    Override тепер зберігається в student_enrollments.program_credits_override
+    (per-group), а не в students.program_credits_override — інакше
+    паралельний студент не міг би мати різні override у різних групах.
+    Fallback на students.program_credits_override — для студентів без
+    enrollment'а (legacy / до міграції).
     """
     row = conn.execute("""
-        SELECT s.program_credits_override AS student_override, g.program_credits AS group_credits
-        FROM students s JOIN groups g ON g.id = ?
+        SELECT
+            COALESCE(e.program_credits_override, s.program_credits_override) AS override_credits,
+            g.program_credits AS group_credits
+        FROM students s
+        JOIN groups g ON g.id = ?
+        LEFT JOIN student_enrollments e
+               ON e.student_id = s.id AND e.group_id = g.id
         WHERE s.id = ?
     """, (group_id, student_id)).fetchone()
-    if not row or not row['student_override'] or not row['group_credits']:
+    if not row or not row['override_credits'] or not row['group_credits']:
         return False
     try:
-        return int(row['student_override']) < int(row['group_credits'])
+        return int(row['override_credits']) < int(row['group_credits'])
     except (TypeError, ValueError):
         return False
-
 
 def program_track_condition(is_reduced, alias=''):
     """SQL-умова (починається з " AND ..."), що обмежує запит до
