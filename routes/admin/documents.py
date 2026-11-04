@@ -1015,12 +1015,57 @@ def import_documents_preview(file_path, db):
         data.update(parse_reference_cell_ua(reference_ua_text))
         data.update(parse_recognition_cell_ua(recognition_ua_text))
 
-        cursor.execute("""
-            SELECT id, document_type, document_type_en, document_number, completion_date,
-                   institution_name, institution_name_en, country, country_en
-            FROM education_documents WHERE student_id=?
-        """, (student_id,))
-        existing_doc = cursor.fetchone()
+        # ── Пошук існуючого документа для КОНКРЕТНОЇ групи ──
+        # Раніше SELECT був по student_id без урахування групи —
+        # при паралельному навчанні (2+ документів) preview показував
+        # «Оновлення» для першого-ліпшого документа студента, а
+        # commit оновлював саме його (не той, що відноситься до групи
+        # з колонки E). Тепер: якщо requested_group_id задано —
+        # шукаємо документ саме для цієї групи; інакше — для primary;
+        # якщо й такого нема — будь-який (legacy-fallback).
+        if requested_group_id is not None:
+            cursor.execute("""
+                SELECT id, document_type, document_type_en, document_number,
+                       completion_date, institution_name, institution_name_en,
+                       country, country_en, group_id
+                FROM education_documents
+                WHERE student_id = ? AND group_id = ?
+                ORDER BY id DESC LIMIT 1
+            """, (student_id, requested_group_id))
+            existing_doc = cursor.fetchone()
+        else:
+            # Група в Excel не вказана — орієнтуємось на primary
+            cursor.execute("""
+                SELECT s.group_id AS primary_gid FROM students s WHERE s.id = ?
+            """, (student_id,))
+            primary_row = cursor.fetchone()
+            primary_gid = primary_row["primary_gid"] if primary_row else None
+
+            if primary_gid:
+                cursor.execute("""
+                    SELECT id, document_type, document_type_en, document_number,
+                           completion_date, institution_name, institution_name_en,
+                           country, country_en, group_id
+                    FROM education_documents
+                    WHERE student_id = ? AND group_id = ?
+                    ORDER BY id DESC LIMIT 1
+                """, (student_id, primary_gid))
+                existing_doc = cursor.fetchone()
+            else:
+                existing_doc = None
+
+            # Legacy-fallback: якщо для primary ничего нет, но есть
+            # документы с group_id IS NULL (старые) — берём их
+            if not existing_doc:
+                cursor.execute("""
+                    SELECT id, document_type, document_type_en, document_number,
+                           completion_date, institution_name, institution_name_en,
+                           country, country_en, group_id
+                    FROM education_documents
+                    WHERE student_id = ? AND (group_id IS NULL OR group_id = ?)
+                    ORDER BY id DESC LIMIT 1
+                """, (student_id, primary_gid))
+                existing_doc = cursor.fetchone()
 
         row_data = {
             "row_index": row_index,
@@ -1037,6 +1082,8 @@ def import_documents_preview(file_path, db):
                 "existing_info": f"(існує: {existing_doc['document_number'] or 'без номера'})",
                 "has_document": True,
                 "existing_doc_id": existing_doc["id"],
+                "existing_group_id": existing_doc["group_id"],
+                "existing_group_id": existing_doc["group_id"],
                 "old_document_type": existing_doc["document_type"] or "",
                 "old_document_type_en": existing_doc["document_type_en"] or "",
                 "old_document_number": existing_doc["document_number"] or "",
@@ -1170,8 +1217,45 @@ def import_docs_commit():
             is_foreign = not (country_lower in ('україна', 'ukraine'))
 
             cursor = db.cursor()
-            cursor.execute("SELECT id FROM education_documents WHERE student_id=?", (row["student_id"],))
-            existing = cursor.fetchone()
+            # ── Пошук існуючого документа для КОНКРЕТНОЇ групи ──
+            # (той самий підхід, що і в preview вище).
+            requested_gid = row.get("requested_group_id")
+
+            if requested_gid is not None:
+                cursor.execute("""
+                    SELECT id, group_id FROM education_documents
+                    WHERE student_id = ? AND group_id = ?
+                    ORDER BY id DESC LIMIT 1
+                """, (row["student_id"], requested_gid))
+                existing = cursor.fetchone()
+            else:
+                # Група не вказана — орієнтуємось на primary
+                primary_row_gid = cursor.execute(
+                    "SELECT group_id FROM students WHERE id = ?",
+                    (row["student_id"],)
+                ).fetchone()
+                primary_gid_for_search = (
+                    primary_row_gid["group_id"] if primary_row_gid else None
+                )
+
+                if primary_gid_for_search:
+                    cursor.execute("""
+                        SELECT id, group_id FROM education_documents
+                        WHERE student_id = ? AND group_id = ?
+                        ORDER BY id DESC LIMIT 1
+                    """, (row["student_id"], primary_gid_for_search))
+                    existing = cursor.fetchone()
+                else:
+                    existing = None
+
+                # Legacy-fallback: документы без group_id
+                if not existing:
+                    cursor.execute("""
+                        SELECT id, group_id FROM education_documents
+                        WHERE student_id = ? AND group_id IS NULL
+                        ORDER BY id DESC LIMIT 1
+                    """, (row["student_id"],))
+                    existing = cursor.fetchone()
 
             doc_type_en  = row.get("document_type_en", "") or ""
             inst_name_en = row.get("institution_name_en", "") or ""
@@ -1179,13 +1263,30 @@ def import_docs_commit():
 
             if existing:
                 education_doc_id = existing["id"]
-                cursor.execute("""
-                    UPDATE education_documents SET
-                        document_type=?, document_type_en=?, document_number=?, completion_date=?,
-                        institution_name=?, institution_name_en=?, country=?, country_en=?
-                    WHERE id=?
-                """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
-                      row["institution_name"], inst_name_en, row["country"], row["country_en"], education_doc_id))
+                # Оновлюємо також group_id, якщо в Excel вказано
+                # конкретну групу (щоб можна було «переприв'язати»
+                # документ, якщо при першому імпорті обрали не ту).
+                # Якщо requested_gid is None — group_id лишається
+                # як був (не скидаємо до NULL без причини).
+                if requested_gid is not None:
+                    cursor.execute("""
+                        UPDATE education_documents SET
+                            document_type=?, document_type_en=?, document_number=?, completion_date=?,
+                            institution_name=?, institution_name_en=?, country=?, country_en=?,
+                            group_id=?
+                        WHERE id=?
+                    """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
+                          row["institution_name"], inst_name_en, row["country"], row["country_en"],
+                          requested_gid, education_doc_id))
+                else:
+                    cursor.execute("""
+                        UPDATE education_documents SET
+                            document_type=?, document_type_en=?, document_number=?, completion_date=?,
+                            institution_name=?, institution_name_en=?, country=?, country_en=?
+                        WHERE id=?
+                    """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
+                          row["institution_name"], inst_name_en, row["country"], row["country_en"],
+                          education_doc_id))
                 updated += 1
             else:
                 # Група для нового документа:

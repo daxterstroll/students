@@ -99,6 +99,36 @@ def _collect_field_conflicts(existing, new_values):
 
     return updates, conflicts
 
+def _normalize_excel_code(raw):
+    """Нормалізує «кодоподібне» значення з Excel (ЄДЕБО, ІПН, номер
+    документа тощо) в рядок.
+
+    openpyxl повертає числа як int/float, а не як рядок — а для кодів
+    важливі саме цифри без зайвих «.0». Наприклад, якщо в Excel клітинка
+    має числовий формат, значення 12345678 стане int 12345678, а
+    12345678.5 — float. Без цієї функції int падає на .strip(), а float
+    дає "12345678.0" — зіпсоване значення в БД.
+
+    Правила:
+      - None / '' → ''
+      - int → str(int)                 (12345678 → "12345678")
+      - float, що ціле → str(int)      (12345678.0 → "12345678")
+      - float, неціле → str(float)     (рідкісний випадок, зберігаємо як є)
+      - bool → str                     (рідкісний випадок)
+      - інше → str(...).strip()
+    """
+    if raw is None:
+        return ''
+    if isinstance(raw, bool):
+        return str(raw)
+    if isinstance(raw, int):
+        return str(raw)
+    if isinstance(raw, float):
+        if raw.is_integer():
+            return str(int(raw))
+        return str(raw)
+    return str(raw).strip()
+
 def _normalize_gender(raw):
     """
     Нормалізує значення колонки «Стать» з Excel до 'M'/'F' або None.
@@ -252,8 +282,14 @@ def import_from_excel():
                     # ── C: Дата народження ──
                     birth_date_raw = row[2]
                     # ── D: ЄДЕБО ──
-                    edebo_code = (row[3]
-                                  if len(row) > 3 and row[3] else '')
+                    # Через _normalize_excel_code, бо openpyxl може
+                    # повернути int/float — і тоді .strip() на ньому
+                    # падає, а float дає "12345678.0".
+                    edebo_code = (
+                        _normalize_excel_code(row[3])
+                        if len(row) > 3 and row[3] not in (None, '')
+                        else ''
+                    )
 
                     # ── E: Ліцензія ──
                     license_id = None
@@ -302,9 +338,11 @@ def import_from_excel():
                              else None)
 
                     # ── I: ІПН ──
-                    tax_id = (str(row[8]).strip()
-                              if len(row) > 8 and row[8] not in (None, '')
-                              else None)
+                    tax_id = (
+                        _normalize_excel_code(row[8]) or None
+                        if len(row) > 8 and row[8] not in (None, '')
+                        else None
+                    )
 
                     # ── J: Адреса ──
                     address_of_residence = (
@@ -520,7 +558,6 @@ def import_from_excel():
                         #    Працює ТІЛЬКИ в update-only режимі (без
                         #    групи), інакше є ризик оновити не того
                         #    студента при ФІО-дублікаті.
-                        date_mismatch_warning = False
                         if not existing and update_only_mode:
                             candidates = conn.execute(
                                 SELECT_EXISTING + """
@@ -543,7 +580,6 @@ def import_from_excel():
                                 # У всіх трьох випадках — попередження
                                 # в звіті, щоб адмін перевірив.
                                 if birth_date:
-                                    date_mismatch_warning = True
                                     warnings.append({
                                         'row': i,
                                         'fio': f"{last_name} {first_name} {middle_name}",
@@ -707,7 +743,6 @@ def import_from_excel():
                             enrollments_added += 1
                             enrollments_added_list.append(entry)
 
-                    # ── Оновлення порожніх полів картки ──
                     # ── Оновлення картки: пусті поля — автоматично,
                     #    заповнені-але-різні — в конфлікти (з кнопкою
                     #    «Замінити» в звіті). ──
@@ -726,7 +761,8 @@ def import_from_excel():
                             'phone_backup': phone_backup,
                             'email': email,
                             'tax_id': tax_id,
-                            'edebo_code': edebo_code,
+                            # 'edebo_code' — ОКРЕМО, нижче:
+                            # per-enrollment, не через UPDATE students
                             'address_of_residence': address_of_residence,
                             'gender': gender,
                         }
@@ -754,6 +790,66 @@ def import_from_excel():
                                     'action': 'other',
                                 })
 
+                        # ── edebo_code — ОКРЕМО: per-enrollment, ──
+                        # НЕ через UPDATE students (там лише кеш primary).
+                        # Записуємо через update_enrollment_edebo_code() —
+                        # ця функція обновлює enrollment.edebo_code і
+                        # автоматично синхронізує students.edebo_code,
+                        # якщо enrollment primary.
+                        edebo_updated = False
+                        if edebo_code:
+                            from routes.enrollments_service import (
+                                update_enrollment_edebo_code,
+                            )
+
+                            if update_only_mode:
+                                # Цільова група — primary enrollment
+                                target_enroll_row = conn.execute("""
+                                    SELECT group_id, edebo_code
+                                    FROM student_enrollments
+                                    WHERE student_id = ?
+                                      AND is_primary = 1
+                                      AND status = 'active'
+                                    LIMIT 1
+                                """, (sid,)).fetchone()
+                            else:
+                                # Цільова група — конкретна з колонки A
+                                target_enroll_row = conn.execute("""
+                                    SELECT group_id, edebo_code
+                                    FROM student_enrollments
+                                    WHERE student_id = ?
+                                      AND group_id = ?
+                                      AND status = 'active'
+                                    LIMIT 1
+                                """, (sid, group_id)).fetchone()
+
+                            if target_enroll_row:
+                                tgt_gid = target_enroll_row['group_id']
+                                # str() — на випадок, якщо в БД збережено
+                                # як int (старі дані) або None.
+                                cur_edc = str(
+                                    target_enroll_row['edebo_code'] or ''
+                                ).strip()
+                                new_edc = str(edebo_code or '').strip()
+
+                                if not cur_edc:
+                                    # Порожньо в enrollment → оновити
+                                    # (students.edebo_code синхронізується
+                                    # автоматично, якщо primary)
+                                    update_enrollment_edebo_code(
+                                        sid, tgt_gid, edebo_code, conn=conn,
+                                    )
+                                    edebo_updated = True
+                                elif cur_edc != new_edc:
+                                    # Різні значення → конфлікт
+                                    conflicts.append({
+                                        'field': 'edebo_code',
+                                        'label': 'ЄДЕБО',
+                                        'current': cur_edc,
+                                        'new': new_edc,
+                                        'group_id': tgt_gid,
+                                    })
+
                         # 1) Пусті поля БД — оновлюємо одразу
                         if updates:
                             set_clause = ', '.join(f"{k} = ?"
@@ -763,12 +859,17 @@ def import_from_excel():
                                 f"WHERE id = ?",
                                 list(updates.values()) + [sid],
                             )
+
+                        # data_updated +1 якщо хоч щось оновили
+                        if updates or edebo_updated:
                             data_updated += 1
                             data_updated_list.append({
                                 'row': i,
                                 'fio': f"{last_name} {first_name} {middle_name}",
                                 'student_id': sid,
-                                'fields': list(updates.keys()),
+                                'fields': list(updates.keys()) + (
+                                    ['edebo_code'] if edebo_updated else []
+                                ),
                             })
 
                         # 2) Заповнені-але-різні — conflict-warning з
@@ -788,15 +889,27 @@ def import_from_excel():
                                 'resolved': False,
                             })
 
-                    # ── Попередження про реактивацію з архіву ──
+                    # ── Попередження про архівного студента ──
                     if was_archived:
-                        warnings.append({
-                            'row': i,
-                            'fio': f"{last_name} {first_name} {middle_name}",
-                            'reason': (f"Студент був в архіві (ID {sid}) — "
-                                       f"enrollment створено, студент "
-                                       f"разархівовано"),
-                        })
+                        if update_only_mode:
+                            warnings.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'reason': (f"Студент в архіві (ID {sid}) — "
+                                           f"оновлено лише поля картки; "
+                                           f"enrollment не створювався "
+                                           f"(update-only режим). Для "
+                                           f"разархівації вкажіть групу "
+                                           f"в колонці A."),
+                            })
+                        else:
+                            warnings.append({
+                                'row': i,
+                                'fio': f"{last_name} {first_name} {middle_name}",
+                                'reason': (f"Студент був в архіві (ID {sid}) — "
+                                           f"enrollment створено, студент "
+                                           f"разархівовано"),
+                            })
 
                 except Exception as e:
                     logger.debug(
@@ -1089,6 +1202,17 @@ def import_report_apply_fields(report_id):
             flash(f'Студента ID {sid} не знайдено (можливо, видалений)', 'error')
             return redirect(url_for('students.import_report', report_id=report_id))
 
+        # ── Розділяємо edebo_code (per-enrollment) від інших полів ──
+        # Витягуємо edebo_code з to_apply, щоб він не пішов у
+        # UPDATE students (students.edebo_code — лише КЕШ primary
+        # enrollment'а, тому записуємо через update_enrollment_edebo_code).
+        edc_conflict = next(
+            (c for c in (target.get('conflicts') or [])
+             if c['field'] == 'edebo_code'),
+            None,
+        )
+        edebo_value = to_apply.pop('edebo_code', None)
+
         # Якщо міняємо укр. ФІО — перерахувати англійські варіанти
         new_last = to_apply.get('last_name_UA') or student['last_name_UA'] or ''
         new_first = to_apply.get('first_name_UA') or student['first_name_UA'] or ''
@@ -1097,28 +1221,50 @@ def import_report_apply_fields(report_id):
             to_apply['last_name_ENG'] = last_eng
             to_apply['first_name_ENG'] = first_eng
 
-        set_clause = ', '.join(f"{k} = ?" for k in to_apply)
-        conn.execute(
-            f"UPDATE students SET {set_clause} WHERE id = ?",
-            list(to_apply.values()) + [sid],
-        )
+        # 1) UPDATE students для останніх полів (без edebo)
+        if to_apply:
+            set_clause = ', '.join(f"{k} = ?" for k in to_apply)
+            conn.execute(
+                f"UPDATE students SET {set_clause} WHERE id = ?",
+                list(to_apply.values()) + [sid],
+            )
+
+        # 2) edebo_code — через enrollment (per-enrollment)
+        if edebo_value and edc_conflict:
+            edc_gid = edc_conflict.get('group_id')
+            if edc_gid:
+                from routes.enrollments_service import (
+                    update_enrollment_edebo_code,
+                )
+                update_enrollment_edebo_code(
+                    sid, edc_gid, edebo_value, conn=conn,
+                )
+
         conn.commit()
+
+        # ── Список фактично застосованих полів (edebo потрапив у
+        #    to_apply.pop(...) вище — його треба врахувати окремо) ──
+        applied_field_set = set(to_apply.keys())
+        if edebo_value and edc_conflict:
+            applied_field_set.add('edebo_code')
 
         # Позначаємо, що саме застосували
         applied = target.setdefault('applied_fields', [])
-        applied.extend(to_apply.keys())
+        applied.extend(sorted(applied_field_set))
 
-        # Прибираємо застосовані конфлікти
+        # Прибираємо застосовані конфлікти (по applied_field_set,
+        # а НЕ по to_apply — інакше edebo_code залишиться в remaining
+        # назавжди, і warning ніколи не стане resolved)
         remaining = [
             c for c in (target.get('conflicts') or [])
-            if c['field'] not in to_apply
+            if c['field'] not in applied_field_set
         ]
         target['conflicts'] = remaining
 
         if remaining:
             target['reason'] = (
                 f"Студент ID {sid} — залишилось {len(remaining)} розбіжностей "
-                f"(вирішено {len(to_apply)})"
+                f"(вирішено {len(applied_field_set)})"
             )
         else:
             target['resolved'] = True
@@ -1131,10 +1277,10 @@ def import_report_apply_fields(report_id):
         log_action(
             current_username(),
             f'замінив поля студента ID {sid} за звітом імпорту',
-            details=f'поля: {", ".join(to_apply.keys())}',
+            details=f'поля: {", ".join(sorted(applied_field_set))}',
         )
         flash(
-            f'Оновлено поля: {", ".join(to_apply.keys())}',
+            f'Оновлено поля: {", ".join(sorted(applied_field_set))}',
             'success',
         )
 
@@ -1243,6 +1389,17 @@ def import_report_apply_all_fields(report_id):
                 failed_rows.append((row_num, f'студент ID {sid} не знайдено'))
                 continue
 
+            # ── Розділяємо edebo_code (per-enrollment) від інших полів ──
+            # Витягуємо edebo_code з to_apply, щоб він не пішов у
+            # UPDATE students (students.edebo_code — лише КЕШ primary
+            # enrollment'а, тому записуємо через update_enrollment_edebo_code).
+            edc_conflict = next(
+                (c for c in (warning.get('conflicts') or [])
+                 if c['field'] == 'edebo_code'),
+                None,
+            )
+            edebo_value = to_apply.pop('edebo_code', None)
+
             # ФІО: якщо міняємо укр. прізвище/ім'я — перегенерувати ENG
             new_last = (
                 to_apply.get('last_name_UA')
@@ -1257,32 +1414,51 @@ def import_report_apply_all_fields(report_id):
                 to_apply['last_name_ENG'] = last_eng
                 to_apply['first_name_ENG'] = first_eng
 
-            set_clause = ', '.join(f"{k} = ?" for k in to_apply)
-            conn.execute(
-                f"UPDATE students SET {set_clause} WHERE id = ?",
-                list(to_apply.values()) + [sid],
-            )
+            # 1) UPDATE students для останніх полів (без edebo)
+            if to_apply:
+                set_clause = ', '.join(f"{k} = ?" for k in to_apply)
+                conn.execute(
+                    f"UPDATE students SET {set_clause} WHERE id = ?",
+                    list(to_apply.values()) + [sid],
+                )
+
+            # 2) edebo_code — через enrollment (per-enrollment)
+            if edebo_value and edc_conflict:
+                edc_gid = edc_conflict.get('group_id')
+                if edc_gid:
+                    from routes.enrollments_service import (
+                        update_enrollment_edebo_code,
+                    )
+                    update_enrollment_edebo_code(
+                        sid, edc_gid, edebo_value, conn=conn,
+                    )
+
+            # ── Список фактично застосованих полів ──
+            applied_field_set = set(to_apply.keys())
+            if edebo_value and edc_conflict:
+                applied_field_set.add('edebo_code')
 
             # Оновлюємо warning у звіті
             applied = warning.setdefault('applied_fields', [])
-            applied.extend(to_apply.keys())
+            applied.extend(sorted(applied_field_set))
+
             remaining = [
                 c for c in (warning.get('conflicts') or [])
-                if c['field'] not in to_apply
+                if c['field'] not in applied_field_set
             ]
             warning['conflicts'] = remaining
             if remaining:
                 warning['reason'] = (
                     f"Студент ID {sid} — залишилось {len(remaining)} "
-                    f"розбіжностей (вирішено {len(to_apply)})"
+                    f"розбіжностей (вирішено {len(applied_field_set)})"
                 )
             else:
                 warning['resolved'] = True
                 warning['resolved_at'] = datetime.now().strftime('%d.%m.%Y %H:%M')
                 warning['resolved_by'] = current_username()
 
-            applied_rows.append((row_num, sid, list(to_apply.keys())))
-            total_fields += len(to_apply)
+            applied_rows.append((row_num, sid, sorted(applied_field_set)))
+            total_fields += len(applied_field_set)
 
         conn.commit()
 

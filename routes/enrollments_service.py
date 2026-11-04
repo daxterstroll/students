@@ -267,6 +267,15 @@ def add_enrollment(
                 if base_row:
                     license_id = base_row[0] if not hasattr(base_row, 'keys') else base_row['id']
 
+        # Нормалізація edebo_code: int/float (з Excel) → str,
+        # щоб у БД не потрапило 12345678.0 або int.
+        if isinstance(edebo_code, float) and edebo_code.is_integer():
+            edebo_code = str(int(edebo_code))
+        elif edebo_code is not None and not isinstance(edebo_code, str):
+            edebo_code = str(edebo_code)
+        elif isinstance(edebo_code, str):
+            edebo_code = edebo_code.strip() or None
+            
         # Якщо edebo_code не передано — успадковуємо від студента
         if edebo_code is None:
             edebo_code = st['edebo_code'] if hasattr(st, 'keys') else st[2]
@@ -409,7 +418,7 @@ def update_enrollment_license(student_id: int, group_id: int,
 
 
 def update_enrollment_edebo_code(student_id: int, group_id: int,
-                                  edebo_code: Optional[str], conn=None):
+                                  edebo_code, conn=None):
     """Змінює код ЄДЕБО конкретного enrollment. Якщо це primary —
     синхронізує students.edebo_code."""
     own = conn is None
