@@ -188,6 +188,7 @@ CREATE TABLE IF NOT EXISTS student_enrollments (
     student_id  INTEGER NOT NULL,
     group_id    INTEGER NOT NULL,
     is_primary  INTEGER NOT NULL DEFAULT 0,
+    program_credits_override INTEGER,
     status      TEXT NOT NULL DEFAULT 'active',
     license_id  INTEGER,
     edebo_code  TEXT,                    -- ЄДЕБО для ЦЬОГО навчання
@@ -691,6 +692,28 @@ cur.execute("CREATE INDEX IF NOT EXISTS idx_study_periods_group ON student_study
 
 # student_enrollments — ЄДЕБО на рівні навчання
 _add_column_if_missing('student_enrollments', 'edebo_code', 'TEXT')
+
+# student_enrollments — кредити скороченої програми на рівні навчання
+_add_column_if_missing('student_enrollments', 'program_credits_override', 'INTEGER')
+
+# Одноразова міграція: students.program_credits_override → primary enrollment
+cur.execute("""
+    UPDATE student_enrollments
+    SET program_credits_override = (
+        SELECT s.program_credits_override FROM students s
+        WHERE s.id = student_enrollments.student_id
+          AND s.program_credits_override IS NOT NULL
+    )
+    WHERE program_credits_override IS NULL
+      AND is_primary = 1
+      AND EXISTS (
+          SELECT 1 FROM students s
+          WHERE s.id = student_enrollments.student_id
+            AND s.program_credits_override IS NOT NULL
+      )
+""")
+if cur.rowcount:
+    print(f"➕ student_enrollments.program_credits_override: перенесено з students для {cur.rowcount} primary-записів")
 
 # Позначка «додано/змінено без наказу» (адмінська корекція помилки).
 _add_column_if_missing('student_enrollments', 'is_correction', 'INTEGER NOT NULL DEFAULT 0')

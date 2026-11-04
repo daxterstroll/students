@@ -33,6 +33,7 @@ def ensure_enrollments_table(conn=None) -> None:
                 correction_note TEXT,
                 correction_by TEXT,
                 correction_at TEXT,
+                program_credits_override INTEGER,
                 notes       TEXT,
                 created_at  TEXT DEFAULT (datetime('now', 'localtime')),
                 UNIQUE (student_id, group_id),
@@ -42,14 +43,15 @@ def ensure_enrollments_table(conn=None) -> None:
             )
         """)
         # На випадок, якщо таблиця вже існує без цих колонок
-        try:
-            conn.execute("ALTER TABLE student_enrollments ADD COLUMN license_id INTEGER")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE student_enrollments ADD COLUMN edebo_code TEXT")
-        except Exception:
-            pass
+        for _col, _type in (
+            ('license_id', 'INTEGER'),
+            ('edebo_code', 'TEXT'),
+            ('program_credits_override', 'INTEGER'),
+        ):
+            try:
+                conn.execute(f"ALTER TABLE student_enrollments ADD COLUMN {_col} {_type}")
+            except Exception:
+                pass
         for _col, _type in (
             ('is_correction', 'INTEGER NOT NULL DEFAULT 0'),
             ('correction_note', 'TEXT'),
@@ -97,6 +99,23 @@ def backfill_primary_from_students(conn=None) -> int:
         if own:
             conn.close()
 
+def _sync_primary_program_credits(conn, student_id):
+    """Синхронізує кеш students.program_credits_override з primary enrollment'ом.
+
+    Викликається після будь-якої зміни, що може вплинути на primary
+    enrollment (add_enrollment з is_primary=1, set_primary_enrollment,
+    end_enrollment, update_enrollment_program_credits для primary).
+    """
+    conn.execute("""
+        UPDATE students SET program_credits_override = (
+            SELECT program_credits_override FROM student_enrollments
+            WHERE student_id = students.id
+              AND is_primary = 1
+              AND status = 'active'
+            LIMIT 1
+        )
+        WHERE id = ?
+    """, (student_id,))
 
 def list_student_enrollments(student_id: int, conn=None) -> list:
     """Повертає ВСІ enrollments студента з назвами групи та ліцензії.
@@ -115,6 +134,7 @@ def list_student_enrollments(student_id: int, conn=None) -> list:
             SELECT e.id, e.student_id, e.group_id, e.is_primary, e.status,
                    COALESCE(e.license_id, s.license_id) AS license_id,
                    COALESCE(e.edebo_code, s.edebo_code) AS edebo_code,
+                   e.program_credits_override,
                    e.order_id, e.notes, e.created_at,
                    e.is_correction, e.correction_note, e.correction_by, e.correction_at,
                    g.name AS group_name, g.start_year, g.study_form,
@@ -212,6 +232,7 @@ def add_enrollment(
     is_primary: bool = False,
     license_id: Optional[int] = None,
     edebo_code: Optional[str] = None,
+    program_credits_override: Optional[int] = None,
     order_id=None,
     notes=None,
     status: str = 'active',
@@ -269,22 +290,23 @@ def add_enrollment(
                 SET status = ?, order_id = COALESCE(?, order_id),
                     notes = COALESCE(?, notes), is_primary = ?,
                     license_id = COALESCE(?, license_id),
-                    edebo_code = COALESCE(?, edebo_code)
+                    edebo_code = COALESCE(?, edebo_code),
+                    program_credits_override = COALESCE(?, program_credits_override)
                 WHERE id = ?
                 """,
                 (status, order_id, notes, 1 if is_primary else 0,
-                 license_id, edebo_code, eid),
+                 license_id, edebo_code, program_credits_override, eid),
             )
         else:
             conn.execute(
                 """
                 INSERT INTO student_enrollments
                     (student_id, group_id, is_primary, status,
-                     license_id, edebo_code, order_id, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                     license_id, edebo_code, program_credits_override, order_id, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (student_id, group_id, 1 if is_primary else 0, status,
-                 license_id, edebo_code, order_id, notes),
+                 license_id, edebo_code, program_credits_override, order_id, notes),
             )
 
         if is_primary:
@@ -302,6 +324,7 @@ def add_enrollment(
                 "WHERE id = ?",
                 (group_id, license_id, edebo_code, student_id),
             )
+            _sync_primary_program_credits(conn, student_id)
 
         conn.execute("""
             UPDATE students SET archived = FALSE
@@ -317,6 +340,37 @@ def add_enrollment(
         if own:
             conn.close()
 
+def update_enrollment_program_credits(student_id: int, group_id: int,
+                                       program_credits_override: Optional[int], conn=None):
+    """Змінює кредити скороченої програми конкретного enrollment'а.
+    Якщо це primary — синхронізує кеш students.program_credits_override."""
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        ensure_enrollments_table(conn)
+        row = conn.execute(
+            "SELECT id, is_primary FROM student_enrollments "
+            "WHERE student_id = ? AND group_id = ?",
+            (student_id, group_id),
+        ).fetchone()
+        if not row:
+            return False, 'Запис про навчання в цій групі не знайдено'
+        eid = row['id'] if hasattr(row, 'keys') else row[0]
+        is_primary = bool(row['is_primary'] if hasattr(row, 'keys') else row[1])
+
+        conn.execute(
+            "UPDATE student_enrollments SET program_credits_override = ? WHERE id = ?",
+            (program_credits_override, eid),
+        )
+        if is_primary:
+            _sync_primary_program_credits(conn, student_id)
+        if own:
+            conn.commit()
+        return True, 'Кредити скороченої програми оновлено'
+    finally:
+        if own:
+            conn.close()
 
 def update_enrollment_license(student_id: int, group_id: int,
                                license_id: Optional[int], conn=None):
@@ -426,6 +480,7 @@ def set_primary_enrollment(student_id: int, group_id: int, conn=None):
             "edebo_code = COALESCE(?, edebo_code) WHERE id = ?",
             (group_id, lic, edc, student_id),
         )
+        _sync_primary_program_credits(conn, student_id)
         if own:
             conn.commit()
         return True, 'Основне навчання оновлено'
@@ -485,9 +540,10 @@ def end_enrollment(student_id: int, group_id: int, *, status: str = 'completed',
                     "edebo_code = COALESCE(?, edebo_code) WHERE id = ?",
                     (new_gid, new_lic, new_edc, student_id),
                 )
+                _sync_primary_program_credits(conn, student_id)
             else:
                 conn.execute(
-                    "UPDATE students SET group_id = NULL WHERE id = ?",
+                    "UPDATE students SET group_id = NULL, program_credits_override = NULL WHERE id = ?",
                     (student_id,),
                 )
 

@@ -328,6 +328,26 @@ main.container {
             color: var(--ink);
             font-weight: 700;
             transition: transform .15s ease, box-shadow .25s ease, background .3s ease;
+            /* Bootstrap 5.3 ставить свої --bs-btn-* для .btn-primary
+               (active-color: #fff, active-bg: синій, focus: синій обідок).
+               Наш градієнт перекриває фон, але :active через
+               .btn:first-child:active (0,3,0) перебиває наш
+               .btn-primary:active (0,2,0) і робить текст білим на
+               золотому + синій focus-обідок. Перекриваємо саме CSS-змінні
+               (не color напряму), інакше specificity не дозволить. */
+            --bs-btn-color: var(--ink);
+            --bs-btn-hover-color: var(--ink);
+            --bs-btn-active-color: var(--ink);
+            --bs-btn-disabled-color: var(--ink);
+            --bs-btn-bg: var(--brass);
+            --bs-btn-border-color: var(--brass);
+            --bs-btn-hover-bg: var(--brass);
+            --bs-btn-hover-border-color: var(--brass);
+            --bs-btn-active-bg: var(--brass);
+            --bs-btn-active-border-color: var(--brass);
+            --bs-btn-disabled-bg: var(--brass-lt);
+            --bs-btn-disabled-border-color: var(--brass-lt);
+            --bs-btn-focus-shadow-rgb: 200, 162, 74;   /* золотий focus-обідок, а не синій */
         }
         .btn-primary:hover {
             background: linear-gradient(160deg, var(--brass), var(--brass-lt));
@@ -977,6 +997,23 @@ html[data-theme="dark"] .btn-outline-success {
     --bs-btn-hover-border-color: #a8d4ad;
     --bs-btn-hover-color: #0e1b2c;
 }
+
+/* .btn-outline-warning у світлій темі Bootstrap дає чистий жовтий
+   #ffc107 на кремовому --paper-2 — практично невидимий. Замінюємо
+   на темно-золотий текст + золоту рамку/фон при наведенні, як решта
+   акцентів сайту. Темна тема вже має свій override нижче. */
+.btn-outline-warning {
+    --bs-btn-color: #8a6a1a;                 /* темно-бронзовий, читається на --paper-2 */
+    --bs-btn-border-color: var(--brass-semi);
+    --bs-btn-hover-bg: var(--brass);
+    --bs-btn-hover-border-color: var(--brass);
+    --bs-btn-hover-color: var(--ink);
+    --bs-btn-active-bg: var(--brass);
+    --bs-btn-active-border-color: var(--brass);
+    --bs-btn-active-color: var(--ink);
+    --bs-btn-focus-shadow-rgb: 200, 162, 74; /* золотий focus, а не жовтий Bootstrap */
+}
+
 html[data-theme="dark"] .btn-outline-warning {
     --bs-btn-color: var(--brass-lt);
     --bs-btn-border-color: var(--brass-semi);
@@ -1167,4 +1204,11 @@ html[data-theme="dark"] .reduced-program-badge {
 .reduced-program-badge--sm {
     font-size: .62em;
     padding: .14em .5em;
+}
+
+/* Іконки всередині бейджів у .page-header мають успадковувати колір
+   бейджа, а не .page-header .bi { color: var(--brass) }, інакше на
+   золотому бейджі золота сніжинка bi-snow стає невидимою. */
+.page-header .badge .bi {
+    color: inherit;
 }

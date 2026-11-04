@@ -394,6 +394,7 @@ def import_from_excel():
                             new_id, group_id,
                             is_primary=True,
                             license_id=license_id,
+                            program_credits_override=program_credits_override,
                             edebo_code=edebo_code, 
                             conn=conn,
                         )
@@ -470,9 +471,14 @@ def import_from_excel():
                             updates['edebo_code'] = edebo_code
                         if address_of_residence and not (existing['address_of_residence'] or '').strip():
                             updates['address_of_residence'] = address_of_residence
-                        if (program_credits_override
-                                and not existing['program_credits_override']):
-                            updates['program_credits_override'] = program_credits_override
+                        # program_credits_override тепер per-enrollment —
+                        # оновлюємо через update_enrollment_program_credits()
+                        # нижче, а не через UPDATE students.
+                        if program_credits_override:
+                            from routes.enrollments_service import update_enrollment_program_credits
+                            update_enrollment_program_credits(
+                                sid, group_id, program_credits_override, conn=conn,
+                            )
                         if gender and not (existing['gender'] or '').strip():
                             updates['gender'] = gender
 

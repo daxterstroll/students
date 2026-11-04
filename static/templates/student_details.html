@@ -55,19 +55,121 @@
                 {% endif %}
             </div>
 
-            <div class="flex-grow-1 text-center text-md-start">
-                <h2 class="mb-1">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }} {{ ui.reduced_program_badge(student) }}</h2>
-                <p class="mb-0 opacity-90">{{ student.group_name | default('Група не вказана', true) }}</p>
+
+
+		<div class="flex-grow-1 text-center text-md-start">
+                <h2 class="mb-1">
+                    {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
+                    {{ ui.reduced_program_badge(student) }}
+                    {% if student.status == 'frozen' %}
+                    <span class="badge" style="background: rgba(200,162,74,.9); color: #0e1b2c; font-size: .55em; vertical-align: middle;"
+                          title="Студент заморожений{{ ' (причина: ' ~ student.frozen_reason ~ ')' if student.frozen_reason }}">
+                        <i class="bi bi-snow"></i> заморожений
+                    </span>
+                    {% elif student.status == 'archived' %}
+                    <span class="badge" style="background: rgba(138,128,113,.9); color: #fff; font-size: .55em; vertical-align: middle;"
+                          title="Студент в архіві">
+                        <i class="bi bi-archive"></i> в архіві
+                    </span>
+                    {% endif %}
+                </h2>
+
+                <p class="mb-0 opacity-90">
+                    {% if student.status == 'frozen' and student.frozen_previous_group_name %}
+                        <span class="text-warning-emphasis">
+                            <i class="bi bi-snow"></i>
+                            Був(ла) у групі <strong>{{ student.frozen_previous_group_name }}</strong>
+                            {% if student.frozen_at %} — з {{ student.frozen_at }}{% endif %}
+                        </span>
+                    {% elif student.status == 'archived' %}
+                        <span class="opacity-75">
+                            <i class="bi bi-archive"></i>
+                            Студент в архіві — поверніть через кнопку нижче або через «Архів груп».
+                        </span>
+                    {% else %}
+                        {{ student.group_name | default('Група не вказана', true) }}
+                    {% endif %}
+                </p>
             </div>
+
+
+
+
+
 
         </div>
     </div>
+
+    {# ── Плашка «заморожений» ── #}
+    {% if student.status == 'frozen' %}
+    <div class="alert alert-warning d-flex align-items-start gap-3 mb-3">
+        <i class="bi bi-snow fs-4 flex-shrink-0"></i>
+        <div class="flex-grow-1">
+            <div class="fw-semibold mb-1">Студент заморожений</div>
+            <div class="small">
+                {% if student.frozen_previous_group_name %}
+                    Був(ла) у групі <strong>{{ student.frozen_previous_group_name }}</strong>.
+                {% endif %}
+                {% if student.frozen_reason %}
+                    <br>Причина: {{ student.frozen_reason }}
+                {% endif %}
+                {% if student.frozen_at %}
+                    <br><span class="text-muted">Заморожено: {{ student.frozen_at }}{% if student.frozen_by %} — {{ student.frozen_by }}{% endif %}</span>
+                {% endif %}
+                {% if student.frozen_document_file %}
+                    <br><a href="{{ url_for('static', filename=student.frozen_document_file) }}"
+                           target="_blank" class="small">
+                        <i class="bi bi-paperclip"></i> Документ-підстава
+                    </a>
+                {% endif %}
+            </div>
+            <div class="mt-2">
+                <a href="{{ url_for('admin.frozen_students') }}" class="btn btn-sm btn-outline-warning">
+                    <i class="bi bi-arrow-right-circle me-1"></i> Керувати заморозкою (на сторінці «Заморожені»)
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Плашка «в архіві» ── #}
+    {% if student.status == 'archived' %}
+    <div class="alert alert-secondary d-flex align-items-start gap-3 mb-3">
+        <i class="bi bi-archive fs-4 flex-shrink-0"></i>
+        <div class="flex-grow-1">
+            <div class="fw-semibold mb-1">Студент в архіві</div>
+            <div class="small text-muted mb-2">
+                Звичайно сюди потрапляють після відрахування або випуску.
+                Якщо потрапив помилково — поверніть нижче, вказавши групу.
+            </div>
+            <form method="POST"
+                  action="{{ url_for('students.unarchive_student', student_id=student.id) }}"
+                  class="row g-2 align-items-end"
+                  onsubmit="return confirm('Розархівувати студента?');">
+                <div class="col-sm-6">
+                    <label class="form-label small mb-1">Повернути в групу</label>
+                    <select name="group_id" class="form-select form-select-sm" required>
+                        <option value="">— оберіть —</option>
+                        {% for g in all_groups %}
+                        <option value="{{ g.id }}">{{ g.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-sm-auto">
+                    <button type="submit" class="btn btn-sm btn-success">
+                        <i class="bi bi-box-arrow-in-up me-1"></i> Розархівувати й повернути
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="d-flex justify-content-between mb-4 flex-wrap gap-2">
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-2"></i>До списку
         </a>
-        {% if student.group_id and not student.archived %}
+        {% if student.group_id and student.status == 'active' %}
         <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
             <i class="bi bi-snow me-2"></i>Заморозити студента
         </button>

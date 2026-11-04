@@ -674,11 +674,21 @@ def student_details(student_id):
     """Картка студента."""
     conn = get_db()
     student = conn.execute("""
-        SELECT s.*, g.program_credits, g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
-               il.name_ua AS license_name_ua, il.short_name_ua AS license_short_name_ua
+        SELECT s.*, g.program_credits,
+               g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
+               il.name_ua AS license_name_ua, il.short_name_ua AS license_short_name_ua,
+               fz.id            AS frozen_record_id,
+               fz.reason        AS frozen_reason,
+               fz.frozen_at     AS frozen_at,
+               fz.frozen_by     AS frozen_by,
+               fz.document_file AS frozen_document_file,
+               pg.name          AS frozen_previous_group_name
         FROM students s
         LEFT JOIN groups g ON s.group_id = g.id
         LEFT JOIN institution_licenses il ON s.license_id = il.id
+        LEFT JOIN frozen_students fz
+               ON fz.student_id = s.id AND fz.resolved_at IS NULL
+        LEFT JOIN groups pg ON pg.id = fz.previous_group_id
         WHERE s.id = ?
     """, (student_id,)).fetchone()
 
@@ -863,7 +873,7 @@ def student_details(student_id):
             'is_reduced': is_reduced_g,   
             'edebo_code': enr.get('edebo_code') or '',
             'group_program_credits': group_program_credits,
-            'student_credits_override': student['program_credits_override'],
+            'student_credits_override': enr.get('program_credits_override'),
             'subjects': subjects_list,
             'practices': practices_list,
             'courseworks': courseworks_list,
@@ -929,6 +939,14 @@ def student_details(student_id):
 
     student_dict = dict(student)
     military_dict = dict(military) if military else None
+
+    # Єдиний статус для шапки/бейджів, як у students.html
+    if student_dict.get('frozen_record_id'):
+        student_dict['status'] = 'frozen'
+    elif student_dict.get('archived'):
+        student_dict['status'] = 'archived'
+    else:
+        student_dict['status'] = 'active'
 
     student_orders = []
     if orders_tables_ready(conn=conn):
@@ -1332,18 +1350,26 @@ def add_student():
                 flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
                 conn.close()
                 return render_template('add_student.html', groups=groups, licenses=licenses)
+        program_credits_override = request.form.get('program_credits_override', type=int)
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
                 last_name_ENG, first_name_ENG, birth_date, group_id, edebo_code, tax_id, license_id,
-                phone, phone_backup, email, address_of_residence, gender
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (last_name_ua, first_name_ua, middle_name_ua, last_name_eng, first_name_eng,
-              birth_date, group_int, request.form.get('edebo_code'), request.form.get('tax_id') or None,
-              license_id, phone, phone_backup, email, address_of_residence, gender))
+                phone, phone_backup, email, address_of_residence, gender,
+                program_credits_override
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (last_name_ua, ..., gender, program_credits_override))
         student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         add_enrollment(student_id, group_int, is_primary=True,
-               license_id=license_id, edebo_code=edebo_code_form, conn=conn)
+               license_id=license_id, edebo_code=edebo_code_form,
+               program_credits_override=program_credits_override,
+               conn=conn)
+        student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        program_credits_override = request.form.get('program_credits_override', type=int)
+        add_enrollment(student_id, group_int, is_primary=True,
+               license_id=license_id, edebo_code=edebo_code_form,
+               program_credits_override=program_credits_override,
+               conn=conn)
         conn.commit()
 
         military_fields_list = [
@@ -1630,22 +1656,14 @@ def edit_student(student_id):
                 return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
             old_group = student['group_id']
+            
             # license_id — НЕ обновляем здесь (управляется через enrollments).
             phone = (request.form.get('phone') or '').strip() or None
             phone_backup = (request.form.get('phone_backup') or '').strip() or None
             email = (request.form.get('email') or '').strip() or None
             address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
-            program_credits_override_raw = request.form.get('program_credits_override', '').strip()
-            if program_credits_override_raw:
-                try:
-                    program_credits_override = int(program_credits_override_raw)
-                except ValueError:
-                    flash("Кредити (скорочена програма) мають бути числом", "error")
-                    conn.close()
-                    return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
-            else:
-                program_credits_override = None
-                        # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
+
+            # Стать: або явно обрана в формі ('M'/'F'), або авто за по батькові.
             gender_form = (request.form.get('gender') or 'auto').strip()
             middle_name_form = request.form.get('middle_name_UA') or ''
             if gender_form in ('M', 'F'):
@@ -1657,7 +1675,7 @@ def edit_student(student_id):
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
                     last_name_ENG=?, first_name_ENG=?, birth_date=?,
-                    group_id=?, tax_id=?, program_credits_override=?,
+                    group_id=?, tax_id=?,
                     phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
                 WHERE id=?
             """, (
@@ -1665,7 +1683,6 @@ def edit_student(student_id):
                 request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
                 request.form.get('first_name_ENG'), birth_date,
                 group_int, request.form.get('tax_id') or None,
-                program_credits_override,
                 phone, phone_backup, email, address_of_residence, gender, student_id
             ))
             
@@ -1804,6 +1821,45 @@ def delete_student(student_id):
 
     return redirect(url_for('students.student_list'))
 
+@students_bp.route('/students/<int:student_id>/unarchive', methods=['POST'])
+@permission_required('manage_students')
+def unarchive_student(student_id):
+    """Повертає архівного студента в обрану групу.
+
+    Використовує add_enrollment(), який сам знімає archived=FALSE, коли
+    з'являється активний enrollment — тому окремий UPDATE не потрібен.
+    """
+    from routes.enrollments_service import add_enrollment
+
+    group_id = request.form.get('group_id', type=int)
+    if not group_id:
+        flash('Оберіть групу, до якої повернути студента', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn = get_db()
+    try:
+        ok, msg = add_enrollment(
+            student_id, group_id, is_primary=True, conn=conn,
+        )
+        if not ok:
+            conn.close()
+            flash(f'Не вдалося розархівувати: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        conn.commit()
+        log_action(
+            current_username(),
+            f'розархівував студента ID {student_id} і повернув у групу ID {group_id}',
+        )
+        flash('Студента розархівовано і повернено в групу', 'success')
+    except Exception as e:
+        conn.rollback()
+        logger.error(f'unarchive_student failed (student={student_id}): {e}', exc_info=True)
+        flash(f'Помилка: {e}', 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('students.student_details', student_id=student_id))
 
 @students_bp.route('/students/<int:student_id>/generate_update_link', methods=['GET', 'POST'])
 @permission_required('manage_students')
@@ -2024,6 +2080,7 @@ def enrollment_add(student_id):
     license_id = request.form.get('license_id', type=int) or None
     edebo_code = (request.form.get('edebo_code') or '').strip() or None
     is_primary = request.form.get('is_primary') == '1'
+    program_credits_override = request.form.get('program_credits_override', type=int)
     order_number = (request.form.get('order_number') or '').strip()
     order_date = (request.form.get('order_date') or '').strip()
 
@@ -2055,7 +2112,9 @@ def enrollment_add(student_id):
             ok, msg = add_enrollment(
                 student_id, group_id,
                 is_primary=is_primary, license_id=license_id,
-                edebo_code=edebo_code, conn=conn,
+                edebo_code=edebo_code,
+                program_credits_override=program_credits_override,
+                conn=conn,
             )
             if ok:
                 conn.execute("""
@@ -2083,7 +2142,8 @@ def enrollment_add(student_id):
                 student_id, group_id,
                 is_primary=is_primary, license_id=license_id,
                 edebo_code=edebo_code,
-                order_id=order_id, conn=conn,
+                program_credits_override=program_credits_override,
+                conn=conn,
             )
 
         if not ok:
@@ -2158,7 +2218,8 @@ def enrollment_action(student_id, group_id):
     correction_reason = (request.form.get('correction_reason') or '').strip()
 
     if action_type not in (
-        'change_license', 'change_edebo_code', 'graduate', 'expel',
+        'change_license', 'change_edebo_code', 'change_program_credits',
+        'graduate', 'expel',
     ):
         flash('Невідома дія', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
@@ -2250,7 +2311,27 @@ def enrollment_action(student_id, group_id):
             if not ok:
                 flash(f'Не вдалося виконати дію: {msg}', 'error')
             return redirect(url_for('students.student_details', student_id=student_id))
+        elif action_type == 'change_program_credits':
+            # Пряме редагування без наказу — як change_edebo_code.
+            from routes.enrollments_service import update_enrollment_program_credits
+            new_credits_raw = (request.form.get('new_program_credits_override') or '').strip()
+            new_credits = int(new_credits_raw) if new_credits_raw else None
 
+            ok, msg = update_enrollment_program_credits(
+                student_id, group_id, new_credits, conn=conn,
+            )
+            if ok:
+                conn.commit()
+                log_action(
+                    current_username(),
+                    f"змінив кредити скороченої програми: student={student_id} group={group_id}",
+                    details=f"{'—' if new_credits is None else new_credits}",
+                )
+                flash('Кредити скороченої програми оновлено', 'success')
+            conn.close()
+            if not ok:
+                flash(f'Не вдалося виконати дію: {msg}', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
         elif action_type == 'graduate':
             if not bypass_order:
                 order_id = create_order(

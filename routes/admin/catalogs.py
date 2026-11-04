@@ -1080,7 +1080,7 @@ def license_report():
         SELECT
             s.id                AS student_id,
             s.last_name_UA, s.first_name_UA, s.middle_name_UA,
-            s.program_credits_override,
+            eff.program_credits_override,
             s.archived          AS student_archived,
             g.id                AS gid,
             g.name              AS group_name,
@@ -1092,13 +1092,13 @@ def license_report():
             il.short_name_ua    AS license_short_name,
             il.name_ua          AS license_name
         FROM (
-            SELECT student_id, group_id, license_id
+            SELECT student_id, group_id, license_id, program_credits_override
             FROM student_enrollments
             WHERE status = 'active' AND group_id IS NOT NULL
 
             UNION
 
-            SELECT s2.id AS student_id, s2.group_id, s2.license_id
+            SELECT s2.id AS student_id, s2.group_id, s2.license_id, s2.program_credits_override
             FROM students s2
             WHERE s2.group_id IS NOT NULL
               AND NOT EXISTS (
