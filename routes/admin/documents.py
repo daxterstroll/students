@@ -439,6 +439,91 @@ def manage_education_documents():
         student_enrollments=student_enrollments,
     )
 
+def _normalize_name_for_match(s):
+    """
+    Нормалізує ПІБ для нечіткого порівняння:
+      - нижній регістр;
+      - усі варіанти апострофа → один символ;
+      - усі варіанти дефіса/тире → пробіл;
+      - пунктуація → пробіл;
+      - зайві пробіли → один.
+    """
+    if not s:
+        return ''
+    s = str(s).lower().strip()
+    for ch in ('\u2019', '\u02BC', '\u2018', '`', '\u02BB', '\u2032', '\u055A', "'"):
+        s = s.replace(ch, "'")
+    for ch in ('\u2014', '\u2013', '\u2012', '\u2212', '\uFF0D', '\u2011', '-'):
+        s = s.replace(ch, ' ')
+    s = ''.join(c if (c.isalnum() or c.isspace() or c == "'") else ' ' for c in s)
+    return ' '.join(s.split())
+
+
+def fuzzy_find_student(cursor, full_name, threshold=90):
+    """
+    Нечіткий пошук студента за ПІБ.
+
+    Чому саме так:
+      * нормалізація регістру / апострофів / дефісів / пробілів — прибирає
+        розбіжності, які в старій версії «з'їдали» 5–20 пунктів схожості;
+      * token_set_ratio — коротший ПІБ (напр. без по батькові) повністю
+        «входить» у довший → 100. token_sort_ratio цей кейс НЕ вирішує
+        (дає ~74 через різницю в довжині рядків);
+      * поріг 90 — свідомо високий, бо token_set_ratio і так дає 100 для
+        будь-якого «subset»-матчу; нижчий поріг почне пропускати
+        «іваненко» → «іващенко» як хибні збіги;
+      * захист від неоднозначності: якщо 2+ студенти мають однаково
+        високий бал (типова ситуація, коли у файлі лише «Прізвище Ім'я»
+        без по батькові, а в базі двоє таких) — повертаємо None, щоб
+        рядок позначився як «студента не знайдено», а не підставив
+        першого-ліпшого.
+    """
+    if full_name is None:
+        return None, None, None
+    target = _normalize_name_for_match(full_name)
+    if not target:
+        return None, None, None
+
+    cursor.execute(
+        "SELECT id, last_name_UA, first_name_UA, middle_name_UA "
+        "FROM students WHERE archived=FALSE"
+    )
+    students = cursor.fetchall()
+    if not students:
+        return None, None, None
+
+    names = []
+    for s in students:
+        parts = (s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"])
+        joined = ' '.join(str(p) for p in parts if p and str(p).strip())
+        names.append(_normalize_name_for_match(joined))
+
+    # 1) точний збіг після нормалізації — найнадійніший
+    for idx, name in enumerate(names):
+        if name == target:
+            return students[idx]["id"], name, 100.0
+
+    # 2) нечітке — token_set_ratio (subset-толерантний)
+    matches = process.extract(
+        target, names, scorer=fuzz.token_set_ratio, limit=3,
+    )
+    if not matches:
+        return None, None, None
+
+    best_name, best_score, best_idx = matches[0]
+    if best_score < threshold:
+        return None, None, None
+
+    # 3) Захист від неоднозначності: якщо «другий претендент» має майже
+    #    такий самий бал — це найчастіше «Прізвище Ім'я» без по батькові
+    #    при двох студентах з таким ПІБ. Не вгадуємо — повертаємо «не знайдено».
+    if len(matches) > 1:
+        second_name, second_score, _ = matches[1]
+        if second_score >= threshold and (best_score - second_score) < 5:
+            return None, None, None
+
+    return students[best_idx]["id"], best_name, best_score
+
 
 @admin_bp.route('/admin/manage_passport_documents', methods=['GET', 'POST'])
 @permission_required('manage_passport_documents')
@@ -806,18 +891,6 @@ def load_preview_from_file(preview_id):
         return json.load(f)
 
 
-def fuzzy_find_student(cursor, full_name, threshold=80):
-    """Нечіткий пошук студента за повним ім'ям (ПІБ) серед активних студентів, використовуючи rapidfuzz; повертає ID найкращого збігу, якщо він проходить поріг схожості threshold."""
-    cursor.execute("SELECT id, last_name_UA, first_name_UA, middle_name_UA FROM students WHERE archived=FALSE")
-    students = cursor.fetchall()
-    names = ["{} {} {}".format(s["last_name_UA"], s["first_name_UA"], s["middle_name_UA"]) for s in students]
-    matches = process.extract(full_name, names, scorer=fuzz.ratio, limit=3)
-    for match_name, score, idx in matches:
-        if score >= threshold:
-            return students[idx]["id"], match_name, score
-    return None, None, None
-
-
 def translate_to_en(text):
     """
     Перекладає текст на англійську через офіційний DeepL API (прямий
@@ -995,7 +1068,9 @@ def import_documents_preview(file_path, db):
             preview_rows.append({"row_index": row_index, "error": "Пусті дані"})
             continue
 
-        student_id, matched_name, score = fuzzy_find_student(cursor, fio)
+        student_id, matched_name, score = fuzzy_find_student(
+            cursor, str(fio).strip() if fio is not None else None
+        )
 
         # ── Колонка E (опційна): ID групи документа ──
         # Порожньо → як і раніше, прив'язка до primary-групи студента.
@@ -1094,7 +1169,6 @@ def import_documents_preview(file_path, db):
                 "existing_info": f"(існує: {existing_doc['document_number'] or 'без номера'})",
                 "has_document": True,
                 "existing_doc_id": existing_doc["id"],
-                "existing_group_id": existing_doc["group_id"],
                 "existing_group_id": existing_doc["group_id"],
                 "old_document_type": existing_doc["document_type"] or "",
                 "old_document_type_en": existing_doc["document_type_en"] or "",
