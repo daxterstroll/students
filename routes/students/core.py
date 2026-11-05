@@ -581,8 +581,10 @@ def student_list():
 
         passport_doc = conn.execute("""
             SELECT document_type, series, number, issued_by, issue_date, valid_until, unique_number
-            FROM passport_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1
-        """, (student_dict['id'],)).fetchone()
+            FROM passport_documents
+            WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
+            ORDER BY id DESC LIMIT 1
+        """, (student_dict['id'], student_dict['group_id'])).fetchone()
         student_dict['has_passport'] = passport_doc is not None
         if passport_doc:
             pd = dict(passport_doc)
@@ -860,6 +862,17 @@ def student_details(student_id):
             d['attachments'] = get_attachments(conn, 'education_document', d['id'])
 
         short_name = (enr.get('group_name') or '').split(' (')[0].strip()
+        
+        group_passport_docs = conn.execute("""
+            SELECT id, group_id, document_type, series, number, issued_by,
+                   issue_date, valid_until, unique_number
+            FROM passport_documents
+            WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
+            ORDER BY id DESC
+        """, (student_id, gid)).fetchall()
+        group_passport_docs = [dict(d) for d in group_passport_docs]
+        for d in group_passport_docs:
+            d['attachments'] = get_attachments(conn, 'passport_document', d['id'])
 
         groups_data.append({
             'group_id': gid,
@@ -877,6 +890,7 @@ def student_details(student_id):
             'attestations': attestations_list,
             'study_periods': [dict(p) for p in group_study_periods],
             'education_docs': group_edu_docs,
+            'passport_docs': group_passport_docs,
         })
 
     # ── Захисна дедуплікація groups_data (на випадок, якщо вище
@@ -920,7 +934,7 @@ def student_details(student_id):
     student_attachments = get_attachments(conn, 'student', student_id)
 
     passport_docs = conn.execute(
-        "SELECT id, document_type, series, number, issued_by, issue_date, valid_until, unique_number "
+        "SELECT id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number "
         "FROM passport_documents WHERE student_id = ? ORDER BY id DESC", (student_id,)
     ).fetchall()
     passport_docs = [dict(d) for d in passport_docs]

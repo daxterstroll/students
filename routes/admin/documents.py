@@ -585,14 +585,16 @@ def manage_passport_documents():
         students_without_docs = cursor.fetchall()
 
     cursor.execute("""
-        SELECT g.id AS group_id, g.name AS group_name, s.id AS student_id,
+        SELECT COALESCE(pd.group_id, s.group_id) AS group_id,
+               g.name AS group_name, s.id AS student_id,
                s.last_name_UA, s.first_name_UA,
-               pd.id AS doc_id, pd.document_type, pd.series, pd.number,
+               pd.id AS doc_id, pd.group_id AS doc_group_id,
+               pd.document_type, pd.series, pd.number,
                pd.issued_by, pd.issue_date, pd.valid_until, pd.unique_number
         FROM passport_documents pd
         INNER JOIN students s ON pd.student_id = s.id
-        INNER JOIN groups g ON s.group_id = g.id
-        WHERE s.archived = FALSE AND g.archived = FALSE
+        LEFT JOIN groups g ON g.id = COALESCE(pd.group_id, s.group_id)
+        WHERE s.archived = FALSE AND (g.archived = FALSE OR g.archived IS NULL)
         ORDER BY g.name, s.last_name_UA, s.first_name_UA, pd.id
     """)
     rows = cursor.fetchall()
@@ -601,13 +603,49 @@ def manage_passport_documents():
     for row in rows:
         gid = row['group_id']
         if gid not in documents_by_group:
-            documents_by_group[gid] = {'group_name': row['group_name'], 'docs': []}
+            documents_by_group[gid] = {
+                'group_name': row['group_name'] or 'Без групи',
+                'docs': [],
+            }
         doc = dict(row)
         doc['attachments'] = get_attachments(db, 'passport_document', doc['doc_id'])
         documents_by_group[gid]['docs'].append(doc)
 
-    sorted_documents_by_group = sorted(documents_by_group.items(), key=lambda x: x[1]['group_name'])
+    # group_name може бути None: паспорт прив'язаний до групи, якої вже
+    # немає (видалена), або у студента немає основної групи (архівний/
+    # заморожений без enrollment'ів). Без `or ''` sorted() падає з
+    # TypeError: '<' not supported between instances of 'str' and 'NoneType'.
+    sorted_documents_by_group = sorted(
+        documents_by_group.items(),
+        key=lambda x: (x[1]['group_name'] or '').lower(),
+    )
 
+    # Enrollments усіх студентів у поточному списку — для селектора
+    # «Для якої групи» в модалках редагування.
+    student_ids_in_view = set()
+    for gdata in documents_by_group.values():
+        for doc in gdata['docs']:
+            student_ids_in_view.add(doc['student_id'])
+
+    enrollments_by_student = {}
+    if student_ids_in_view:
+        placeholders = ','.join('?' * len(student_ids_in_view))
+        enroll_rows = db.execute(f"""
+            SELECT e.student_id, e.group_id, e.is_primary, e.status,
+                   g.name AS group_name
+            FROM student_enrollments e
+            JOIN groups g ON g.id = e.group_id
+            WHERE e.student_id IN ({placeholders})
+            ORDER BY e.is_primary DESC, e.id
+        """, list(student_ids_in_view)).fetchall()
+        for r in enroll_rows:
+            enrollments_by_student.setdefault(r['student_id'], []).append(dict(r))
+
+    # Для add-форми (коли прийшли з картки студента)
+    student_enrollments = []
+    if student:
+        student_enrollments = enrollments_by_student.get(student['id'], [])
+    
     student_doc_id = None
     if student:
         for gid, gdata in documents_by_group.items():
@@ -693,13 +731,15 @@ def manage_passport_documents():
                 # з вимкненим JS), тому підстраховуємось і тут.
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
 
+                doc_group_id = request.form.get('doc_group_id', type=int)
+
                 cursor.execute("""
                     UPDATE passport_documents SET
-                        student_id=?, document_type=?, series=?, number=?,
+                        student_id=?, group_id=?, document_type=?, series=?, number=?,
                         issued_by=?, issue_date=?, valid_until=?, unique_number=?
                     WHERE id=?
                 """, (
-                    student_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    student_id, doc_group_id, document_type, request.form.get('series') or None, request.form.get('number'),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
                     doc_id,
@@ -737,12 +777,14 @@ def manage_passport_documents():
 
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
 
+                doc_group_id = request.form.get('doc_group_id', type=int)
+
                 cursor.execute("""
                     INSERT INTO passport_documents (
-                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    student_id, doc_group_id, document_type, request.form.get('series') or None, request.form.get('number'),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
                 ))
@@ -773,6 +815,8 @@ def manage_passport_documents():
         student=student,
         student_doc_id=student_doc_id,
         max_files=MAX_FILES,
+        student_enrollments=student_enrollments,
+        enrollments_by_student=enrollments_by_student,
         **passport_template_context(),
     )
 
@@ -812,6 +856,20 @@ def import_passport_documents():
                     fio = row[0]
                     document_type = str(row[1]).strip() if len(row) > 1 and row[1] else None
                     number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
+                    
+                    # Колонка I (9-й индекс) — опційний ID групи документа
+                    group_id_raw = row[8] if len(row) > 8 else None
+                    requested_group_id = None
+                    if group_id_raw not in (None, ''):
+                        try:
+                            requested_group_id = int(group_id_raw)
+                        except (ValueError, TypeError):
+                            skipped_details.append({
+                                'row': i, 'fio': str(fio or ''),
+                                'reason': f"некоректний ID групи в колонці I: '{group_id_raw}'",
+                            })
+                            skipped += 1
+                            continue
 
                     if not fio or not document_type or not number:
                         skipped_details.append({
@@ -846,11 +904,20 @@ def import_passport_documents():
                     if document_type not in PASSPORT_TYPES_ID_STYLE:
                         valid_until = None
 
+                    # Якщо групу не вказано — прив'язуємо до основної групи студента
+                    if requested_group_id is None:
+                        primary_row = cursor.execute(
+                            "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                        ).fetchone()
+                        target_group_id = primary_row[0] if primary_row else None
+                    else:
+                        target_group_id = requested_group_id
+
                     cursor.execute("""
                         INSERT INTO passport_documents (
-                            student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (student_id, document_type, series, number, issued_by,
+                            student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (student_id, target_group_id, document_type, series, number, issued_by,
                           issue_date, valid_until, unique_number))
                     inserted += 1
 
