@@ -119,6 +119,13 @@
                         </span>
                     {% else %}
                         {{ student.group_name | default('Група не вказана', true) }}
+                        {% if session.get('is_admin') and student.group_id %}
+                        <span class="badge"
+                              style="background: rgba(200,162,74,.18); color: var(--brass-lt); border: 1px solid var(--brass-semi); font-size: .68em; vertical-align: middle; margin-left: .4rem; font-family: 'JetBrains Mono', monospace;"
+                              title="ID групи в базі даних">
+                            ID {{ student.group_id }}
+                        </span>
+                        {% endif %}
                     {% endif %}
                 </p>
             </div>

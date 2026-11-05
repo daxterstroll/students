@@ -777,15 +777,15 @@ def manage_passport_documents():
     )
 
 
+# routes/admin/documents.py — на початку файлу вже є: import os, json, uuid, time
+# додайте константу поруч із TEMP_PREVIEW_FOLDER:
+
+PASSPORT_REPORTS_DIR = os.path.join(os.getcwd(), 'import_reports')
+
+
 @admin_bp.route('/admin/import_passport_documents', methods=['GET', 'POST'])
 @permission_required('import_passport_documents')
 def import_passport_documents():
-    """
-    Масовий імпорт паспортних даних з Excel: кожен рядок - один
-    студент (знаходиться нечітким пошуком за ПІБ серед усіх активних
-    студентів, routes/admin.fuzzy_find_student). Якщо студент уже має
-    паспортні дані - додає ще один запис (історія), не перезаписує.
-    """
     if request.method == 'POST':
         file = request.files.get('excel_file')
         if not file or not allowed_file(file.filename):
@@ -800,6 +800,8 @@ def import_passport_documents():
         conn = get_db()
         cursor = conn.cursor()
         inserted, skipped = 0, 0
+        skipped_details = []          # ← замість flash у циклі
+
         try:
             wb = load_workbook(filepath)
             sheet = wb.active
@@ -812,20 +814,27 @@ def import_passport_documents():
                     number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
 
                     if not fio or not document_type or not number:
-                        flash(f"❗ Рядок {i}: не заповнено ПІБ, тип документа чи номер - пропущено")
+                        skipped_details.append({
+                            'row': i, 'fio': str(fio or ''),
+                            'reason': 'не заповнено ПІБ, тип документа чи номер',
+                        })
                         skipped += 1
                         continue
+
                     if document_type not in PASSPORT_TYPES:
-                        flash(
-                            f"❗ Рядок {i}: невідомий тип документа '{document_type}'. "
-                            f"Очікується один з: {'; '.join(PASSPORT_TYPES)}. - пропущено"
-                        )
+                        skipped_details.append({
+                            'row': i, 'fio': str(fio or ''),
+                            'reason': f"невідомий тип документа '{document_type}'",
+                        })
                         skipped += 1
                         continue
 
                     student_id, matched_name, score = fuzzy_find_student(cursor, str(fio).strip())
                     if not student_id:
-                        flash(f"❗ Рядок {i}: студента не знайдено за ПІБ '{fio}' - пропущено")
+                        skipped_details.append({
+                            'row': i, 'fio': str(fio or ''),
+                            'reason': 'студента не знайдено за ПІБ (або неоднозначно)',
+                        })
                         skipped += 1
                         continue
 
@@ -834,8 +843,6 @@ def import_passport_documents():
                     issue_date = _excel_date_to_ua(row[5]) if len(row) > 5 else None
                     valid_until = _excel_date_to_ua(row[6]) if len(row) > 6 else None
                     unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
-                    # "Дійсний до" стосується лише ID-картки - якщо у файлі
-                    # випадково заповнено для книжки, ігноруємо значення.
                     if document_type not in PASSPORT_TYPES_ID_STYLE:
                         valid_until = None
 
@@ -843,11 +850,16 @@ def import_passport_documents():
                         INSERT INTO passport_documents (
                             student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number))
+                    """, (student_id, document_type, series, number, issued_by,
+                          issue_date, valid_until, unique_number))
                     inserted += 1
+
                 except Exception as e:
                     logger.error(f"Row {i} error (passport import): {e}")
-                    flash(f"❗ Рядок {i}: помилка обробки - {e}")
+                    skipped_details.append({
+                        'row': i, 'fio': str(fio or ''),
+                        'reason': f'помилка обробки: {e}',
+                    })
                     skipped += 1
                     continue
 
@@ -855,22 +867,52 @@ def import_passport_documents():
             log_action(
                 current_username(),
                 f"імпорт паспортних даних з Excel: додано {inserted}, пропущено {skipped}",
-                details=f"файл: {filename}"
+                details=f"файл: {filename}",
             )
-            flash(f"✅ Імпорт завершено. Додано: {inserted}, пропущено: {skipped}", "success")
         except Exception as e:
             conn.rollback()
-            flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
             logger.error(f"Error importing passport Excel: {e}")
+            flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
         finally:
             if os.path.exists(filepath):
                 os.remove(filepath)
             conn.close()
 
+        # ── Звіт: деталі — у файл, а не в cookie ──
+        if skipped_details:
+            os.makedirs(PASSPORT_REPORTS_DIR, exist_ok=True)
+            report_id = uuid.uuid4().hex
+            with open(os.path.join(PASSPORT_REPORTS_DIR, f'passport_{report_id}.json'),
+                      'w', encoding='utf-8') as f:
+                json.dump({
+                    'filename': filename,
+                    'inserted': inserted,
+                    'skipped': skipped,
+                    'skipped_details': skipped_details,
+                    'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
+                }, f, ensure_ascii=False)
+            return redirect(url_for('admin.import_passport_report', report_id=report_id))
+
+        flash(f"✅ Імпорт завершено. Додано: {inserted}", "success")
         return redirect(url_for('admin.import_passport_documents'))
 
     return render_template('import_passport_documents.html', **passport_template_context())
 
+
+@admin_bp.route('/admin/import_passport_documents/report/<report_id>')
+@permission_required('import_passport_documents')
+def import_passport_report(report_id):
+    """Детальний звіт — окрема сторінка, щоб не тримати 1300+ flash у сесії."""
+    report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
+    path = os.path.join(PASSPORT_REPORTS_DIR, f'passport_{report_id}.json')
+    if not report_id or not os.path.isfile(path):
+        flash('Звіт не знайдено або він застарів', 'warning')
+        return redirect(url_for('admin.import_passport_documents'))
+    with open(path, encoding='utf-8') as f:
+        report = json.load(f)
+    return render_template('import_passport_report.html', report=report)
+    
+    
 
 def save_preview_to_file(preview):
     """Зберігає проміжний результат парсингу Excel-файлу імпорту документів про освіту у тимчасовий JSON-файл (щоб не тримати великі дані в сесії) і повертає його ID."""
