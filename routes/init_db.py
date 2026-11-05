@@ -327,6 +327,7 @@ CREATE TABLE IF NOT EXISTS "activity_grades" (
 CREATE TABLE IF NOT EXISTS "passport_documents" (
     "id"    INTEGER,
     "student_id"    INTEGER NOT NULL,
+    "group_id"      INTEGER,
     "document_type" TEXT NOT NULL CHECK("document_type" IN (
         'Свідоцтво про народження',
         'Паспорт громадянина України',
@@ -340,7 +341,8 @@ CREATE TABLE IF NOT EXISTS "passport_documents" (
     "valid_until"   TEXT,
     "unique_number" TEXT,
     PRIMARY KEY("id" AUTOINCREMENT),
-    FOREIGN KEY("student_id") REFERENCES "students"("id")
+    FOREIGN KEY("student_id") REFERENCES "students"("id"),
+    FOREIGN KEY("group_id") REFERENCES "groups"("id")
 );
 CREATE TABLE IF NOT EXISTS "education_documents" (
     "id"    INTEGER,
@@ -773,6 +775,31 @@ _add_column_if_missing('diplomas', 'group_id', 'INTEGER')
 # (напр. для бакалаврату — шкільний атестат, для магістратури — диплом бакалавра)
 _add_column_if_missing('education_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
 cur.execute("CREATE INDEX IF NOT EXISTS idx_education_documents_group ON education_documents(group_id)")
+
+# Backfill: старі документи про освіту → до ОСНОВНОЇ групи студента
+cur.execute("""
+    UPDATE education_documents
+    SET group_id = (SELECT s.group_id FROM students s WHERE s.id = education_documents.student_id)
+    WHERE group_id IS NULL
+      AND EXISTS (SELECT 1 FROM students s WHERE s.id = education_documents.student_id AND s.group_id IS NOT NULL)
+""")
+if cur.rowcount:
+    print(f"➕ education_documents: прив'язано до групи {cur.rowcount} записів")
+
+# passport_documents — прив'язка паспорта до конкретного enrollment'а
+_add_column_if_missing('passport_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
+cur.execute("CREATE INDEX IF NOT EXISTS idx_passport_documents_group ON passport_documents(group_id)")
+
+# Backfill: старі паспорти → до ОСНОВНОЇ групи студента
+cur.execute("""
+    UPDATE passport_documents
+    SET group_id = (SELECT s.group_id FROM students s WHERE s.id = passport_documents.student_id)
+    WHERE group_id IS NULL
+      AND EXISTS (SELECT 1 FROM students s WHERE s.id = passport_documents.student_id AND s.group_id IS NOT NULL)
+""")
+if cur.rowcount:
+    print(f"➕ passport_documents: прив'язано до групи {cur.rowcount} записів")
+
 
 # Backfill: старі документи → до ОСНОВНОЇ групи студента
 cur.execute("""
@@ -1374,6 +1401,47 @@ cur.execute("""
     ON diplomas(student_id, group_id)
     WHERE group_id IS NOT NULL
 """)
+
+# UNIQUE-індекс на паспорти: (студент, група, тип, серія, номер).
+# Перед створенням — підчищаємо залишкові дублікати (idempotentno:
+# на чистій БД видаляти нічого, на вже почищеній — теж).
+_dup_passports = cur.execute("""
+    SELECT COUNT(*) FROM (
+        SELECT student_id, COALESCE(group_id, -1) AS grp, document_type,
+               COALESCE(series, '') AS ser, number
+        FROM passport_documents
+        GROUP BY student_id, COALESCE(group_id, -1), document_type,
+                 COALESCE(series, ''), number
+        HAVING COUNT(*) > 1
+    )
+""").fetchone()[0]
+
+if _dup_passports:
+    print(f"⚠️ passport_documents: знайдено {_dup_passports} дублікатів — чистка перед створенням UNIQUE INDEX")
+    cur.execute("""
+        DELETE FROM passport_documents
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM passport_documents
+            GROUP BY student_id, COALESCE(group_id, -1),
+                     document_type, COALESCE(series, ''), number
+        )
+    """)
+    print(f"   видалено записів: {cur.rowcount}")
+
+try:
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_passport_unique_per_group
+        ON passport_documents (
+            student_id,
+            COALESCE(group_id, -1),
+            document_type,
+            COALESCE(series, ''),
+            number
+        )
+    """)
+    print("✅ idx_passport_unique_per_group створено")
+except sqlite3.IntegrityError as e:
+    print(f"⚠️ Не вдалося створити UNIQUE INDEX на passport_documents: {e}")
 
 # Перевірка: скільки записів залишилось без group_id (зазвичай це
 # студенти без групи — архівні, заморожені, без enrollment'ів).

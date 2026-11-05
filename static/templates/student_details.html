@@ -452,11 +452,19 @@
 
                 {% include 'student_enrollments_section.html' %}
 
-                <!-- Паспортні дані -->
+                <!-- Паспортні дані — табами по групах (як оцінки й документи освіти) -->
                 <div class="accordion-item border-0 shadow-sm mb-3" style="border-radius: 12px; overflow: hidden;">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#passportCollapse">
-                            <i class="bi bi-person-vcard me-3 fs-4" style="color: var(--brass);"></i>Паспортні дані
+                            <i class="bi bi-person-vcard me-3 fs-4" style="color: var(--brass);"></i>
+                            <span class="flex-grow-1 text-start">
+                                Паспортні дані
+                                {% if groups_data|length > 1 %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-2">
+                                    {{ groups_data|length }} групи
+                                </span>
+                                {% endif %}
+                            </span>
                         </button>
                     </h2>
                     <div id="passportCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
@@ -466,50 +474,122 @@
                                     <i class="bi bi-pencil me-1"></i>Керувати паспортними даними
                                 </a>
                             </div>
-                            {% if passport_docs %}
-                                {% for doc in passport_docs %}
-                                <div class="border rounded-3 p-4 mb-4">
-                                    <h5>{{ doc.document_type }}</h5>
-                                    <div class="row g-3">
-                                        <div class="col-sm-6">
-                                            <div class="text-muted small">Серія та номер</div>
-                                            <div>{{ (doc.series ~ ' ' if doc.series else '') ~ doc.number }}</div>
-                                        </div>
-                                        <div class="col-sm-6">
-                                            <div class="text-muted small">Ким видано</div>
-                                            <div>{{ val(doc.issued_by) }}</div>
-                                        </div>
-                                        <div class="col-sm-6">
-                                            <div class="text-muted small">Дата видачі</div>
-                                            <div>{{ val(doc.issue_date) }}</div>
-                                        </div>
-                                        {% if doc.document_type in passport_types_id_style %}
-                                        <div class="col-sm-6">
-                                            <div class="text-muted small">Дійсний до</div>
-                                            <div>{{ val(doc.valid_until) }}</div>
-                                        </div>
-                                        {% endif %}
-                                        {% if doc.unique_number %}
-                                        <div class="col-sm-6">
-                                            <div class="text-muted small">Номер запису в ЄДДР</div>
-                                            <div>{{ doc.unique_number }}</div>
-                                        </div>
+
+                            {% if groups_data %}
+                                {% if groups_data|length > 1 %}
+                                <ul class="nav nav-tabs mb-3" role="tablist">
+                                    {% for g in groups_data %}
+                                    <li class="nav-item" role="presentation">
+                                        <button class="nav-link {% if loop.first %}active{% endif %}"
+                                                data-bs-toggle="tab"
+                                                data-bs-target="#tab-passport-{{ g.group_id }}"
+                                                type="button" role="tab">
+                                            {{ g.short_group_name }}
+                                            {{ group_tab_badge(g) }}
+                                        </button>
+                                    </li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+
+                                <div class="tab-content">
+                                    {% for g in groups_data %}
+                                    <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+                                         id="tab-passport-{{ g.group_id }}" role="tabpanel">
+                                        {% if g.passport_docs %}
+                                            {% set _newest = g.passport_docs[0] %}
+                                            {% set _others = g.passport_docs[1:] %}
+
+                                            {# Актуальний (найновіший) паспорт — розгорнуто #}
+                                            <div class="border rounded-3 p-4 mb-3">
+                                                <h5 class="d-flex align-items-center justify-content-between">
+                                                    <span>{{ _newest.document_type }}</span>
+                                                    {% if not _newest.group_id %}
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis"
+                                                          title="Документ без прив'язки до конкретної групи — показується у всіх групах студента">
+                                                        <i class="bi bi-question-circle"></i> загальний
+                                                    </span>
+                                                    {% endif %}
+                                                </h5>
+                                                <div class="row g-3">
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Серія та номер</div>
+                                                        <div>{{ (_newest.series ~ ' ' if _newest.series else '') ~ _newest.number }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Ким видано</div>
+                                                        <div>{{ val(_newest.issued_by) }}</div>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Дата видачі</div>
+                                                        <div>{{ val(_newest.issue_date) }}</div>
+                                                    </div>
+                                                    {% if _newest.document_type in passport_types_id_style %}
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Дійсний до</div>
+                                                        <div>{{ val(_newest.valid_until) }}</div>
+                                                    </div>
+                                                    {% endif %}
+                                                    {% if _newest.unique_number %}
+                                                    <div class="col-sm-6">
+                                                        <div class="text-muted small">Номер запису в ЄДДР</div>
+                                                        <div>{{ _newest.unique_number }}</div>
+                                                    </div>
+                                                    {% endif %}
+                                                </div>
+                                                {% if _newest.attachments %}
+                                                <div class="mt-2">
+                                                    <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
+                                                    {% for a in _newest.attachments %}
+                                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
+                                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+                                                    </a>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+
+                                            {# Попередні паспорти — згорнуто #}
+                                            {% if _others %}
+                                            <div class="mb-2">
+                                                <button class="btn btn-sm btn-outline-secondary"
+                                                        data-bs-toggle="collapse"
+                                                        data-bs-target="#passport-history-{{ g.group_id }}">
+                                                    <i class="bi bi-archive me-1"></i>
+                                                    Історія ({{ _others|length }} попередніх документів)
+                                                </button>
+                                                <div class="collapse mt-2" id="passport-history-{{ g.group_id }}">
+                                                    {% for doc in _others %}
+                                                    <div class="border rounded-3 p-3 mb-2 small">
+                                                        <div class="d-flex justify-content-between flex-wrap gap-1">
+                                                            <span>
+                                                                <strong>{{ doc.document_type }}</strong>
+                                                                № {{ (doc.series ~ ' ' if doc.series else '') ~ doc.number }}
+                                                            </span>
+                                                            <span class="text-muted">від {{ doc.issue_date or '—' }}</span>
+                                                        </div>
+                                                        {% if doc.issued_by %}
+                                                        <div class="text-muted mt-1">Видано: {{ doc.issued_by }}</div>
+                                                        {% endif %}
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                            {% endif %}
+                                        {% else %}
+                                            <div class="p-4 text-center text-muted">
+                                                <i class="bi bi-person-vcard fs-4 d-block mb-2"></i>
+                                                Для цієї групи паспортних даних ще не додано
+                                            </div>
                                         {% endif %}
                                     </div>
-                                    {% if doc.attachments %}
-                                    <div class="mt-2">
-                                        <div class="small text-muted mb-1"><i class="bi bi-paperclip"></i> Скановані копії:</div>
-                                        {% for a in doc.attachments %}
-                                        <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                                            <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-                                        </a>
-                                        {% endfor %}
-                                    </div>
-                                    {% endif %}
+                                    {% endfor %}
                                 </div>
-                                {% endfor %}
                             {% else %}
-                                <p class="text-muted text-center py-4">Паспортні дані відсутні</p>
+                                <div class="p-4 text-center text-muted">
+                                    <i class="bi bi-person-vcard fs-4 d-block mb-2"></i>
+                                    Паспортні дані відсутні
+                                </div>
                             {% endif %}
                         </div>
                     </div>

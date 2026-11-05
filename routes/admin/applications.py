@@ -627,10 +627,11 @@ def pending_student_review(pending_id):
             if row['passport_number']:
                 cur_passport = conn.execute("""
                     INSERT INTO passport_documents (
-                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     student_id,
+                    group_id,
                     normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
                     row['passport_series'],
                     row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
@@ -859,12 +860,17 @@ def pending_student_review(pending_id):
 
             passport_id_for_scans = None
             if request.form.get('add_passport') and row['passport_number']:
+                _grp_row = conn.execute(
+                    "SELECT group_id FROM students WHERE id = ?", (existing_id,)
+                ).fetchone()
+                _doc_gid = _grp_row['group_id'] if _grp_row else None
+
                 cur_passport = conn.execute("""
                     INSERT INTO passport_documents (
-                        student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    existing_id,
+                    existing_id, _doc_gid,
                     normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
                     row['passport_series'],
                     row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
@@ -1255,11 +1261,16 @@ def update_request_review(request_id):
 
             if 'passport' in allowed_fields and submitted.get('passport') and request.form.get('apply_passport'):
                 p = submitted['passport']
+                _grp_row = conn.execute(
+                    "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                ).fetchone()
+                _doc_gid = _grp_row['group_id'] if _grp_row else None
+
                 cur_p = conn.execute("""
-                    INSERT INTO passport_documents (student_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO passport_documents (student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id,
+                    student_id, _doc_gid,
                     normalize_passport_type(p.get('document_type')) or PASSPORT_TYPE_DEFAULT,
                     p.get('series'), p.get('number'), p.get('issued_by'),
                     p.get('issue_date'), p.get('valid_until'), p.get('unique_number')
