@@ -50,10 +50,6 @@
                             {% if students_by_group[group.id] %}
                             <ul class="list-group mt-2">
                                 {% for student in students_by_group[group.id] %}
-                                <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
-                                    <span>{{ student.last_name_UA }} {{ student.first_name_UA }} <span class="text-muted">({{ student.birth_date }})</span> {{ ui.reduced_program_badge_for(student.program_credits_override, group.program_credits) }}</span>
-                                    <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-primary" title="Деталі студента">Деталі</a>
-                                </li>
 								<li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-2">
 									<span>
 										{{ student.last_name_UA }} {{ student.first_name_UA }}

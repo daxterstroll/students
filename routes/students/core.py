@@ -728,44 +728,43 @@ def student_details(student_id):
                 return label
         return name
 
-    # ── Дані по КОЖНІЙ групі, в якій навчається студент ──
-    active_enrollments = [e for e in enrollments if e['status'] == 'active']
+    # ── Дані по КОЖНІЙ групі, в якій навчається або навчався студент ──
+    # Беремо ВСІ enrollments, а не лише активні: у випущеного (або
+    # відрахованого) студента active_enrollments порожній, і раніше вся
+    # секція «Оцінки / Документи / Періоди» зникала, хоча дані в БД є.
+    # list_student_enrollments уже сортує так, що активні йдуть першими,
+    # а завершені — після них.
+    display_enrollments = list(enrollments)
+
+    # Legacy-fallback: якщо в студента є group_id, але enrollment'а для
+    # цієї групи немає (старі дані до впровадження enrollment-моделі)
     if student['group_id'] and not any(
-        e['group_id'] == student['group_id'] for e in active_enrollments
+        e['group_id'] == student['group_id'] for e in display_enrollments
     ):
-        active_enrollments.insert(0, {
+        display_enrollments.insert(0, {
             'group_id': student['group_id'],
             'group_name': student['group_name'],
             'is_primary': 1,
+            'status': 'active',
             'program_credits': student['program_credits'],
         })
 
-    # ── Захисна дедуплікація active_enrollments: одна група — один рядок ──
-    # Через історичні дані чи баги в попередніх версіях active_enrollments
-    # міг містити кілька записів з однаковим group_id (наприклад, fallback
-    # нижче додає запис для student.group_id, навіть якщо реальний
-    # enrollment для цієї групи вже є з іншим типом). Якщо так — лишаємо
-    # лише перший, з пріоритетом:
-    #   1) is_primary=1
-    #   2) active
-    #   3) найменший id (стабільність порядку)
+    # ── Захисна дедуплікація: одна група — один рядок ──
     _seen_gids = set()
     _deduped_enrollments = []
-    # Спочатку — ті, що з реального enrollment'а (не fallback)
-    for _enr in active_enrollments:
+    for _enr in display_enrollments:
         _gid = _enr.get('group_id')
         if _gid is None or _gid in _seen_gids:
             continue
         _seen_gids.add(_gid)
         _deduped_enrollments.append(_enr)
-    active_enrollments = _deduped_enrollments
+    display_enrollments = _deduped_enrollments
 
-    # Гарантуємо, що «основна» група рівно одна — інакше обидві таби
-    # виглядають як «осн.», і здається, що це та сама вкладка двічі.
-    _primary_count = sum(1 for _e in active_enrollments if _e.get('is_primary'))
+    # Гарантуємо, що «основна» група рівно одна
+    _primary_count = sum(1 for _e in display_enrollments if _e.get('is_primary'))
     if _primary_count > 1:
         _first_primary = True
-        for _e in active_enrollments:
+        for _e in display_enrollments:
             if _e.get('is_primary'):
                 if _first_primary:
                     _first_primary = False
@@ -773,7 +772,7 @@ def student_details(student_id):
                     _e['is_primary'] = 0
 
     groups_data = []
-    for enr in active_enrollments:
+    for enr in display_enrollments:
         gid = enr['group_id']
         group_program_credits = enr.get('program_credits')
         is_reduced_g = is_student_on_reduced_program(conn, student_id, gid)
@@ -870,7 +869,8 @@ def student_details(student_id):
             'group_name': enr.get('group_name') or '',
             'short_group_name': short_name or f"Група #{gid}",
             'is_primary': bool(enr['is_primary']),
-            'is_reduced': is_reduced_g,   
+            'status': enr.get('status') or 'active',
+            'is_reduced': is_reduced_g,
             'edebo_code': enr.get('edebo_code') or '',
             'group_program_credits': group_program_credits,
             'student_credits_override': enr.get('program_credits_override'),

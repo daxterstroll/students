@@ -20,6 +20,39 @@
     <span class="text-muted fst-italic small">Оцінку не виставлено</span>
 {%- endif -%}
 {% endmacro %}
+
+{# ── Єдиний блок бейджа статусу вкладки групи ──
+   Використовується однаково у трьох розділах: Оцінки, Документи про
+   освіту, Періоди навчання — щоб не дублювати 30 рядків тричі і не
+   забути оновити десь одне з трьох місць (саме так і сталося раніше).
+   Показує:
+     - 'graduated' / 'expelled' / 'frozen' — якщо навчання в цій групі
+       завершене (архів/відрахування/заморожування), дані все одно
+       доступні для перегляду;
+     - 'осн.' / 'парал.' — для активних enrollments. #}
+{% macro group_tab_badge(g) %}
+{% if g.status == 'graduated' %}
+<span class="badge bg-success-subtle text-success-emphasis ms-1"
+      title="Випуск — група закрита, дані доступні для перегляду">
+    <i class="bi bi-mortarboard-fill"></i> випуск
+</span>
+{% elif g.status == 'expelled' %}
+<span class="badge bg-danger-subtle text-danger-emphasis ms-1"
+      title="Відраховано — група закрита">
+    <i class="bi bi-person-x"></i> відраховано
+</span>
+{% elif g.status == 'frozen' %}
+<span class="badge bg-info-subtle text-info-emphasis ms-1"
+      title="Заморожено — група призупинена">
+    <i class="bi bi-snow"></i> заморожено
+</span>
+{% elif g.is_primary %}
+<span class="badge bg-primary ms-1" title="Основна група">осн.</span>
+{% else %}
+<span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
+{% endif %}
+{% endmacro %}
+
 {% block main_class %}py-3{% endblock %} 
 {% block content %}
 <div class="container py-4">
@@ -55,8 +88,6 @@
                 {% endif %}
             </div>
 
-
-
 		<div class="flex-grow-1 text-center text-md-start">
                 <h2 class="mb-1">
                     {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
@@ -91,11 +122,6 @@
                     {% endif %}
                 </p>
             </div>
-
-
-
-
-
 
         </div>
     </div>
@@ -819,11 +845,7 @@
 											data-bs-target="#tab-grades-{{ g.group_id }}"
 											type="button" role="tab">
 										{{ g.short_group_name }}
-										{% if g.is_primary %}
-										<span class="badge bg-primary ms-1" title="Основна група">осн.</span>
-										{% else %}
-										<span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
-										{% endif %}
+										{{ group_tab_badge(g) }}
 										{% if g.is_reduced %}
 										<span class="reduced-program-badge reduced-program-badge--sm ms-1"
 											  title="Скорочена програма: {{ g.student_credits_override }} з {{ g.group_program_credits }} кр.">
@@ -998,11 +1020,7 @@
                                                 data-bs-target="#tab-edudocs-{{ g.group_id }}"
                                                 type="button" role="tab">
                                             {{ g.short_group_name }}
-                                            {% if g.is_primary %}
-                                            <span class="badge bg-primary ms-1" title="Основна група">осн.</span>
-                                            {% else %}
-                                            <span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
-                                            {% endif %}
+                                            {{ group_tab_badge(g) }}
                                         </button>
                                     </li>
                                     {% endfor %}
@@ -1189,11 +1207,7 @@
                                                 data-bs-target="#tab-periods-{{ g.group_id }}"
                                                 type="button" role="tab">
                                             {{ g.short_group_name }}
-                                            {% if g.is_primary %}
-                                            <span class="badge bg-primary ms-1" title="Основна група">осн.</span>
-                                            {% else %}
-                                            <span class="badge bg-secondary ms-1" title="Паралельне навчання">парал.</span>
-                                            {% endif %}
+                                            {{ group_tab_badge(g) }}
                                         </button>
                                     </li>
                                     {% endfor %}
