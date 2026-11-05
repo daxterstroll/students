@@ -138,12 +138,19 @@ def dashboard():
     if include_frozen:
         frozen_exclude_cond = ""
     else:
+        # Будь-який студент з активною (resolved_at IS NULL) заморозкою
+        # виключається зі статистики. Це та сама логіка, що вже
+        # використовується на сторінці «Студенти» (student_list) і в
+        # «Звіті по ліцензіях» (license_report) — тому лічильники
+        # скрізь узгоджені. Раніше тут був додатковий «розумний»
+        # виняток для паралельних студентів (заморожений в одній
+        # групі, але з активним enrollment в іншій — не виключався),
+        # через що такий студент потрапляв одночасно і в «Активних»,
+        # і в «Заморожених».
         frozen_exclude_cond = """
-            AND NOT (
-                EXISTS (SELECT 1 FROM frozen_students fz
-                        WHERE fz.student_id = s.id AND fz.resolved_at IS NULL)
-                AND NOT EXISTS (SELECT 1 FROM student_enrollments se
-                                WHERE se.student_id = s.id AND se.status = 'active')
+            AND NOT EXISTS (
+                SELECT 1 FROM frozen_students fz
+                WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
             )
         """
     student_archived_cond = ("" if include_archived else "AND COALESCE(s.archived,0)=0") + " " + frozen_exclude_cond

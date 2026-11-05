@@ -43,6 +43,13 @@
                                 <span class="enrollment-badge enrollment-badge--parallel"
                                       title="Паралельне навчання">паралельне</span>
                                 {% endif %}
+                                {% if session.get('is_admin') %}
+                                <span class="enrollment-badge"
+                                      style="background: rgba(200,162,74,.18); color: var(--brass-lt); border: 1px solid var(--brass-semi); font-family: 'JetBrains Mono', monospace; font-weight: 600;"
+                                      title="ID групи в базі даних">
+                                    ID {{ e.group_id }}
+                                </span>
+                                {% endif %}
                             </div>
                             <div class="enrollment-card__meta">
                                 {% if e.start_year %}<span><i class="bi bi-calendar3"></i> {{ e.start_year }}</span>{% endif %}
