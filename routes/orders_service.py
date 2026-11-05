@@ -423,13 +423,17 @@ def list_orders(
 
 def get_student_orders(student_id: int, conn=None) -> list[dict]:
     """
-    Таймлайн наказів студента (для картки).
+    Таймлайн наказів студента.
 
     Включає:
       1) прямі order_items entity_type='student'
       2) накази на поточну групу студента
       3) накази на групи з previous_group_id (відрахування / заморозка)
       4) накази на group_id з payload enrollment цього студента
+      5) накази на ВСІ групи з enrollments студента (активні + історичні)
+
+    Кожен наказ отримує поле `group_refs` — список груп, яких він
+    стосується для цього студента (див. _order_group_refs).
     """
     own_conn = conn is None
     if own_conn:
@@ -443,18 +447,24 @@ def get_student_orders(student_id: int, conn=None) -> list[dict]:
         if row and row[0]:
             group_ids.add(int(row[0]))
 
-        # групи з заморозки
+        # ВСІ групи з enrollments студента (активні + graduated/expelled/frozen)
         for r in conn.execute(
-            """
-            SELECT previous_group_id FROM frozen_students
-            WHERE student_id=? AND previous_group_id IS NOT NULL
-            """,
+            "SELECT DISTINCT group_id FROM student_enrollments "
+            "WHERE student_id=? AND group_id IS NOT NULL",
+            (student_id,),
+        ).fetchall():
+            group_ids.add(int(r[0]))
+
+        # Групи з заморозки
+        for r in conn.execute(
+            "SELECT previous_group_id FROM frozen_students "
+            "WHERE student_id=? AND previous_group_id IS NOT NULL",
             (student_id,),
         ).fetchall():
             if r[0]:
                 group_ids.add(int(r[0]))
 
-        # group_id з payload enrollment / інших student-items
+        # Group_id з payload enrollment / expulsion
         for r in conn.execute(
             """
             SELECT oi.payload
@@ -466,12 +476,13 @@ def get_student_orders(student_id: int, conn=None) -> list[dict]:
             (student_id,),
         ).fetchall():
             pl = _payload_loads(r[0])
-            gid = pl.get('group_id') or pl.get('previous_group_id')
-            if gid:
-                try:
-                    group_ids.add(int(gid))
-                except (TypeError, ValueError):
-                    pass
+            for k in ('group_id', 'previous_group_id', 'from_group_id', 'to_group_id'):
+                gid = pl.get(k)
+                if gid:
+                    try:
+                        group_ids.add(int(gid))
+                    except (TypeError, ValueError):
+                        pass
 
         # 1) прямі
         direct = conn.execute(
@@ -514,6 +525,28 @@ def get_student_orders(student_id: int, conn=None) -> list[dict]:
             )
             d['payload'] = _payload_loads(d.pop('item_payload', None))
             d['payload_text'] = format_payload(conn, d['order_type'], d['payload'])
+
+            # ── Усі групи, яких стосується наказ для цього студента ──
+            # SQL-фільтр: лише items, які належать САМЕ цьому студенту,
+            # або group items (для масових наказів). Це також швидше —
+            # з БД повертається менший результат.
+            full_items_rows = conn.execute(
+                "SELECT entity_type, entity_id, payload FROM order_items "
+                "WHERE order_id=? "
+                "  AND (entity_type = 'group' "
+                "       OR (entity_type = 'student' AND entity_id = ?))",
+                (d['id'], student_id),
+            ).fetchall()
+            full_items = [
+                {'entity_type': ir['entity_type'],
+                 'entity_id': ir['entity_id'],
+                 'payload': _payload_loads(ir['payload'])}
+                for ir in full_items_rows
+            ]
+            d['group_refs'] = _order_group_refs(
+                conn, d['order_type'], full_items, group_ids, student_id
+            )
+
             atts = conn.execute(
                 """
                 SELECT id, file_path, original_name
@@ -540,7 +573,6 @@ def get_student_orders(student_id: int, conn=None) -> list[dict]:
     finally:
         if own_conn:
             conn.close()
-
 
 
 def student_has_enrollment(student_id: int, conn=None) -> bool:
@@ -859,3 +891,335 @@ def mirror_license_transfer_order(
         legacy_id=legacy_id,
         conn=conn,
     )
+
+def get_enrollment_pairs(conn=None) -> set:
+    """
+    Множина пар (student_id, group_id), для яких уже є активний наказ
+    типу 'enrollment'. Використовується для перевірки, чи в конкретній
+    ГРУПІ студента вже оформлено зарахування (а не «студент має якийсь
+    наказ десь», як у get_enrollment_student_ids).
+
+    Потрібно для паралельного навчання: якщо студент вчиться у групах
+    A і B, наказ для A не повинен блокувати створення наказу для B.
+    """
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT oi.entity_id AS student_id, oi.payload
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.status = 'active'
+              AND o.order_type = 'enrollment'
+              AND oi.entity_type = 'student'
+        """).fetchall()
+        result = set()
+        for r in rows:
+            try:
+                payload = json.loads(r['payload'] or '{}')
+                gid = payload.get('group_id')
+                if gid:
+                    result.add((int(r['student_id']), int(gid)))
+            except (ValueError, TypeError):
+                continue
+        return result
+    finally:
+        if own:
+            conn.close()
+
+
+def get_active_groups_for_student(cursor, student_id: int) -> list:
+    """
+    Повертає список активних груп студента:
+        [(group_id, group_name, is_primary), ...]
+    Primary йде першим, далі паралельні за порядком створення enrollment'а.
+
+    Legacy-fallback: студент без enrollment'ів, але з group_id —
+    повертає одну групу.
+    """
+    rows = cursor.execute("""
+        SELECT e.group_id, g.name, e.is_primary
+        FROM student_enrollments e
+        JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ? AND e.status = 'active'
+        ORDER BY e.is_primary DESC, e.id
+    """, (student_id,)).fetchall()
+
+    if rows:
+        return [(r['group_id'], r['name'], bool(r['is_primary'])) for r in rows]
+
+    row = cursor.execute("""
+        SELECT s.group_id, g.name
+        FROM students s
+        LEFT JOIN groups g ON g.id = s.group_id
+        WHERE s.id = ?
+    """, (student_id,)).fetchone()
+    if row and row['group_id']:
+        return [(row['group_id'], row['name'], True)]
+    return []
+    
+def _order_group_refs(conn, order_type: str, items: list,
+                      known_group_ids: set, student_id: int) -> list:
+    """
+    Повертає список груп, яких стосується наказ САМЕ ДЛЯ ЦЬОГО студента.
+
+    ВАЖЛИВО: беремо лише ті `items`, де entity_type='student' і
+    entity_id == student_id (для паралельного студента в наказі є
+    items й інших студентів — їхні payload.group_id ігноруємо), та
+    entity_type='group' (для масових наказів на кшталт course_transfer).
+    """
+    refs, seen = [], set()
+
+    def add(gid, role=None, check_known=True):
+        if not gid or gid in seen:
+            return
+        try:
+            gid = int(gid)
+        except (TypeError, ValueError):
+            return
+        if check_known and gid not in known_group_ids:
+            return
+        row = conn.execute(
+            "SELECT name, start_year, study_form FROM groups WHERE id=?", (gid,)
+        ).fetchone()
+        if not row:
+            return
+        seen.add(gid)
+        refs.append({
+            'id': gid,
+            'name': row['name'],
+            'start_year': row['start_year'],
+            'study_form': row['study_form'],
+            'role': role,
+        })
+
+    for it in items:
+        et = it.get('entity_type')
+        eid = it.get('entity_id')
+        payload = it.get('payload') or {}
+
+        if et == 'group':
+            add(eid, order_type)
+
+        # ── КЛЮЧОВЕ ВИПРАВЛЕННЯ ──
+        # Беремо лише items, які належать САМЕ ЦЬОМУ студентові.
+        if et == 'student' and eid == student_id:
+            if order_type == 'enrollment':
+                add(payload.get('group_id'), 'enrollment')
+            elif order_type == 'expulsion':
+                add(payload.get('previous_group_id'), 'expulsion')
+            elif order_type == 'license_transfer':
+                add(payload.get('group_id'), 'license')
+            elif order_type == 'graduation':
+                add(payload.get('group_id'), 'graduation')
+            elif order_type in ('group_transfer', 'study_form_transfer'):
+                add(payload.get('from_group_id'), 'from', check_known=False)
+                add(payload.get('to_group_id'),   'to',   check_known=False)
+
+    return refs
+    
+def _order_group_id_for_dedup(order_type: str, payload: dict):
+    """
+    Group_id, який використовується для дедуплікації items у наказі.
+
+    Для enrollment/expulsion/graduation/license_transfer/freeze — це
+    поле з payload. Для інших типів (course_transfer) — None.
+
+    Використовується, щоб:
+      - студент з паралельним навчанням міг мати 2 окремі позиції
+        (для КН-21 і для МГ-1) — бо це РІЗНІ групи;
+      - справжній дублікат (той самий студент у тій самій групі)
+        згортався в одну позицію.
+    """
+    if not payload:
+        return None
+    field_map = {
+        'enrollment':          'group_id',
+        'expulsion':           'previous_group_id',
+        'graduation':          'group_id',
+        'license_transfer':    'group_id',
+        'freeze':              'previous_group_id',
+        'group_transfer':      'from_group_id',
+        'study_form_transfer': 'from_group_id',
+    }
+    field = field_map.get(order_type)
+    if not field:
+        return None
+    gid = payload.get(field)
+    if not gid:
+        return None
+    try:
+        return int(gid)
+    except (TypeError, ValueError):
+        return None    
+    
+def merge_orders(
+    target_id: int,
+    source_ids: list[int],
+    *,
+    new_number: str | None = None,
+    new_date: str | None = None,
+    new_notes: str | None = None,
+    conn=None,
+) -> dict:
+    """
+    Об'єднує накази: переносить order_items та attachments з source_ids
+    у target_id, оновлює реквізити target (опційно) та видаляє source.
+
+    Обмеження:
+      - усі накази мають бути 'active';
+      - усі мають бути одного order_type;
+      - target має бути серед обраних.
+
+    Дублікати (та сама пара entity_type + entity_id, яка вже є в
+    target) — пропускаються (не переносяться), збільшують лічильник
+    skipped_duplicates.
+
+    Повертає dict:
+        {ok, error?, moved_items, skipped_duplicates,
+         moved_attachments, order_type, main_number, main_date}
+    """
+    own = conn is None
+    if own:
+        conn = get_db()
+    try:
+        source_ids = [int(x) for x in source_ids if int(x) != target_id]
+        if not source_ids:
+            return {'ok': False, 'error': 'Немає наказів для об\'єднання'}
+
+        all_ids = [target_id] + source_ids
+        ph = ','.join('?' * len(all_ids))
+        rows = conn.execute(
+            f"SELECT id, order_type, status, order_number, order_date "
+            f"FROM orders WHERE id IN ({ph})",
+            all_ids,
+        ).fetchall()
+
+        if len(rows) != len(all_ids):
+            return {'ok': False, 'error': 'Деякі накази не знайдено'}
+
+        by_id = {r['id']: r for r in rows}
+        target_row = by_id[target_id]
+        target_type = target_row['order_type']
+
+        for sid in all_ids:
+            r = by_id[sid]
+            if r['status'] != 'active':
+                return {
+                    'ok': False,
+                    'error': f"Наказ #{sid} не активний",
+                }
+            if r['order_type'] != target_type:
+                return {
+                    'ok': False,
+                    'error': (
+                        f"Наказ #{sid} іншого типу "
+                        f"({r['order_type']} ≠ {target_type})"
+                    ),
+                }
+
+        # ── Позиції: дедуплікація за (entity_type, entity_id, group_id) ──
+        existing_pairs = set()
+        for r in conn.execute(
+            "SELECT entity_type, entity_id, payload FROM order_items WHERE order_id=?",
+            (target_id,),
+        ).fetchall():
+            payload = _payload_loads(r['payload'])
+            gid = (
+                _order_group_id_for_dedup(target_type, payload)
+                if r['entity_type'] == 'student' else None
+            )
+            existing_pairs.add((r['entity_type'], r['entity_id'], gid))
+
+        moved_items = 0
+        skipped_duplicates = 0
+
+        for src_id in source_ids:
+            items = conn.execute(
+                "SELECT id, entity_type, entity_id, payload FROM order_items WHERE order_id=?",
+                (src_id,),
+            ).fetchall()
+            for item in items:
+                payload = _payload_loads(item['payload'])
+                gid = (
+                    _order_group_id_for_dedup(target_type, payload)
+                    if item['entity_type'] == 'student' else None
+                )
+                pair = (item['entity_type'], item['entity_id'], gid)
+                if pair in existing_pairs:
+                    skipped_duplicates += 1
+                    continue
+                conn.execute(
+                    "UPDATE order_items SET order_id=? WHERE id=?",
+                    (target_id, item['id']),
+                )
+                existing_pairs.add(pair)
+                moved_items += 1
+
+        # ── Скани наказу ──
+        moved_atts = 0
+        for src_id in source_ids:
+            cur = conn.execute(
+                "UPDATE attachments SET entity_id=? "
+                "WHERE entity_type='order' AND entity_id=?",
+                (target_id, src_id),
+            )
+            moved_atts += cur.rowcount or 0
+
+        # ── Переприв'язка посилань на order_id ──
+        for src_id in source_ids:
+            for tbl in ('frozen_students',
+                        'student_enrollments',
+                        'student_name_history'):
+                try:
+                    conn.execute(
+                        f"UPDATE {tbl} SET order_id=? WHERE order_id=?",
+                        (target_id, src_id),
+                    )
+                except Exception:
+                    # Таблиця може не існувати у старій БД — не критично
+                    pass
+
+        # ── Оновлення реквізитів target ──
+        updates = []
+        params = []
+        if new_number:
+            updates.append("order_number=?")
+            params.append(new_number)
+        if new_date:
+            updates.append("order_date=?")
+            params.append(new_date)
+        if new_notes is not None:
+            updates.append("notes=?")
+            params.append(new_notes)
+        if updates:
+            params.append(target_id)
+            conn.execute(
+                f"UPDATE orders SET {', '.join(updates)} WHERE id=?",
+                params,
+            )
+
+        # ── Видалення source ──
+        for src_id in source_ids:
+            conn.execute("DELETE FROM order_items WHERE order_id=?", (src_id,))
+            conn.execute("DELETE FROM orders WHERE id=?", (src_id,))
+
+        if own:
+            conn.commit()
+        return {
+            'ok': True,
+            'moved_items': moved_items,
+            'skipped_duplicates': skipped_duplicates,
+            'moved_attachments': moved_atts,
+            'order_type': target_type,
+            'main_number': new_number or target_row['order_number'],
+            'main_date': new_date or target_row['order_date'],
+        }
+    except Exception as e:
+        if own:
+            conn.rollback()
+        return {'ok': False, 'error': str(e)}
+    finally:
+        if own:
+            conn.close()

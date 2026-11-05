@@ -5,16 +5,19 @@
 {% block content %}
 <div class="container py-4">
 
-    <div class="mb-3">
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
         <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> До студентів
+        </a>
+        <a href="{{ url_for('admin.enrollment_bulk') }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-clipboard-data me-1"></i> Масове додавання зі списку
         </a>
     </div>
 
     {{ ui.page_header(
         'bi-file-earmark-plus',
         'Наказ про зарахування',
-        'Оформлення наказу для студентів, у яких його ще немає (крок 3 моделі наказів)'
+        'Кожен рядок — пара «студент + група». Можна розподілити студентів по різних наказах.'
     ) }}
 
     <div class="row g-3 mb-3">
@@ -22,7 +25,7 @@
             <div class="card text-center">
                 <div class="card-body py-3">
                     <div class="fs-4 fw-bold text-success">{{ enrolled_count }}</div>
-                    <div class="small text-muted">уже мають наказ</div>
+                    <div class="small text-muted">записів уже з наказом (студент × група)</div>
                 </div>
             </div>
         </div>
@@ -30,7 +33,7 @@
             <div class="card text-center">
                 <div class="card-body py-3">
                     <div class="fs-4 fw-bold text-warning">{{ missing_total }}</div>
-                    <div class="small text-muted">без наказу про зарахування</div>
+                    <div class="small text-muted">записів без наказу</div>
                 </div>
             </div>
         </div>
@@ -50,7 +53,7 @@
                 <div class="col-md-5">
                     <label class="form-label small mb-1">Група</label>
                     <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
-                        <option value="">Усі активні студенти</option>
+                        <option value="">Усі активні групи</option>
                         {% for g in groups %}
                         <option value="{{ g.id }}" {% if group_id == g.id %}selected{% endif %}>
                             {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
@@ -77,27 +80,38 @@
         </div>
     </div>
 
+    {% if existing_orders %}
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle-fill me-1"></i>
+        <strong>Як працює вибір наказу:</strong>
+        біля кожного студента у колонці «Наказ» оберіть наявний наказ — він додасться
+        до нього. Якщо залишити «— створити новий —», студент піде у новий наказ
+        (кнопка «Далі»). Можна комбінувати: частину — до існуючого, частину — в новий.
+    </div>
+    {% endif %}
+
     <form method="POST" id="enrollForm">
-        <input type="hidden" name="action" value="preview">
         {% if group_id %}<input type="hidden" name="group_id" value="{{ group_id }}">{% endif %}
         {% if only_missing %}<input type="hidden" name="only_missing" value="1">{% endif %}
 
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span>
-                    <strong>Студенти</strong>
-                    <span class="text-muted small ms-2">позначте тих, кого включити в один наказ</span>
+                    <strong>Студенти × Групи</strong>
+                    <span class="text-muted small ms-2">
+                        оберіть наказ біля кожного студента (або залиште «новий»)
+                    </span>
                 </span>
-                <div class="d-flex gap-2">
+                <div class="d-flex gap-2 flex-wrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectAll">
                         Обрати всіх
                     </button>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectNone">
                         Зняти всіх
                     </button>
-                    <button type="submit" class="btn btn-sm btn-primary" id="btnNext">
-                        Далі: реквізити наказу
-                        <i class="bi bi-arrow-right ms-1"></i>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearAssignments"
+                            title="Скинути всі вибори наказів — усі студенти підуть на новий наказ">
+                        <i class="bi bi-eraser me-1"></i>Скинути накази
                     </button>
                 </div>
             </div>
@@ -108,38 +122,74 @@
                         <thead class="table-light">
                             <tr>
                                 <th style="width:40px;" class="text-center">
-                                    <input type="checkbox" class="form-check-input" id="checkAll">
+                                    <input type="checkbox" class="form-check-input" id="checkAll"
+                                           title="Обрати / зняти всіх">
                                 </th>
                                 <th>ПІБ</th>
-                                <th>Дата народж.</th>
                                 <th>Група</th>
+                                <th>Дата народж.</th>
                                 <th>Рік вступу</th>
-                                <th class="text-center">Наказ</th>
+                                <th style="min-width:260px;">Наказ</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for s in students %}
-                            <tr class="{% if s.has_enrollment %}table-success{% endif %}">
+                            {% set pair = s.student_id ~ '_' ~ s.group_id %}
+                            <tr data-pair="{{ pair }}"
+                                class="{% if s.has_enrollment %}table-success{% endif %}">
                                 <td class="text-center">
                                     {% if not s.has_enrollment %}
-                                    <input type="checkbox" class="form-check-input js-student"
-                                           name="student_ids" value="{{ s.id }}" checked>
+                                    <input type="checkbox" class="form-check-input js-pair"
+                                           name="pairs"
+                                           value="{{ pair }}"
+                                           data-pair="{{ pair }}"
+                                           checked>
                                     {% else %}
                                     <input type="checkbox" class="form-check-input" disabled>
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('students.student_details', student_id=s.id) }}"
+                                    <a href="{{ url_for('students.student_details', student_id=s.student_id) }}"
                                        class="text-decoration-none">{{ s.full_name }}</a>
                                 </td>
-                                <td class="font-monospace small">{{ s.birth_date or '—' }}</td>
-                                <td class="small">{{ s.group_name or '—' }}</td>
-                                <td class="small">{{ s.start_year or '—' }}</td>
-                                <td class="text-center">
-                                    {% if s.has_enrollment %}
-                                    <span class="badge bg-success-subtle text-success-emphasis">є</span>
+                                <td>
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                        {{ s.group_name }}
+                                    </span>
+                                    {% if s.is_primary %}
+                                    <span class="badge bg-primary-subtle text-primary-emphasis ms-1"
+                                          title="Основна група студента">осн.</span>
                                     {% else %}
-                                    <span class="badge bg-warning-subtle text-warning-emphasis">немає</span>
+                                    <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                                          title="Паралельне навчання">парал.</span>
+                                    {% endif %}
+                                </td>
+                                <td class="font-monospace small">{{ s.birth_date or '—' }}</td>
+                                <td class="small">{{ s.start_year or '—' }}</td>
+                                <td>
+                                    {% if s.has_enrollment %}
+                                    <span class="badge bg-success-subtle text-success-emphasis">
+                                        <i class="bi bi-check-circle me-1"></i>є
+                                    </span>
+                                    {% elif existing_orders %}
+                                    <select name="assign_{{ pair }}"
+                                            class="form-select form-select-sm js-assign"
+                                            data-pair="{{ pair }}">
+                                        <option value="">— створити новий —</option>
+                                        {% for o in existing_orders %}
+                                        <option value="{{ o.id }}">
+                                            № {{ o.order_number }} · {{ o.order_date }}
+                                            ({{ o.items_count }} поз.)
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis">
+                                        <i class="bi bi-plus-circle me-1"></i>немає
+                                    </span>
+                                    <div class="small text-muted mt-1">
+                                        Буде створено новий наказ
+                                    </div>
                                     {% endif %}
                                 </td>
                             </tr>
@@ -151,40 +201,215 @@
                 <div class="p-5 text-center text-muted">
                     <i class="bi bi-check-circle-fill fs-1 d-block mb-2 text-success"></i>
                     {% if only_missing %}
-                        Усі студенти в цьому фільтрі вже мають наказ про зарахування.
+                        Усі активні enrollments уже мають наказ про зарахування.
                     {% else %}
-                        Немає студентів за обраними фільтрами.
+                        Немає записів за обраними фільтрами.
                     {% endif %}
                 </div>
                 {% endif %}
             </div>
+
+            {% if students %}
+            <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="submit"
+                            name="action" value="assign_existing"
+                            class="btn btn-success"
+                            id="btnAssign"
+                            title="Додати обрані записи до наказів, вибраних у колонці «Наказ»">
+                        <i class="bi bi-plus-circle me-1"></i>
+                        Додати до обраних наказів
+                        (<span id="assignCount">0</span>)
+                    </button>
+                    <button type="submit"
+                            name="action" value="preview"
+                            class="btn btn-primary"
+                            id="btnNext"
+                            title="Створити один новий наказ для записів, у яких не обрано існуючий">
+                        <i class="bi bi-arrow-right-circle me-1"></i>
+                        Далі: реквізити нового наказу
+                        (<span id="newCount">0</span>)
+                    </button>
+                </div>
+                <span class="small text-muted" id="summaryHint"></span>
+            </div>
+            {% endif %}
         </div>
     </form>
 </div>
 
+<style>
+    .js-assign:disabled {
+        opacity: .5;
+        cursor: not-allowed;
+    }
+</style>
+
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    const boxes = () => [...document.querySelectorAll('.js-student')];
+    const form = document.getElementById('enrollForm');
     const checkAll = document.getElementById('checkAll');
+    const btnNext = document.getElementById('btnNext');
+    const btnAssign = document.getElementById('btnAssign');
+    const assignCountEl = document.getElementById('assignCount');
+    const newCountEl = document.getElementById('newCount');
+    const summaryHint = document.getElementById('summaryHint');
+
+    if (!form) return;
+
+    function allPairs() {
+        return [...document.querySelectorAll('.js-pair')];
+    }
+
+    function getSelectFor(pair) {
+        return document.querySelector(`select.js-assign[data-pair="${pair}"]`);
+    }
+
+    function updateCounters() {
+        let toNew = 0;
+        let toExisting = 0;
+        const perOrder = {};
+
+        allPairs().forEach(cb => {
+            if (!cb.checked) return;
+            const sel = getSelectFor(cb.dataset.pair);
+            if (sel && sel.value) {
+                toExisting++;
+                const optText = sel.options[sel.selectedIndex].textContent.trim();
+                perOrder[optText] = (perOrder[optText] || 0) + 1;
+            } else {
+                toNew++;
+            }
+        });
+
+        if (assignCountEl) assignCountEl.textContent = toExisting;
+        if (newCountEl) newCountEl.textContent = toNew;
+
+        if (btnNext) btnNext.disabled = toNew === 0;
+        if (btnAssign) btnAssign.disabled = toExisting === 0;
+
+        // Підсказка праворуч
+        if (summaryHint) {
+            const parts = [];
+            if (toExisting) parts.push(`до існуючих: ${toExisting}`);
+            if (toNew) parts.push(`у новий: ${toNew}`);
+            summaryHint.textContent = parts.length
+                ? parts.join(' · ')
+                : 'Оберіть студентів для подальших дій';
+        }
+    }
+
+    function syncSelectState(cb) {
+        const sel = getSelectFor(cb.dataset.pair);
+        if (!sel) return;
+        sel.disabled = !cb.checked;
+    }
+
+    // Чекбокси
+    allPairs().forEach(cb => {
+        syncSelectState(cb);
+        cb.addEventListener('change', () => {
+            syncSelectState(cb);
+            updateCounters();
+        });
+    });
+
+    // Select наказу
+    document.querySelectorAll('.js-assign').forEach(sel => {
+        sel.addEventListener('change', function () {
+            if (this.value) {
+                // Якщо обрано наказ, але чекбокс знятий — увімкнути
+                const cb = document.querySelector(
+                    `.js-pair[data-pair="${this.dataset.pair}"]`
+                );
+                if (cb && !cb.checked) {
+                    cb.checked = true;
+                    syncSelectState(cb);
+                }
+            }
+            updateCounters();
+        });
+    });
+
+    // "Обрати всіх"
     if (checkAll) {
         checkAll.addEventListener('change', () => {
-            boxes().forEach(b => { b.checked = checkAll.checked; });
+            allPairs().forEach(cb => {
+                cb.checked = checkAll.checked;
+                syncSelectState(cb);
+            });
+            updateCounters();
         });
     }
     document.getElementById('btnSelectAll')?.addEventListener('click', () => {
-        boxes().forEach(b => { b.checked = true; });
+        allPairs().forEach(cb => {
+            cb.checked = true;
+            syncSelectState(cb);
+        });
         if (checkAll) checkAll.checked = true;
+        updateCounters();
     });
     document.getElementById('btnSelectNone')?.addEventListener('click', () => {
-        boxes().forEach(b => { b.checked = false; });
+        allPairs().forEach(cb => {
+            cb.checked = false;
+            syncSelectState(cb);
+        });
         if (checkAll) checkAll.checked = false;
+        updateCounters();
     });
-    document.getElementById('enrollForm')?.addEventListener('submit', (e) => {
-        if (!boxes().some(b => b.checked)) {
-            e.preventDefault();
-            alert('Оберіть хоча б одного студента.');
+
+    // "Скинути накази" — усі select в порожнє ("створити новий")
+    document.getElementById('btnClearAssignments')?.addEventListener('click', () => {
+        document.querySelectorAll('.js-assign').forEach(sel => {
+            sel.value = '';
+        });
+        updateCounters();
+    });
+
+    // Перевірка при submit
+    form.addEventListener('submit', (e) => {
+        const submitter = e.submitter;
+        const action = submitter ? submitter.value : 'preview';
+
+        if (action === 'assign_existing') {
+            const chosen = allPairs().filter(cb => cb.checked).length;
+            if (chosen === 0) {
+                e.preventDefault();
+                alert('Оберіть хоча б одного студента.');
+                return;
+            }
+            const withOrder = allPairs().filter(cb => {
+                if (!cb.checked) return false;
+                const sel = getSelectFor(cb.dataset.pair);
+                return sel && sel.value;
+            }).length;
+            if (withOrder === 0) {
+                e.preventDefault();
+                alert('Ні в кого не обрано наказ у колонці «Наказ».');
+                return;
+            }
+            if (!confirm(`Додати ${withOrder} запис(ів) до обраних наказів?`)) {
+                e.preventDefault();
+            }
+        } else if (action === 'preview') {
+            const toNew = allPairs().filter(cb => {
+                if (!cb.checked) return false;
+                const sel = getSelectFor(cb.dataset.pair);
+                return !sel || !sel.value;
+            }).length;
+            if (toNew === 0) {
+                e.preventDefault();
+                alert(
+                    'Немає записів для нового наказу. '
+                    + 'Або зніміть вибір існуючого наказу в колонці «Наказ», '
+                    + 'або використайте кнопку «Додати до обраних наказів».'
+                );
+                return;
+            }
         }
     });
+
+    updateCounters();
 });
 </script>
 {% endblock %}

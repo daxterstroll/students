@@ -90,7 +90,7 @@
                         <tr>
                             <th class="text-center" style="width:40px;">№</th>
                             <th>Об’єкт</th>
-                            <th>Тип</th>
+                            <th>Група</th>
                             <th>Деталі</th>
                             <th class="text-end" style="width:90px;"></th>
                         </tr>
@@ -108,7 +108,15 @@
                                 {{ it.label }}
                                 {% endif %}
                             </td>
-                            <td class="small text-muted">{{ it.entity_type }}</td>
+                            <td>
+                                {% if it.group_name_for_item %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                    <i class="bi bi-mortarboard-fill me-1"></i>{{ it.group_name_for_item }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
                             <td class="small">{{ it.payload_text or '—' }}</td>
                             <td class="text-end">
                                 <form method="POST"
@@ -136,20 +144,32 @@
         <div class="card-header"><strong>Додати студента</strong></div>
         <div class="card-body">
             {% if candidates %}
-            <form method="POST" class="row g-2 align-items-end">
+            <form method="POST" class="row g-2 align-items-end" id="addStudentForm">
                 <input type="hidden" name="action" value="add_student">
                 <div class="col-md-6">
-                    <label class="form-label small">Студент</label>
-                    <select name="student_id" class="form-select form-select-sm" required>
+                    <label class="form-label small">Студент × Група</label>
+                    <input type="text" id="candidateSearch"
+                           class="form-control form-control-sm mb-2"
+                           placeholder="Пошук: ПІБ або група…" autocomplete="off">
+                    <select name="pair" id="candidateSelect"
+                            class="form-select form-select-sm" size="8" required>
                         <option value="">— оберіть —</option>
                         {% for c in candidates %}
-                        <option value="{{ c.id }}">{{ c.label }}</option>
+                        <option value="{{ c.student_id }}_{{ c.group_id }}"
+                                data-label="{{ c.label|lower }}">
+                            {{ c.label }}
+                        </option>
                         {% endfor %}
                     </select>
+                    <div class="form-text">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Показано лише пари (студент × група), яких ще немає в наказі.
+                        Студент з паралельним навчанням з'явиться окремо для кожної групи.
+                    </div>
                 </div>
                 {% if order.order_type == 'expulsion' %}
                 <div class="col-md-4">
-                    <label class="form-label small">Причина (для відрахування)</label>
+                    <label class="form-label small">Причина відрахування</label>
                     <input type="text" name="reason" class="form-control form-control-sm"
                            placeholder="опційно">
                 </div>
@@ -161,12 +181,48 @@
                 </div>
             </form>
             <p class="small text-muted mt-2 mb-0">
-                Показано активних студентів, яких ще немає в цьому наказі (до 2000).
+                Показано активних студентів та їхні групи (до 5000 записів).
             </p>
             {% else %}
-            <p class="text-muted small mb-0">Немає студентів для додавання (усі вже в наказі або архів).</p>
+            <p class="text-muted small mb-0">
+                Немає доступних пар «студент × група» — усі вже в наказі, або немає активних студентів.
+            </p>
             {% endif %}
         </div>
+
+        <script>
+        (function () {
+            const search = document.getElementById('candidateSearch');
+            const select = document.getElementById('candidateSelect');
+            if (!search || !select) return;
+
+            search.addEventListener('input', function () {
+                const q = this.value.trim().toLowerCase();
+                let visibleCount = 0;
+                let firstVisible = null;
+
+                Array.from(select.options).forEach(function (opt) {
+                    if (!opt.value) return;
+                    const matches = !q || (opt.dataset.label || '').includes(q);
+                    opt.hidden = !matches;
+                    opt.style.display = matches ? '' : 'none';
+                    if (matches) {
+                        visibleCount++;
+                        if (!firstVisible) firstVisible = opt;
+                    }
+                });
+
+                // Автовибір першого знайденого
+                if (q && firstVisible) {
+                    select.value = firstVisible.value;
+                }
+
+                // Підлаштувати висоту
+                select.size = visibleCount === 0 ? 2
+                             : Math.min(10, Math.max(5, visibleCount));
+            });
+        })();
+        </script>
     </div>
 </div>
 {% endblock %}

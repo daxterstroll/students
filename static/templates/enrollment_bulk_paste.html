@@ -1,0 +1,209 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Масове додавання наказів про зарахування{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.enrollment_order') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До наказів про зарахування
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-clipboard-data',
+        'Масове додавання зі списку',
+        'Вставте список — система сама розпізнає ПІБ, номер/дату наказу та згрупує студентів'
+    ) }}
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form method="POST" id="bulkForm">
+                        <label for="raw_text" class="form-label fw-semibold">
+                            Вставте дані (по одному студенту на рядок):
+                        </label>
+                        <textarea name="raw_text" id="raw_text"
+                                  class="form-control font-monospace"
+                                  rows="15" required
+                                  placeholder="Гаврилець Денис Олександрович&#9;Код наказу про зарахування: 344977; Номер наказу: 1112с; Дата наказу: 28.08.2026
+Петренко Марія Іванівна&#9;Код наказу про зарахування: 344978; Номер наказу: 1112с; Дата наказу: 28.08.2026"></textarea>
+                        <div class="form-text mt-2">
+                            Студенти з однаковими <em>номером</em> і <em>датою</em> об'єднуються в один наказ.
+                            Поле «Код наказу про зарахування» необов'язкове — піде в примітку наказу.
+                        </div>
+
+                        <div class="d-flex gap-2 mt-3 align-items-center flex-wrap">
+                            <button type="submit" class="btn btn-primary" id="bulkSubmitBtn">
+                                <i class="bi bi-arrow-right-circle me-1"></i> Розпізнати
+                            </button>
+                            <span class="text-muted small" id="bulkSizeInfo"></span>
+                        </div>
+
+                        <div class="progress mt-3 d-none" id="bulkProgressWrap" style="height: 8px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                 id="bulkProgressBar" role="progressbar" style="width: 0%;"></div>
+                        </div>
+                        <div class="small text-muted mt-1 d-none" id="bulkProgressLabel"></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card border-info h-100">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-info-circle me-1"></i>Як це працює</h6>
+                    <ol class="small mb-3 ps-3">
+                        <li>Вставляєте список — по одному студенту на рядок.</li>
+                        <li>Система знаходить кожного за ПІБ (нечіткий пошук).</li>
+                        <li>Групує за наказом (номер + дата).</li>
+                        <li>Показує превью — ви перевіряєте і підтверджуєте.</li>
+                    </ol>
+
+                    <h6 class="fw-bold mt-3"><i class="bi bi-shield-check me-1"></i>Великі списки</h6>
+                    <p class="small mb-0">
+                        Списки більші за <strong>20 КБ</strong> надсилаються шматками по
+                        <strong>40 КБ</strong> — жоден окремий запит не перевищує лімітів
+                        навіть дуже строгих проксі. Ви бачите прогрес у реальному часі.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById('bulkForm');
+    const textarea = document.getElementById('raw_text');
+    const submitBtn = document.getElementById('bulkSubmitBtn');
+    const sizeInfo = document.getElementById('bulkSizeInfo');
+    const progressWrap = document.getElementById('bulkProgressWrap');
+    const progressBar = document.getElementById('bulkProgressBar');
+    const progressLabel = document.getElementById('bulkProgressLabel');
+
+    const INLINE_LIMIT = 20 * 1024;
+    const CHUNK_SIZE = 40 * 1024;
+
+    function bytesOf(str) { return new Blob([str]).size; }
+
+    function humanSize(b) {
+        if (b < 1024) return b + ' Б';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' КБ';
+        return (b / 1024 / 1024).toFixed(2) + ' МБ';
+    }
+
+    function updateSizeInfo() {
+        const bytes = bytesOf(textarea.value);
+        const lines = textarea.value.split('\n').filter(l => l.trim()).length;
+        sizeInfo.textContent = humanSize(bytes) + ' · ' + lines + ' рядк.';
+    }
+
+    textarea.addEventListener('input', updateSizeInfo);
+    updateSizeInfo();
+
+    function newToken() {
+        const arr = new Uint8Array(8);
+        crypto.getRandomValues(arr);
+        return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    function showProgress(pct, label) {
+        progressWrap.classList.remove('d-none');
+        progressLabel.classList.remove('d-none');
+        progressBar.style.width = pct + '%';
+        progressBar.setAttribute('aria-valuenow', pct);
+        progressLabel.textContent = label || '';
+    }
+
+    function setBtnLoading(loading, text) {
+        submitBtn.disabled = loading;
+        submitBtn.innerHTML = loading
+            ? '<span class="spinner-border spinner-border-sm me-2"></span>' + (text || 'Обробка…')
+            : '<i class="bi bi-arrow-right-circle me-1"></i> Розпізнати';
+    }
+
+    form.addEventListener('submit', async function (e) {
+        const text = textarea.value;
+        const bytes = bytesOf(text);
+
+        if (bytes <= INLINE_LIMIT) {
+            setBtnLoading(true, 'Обробка…');
+            return; // стандартний POST → редірект на превью
+        }
+
+        e.preventDefault();
+
+        const token = newToken();
+        const totalChunks = Math.ceil(text.length / CHUNK_SIZE);
+
+        try {
+            for (let i = 0; i < totalChunks; i++) {
+                const pct = Math.round((i / totalChunks) * 90);
+                showProgress(pct, 'Завантаження ' + (i + 1) + ' / ' + totalChunks);
+                setBtnLoading(true, 'Завантаження ' + (i + 1) + '/' + totalChunks);
+
+                const fd = new FormData();
+                fd.append('session_token', token);
+                fd.append('chunk', text.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE));
+                fd.append('chunk_num', i + 1);
+                fd.append('total', totalChunks);
+
+                const resp = await fetch(
+                    '{{ url_for("admin.enrollment_bulk_upload_chunk") }}',
+                    { method: 'POST', body: fd }
+                );
+
+                if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    throw new Error(
+                        'Помилка завантаження шматка ' + (i + 1) + ': HTTP ' +
+                        resp.status + ' — ' + txt.substring(0, 200)
+                    );
+                }
+                const json = await resp.json();
+                if (!json.ok) throw new Error('Сервер: ' + (json.error || 'невідома помилка'));
+            }
+
+            showProgress(95, 'Розпізнаємо ПІБ…');
+            setBtnLoading(true, 'Розпізнаємо ПІБ…');
+
+            const fd = new FormData();
+            fd.append('session_token', token);
+            const finalResp = await fetch(
+                '{{ url_for("admin.enrollment_bulk_finalize") }}',
+                { method: 'POST', body: fd }
+            );
+
+            showProgress(100, 'Готово, переходимо до превью…');
+
+            if (finalResp.redirected) {
+                window.location.href = finalResp.url;
+            } else if (finalResp.ok) {
+                const html = await finalResp.text();
+                // Сервер повернув HTML замість редіректу — рендеримо як є
+                document.open();
+                document.write(html);
+                document.close();
+            } else {
+                throw new Error(
+                    'Сервер відмовив (HTTP ' + finalResp.status + '). ' +
+                    'Дивіться логи: logs/app-YYYY-MM.log'
+                );
+            }
+        } catch (err) {
+            console.error(err);
+            alert('Не вдалося обробити список:\n\n' + err.message);
+            showProgress(0, '');
+            progressWrap.classList.add('d-none');
+            progressLabel.classList.add('d-none');
+            setBtnLoading(false);
+        }
+    });
+})();
+</script>
+{% endblock %}

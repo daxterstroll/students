@@ -3,6 +3,33 @@
 {% block title %}Накази{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
+
+{# ── Макрос для клікабельного заголовка зі стрілкою ── #}
+{% macro sort_link(column, label) -%}
+    {%- set new_order = 'asc' if (sort_order == 'desc' or sort_by != column) else 'desc' -%}
+    <a href="{{ url_for('admin.orders_list',
+                        type=order_type or none,
+                        search=search or none,
+                        number=number_filter or none,
+                        only_duplicates='1' if only_duplicates else none,
+                        per_page=per_page,
+                        sort_by=column,
+                        sort_order=new_order) }}"
+       class="text-decoration-none"
+       style="color: inherit;">
+        <span class="d-inline-flex align-items-center gap-1">
+            {{ label }}
+            {%- if sort_by == column %}
+                <i class="bi bi-caret-{{ 'up' if sort_order == 'asc' else 'down' }}-fill"
+                   style="font-size: .85em;"></i>
+            {%- else %}
+                <i class="bi bi-arrow-down-up"
+                   style="font-size: .7em; opacity: .35;"></i>
+            {%- endif %}
+        </span>
+    </a>
+{%- endmacro %}
+
 <div class="container py-4">
 
     <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
@@ -24,16 +51,46 @@
         'Усі накази: зарахування, переведення, відрахування, випуск'
     ) }}
 
+    {# ── Плашка про знайдені дублікати ── #}
+    {% if duplicate_numbers %}
+    <div class="alert alert-warning py-2 mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            <strong>{{ duplicate_numbers|length }}</strong>
+            номер(ів) повторюються
+            {% if order_type %}серед наказів цього типу{% endif %}:
+            {% for num, cnt in duplicate_numbers.items() %}
+            <span class="badge bg-warning text-dark font-monospace ms-1"
+                  title="Цей номер мають {{ cnt }} наказ(ів)">
+                {{ num }} <span style="opacity:.7;">×{{ cnt }}</span>
+            </span>
+            {% endfor %}
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('admin.orders_list',
+                                type=order_type or none,
+                                only_duplicates='1',
+                                sort_by='order_number',
+                                sort_order='asc') }}"
+               class="btn btn-sm btn-warning">
+                <i class="bi bi-funnel me-1"></i>
+                Показати лише дублікати
+            </a>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Таби типів ── #}
     <div class="card mb-3">
         <div class="card-body py-2">
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <a href="{{ url_for('admin.orders_list', search=search) }}"
+                <a href="{{ url_for('admin.orders_list', search=search or none, number=number_filter or none, only_duplicates='1' if only_duplicates else none, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
                    class="btn btn-sm {% if not order_type %}btn-dark{% else %}btn-outline-secondary{% endif %}">
                     Усі <span class="badge bg-secondary ms-1">{{ total_all }}</span>
                 </a>
                 {% for t in order_types %}
                     {% if type_counts.get(t) %}
-                    <a href="{{ url_for('admin.orders_list', type=t, search=search) }}"
+                    <a href="{{ url_for('admin.orders_list', type=t, search=search or none, number=number_filter or none, only_duplicates='1' if only_duplicates else none, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
                        class="btn btn-sm {% if order_type == t %}btn-dark{% else %}btn-outline-secondary{% endif %}">
                         {{ type_labels.get(t, t) }}
                         <span class="badge bg-secondary ms-1">{{ type_counts[t] }}</span>
@@ -44,41 +101,93 @@
         </div>
     </div>
 
+    {# ── Фільтри ── #}
     <div class="card mb-3">
         <div class="card-body py-2">
-            <form method="GET" class="row g-2 align-items-end">
+            <form method="GET" class="row g-2 align-items-end" id="ordersFilterForm">
                 {% if order_type %}
                 <input type="hidden" name="type" value="{{ order_type }}">
                 {% endif %}
-                <div class="col-md-6">
+                <input type="hidden" name="sort_by" value="{{ sort_by }}">
+                <input type="hidden" name="sort_order" value="{{ sort_order }}">
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">
+                        <i class="bi bi-hash me-1"></i>Номер наказу
+                    </label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="number" class="form-control font-monospace"
+                               value="{{ number_filter }}" placeholder="напр. 1112с"
+                               autocomplete="off">
+                        {% if number_filter %}
+                        <a href="{{ url_for('admin.orders_list', type=order_type or none, search=search or none, only_duplicates='1' if only_duplicates else none, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+                           class="btn btn-outline-secondary" title="Очистити">
+                            <i class="bi bi-x"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="col-md-3">
                     <label class="form-label small mb-1">Пошук (номер, назва, примітка)</label>
                     <div class="input-group input-group-sm">
                         <input type="text" name="search" class="form-control"
                                value="{{ search }}" placeholder="напр. 45/2026">
-                        <button type="submit" class="btn btn-outline-secondary">
-                            <i class="bi bi-search"></i>
-                        </button>
                         {% if search %}
-                        <a href="{{ url_for('admin.orders_list', type=order_type or none) }}"
-                           class="btn btn-outline-secondary"><i class="bi bi-x"></i></a>
+                        <a href="{{ url_for('admin.orders_list', type=order_type or none, number=number_filter or none, only_duplicates='1' if only_duplicates else none, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+                           class="btn btn-outline-secondary" title="Очистити">
+                            <i class="bi bi-x"></i>
+                        </a>
                         {% endif %}
                     </div>
                 </div>
-                <div class="col-md-3">
+
+                <div class="col-md-2">
                     <label class="form-label small mb-1">На сторінці</label>
-                    <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <select name="per_page" class="form-select form-select-sm">
                         {% for n in [20, 50, 100, 200] %}
                         <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
                         {% endfor %}
                     </select>
+                </div>
+
+                <div class="col-md-2">
+                    <div class="form-check mt-4">
+                        <input class="form-check-input" type="checkbox" name="only_duplicates"
+                               value="1" id="onlyDuplicatesCheck"
+                               {% if only_duplicates %}checked{% endif %}>
+                        <label class="form-check-label small" for="onlyDuplicatesCheck">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            Лише дублікати номерів
+                        </label>
+                    </div>
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>Застосувати
+                    </button>
                 </div>
             </form>
         </div>
     </div>
 
     <div class="card">
-        <div class="card-header d-flex justify-content-between">
-            <strong>Знайдено: {{ total }}</strong>
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <strong>Знайдено: {{ total }}</strong>
+                <button type="button" class="btn btn-sm btn-outline-primary"
+                        id="btnOpenMerge">
+                    <i class="bi bi-union me-1"></i>
+                    Об'єднати обрані
+                    <span class="badge bg-primary ms-1" id="selectedCount" style="display:none;">0</span>
+                </button>
+                <span class="small text-muted">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Оберіть ≥2 накази <strong>одного типу</strong> — потім «Об'єднати».
+                    Сортування по «Номер» показує однакові номери поруч.
+                </span>
+            </div>
         </div>
         <div class="card-body p-0">
             {% if orders %}
@@ -86,37 +195,60 @@
                 <table class="table table-hover table-sm mb-0 align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th style="width:70px;">ID</th>
-                            <th>Дата</th>
-                            <th>Номер</th>
-                            <th>Тип</th>
-                            <th class="text-center">Позицій</th>
-                            <th>Хто створив</th>
+                            <th style="width:40px;" class="text-center">
+                                <input type="checkbox" class="form-check-input" id="checkAllOrders"
+                                       title="Обрати всі на сторінці">
+                            </th>
+                            <th style="width:70px;">{{ sort_link('id', 'ID') }}</th>
+                            <th>{{ sort_link('order_date', 'Дата') }}</th>
+                            <th>{{ sort_link('order_number', 'Номер') }}</th>
+                            <th>{{ sort_link('order_type', 'Тип') }}</th>
+                            <th class="text-center">{{ sort_link('items_count', 'Позицій') }}</th>
+                            <th>{{ sort_link('created_by', 'Хто створив') }}</th>
                             <th class="text-end" style="width:150px;">Дії</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for o in orders %}
-                        <tr>
+                        <tr data-order-id="{{ o.id }}"
+                            data-order-number="{{ o.order_number }}"
+                            data-order-date="{{ o.order_date }}"
+                            data-order-type="{{ o.order_type }}"
+                            data-order-type-label="{{ o.type_label }}"
+                            data-items-count="{{ o.items_count }}"
+                            data-order-notes="{{ o.notes or '' }}"
+                            {% if o.duplicates_count > 1 %}class="table-warning"{% endif %}>
+                            <td class="text-center">
+                                <input type="checkbox"
+                                       class="form-check-input js-order-check"
+                                       value="{{ o.id }}"
+                                       data-order-type="{{ o.order_type }}">
+                            </td>
                             <td class="font-monospace small text-muted">{{ o.id }}</td>
                             <td class="font-monospace small">{{ o.order_date }}</td>
-							<td>
-								<a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
-								   class="text-decoration-none fw-semibold">
-									{{ o.order_number }}
-								</a>
-								{% if o.license_summary %}
-								<div class="small mt-1">
-									<span class="badge bg-info-subtle text-info-emphasis"
-										  title="Ліцензії: було → стало">
-										<i class="bi bi-award me-1"></i>{{ o.license_summary }}
-									</span>
-								</div>
-								{% endif %}
-								{% if o.notes %}
-								<div class="small text-muted">{{ o.notes[:80] }}{% if o.notes|length > 80 %}…{% endif %}</div>
-								{% endif %}
-							</td>
+                            <td>
+                                <a href="{{ url_for('admin.order_detail', order_id=o.id) }}"
+                                   class="text-decoration-none fw-semibold">
+                                    {{ o.order_number }}
+                                </a>
+                                {% if o.duplicates_count > 1 %}
+                                <span class="badge bg-warning text-dark ms-1"
+                                      title="Такий же номер мають ще {{ o.duplicates_count - 1 }} наказ(ів)">
+                                    ×{{ o.duplicates_count }}
+                                </span>
+                                {% endif %}
+                                {% if o.license_summary %}
+                                <div class="small mt-1">
+                                    <span class="badge bg-info-subtle text-info-emphasis"
+                                          title="Ліцензії: було → стало">
+                                        <i class="bi bi-award me-1"></i>{{ o.license_summary }}
+                                    </span>
+                                </div>
+                                {% endif %}
+                                {% if o.notes %}
+                                <div class="small text-muted">{{ o.notes[:80] }}{% if o.notes|length > 80 %}…{% endif %}</div>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="badge bg-secondary-subtle text-secondary-emphasis">
                                     {{ o.type_label }}
@@ -151,22 +283,39 @@
             <div class="p-5 text-center text-muted">
                 <i class="bi bi-journal fs-1 d-block mb-2"></i>
                 Наказів не знайдено
+                {% if only_duplicates %}
+                <div class="small mt-2">
+                    Дублікатів не знайдено.
+                    <a href="{{ url_for('admin.orders_list', type=order_type or none, search=search or none, number=number_filter or none) }}">
+                        Показати всі
+                    </a>
+                </div>
+                {% endif %}
             </div>
             {% endif %}
         </div>
 
         {% if total_pages > 1 %}
+        {% set pagination_extra = {
+            'type': order_type or none,
+            'search': search or none,
+            'number': number_filter or none,
+            'only_duplicates': '1' if only_duplicates else none,
+            'per_page': per_page,
+            'sort_by': sort_by,
+            'sort_order': sort_order,
+        } %}
         <div class="card-footer d-flex justify-content-center gap-2 py-3">
             {% if page > 1 %}
             <a class="btn btn-sm btn-outline-secondary"
-               href="{{ url_for('admin.orders_list', page=page-1, per_page=per_page, type=order_type or none, search=search) }}">
+               href="{{ url_for('admin.orders_list', page=page-1, **pagination_extra) }}">
                 <i class="bi bi-chevron-left"></i>
             </a>
             {% endif %}
             <span class="small align-self-center">Стор. {{ page }} з {{ total_pages }}</span>
             {% if page < total_pages %}
             <a class="btn btn-sm btn-outline-secondary"
-               href="{{ url_for('admin.orders_list', page=page+1, per_page=per_page, type=order_type or none, search=search) }}">
+               href="{{ url_for('admin.orders_list', page=page+1, **pagination_extra) }}">
                 <i class="bi bi-chevron-right"></i>
             </a>
             {% endif %}
@@ -174,4 +323,228 @@
         {% endif %}
     </div>
 </div>
+
+{# ═══════════════════════════════════════════════════════════
+   Модалка об'єднання (без змін)
+   ═══════════════════════════════════════════════════════════ #}
+<div class="modal fade" id="mergeOrdersModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.orders_merge') }}" id="mergeOrdersForm">
+                <input type="hidden" name="main_order_id" id="mergeMainId" value="">
+                <div id="mergeOrderIdsContainer"></div>
+
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-union me-2"></i>Об'єднання наказів
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="alert alert-warning small mb-3">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        <strong>Увага:</strong> усі позиції (студенти, групи) з обраних
+                        наказів будуть перенесені в <strong>головний</strong> наказ.
+                        Скани теж перенесуться. Решта наказів буде <strong>видалено</strong>.
+                        Дублікати (той самий студент у тій самій групі) — <strong>пропускаються</strong>.
+                        <br>Дію <strong>не можна скасувати</strong>.
+                    </div>
+
+                    <label class="form-label small fw-semibold mb-2">
+                        Оберіть головний наказ (у нього переносити):
+                    </label>
+                    <div id="mergeOrdersList" class="d-flex flex-column gap-2 mb-3"></div>
+
+                    <hr>
+
+                    <h6 class="fw-semibold mb-2">Реквізити головного наказу</h6>
+                    <p class="small text-muted mb-2">
+                        За замовчуванням — з обраного головного. Можна змінити за потреби.
+                    </p>
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Номер</label>
+                            <input type="text" name="new_number" id="mergeNewNumber"
+                                   class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Дата</label>
+                            <input type="text" name="new_date" id="mergeNewDate"
+                                   class="form-control form-control-sm"
+                                   placeholder="ДД.ММ.РРРР"
+                                   pattern="\d{2}\.\d{2}\.\d{4}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small mb-1">Примітка</label>
+                            <input type="text" name="new_notes" id="mergeNewNotes"
+                                   class="form-control form-control-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary"
+                            data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary" id="mergeSubmitBtn">
+                        <i class="bi bi-check-lg me-1"></i>Об'єднати
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const btnOpenMerge = document.getElementById('btnOpenMerge');
+    const btnSelectedCount = document.getElementById('selectedCount');
+    const checkAll = document.getElementById('checkAllOrders');
+    const modalEl = document.getElementById('mergeOrdersModal');
+
+    if (!btnOpenMerge || !modalEl) return;
+
+    let modal = null;
+    try {
+        modal = new bootstrap.Modal(modalEl);
+    } catch (e) {
+        console.error('[merge] Не вдалося ініціалізувати модалку:', e);
+        return;
+    }
+
+    function getSelected() {
+        return [...document.querySelectorAll('.js-order-check:checked')];
+    }
+
+    function getSelectedTypes() {
+        const types = new Set();
+        getSelected().forEach(cb => types.add(cb.dataset.orderType));
+        return types;
+    }
+
+    function updateToolbar() {
+        const count = getSelected().length;
+        btnSelectedCount.textContent = count;
+        btnSelectedCount.style.display = count > 0 ? '' : 'none';
+
+        if (count >= 2 && getSelectedTypes().size <= 1) {
+            btnOpenMerge.classList.remove('btn-outline-primary');
+            btnOpenMerge.classList.add('btn-primary');
+        } else {
+            btnOpenMerge.classList.remove('btn-primary');
+            btnOpenMerge.classList.add('btn-outline-primary');
+        }
+    }
+
+    document.querySelectorAll('.js-order-check').forEach(cb => {
+        cb.addEventListener('change', updateToolbar);
+    });
+
+    if (checkAll) {
+        checkAll.addEventListener('change', () => {
+            document.querySelectorAll('.js-order-check').forEach(cb => {
+                cb.checked = checkAll.checked;
+            });
+            updateToolbar();
+        });
+    }
+
+    function openMergeModal() {
+        const cbs = getSelected();
+        if (cbs.length < 2) {
+            alert('Оберіть, будь ласка, мінімум 2 накази для об\'єднання.');
+            return;
+        }
+        const types = getSelectedTypes();
+        if (types.size > 1) {
+            alert('Не можна об\'єднувати накази різних типів:\n' +
+                  [...types].join(', ') + '\n\nОберіть накази одного типу.');
+            return;
+        }
+
+        const list = document.getElementById('mergeOrdersList');
+        list.innerHTML = '';
+        const idsContainer = document.getElementById('mergeOrderIdsContainer');
+        idsContainer.innerHTML = '';
+
+        cbs.forEach((cb, idx) => {
+            const tr = cb.closest('tr');
+            const id = tr.dataset.orderId;
+            const number = tr.dataset.orderNumber;
+            const date = tr.dataset.orderDate;
+            const typeLabel = tr.dataset.orderTypeLabel;
+            const itemsCount = tr.dataset.itemsCount;
+            const notes = tr.dataset.orderNotes || '';
+
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.name = 'order_ids';
+            hidden.value = id;
+            idsContainer.appendChild(hidden);
+
+            const card = document.createElement('label');
+            card.className = 'd-flex align-items-center gap-3 p-2 rounded border';
+            card.style.cursor = 'pointer';
+            card.style.background = 'var(--paper-2)';
+            card.innerHTML = `
+                <input type="radio" name="__main_pick" value="${id}"
+                       ${idx === 0 ? 'checked' : ''}
+                       class="form-check-input m-0">
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">
+                        № ${number} <span class="text-muted">від ${date}</span>
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">${typeLabel}</span>
+                    </div>
+                    <div class="small text-muted">
+                        Позицій: ${itemsCount}${notes ? ' · ' + notes : ''}
+                    </div>
+                </div>
+            `;
+            list.appendChild(card);
+
+            const radio = card.querySelector('input[type=radio]');
+            radio.addEventListener('change', () => {
+                document.getElementById('mergeMainId').value = id;
+                document.getElementById('mergeNewNumber').value = number;
+                document.getElementById('mergeNewDate').value = date;
+                document.getElementById('mergeNewNotes').value = notes;
+            });
+        });
+
+        const firstTr = cbs[0].closest('tr');
+        document.getElementById('mergeMainId').value = firstTr.dataset.orderId;
+        document.getElementById('mergeNewNumber').value = firstTr.dataset.orderNumber;
+        document.getElementById('mergeNewDate').value = firstTr.dataset.orderDate;
+        document.getElementById('mergeNewNotes').value = firstTr.dataset.orderNotes || '';
+
+        modal.show();
+    }
+
+    btnOpenMerge.addEventListener('click', openMergeModal);
+
+    document.getElementById('mergeOrdersForm').addEventListener('submit', function (e) {
+        const mainId = document.getElementById('mergeMainId').value;
+        if (!mainId) {
+            e.preventDefault();
+            alert('Оберіть головний наказ.');
+            return;
+        }
+        const ids = getSelected();
+        if (ids.length < 2) {
+            e.preventDefault();
+            alert('Оберіть хоча б два накази.');
+            return;
+        }
+        const num = document.getElementById('mergeNewNumber').value;
+        if (!confirm(
+            `Об'єднати ${ids.length} наказів у №${num}?\n\n` +
+            `Решта наказів (${ids.length - 1}) буде видалено. Дію не можна скасувати.`
+        )) {
+            e.preventDefault();
+        }
+    });
+
+    updateToolbar();
+});
+</script>
 {% endblock %}
