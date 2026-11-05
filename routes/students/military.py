@@ -86,10 +86,19 @@ MILITARY_FIELDS = [
     ('formed_at', 'Документ сформовано'),
     ('data_verified_on_time', 'Дані уточнено вчасно'),
     ('data_update_date', 'Дата уточнення даних'),
-    # Постанова КМУ №812 від 10.06.2026 — графа 18 «Примітка»
     ('note_18', 'Примітка (графа 18)'),
     ('mobilized_date', 'Дата мобілізації'),
+    # ── Колишні legacy-поля, які залишаються (використовуються в Додатку 4/5) ──
+    ('military_registration_document', 'Військово-обліковий документ'),
+    ('change_credentials', 'Зміна облікових даних'),
+    ('reason_for_changing_credentials', 'Підстава для зміни'),
 ]
+
+# LEGACY_FIELDS більше не використовується — усі колишні legacy-поля
+# або перенесені в нові, або (military_registration_document,
+# change_credentials, reason_for_changing_credentials) перекласифіковані
+# в MILITARY_FIELDS вище.
+LEGACY_FIELDS = []
 
 # Поля картки студента, які беремо з PDF. У military їх НЕМАЄ.
 STUDENT_FIELDS = [
@@ -99,18 +108,6 @@ STUDENT_FIELDS = [
     ('phone', 'Телефон'),
     ('email', 'Email'),
 ]
-
-# Легасі-поля military, які вже не приходять з PDF, але можуть бути
-# заповнені вручну.
-LEGACY_FIELDS = [
-    ('military_registration_document', 'Військово-обліковий документ'),
-    ('issued_VOD', 'Виданий ВОД'),
-    ('military_accounting_specialty_number', 'Номер ВОС (старе поле)'),
-    ('change_credentials', 'Зміна облікових даних'),
-    ('reason_for_changing_credentials', 'Підстава для зміни'),
-    ('being_on_military_registration', 'Перебування на обліку'),
-]
-
 
 def _field_label(name, scope='military'):
     src = (MILITARY_FIELDS + LEGACY_FIELDS) if scope == 'military' else STUDENT_FIELDS

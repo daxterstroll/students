@@ -120,10 +120,6 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         'data_verified_on_time': 1 if parsed.get('data_verified_on_time') else 0,
         'data_update_date': parsed.get('data_update_date') or '',
         'military_registration_document': parsed.get('military_registration_document') or '',
-        'issued_VOD': parsed.get('issued_VOD') or '',
-        'phone': parsed.get('phone') or '',
-        'email': parsed.get('email') or '',
-        'address_of_residence': parsed.get('address') or '',
     }
 
     cols = list(new_military.keys())
@@ -144,26 +140,25 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         return False, f"Не вдалося оновити військові дані: {e}"
 
     # Оновлюємо поля картки студента, якщо в PDF є
+    # Адреса/телефон/email з PDF тепер ідуть у картку студента,
+    # а не в military (там цих колонок більше немає).
     student_updates = {}
-    if parsed.get('birth_date'):
-        student_updates['birth_date'] = parsed['birth_date']
-    if parsed.get('tax_id'):
-        student_updates['tax_id'] = parsed['tax_id']
+    if parsed.get('address'):
+        student_updates['address_of_residence'] = parsed['address']
     if parsed.get('phone'):
         student_updates['phone'] = parsed['phone']
     if parsed.get('email'):
         student_updates['email'] = parsed['email']
-
     if student_updates:
-        cols = list(student_updates.keys())
-        set_clause = ', '.join(f"{c} = ?" for c in cols)
         try:
+            cols = list(student_updates.keys())
+            set_clause = ', '.join(f"{c} = COALESCE(NULLIF({c}, ''), ?)" for c in cols)
             conn.execute(
                 f"UPDATE students SET {set_clause} WHERE id = ?",
-                [student_updates[c] for c in cols] + [student_id]
+                [student_updates[c] for c in cols] + [student_id],
             )
         except Exception as e:
-            logger.error(f"[promote_apply] students UPDATE: {e}", exc_info=True)
+            logger.warning(f"[promote_update] students address/contacts update: {e}")
 
     # Фото — тільки якщо в студента ще немає
     if photo_bytes:
@@ -266,11 +261,9 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
         'disability_group': parsed.get('disability_group') or '',
         'disability_valid_until': parsed.get('disability_valid_until') or '',
         'disability_reason': parsed.get('disability_reason') or '',
+        'formed_at': parsed.get('formed_at') or '',
         'data_verified_on_time': 1 if parsed.get('data_verified_on_time') else 0,
         'data_update_date': parsed.get('data_update_date') or '',
-        'address_of_residence': parsed.get('address') or '',
-        'phone': parsed.get('phone') or '',
-        'email': parsed.get('email') or '',
     }
 
     cols = list(new_fields.keys())
@@ -294,10 +287,24 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
         logger.error(f"[promote_update] military UPDATE/INSERT: {e}", exc_info=True)
         return False, f"Не вдалося оновити військові дані: {e}"
 
-    logger.info(
-        f"[promote_update] military OK: status_badge={new_fields['status_badge']!r}, "
-        f"tck_name={new_fields['tck_name']!r}"
-    )
+    # Адреса/телефон/email з PDF — у картку студента, не в military
+    student_updates = {}
+    if parsed.get('address'):
+        student_updates['address_of_residence'] = parsed['address']
+    if parsed.get('phone'):
+        student_updates['phone'] = parsed['phone']
+    if parsed.get('email'):
+        student_updates['email'] = parsed['email']
+    if student_updates:
+        try:
+            cols = list(student_updates.keys())
+            set_clause = ', '.join(f"{c} = COALESCE(NULLIF({c}, ''), ?)" for c in cols)
+            conn.execute(
+                f"UPDATE students SET {set_clause} WHERE id = ?",
+                [student_updates[c] for c in cols] + [student_id],
+            )
+        except Exception as e:
+            logger.warning(f"[promote_update] students address/contacts update: {e}")
 
     if photo_bytes:
         try:
@@ -660,16 +667,23 @@ def pending_student_review(pending_id):
             if has_military_scans or has_old_military_fields:
                 cur_military = conn.execute("""
                     INSERT INTO military (
-                        student_id, registration_number_of_the_DRPVR, military_registration_document, issued_VOD,
-                        military_accounting_specialty_number, military_rank, address_of_residence,
+                        student_id, registry_number, military_registration_document, formed_at,
+                        vos_code, military_rank,
                         change_credentials, reason_for_changing_credentials
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     student_id, row['military_registration_number_drpvr'], row['military_registration_document'],
                     row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                    row['military_address'], row['military_change_credentials'], row['military_change_reason'],
+                    row['military_change_credentials'], row['military_change_reason'],
                 ))
                 military_id = cur_military.lastrowid
+
+                # Адреса тепер живе в students, а не в military
+                if row['military_address']:
+                    conn.execute(
+                        "UPDATE students SET address_of_residence = COALESCE(NULLIF(address_of_residence, ''), ?) WHERE id = ?",
+                        (row['military_address'], student_id),
+                    )
             else:
                 conn.execute(
                     "UPDATE attachments SET entity_type='student', entity_id=? "
@@ -881,30 +895,36 @@ def pending_student_review(pending_id):
                 ).fetchone()
                 if existing_military:
                     conn.execute("""
-                        UPDATE military SET registration_number_of_the_DRPVR=?, military_registration_document=?,
-                                             issued_VOD=?, military_accounting_specialty_number=?, military_rank=?,
-                                             address_of_residence=?, change_credentials=?, reason_for_changing_credentials=?
+                        UPDATE military SET registry_number=?, military_registration_document=?,
+                                             formed_at=?, vos_code=?, military_rank=?,
+                                             change_credentials=?, reason_for_changing_credentials=?
                         WHERE id=?
                     """, (
                         row['military_registration_number_drpvr'], row['military_registration_document'],
                         row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                        row['military_address'], row['military_change_credentials'], row['military_change_reason'],
+                        row['military_change_credentials'], row['military_change_reason'],
                         existing_military['id']
                     ))
                     military_id_for_scans = existing_military['id']
                 else:
                     cur_military = conn.execute("""
                         INSERT INTO military (
-                            student_id, registration_number_of_the_DRPVR, military_registration_document, issued_VOD,
-                            military_accounting_specialty_number, military_rank, address_of_residence,
+                            student_id, registry_number, military_registration_document, formed_at,
+                            vos_code, military_rank,
                             change_credentials, reason_for_changing_credentials
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         existing_id, row['military_registration_number_drpvr'], row['military_registration_document'],
                         row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                        row['military_address'], row['military_change_credentials'], row['military_change_reason'],
+                        row['military_change_credentials'], row['military_change_reason'],
                     ))
                     military_id_for_scans = cur_military.lastrowid
+                # Адреса — в картку студента, не в military
+                if row['military_address']:
+                    conn.execute(
+                        "UPDATE students SET address_of_residence = COALESCE(NULLIF(address_of_residence, ''), ?) WHERE id = ?",
+                        (row['military_address'], existing_id),
+                    )
                 updated_parts.append('військовий облік')
                 conn.execute(
                     "UPDATE attachments SET entity_type='military', entity_id=? "
@@ -1390,13 +1410,17 @@ def update_request_review(request_id):
                             'deferral_until': m.get('deferral_until'),
                             'vlk_decision': m.get('vlk_decision'),
                             'vlk_date': m.get('vlk_date'),
-                            'address_of_residence': m.get('address_of_residence'),
-                            'registration_number_of_the_DRPVR': m.get('registration_number_of_the_DRPVR'),
+                            'formed_at': m.get('formed_at'),
                             'military_registration_document': m.get('military_registration_document'),
-                            'issued_VOD': m.get('issued_VOD'),
-                            'military_accounting_specialty_number': m.get('military_accounting_specialty_number'),
                         }.items() if v
                     }
+
+                    # Адреса — окремо, у картку студента
+                    if m.get('address_of_residence'):
+                        conn.execute(
+                            "UPDATE students SET address_of_residence = COALESCE(NULLIF(address_of_residence, ''), ?) WHERE id = ?",
+                            (m.get('address_of_residence'), student_id),
+                        )
 
                     if existing_military:
                         military_id = existing_military['id']

@@ -560,26 +560,6 @@
                                 </div>
                                 {% endif %}
 
-                                {% if military.phone or military.email %}
-                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
-                                    <i class="bi bi-telephone me-1"></i>Контакти з документа
-                                </h6>
-                                <div class="row g-3 mb-3">
-                                    {% if military.phone %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Телефон (з PDF)</div>
-                                        <div>{{ military.phone }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.email %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Email (з PDF)</div>
-                                        <div>{{ military.email }}</div>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                                {% endif %}
-
                                 {% if military.data_update_date or military.data_verified_on_time %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
                                     <i class="bi bi-check2-circle me-1"></i>Дані уточнено
@@ -602,47 +582,31 @@
                                 </div>
                                 {% endif %}
 
-                                {% if military.military_registration_document or military.issued_VOD or military.military_accounting_specialty_number or military.change_credentials or military.reason_for_changing_credentials or military.being_on_military_registration %}
-                                <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
-                                    <i class="bi bi-archive me-1"></i>Додаткові поля (старі)
-                                </h6>
-                                <div class="row g-3 mb-3">
-                                    {% if military.military_registration_document %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Військово-обліковий документ</div>
-                                        <div>{{ military.military_registration_document }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.issued_VOD %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Виданий ВОД</div>
-                                        <div class="font-monospace">{{ military.issued_VOD }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.military_accounting_specialty_number %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Номер ВОС (старе)</div>
-                                        <div>{{ military.military_accounting_specialty_number }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.change_credentials %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Зміна облікових даних</div>
-                                        <div>{{ military.change_credentials }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.reason_for_changing_credentials %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Підстава для зміни</div>
-                                        <div>{{ military.reason_for_changing_credentials }}</div>
-                                    </div>
-                                    {% endif %}
-                                    {% if military.being_on_military_registration %}
-                                    <div class="col-sm-6">
-                                        <div class="text-muted small">Перебування на обліку</div>
-                                        <div>{{ military.being_on_military_registration }}</div>
-                                    </div>
-                                    {% endif %}
+								{% if military.military_registration_document or military.change_credentials or military.reason_for_changing_credentials %}
+								<h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">
+									<i class="bi bi-pencil-square me-1"></i>Додаткові поля (вручну)
+								</h6>
+								<div class="row g-3 mb-3">
+									{% if military.military_registration_document %}
+									<div class="col-sm-6">
+										<div class="text-muted small">Військово-обліковий документ</div>
+										<div>{{ military.military_registration_document }}</div>
+									</div>
+									{% endif %}
+									{% if military.change_credentials %}
+									<div class="col-sm-6">
+										<div class="text-muted small">Зміна облікових даних</div>
+										<div>{{ military.change_credentials }}</div>
+									</div>
+									{% endif %}
+									{% if military.reason_for_changing_credentials %}
+									<div class="col-sm-6">
+										<div class="text-muted small">Підстава для зміни</div>
+										<div>{{ military.reason_for_changing_credentials }}</div>
+									</div>
+									{% endif %}
+								</div>
+								{% endif %}
                                 </div>
                                 {% endif %}
 

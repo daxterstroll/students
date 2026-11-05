@@ -95,22 +95,22 @@
                         <label class="form-label">Звання</label>
                         <input type="text" name="military_rank" class="form-control" value="{{ request.form.military_rank or '' }}">
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Реєстраційний номер ЄДРПВР</label>
-                        <input type="text" name="registration_number_of_the_DRPVR" class="form-control" value="{{ request.form.registration_number_of_the_DRPVR or '' }}">
-                    </div>
+					<div class="col-md-4">
+						<label class="form-label">Номер запису (ДРПВР)</label>
+						<input type="text" name="registry_number" class="form-control" value="{{ request.form.registry_number or '' }}">
+					</div>
                     <div class="col-md-4">
                         <label class="form-label">Військово-обліковий документ</label>
                         <input type="text" name="military_registration_document" class="form-control" value="{{ request.form.military_registration_document or '' }}">
                     </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Виданий ВОД</label>
-                        <input type="text" name="issued_VOD" placeholder="ДД.ММ.РРРР" class="form-control" value="{{ request.form.issued_VOD or '' }}">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">Номер військово-облікової спеціальності</label>
-                        <input type="text" name="military_accounting_specialty_number" class="form-control" value="{{ request.form.military_accounting_specialty_number or '' }}">
-                    </div>
+					<div class="col-md-4">
+						<label class="form-label">Документ сформовано</label>
+						<input type="text" name="formed_at" placeholder="ДД.ММ.РРРР" class="form-control" value="{{ request.form.formed_at or '' }}">
+					</div>
+					<div class="col-md-4">
+						<label class="form-label">Код ВОС</label>
+						<input type="text" name="vos_code" class="form-control" value="{{ request.form.vos_code or '' }}">
+					</div>
                     <div class="col-md-4">
                         <label class="form-label">Зміна облікових данних</label>
                         <input type="text" name="change_credentials" class="form-control" value="{{ request.form.change_credentials or '' }}">
@@ -119,10 +119,10 @@
                         <label class="form-label">Підстава для зміни облікових даних</label>
                         <input type="text" name="reason_for_changing_credentials" class="form-control" value="{{ request.form.reason_for_changing_credentials or '' }}">
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Перебування на військовому обліку</label>
-                        <input type="text" name="being_on_military_registration" class="form-control" value="{{ request.form.being_on_military_registration or '' }}">
-                    </div>
+					<div class="col-md-6">
+						<label class="form-label">ТЦК та СП</label>
+						<input type="text" name="tck_name" class="form-control" value="{{ request.form.tck_name or '' }}">
+					</div>
                     <div class="col-12">
                         <label class="form-label">Адреса місця проживання</label>
                         <input type="text" name="address_of_residence" class="form-control" value="{{ request.form.address_of_residence or '' }}">
