@@ -55,6 +55,66 @@
 
 {% block main_class %}py-3{% endblock %} 
 {% block content %}
+
+<style>
+    /* Фото студента — винесено на початок, щоб уникнути FOUC:
+       без цих правил <img> рендериться в натуральному розмірі
+       (на весь екран), поки браузер не дочитає <style> внизу документа. */
+    .photo-frame {
+        width: 150px;
+        height: 200px;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 6px 18px rgba(14,27,44,.14);
+        border: 3px solid #fff;
+        background: var(--paper-2);
+    }
+    .photo-frame--header {
+        width: 96px;
+        height: 128px;
+        border-radius: 10px;
+        border: 3px solid var(--brass);
+        box-shadow: 0 8px 20px rgba(0,0,0,.35);
+        margin: 0 auto;
+    }
+    .student-header .page-header,
+    .student-header.page-header { padding-top: 1.5rem; padding-bottom: 1.5rem; }
+    .photo-frame__img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+    .photo-frame__placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 3rem;
+        background: linear-gradient(160deg, var(--paper-2), #fff);
+    }
+    .photo-frame--header .photo-frame__placeholder { font-size: 2rem; color: var(--brass-semi); }
+
+    .photo-frame-wrap { position: relative; width: 96px; }
+    .photo-corner-btn {
+        position: absolute;
+        bottom: -6px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .85rem;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0,0,0,.35);
+    }
+    .photo-corner-btn { left: 6px; }
+    .photo-corner-btn--delete { left: auto; right: 6px; }
+</style>
+
 <div class="container py-4">
 
     <!-- Шапка з фото ліворуч від ПІБ і групи -->
@@ -299,10 +359,14 @@
                             <div class="text-muted small">Резервний телефон</div>
                             <div>{{ val(student.phone_backup) }}</div>
                         </div>
-                        <div class="col-6">
-                            <div class="text-muted small">Email</div>
-                            <div>{{ val(student.email) }}</div>
-                        </div>
+						<div class="col-6">
+							<div class="text-muted small">Email</div>
+							<div>{{ val(student.email) }}</div>
+						</div>
+						<div class="col-12">
+							<div class="text-muted small">Адреса проживання</div>
+							<div>{{ val(student.address_of_residence) }}</div>
+						</div>
                     </div>
                 </div>
             </div>
@@ -607,8 +671,6 @@
 									{% endif %}
 								</div>
 								{% endif %}
-                                </div>
-                                {% endif %}
 
                                 {% if military_attachments %}
                                 <h6 class="text-muted small text-uppercase mb-2 mt-3 pt-2 border-top">

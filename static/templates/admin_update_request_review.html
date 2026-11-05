@@ -258,16 +258,13 @@
             </table>
             {% endif %}
 
-            {% if m.get('registration_number_of_the_DRPVR') or m.get('military_registration_document')
-                  or m.get('issued_VOD') or m.get('military_accounting_specialty_number') %}
-            {# ── Старі поля (якщо студент ввів вручну) ── #}
-            <h6 class="text-muted small text-uppercase mt-3 mb-2">Старі поля (введено вручну)</h6>
+            {% if m.get('formed_at') or m.get('military_registration_document') %}
+            {# ── Додаткові поля (введено вручну) ── #}
+            <h6 class="text-muted small text-uppercase mt-3 mb-2">Додаткові поля (введено вручну)</h6>
             <table class="table table-sm table-borderless mb-2">
                 <tbody>
-                    {% if m.get('registration_number_of_the_DRPVR') %}<tr><th class="text-muted w-25">Номер ДРПВР</th><td>{{ m.registration_number_of_the_DRPVR }}</td></tr>{% endif %}
-                    {% if m.get('military_registration_document') %}<tr><th class="text-muted">Документ</th><td>{{ m.military_registration_document }}</td></tr>{% endif %}
-                    {% if m.get('issued_VOD') %}<tr><th class="text-muted">Виданий ВОД</th><td class="font-monospace">{{ m.issued_VOD }}</td></tr>{% endif %}
-                    {% if m.get('military_accounting_specialty_number') %}<tr><th class="text-muted">Номер ВОС (старе)</th><td>{{ m.military_accounting_specialty_number }}</td></tr>{% endif %}
+                    {% if m.get('military_registration_document') %}<tr><th class="text-muted w-25">Військово-обліковий документ</th><td>{{ m.military_registration_document }}</td></tr>{% endif %}
+                    {% if m.get('formed_at') %}<tr><th class="text-muted">Документ сформовано</th><td class="font-monospace">{{ m.formed_at }}</td></tr>{% endif %}
                 </tbody>
             </table>
             {% endif %}
