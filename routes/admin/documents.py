@@ -459,7 +459,7 @@ def _normalize_name_for_match(s):
     return ' '.join(s.split())
 
 
-def fuzzy_find_student(cursor, full_name, threshold=90):
+def fuzzy_find_student(cursor, full_name, threshold=95):
     """
     Нечіткий пошук студента за ПІБ.
 
