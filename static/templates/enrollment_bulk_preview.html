@@ -1,0 +1,263 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевірка — масове додавання наказів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.enrollment_bulk') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Вставити інший список
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-check2-square',
+        'Перевірка перед створенням',
+        'Розпізнано ' ~ total_students ~ ' записів у ' ~ groups|length ~ ' наказ(ах)'
+    ) }}
+
+    {% if errors %}
+    <div class="alert alert-warning">
+        <h6 class="mb-2">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+            Проблемні рядки — будуть пропущені ({{ errors|length }})
+        </h6>
+        <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+            <table class="table table-sm mb-0">
+                <thead>
+                    <tr>
+                        <th style="width:60px;">Рядок</th>
+                        <th style="width:30%;">ПІБ</th>
+                        <th>Причина</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in errors %}
+                    <tr>
+                        <td class="text-center font-monospace small">{{ e.line }}</td>
+                        <td class="small">{{ e.fio or '—' }}</td>
+                        <td class="text-danger small">{{ e.reason }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small text-muted mt-2">
+            Проблемні рядки можна виправити в тексті й повторити вставку —
+            вже створені накази не задублюються.
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not groups %}
+    <div class="alert alert-danger">
+        <i class="bi bi-x-circle-fill me-2"></i>
+        Жодного наказу не буде створено — виправте помилки вище.
+    </div>
+    {% else %}
+    <form method="POST"
+          action="{{ url_for('admin.enrollment_bulk_confirm') }}"
+          id="bulkConfirmForm">
+        <input type="hidden" name="token" value="{{ token }}">
+        <input type="hidden" name="include_present" value="1">
+
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3 px-2 py-2"
+             style="background: var(--paper-2); border-radius: 8px;">
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="toggleAll(true)">
+                <i class="bi bi-check-square me-1"></i> Обрати всіх
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary"
+                    onclick="toggleAll(false)">
+                <i class="bi bi-square me-1"></i> Зняти всіх
+            </button>
+            <span class="small text-muted ms-auto">
+                <i class="bi bi-info-circle me-1"></i>
+                Знімайте галочки з тих, кого <strong>не включати</strong> в наказ.
+                Якщо в наказі залишилось 0 студентів — наказ не створиться.
+            </span>
+        </div>
+
+        {% for g in groups %}
+        {% set group_idx = loop.index0 %}
+        <div class="card mb-3" id="group-card-{{ group_idx }}">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <strong>Наказ № {{ g.number }}</strong>
+                    від <span class="font-monospace">{{ g.date }}</span>
+                    {% if g.codes %}
+                    <div class="small text-muted mt-1">
+                        <i class="bi bi-hash"></i>
+                        Код наказу (примітка): {{ g.codes|join(', ') }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="badge bg-primary">
+                        <span class="js-group-count" data-group="{{ group_idx }}">{{ g.students|length }}</span>
+                        з {{ g.students|length }}
+                    </span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="toggleGroup({{ group_idx }}, true)" title="Обрати всіх">
+                        <i class="bi bi-check-all"></i>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            onclick="toggleGroup({{ group_idx }}, false)" title="Зняти всіх">
+                        <i class="bi bi-x-square"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center" style="width:40px;">
+                                    <input type="checkbox"
+                                           class="form-check-input js-toggle-group-checkbox"
+                                           data-group="{{ group_idx }}" checked>
+                                </th>
+                                <th>Студент</th>
+                                <th>Група (для наказу)</th>
+                                <th class="small">Введено у списку</th>
+                                <th class="text-center" style="width:100px;">Збіг</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in g.students %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox"
+                                           class="form-check-input js-include"
+                                           name="include"
+                                           value="{{ s.student_id }}_{{ s.group_id }}"
+                                           data-group="{{ group_idx }}"
+                                           checked>
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('students.student_details', student_id=s.student_id) }}"
+                                       target="_blank" class="text-decoration-none">
+                                        {{ s.matched_name }}
+                                    </a>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                        {{ s.group_name or ('#' ~ s.group_id) }}
+                                    </span>
+                                    {% if s.is_primary_group %}
+                                    <span class="badge bg-primary-subtle text-primary-emphasis ms-1"
+                                          title="Основна група студента">осн.</span>
+                                    {% endif %}
+                                    {% if s.other_groups_count and s.other_groups_count > 0 %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
+                                          title="У студента є ще {{ s.other_groups_count }} активн(их) груп(и) без наказу про зарахування. Щоб створити наказ і для них — додайте студента окремим рядком у список з тим самим або іншим номером наказу.">
+                                        <i class="bi bi-people"></i> +{{ s.other_groups_count }} парал.
+                                    </span>
+                                    {% endif %}
+                                </td>
+                                <td class="small text-muted">
+                                    {% if s.fio_input != s.matched_name %}
+                                    <i class="bi bi-arrow-right me-1"></i>{{ s.fio_input }}
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if s.score >= 95 %}
+                                    <span class="badge bg-success-subtle text-success-emphasis">{{ s.score }}%</span>
+                                    {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis"
+                                          title="Нижчий збіг — перевірте">{{ s.score }}%</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="d-flex flex-wrap gap-2 mt-3">
+            <button type="submit" class="btn btn-success btn-lg">
+                <i class="bi bi-check-circle me-2"></i>
+                Створити накази з вибраними
+            </button>
+            <a href="{{ url_for('admin.enrollment_bulk') }}"
+               class="btn btn-outline-secondary btn-lg">
+                Скасувати
+            </a>
+        </div>
+    </form>
+    {% endif %}
+
+</div>
+
+<style>
+    .group-card-empty {
+        border-color: var(--stamp) !important;
+        background: var(--stamp-soft);
+    }
+</style>
+
+<script>
+(function () {
+    function toggleAll(state) {
+        document.querySelectorAll('.js-include').forEach(cb => cb.checked = state);
+        document.querySelectorAll('.js-toggle-group-checkbox').forEach(cb => cb.checked = state);
+        updateAll();
+    }
+
+    function toggleGroup(groupIdx, state) {
+        document.querySelectorAll('.js-include[data-group="' + groupIdx + '"]').forEach(cb => cb.checked = state);
+        const master = document.querySelector('.js-toggle-group-checkbox[data-group="' + groupIdx + '"]');
+        if (master) master.checked = state;
+        updateAll();
+    }
+
+    function updateAll() {
+        document.querySelectorAll('.js-group-count').forEach(el => {
+            const g = el.dataset.group;
+            const checked = document.querySelectorAll(
+                '.js-include[data-group="' + g + '"]:checked'
+            ).length;
+            el.textContent = checked;
+        });
+        document.querySelectorAll('[id^="group-card-"]').forEach(card => {
+            const idx = card.id.replace('group-card-', '');
+            const checked = document.querySelectorAll(
+                '.js-include[data-group="' + idx + '"]:checked'
+            ).length;
+            card.classList.toggle('group-card-empty', checked === 0);
+        });
+    }
+
+    document.querySelectorAll('.js-include').forEach(cb => {
+        cb.addEventListener('change', updateAll);
+    });
+    document.querySelectorAll('.js-toggle-group-checkbox').forEach(master => {
+        master.addEventListener('change', function () {
+            toggleGroup(this.dataset.group, this.checked);
+        });
+    });
+
+    const form = document.getElementById('bulkConfirmForm');
+    if (form) {
+        form.addEventListener('submit', function (e) {
+            const total = document.querySelectorAll('.js-include:checked').length;
+            if (total === 0) {
+                e.preventDefault();
+                alert('Не обрано жодного запису — нічого створювати.');
+                return;
+            }
+            const activeGroups = [...document.querySelectorAll('.js-group-count')]
+                .filter(el => parseInt(el.textContent, 10) > 0).length;
+            if (!confirm('Створити ' + activeGroups + ' наказ(ів) для ' + total + ' записів?')) {
+                e.preventDefault();
+            }
+        });
+    }
+    updateAll();
+})();
+</script>
+{% endblock %}

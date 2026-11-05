@@ -84,9 +84,18 @@
     </div>
 
     <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <strong>Позиції наказу</strong>
-            <span class="badge bg-primary">{{ order['items']|length }}</span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-primary">{{ order['items']|length }}</span>
+                {% if order.duplicates_hidden %}
+                <span class="badge bg-warning text-dark"
+                      title="У БД було {{ order.duplicates_hidden }} зайвих рядків з тим самим студентом і групою — приховано при показі">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    приховано {{ order.duplicates_hidden }} дубл.
+                </span>
+                {% endif %}
+            </div>
         </div>
         <div class="card-body p-0">
             {% if order['items'] %}
@@ -96,7 +105,7 @@
                         <tr>
                             <th class="text-center" style="width:40px;">№</th>
                             <th>Об’єкт</th>
-                            <th>Тип</th>
+                            <th>Група</th>
                             <th>Деталі</th>
                             <th style="min-width:220px;">Перенести в наказ</th>
                         </tr>
@@ -114,7 +123,15 @@
                                 {{ it.label }}
                                 {% endif %}
                             </td>
-                            <td class="small text-muted">{{ it.entity_type }}</td>
+                            <td>
+                                {% if it.group_name_for_item %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                    <i class="bi bi-mortarboard-fill me-1"></i>{{ it.group_name_for_item }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
                             <td class="small">{{ it.payload_text or '—' }}</td>
                             <td>
                                 {% if peer_orders and it.id %}
