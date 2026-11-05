@@ -1514,11 +1514,11 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
                s.birth_date, s.gender, s.tax_id, s.dismissed_at,
                s.license_id,
+               s.address_of_residence,         
                il.short_name_ua AS license_short,
                m.status_badge, m.military_rank, m.category_override,
                m.registry_number, m.vos_code, m.vos_description,
                m.military_registration_document,
-               m.address_of_residence,
                m.tck_name,
                m.deferral_type, m.deferral_until,
                m.note_18,
@@ -1535,7 +1535,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
         WHERE COALESCE(s.archived, 0) = 0
         ORDER BY s.last_name_UA COLLATE UKRAINIAN,
                  s.first_name_UA COLLATE UKRAINIAN
-    """).fetchall()
+    """).fetchall() 
 
     # Останні паспорти — одним запитом
     passport_map = {}
@@ -2623,7 +2623,7 @@ def dodatok_4_list():
                m.registry_number, m.military_registration_document,
                m.vos_code, m.military_rank, m.tck_name,
                m.change_credentials, m.reason_for_changing_credentials,
-               m.address_of_residence,
+               s.address_of_residence,
                m.dodatok4_sent_at, m.dodatok4_fingerprint, m.dodatok4_snapshot,
                g.name AS group_name
         FROM students s
@@ -2692,11 +2692,10 @@ def dodatok_4_export(student_id):
 
     r = conn.execute("""
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
-               s.birth_date, s.tax_id,
+               s.birth_date, s.tax_id, s.address_of_residence,  
                m.registry_number, m.military_registration_document,
                m.vos_code, m.military_rank, m.tck_name,
                m.change_credentials, m.reason_for_changing_credentials,
-               m.address_of_residence,
                m.dodatok4_sent_at, m.dodatok4_fingerprint
         FROM students s
         INNER JOIN military m ON m.student_id = s.id

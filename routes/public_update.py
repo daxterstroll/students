@@ -361,11 +361,10 @@ def update_info(token):
             'deferral_until': f('military_deferral_until'),
             'vlk_decision': f('military_vlk_decision'),
             'vlk_date': f('military_vlk_date'),
-            'address_of_residence': f('military_address'),
-            'registration_number_of_the_DRPVR': f('military_registration_number_drpvr'),
+            'formed_at': _iso_to_ua_date(f('military_issued_vod')),
             'military_registration_document': f('military_registration_document'),
-            'issued_VOD': _iso_to_ua_date(f('military_issued_vod')),
-            'military_accounting_specialty_number': f('military_specialty_number'),
+            # адреса — в картку студента, не в military
+            'address_of_residence': f('military_address'),
         }
 
     conn.execute(

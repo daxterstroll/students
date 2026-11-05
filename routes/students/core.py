@@ -341,11 +341,8 @@ def student_list():
                m.data_verified_on_time,
                m.data_update_date,
                m.military_registration_document,
-               m.issued_VOD,
-               m.military_accounting_specialty_number,
                m.change_credentials,
                m.reason_for_changing_credentials,
-               m.being_on_military_registration,
                g.name || ' (' || g.start_year || ', ' || g.study_form || ', ' || g.program_credits || ' кредитів)' AS group_name,
                g.study_form,
                g.program_credits,
@@ -1335,39 +1332,6 @@ def add_student():
             )
             return redirect(url_for('students.student_details', student_id=existing_id))
 
-        # ── Новий студент ──
-        # gender / license_id / phone / phone_backup / email /
-        # address_of_residence уже визначені ВИЩЕ, тому тут НЕ
-        # повторюємо їхні визначення.
-        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
-        issued_VOD = None
-        if issued_VOD_raw:
-            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
-            try:
-                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
-                issued_VOD = issued_VOD_clean
-            except ValueError:
-                flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
-                conn.close()
-                return render_template('add_student.html', groups=groups, licenses=licenses)
-        program_credits_override = request.form.get('program_credits_override', type=int)
-        # ── Новий студент ──
-        # gender / license_id / phone / phone_backup / email /
-        # address_of_residence уже визначені ВИЩЕ (перед перевіркою
-        # "чи вже є такий студент"), тут їх НЕ перевизначаємо.
-        program_credits_override = request.form.get('program_credits_override', type=int)
-        issued_VOD_raw = request.form.get('issued_VOD', '').strip()
-        issued_VOD = None
-        if issued_VOD_raw:
-            issued_VOD_clean = issued_VOD_raw.replace("-", ".")
-            try:
-                datetime.strptime(issued_VOD_clean, "%d.%m.%Y")
-                issued_VOD = issued_VOD_clean
-            except ValueError:
-                flash("Невірний формат дати видачі ВОД. Введіть у форматі ДД.ММ.РРРР")
-                conn.close()
-                return render_template('add_student.html', groups=groups, licenses=licenses)
-
         conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
@@ -1422,15 +1386,13 @@ def add_student():
             'tck_name', 'military_rank', 'registry_number', 'vos_code', 'vos_description',
             'deferral_type', 'deferral_until', 'police_reason', 'police_date',
             'vlk_decision', 'vlk_date', 'disability_group', 'disability_valid_until',
-            'disability_reason',
-            'military_registration_document', 'issued_VOD',
-            'military_accounting_specialty_number', 'change_credentials',
-            'reason_for_changing_credentials', 'being_on_military_registration',
+            'disability_reason', 'formed_at',
+            'military_registration_document', 'change_credentials',
+            'reason_for_changing_credentials',
         ]
         has_military = any((request.form.get(f) or '').strip() for f in military_fields_list)
         if has_military:
             data = {f: (request.form.get(f) or '').strip() or None for f in military_fields_list}
-            data['issued_VOD'] = issued_VOD
             columns = ['student_id'] + list(data.keys())
             placeholders = ', '.join('?' for _ in columns)
             conn.execute(

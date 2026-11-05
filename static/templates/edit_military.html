@@ -157,19 +157,21 @@
                     {% endif %}
                     {% endfor %}
 
-                    {# ── Додаткові (легасі) поля, які вже не приходять з PDF ── #}
-                    <div class="col-12 mt-3 pt-3 border-top">
-                        <h6 class="text-muted small text-uppercase mb-3">
-                            <i class="bi bi-archive me-1"></i>Додаткові поля (не з PDF «Резерв+»)
-                        </h6>
-                    </div>
-                    {% for key, label in legacy_fields %}
-                    {% set val = military[key] if military else '' %}
-                    <div class="col-md-6">
-                        <label class="form-label" for="f_{{ key }}">{{ label }}</label>
-                        <input type="text" name="{{ key }}" id="f_{{ key }}" class="form-control" value="{{ val or '' }}">
-                    </div>
-                    {% endfor %}
+					{# ── Додаткові поля, які заповнюються вручну (не з PDF «Резерв+») ── #}
+					{% if legacy_fields %}
+					<div class="col-12 mt-3 pt-3 border-top">
+						<h6 class="text-muted small text-uppercase mb-3">
+							<i class="bi bi-pencil-square me-1"></i>Додаткові поля (вручну, не з PDF «Резерв+»)
+						</h6>
+					</div>
+					{% for key, label in legacy_fields %}
+					{% set val = military[key] if military else '' %}
+					<div class="col-md-6">
+						<label class="form-label" for="f_{{ key }}">{{ label }}</label>
+						<input type="text" name="{{ key }}" id="f_{{ key }}" class="form-control" value="{{ val or '' }}">
+					</div>
+					{% endfor %}
+					{% endif %}
 
                     {# ── Скановані копії ── #}
                     <div class="col-12 border-top pt-3 mt-3">

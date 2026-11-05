@@ -48,9 +48,11 @@ STUDENT_FIELDS = ['last_name_UA', 'first_name_UA', 'middle_name_UA',
                    'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code',
                    'tax_id', 'phone', 'email']
 MILITARY_FIELDS = [
-    'registration_number_of_the_DRPVR', 'military_registration_document', 'issued_VOD',
-    'military_accounting_specialty_number', 'military_rank', 'change_credentials',
-    'reason_for_changing_credentials', 'being_on_military_registration', 'address_of_residence'
+    'status_badge', 'valid_until', 'registration_category', 'removal_basis',
+    'tck_name', 'military_rank', 'registry_number', 'vos_code', 'vos_description',
+    'deferral_type', 'deferral_until', 'vlk_decision', 'vlk_date',
+    'disability_group', 'formed_at',
+    'military_registration_document', 'change_credentials', 'reason_for_changing_credentials',
 ]
 # Набір обов'язкових полів паспортного документа залежить від типу
 # (серія - лише для книжки; дійсний до і запис у ЄДДР - лише для
