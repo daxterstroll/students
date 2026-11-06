@@ -445,7 +445,25 @@ def pending_student_review(pending_id):
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
             # Чекбокс — окремо (0/1, а не None/'')
             values['military_data_verified_on_time'] = 1 if request.form.get('military_data_verified_on_time') else 0
-            if values.get('passport_document_type') not in PASSPORT_TYPES_ID_STYLE:
+
+            # ── Паспорт: не зберігаємо "сміттєвий" тип без номера ──
+            # Якщо номер паспорта порожній — вважаємо, що паспортний
+            # розділ не заповнювався, і очищаємо ВСІ паспортні поля.
+            # Інакше <select> з дефолтним значенням (напр. ID-картка)
+            # при будь-якому збереженні заявки записувався б у БД,
+            # навіть якщо студент паспорт не вводив — і в порівнянні
+            # з базою це виглядало б як "фантомний паспорт".
+            if not values.get('passport_number'):
+                values['passport_document_type'] = None
+                values['passport_series'] = None
+                values['passport_issued_by'] = None
+                values['passport_issue_date'] = None
+                values['passport_valid_until'] = None
+                values['passport_unique_number'] = None
+            elif values.get('passport_document_type') not in PASSPORT_TYPES_ID_STYLE:
+                # ID-специфічні поля не мають значення для книжки /
+                # свідоцтва про народження — скидаємо, щоб не тягнути
+                # старі значення, якщо тип змінили.
                 values['passport_valid_until'] = None
 
             # military_data_verified_on_time — не TEXT, а INTEGER. У
@@ -519,20 +537,27 @@ def pending_student_review(pending_id):
             program_credits_override_raw = (request.form.get('program_credits_override') or '').strip()
             program_credits_override = int(program_credits_override_raw) if program_credits_override_raw else None
 
+            # force_new_student=1 — адмін ЯВНО підтвердив, що це різні люди
+            # з однаковим ПІБ і датою народження (напр. повні тезки).
+            # У цьому випадку пошук дубліката пропускаємо і створюємо
+            # нового студента, навіть якщо в базі вже є «схожий».
+            force_new_student = request.form.get('force_new_student') == '1'
+
             # ── Перевірка: чи студент уже є в базі? ──
             existing_student = None
-            if row['tax_id']:
-                existing_student = conn.execute(
-                    "SELECT id FROM students WHERE tax_id = ?", (row['tax_id'],)
-                ).fetchone()
-                
-            if not existing_student:
-                existing_student = conn.execute("""
-                    SELECT id FROM students
-                    WHERE LOWER_UA(last_name_UA) = LOWER_UA(?)
-                      AND LOWER_UA(first_name_UA) = LOWER_UA(?)
-                      AND birth_date = ?
-                """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
+            if not force_new_student:
+                if row['tax_id']:
+                    existing_student = conn.execute(
+                        "SELECT id FROM students WHERE tax_id = ?", (row['tax_id'],)
+                    ).fetchone()
+
+                if not existing_student:
+                    existing_student = conn.execute("""
+                        SELECT id FROM students
+                        WHERE LOWER_UA(last_name_UA) = LOWER_UA(?)
+                          AND LOWER_UA(first_name_UA) = LOWER_UA(?)
+                          AND birth_date = ?
+                    """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
 
             if existing_student:
                 # Не дублюємо — реактивуємо enrollment і знімаємо з архіву.
@@ -551,9 +576,9 @@ def pending_student_review(pending_id):
                 from routes.enrollments_service import add_enrollment
                 add_enrollment(
                     student_id, group_id,
-                    is_primary=not has_active,
+                    is_primary=True,
                     license_id=license_id,
-                    edebo_code=row['edebo_code'],
+                    edebo_code=None,   # pending_students не має edebo_code
                     program_credits_override=program_credits_override,
                     conn=conn,
                 )
@@ -578,9 +603,9 @@ def pending_student_review(pending_id):
                 from routes.enrollments_service import add_enrollment
                 add_enrollment(
                     student_id, group_id,
-                    is_primary=True,
+                    is_primary=not has_active,
                     license_id=license_id,
-                    edebo_code=row['edebo_code'],
+                    edebo_code=None,   # pending_students не має edebo_code
                     program_credits_override=program_credits_override,
                     conn=conn,
                 )
@@ -715,22 +740,11 @@ def pending_student_review(pending_id):
 
             military_id = None
             if has_military_scans or has_old_military_fields or has_new_military_fields:
-                cur_military = conn.execute("""
-                    INSERT INTO military (
-                        student_id,
-                        registry_number, military_registration_document, formed_at,
-                        vos_code, military_rank,
-                        change_credentials, reason_for_changing_credentials,
-                        status_badge, valid_until, registration_category, removal_basis,
-                        tck_name, vos_description,
-                        deferral_type, deferral_until,
-                        police_reason, police_date,
-                        vlk_decision, vlk_date,
-                        disability_group, disability_valid_until, disability_reason,
-                        data_verified_on_time, data_update_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    student_id,
+                existing_military = conn.execute(
+                    "SELECT id FROM military WHERE student_id = ?", (student_id,)
+                ).fetchone()
+
+                military_values = (
                     row['military_registration_number_drpvr'],
                     row['military_registration_document'],
                     row['military_issued_vod'],
@@ -755,8 +769,61 @@ def pending_student_review(pending_id):
                     row['military_disability_reason'],
                     row['military_data_verified_on_time'] or 0,
                     row['military_data_update_date'],
-                ))
-                military_id = cur_military.lastrowid
+                )
+
+                if existing_military:
+                    # Оновлюємо ПОРОЖНІ поля наявного запису — не затираємо те,
+                    # що адмін уже вписав вручну. Той самий COALESCE-патерн, що й
+                    # в _promote_pending_military_to_student / students.create.
+                    conn.execute("""
+                        UPDATE military SET
+                            registry_number                     = COALESCE(NULLIF(registry_number, ''), ?),
+                            military_registration_document      = COALESCE(NULLIF(military_registration_document, ''), ?),
+                            formed_at                           = COALESCE(NULLIF(formed_at, ''), ?),
+                            vos_code                            = COALESCE(NULLIF(vos_code, ''), ?),
+                            military_rank                       = COALESCE(NULLIF(military_rank, ''), ?),
+                            change_credentials                  = COALESCE(NULLIF(change_credentials, ''), ?),
+                            reason_for_changing_credentials     = COALESCE(NULLIF(reason_for_changing_credentials, ''), ?),
+                            status_badge                        = COALESCE(NULLIF(status_badge, ''), ?),
+                            valid_until                         = COALESCE(NULLIF(valid_until, ''), ?),
+                            registration_category               = COALESCE(NULLIF(registration_category, ''), ?),
+                            removal_basis                       = COALESCE(NULLIF(removal_basis, ''), ?),
+                            tck_name                            = COALESCE(NULLIF(tck_name, ''), ?),
+                            vos_description                     = COALESCE(NULLIF(vos_description, ''), ?),
+                            deferral_type                       = COALESCE(NULLIF(deferral_type, ''), ?),
+                            deferral_until                      = COALESCE(NULLIF(deferral_until, ''), ?),
+                            police_reason                       = COALESCE(NULLIF(police_reason, ''), ?),
+                            police_date                         = COALESCE(NULLIF(police_date, ''), ?),
+                            vlk_decision                        = COALESCE(NULLIF(vlk_decision, ''), ?),
+                            vlk_date                            = COALESCE(NULLIF(vlk_date, ''), ?),
+                            disability_group                    = COALESCE(NULLIF(disability_group, ''), ?),
+                            disability_valid_until              = COALESCE(NULLIF(disability_valid_until, ''), ?),
+                            disability_reason                   = COALESCE(NULLIF(disability_reason, ''), ?),
+                            data_verified_on_time               = CASE
+                                                                    WHEN COALESCE(data_verified_on_time, 0) = 0 THEN ?
+                                                                    ELSE data_verified_on_time
+                                                                  END,
+                            data_update_date                    = COALESCE(NULLIF(data_update_date, ''), ?)
+                        WHERE id = ?
+                    """, military_values + (existing_military['id'],))
+                    military_id = existing_military['id']
+                else:
+                    cur_military = conn.execute("""
+                        INSERT INTO military (
+                            student_id,
+                            registry_number, military_registration_document, formed_at,
+                            vos_code, military_rank,
+                            change_credentials, reason_for_changing_credentials,
+                            status_badge, valid_until, registration_category, removal_basis,
+                            tck_name, vos_description,
+                            deferral_type, deferral_until,
+                            police_reason, police_date,
+                            vlk_decision, vlk_date,
+                            disability_group, disability_valid_until, disability_reason,
+                            data_verified_on_time, data_update_date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (student_id,) + military_values)
+                    military_id = cur_military.lastrowid
 
                 # Адреса тепер живе в students, а не в military
                 if row['military_address']:
@@ -1064,7 +1131,68 @@ def pending_student_review(pending_id):
     passport_scans = get_attachments(conn, 'pending_student_passport', pending_id)
     military_scans = get_attachments(conn, 'pending_student_military', pending_id)
 
+    # ═══════════════════════════════════════════════════════════════
+    # Розширена інформація про наявного студента (якщо це дублікат).
+    # Потрібна для нового UI, щоб адмін бачив, що вже є в картці —
+    # і міг свідомо обрати: оновити / зарахувати в нову групу /
+    # відхилити / створити другого (різні люди).
+    # ═══════════════════════════════════════════════════════════════
+    existing_full = None
+    existing_enrollments = []
+    existing_has_passport = False
+    existing_edu_docs_count = 0
+    existing_military = None
+
+    if existing_student:
+        sid = existing_student['id']
+        ex_row = conn.execute("""
+            SELECT s.*,
+                   g.name AS primary_group_name,
+                   il.short_name_ua AS primary_license_short
+            FROM students s
+            LEFT JOIN groups g ON s.group_id = g.id
+            LEFT JOIN institution_licenses il ON il.id = s.license_id
+            WHERE s.id = ?
+        """, (sid,)).fetchone()
+        existing_full = dict(ex_row) if ex_row else None
+
+        try:
+            from routes.enrollments_service import list_student_enrollments
+            existing_enrollments = list_student_enrollments(sid, conn=conn)
+        except Exception as _e:
+            logger.warning(
+                f"pending_student_review: не вдалося завантажити "
+                f"enrollments для студента {sid}: {_e}"
+            )
+
+        existing_has_passport = conn.execute(
+            "SELECT 1 FROM passport_documents WHERE student_id = ? LIMIT 1",
+            (sid,),
+        ).fetchone() is not None
+
+        existing_edu_docs_count = conn.execute(
+            "SELECT COUNT(*) FROM education_documents WHERE student_id = ?",
+            (sid,),
+        ).fetchone()[0]
+
+        existing_military = conn.execute(
+            "SELECT * FROM military WHERE student_id = ? LIMIT 1",
+            (sid,),
+        ).fetchone()
+
     conn.close()
+    return render_template(
+        'admin_pending_student_review.html',
+        row=row, groups=groups, licenses=licenses,
+        existing_student=existing_student,
+        existing_full=existing_full,
+        existing_enrollments=existing_enrollments,
+        existing_has_passport=existing_has_passport,
+        existing_edu_docs_count=existing_edu_docs_count,
+        existing_military=existing_military,
+        scans=scans, passport_scans=passport_scans, military_scans=military_scans,
+        **passport_template_context(),
+    )
     return render_template(
         'admin_pending_student_review.html',
         row=row, groups=groups, licenses=licenses, existing_student=existing_student,

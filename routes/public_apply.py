@@ -376,8 +376,26 @@ def apply():
     passport_document_type = f('passport_document_type')
     if passport_document_type not in PASSPORT_TYPES:
         passport_document_type = None
-    passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
-    passport_valid_until = _iso_to_ua_date(f('passport_valid_until')) if passport_document_type in PASSPORT_TYPES_ID_STYLE else None
+
+    # Якщо номер паспорта не введено — не зберігаємо "сміттєвий" тип
+    # (і решту паспортних полів), щоб у БД не осідало дефолтне значення
+    # <select>, яке студент свідомо не обирав.
+    if not f('passport_number'):
+        passport_document_type = None
+        passport_series_val = None
+        passport_issued_by_val = None
+        passport_issue_date_val = None
+        passport_valid_until = None
+        passport_unique_number_val = None
+    else:
+        passport_series_val = f('passport_series')
+        passport_issued_by_val = f('passport_issued_by')
+        passport_issue_date_val = _iso_to_ua_date(f('passport_issue_date'))
+        passport_valid_until = (
+            _iso_to_ua_date(f('passport_valid_until'))
+            if passport_document_type in PASSPORT_TYPES_ID_STYLE else None
+        )
+        passport_unique_number_val = f('passport_unique_number')
 
     conn = get_db()
     cur = conn.execute("""
@@ -414,8 +432,8 @@ def apply():
         f('reference_country'), _iso_to_ua_date(f('reference_issue_date')),
         f('recognition_certificate_number'), f('recognition_issuer'), _iso_to_ua_date(f('recognition_date')),
         reduced_program_claim, None, None,
-        passport_document_type, f('passport_series'), f('passport_number'), f('passport_issued_by'),
-        passport_issue_date, passport_valid_until, f('passport_unique_number'),
+        passport_document_type, passport_series_val, passport_number_val, passport_issued_by_val,
+        passport_issue_date, passport_valid_until, passport_unique_number_val,
         f('military_registration_number_drpvr'), f('military_registration_document'), military_issued_vod,
         f('military_specialty_number'), f('military_rank'), military_being_registered, f('military_address'),
         f('military_change_credentials'), f('military_change_reason'),
