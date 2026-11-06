@@ -236,6 +236,17 @@
                 {% endif %}
             </div>
 
+            {% set has_new_fields = m.get('status_badge') or m.get('tck_name') or m.get('vos_code')
+                                 or m.get('vos_description') or m.get('registry_number')
+                                 or m.get('deferral_type') or m.get('deferral_until')
+                                 or m.get('vlk_decision') or m.get('vlk_date')
+                                 or m.get('registration_category') or m.get('valid_until')
+                                 or m.get('removal_basis')
+                                 or m.get('police_reason') or m.get('police_date')
+                                 or m.get('disability_group') or m.get('disability_valid_until')
+                                 or m.get('disability_reason')
+                                 or m.get('formed_at') or m.get('data_update_date')
+                                 or m.get('address_of_residence') %}
             {% if has_new_fields %}
             {# ── Нові поля з PDF «Резерв+» ── #}
             <h6 class="text-muted small text-uppercase mt-3 mb-2">З PDF «Резерв+»</h6>
@@ -244,6 +255,7 @@
                     {% if m.get('status_badge') %}<tr><th class="text-muted w-25">Статус</th><td>{{ m.status_badge }}</td></tr>{% endif %}
                     {% if m.get('registration_category') %}<tr><th class="text-muted">Категорія обліку</th><td>{{ m.registration_category }}</td></tr>{% endif %}
                     {% if m.get('valid_until') %}<tr><th class="text-muted">Дійсний до</th><td class="font-monospace">{{ m.valid_until }}</td></tr>{% endif %}
+                    {% if m.get('removal_basis') %}<tr><th class="text-muted">Підстава зняття</th><td>{{ m.removal_basis }}</td></tr>{% endif %}
                     {% if m.get('tck_name') %}<tr><th class="text-muted">ТЦК та СП</th><td>{{ m.tck_name }}</td></tr>{% endif %}
                     {% if m.get('military_rank') %}<tr><th class="text-muted">Військове звання</th><td>{{ m.military_rank }}</td></tr>{% endif %}
                     {% if m.get('registry_number') %}<tr><th class="text-muted">Номер у реєстрі «Оберіг»</th><td class="font-monospace">{{ m.registry_number }}</td></tr>{% endif %}
@@ -251,8 +263,15 @@
                     {% if m.get('vos_description') %}<tr><th class="text-muted">Опис ВОС</th><td>{{ m.vos_description }}</td></tr>{% endif %}
                     {% if m.get('deferral_type') %}<tr><th class="text-muted">Тип відстрочки</th><td>{{ m.deferral_type }}</td></tr>{% endif %}
                     {% if m.get('deferral_until') %}<tr><th class="text-muted">Відстрочка до</th><td>{{ m.deferral_until }}</td></tr>{% endif %}
+                    {% if m.get('police_reason') %}<tr><th class="text-muted">Причина звернення до поліції</th><td>{{ m.police_reason }}</td></tr>{% endif %}
+                    {% if m.get('police_date') %}<tr><th class="text-muted">Дата звернення до поліції</th><td class="font-monospace">{{ m.police_date }}</td></tr>{% endif %}
                     {% if m.get('vlk_decision') %}<tr><th class="text-muted">Постанова ВЛК</th><td>{{ m.vlk_decision }}</td></tr>{% endif %}
                     {% if m.get('vlk_date') %}<tr><th class="text-muted">Дата ВЛК</th><td class="font-monospace">{{ m.vlk_date }}</td></tr>{% endif %}
+                    {% if m.get('disability_group') %}<tr><th class="text-muted">Група інвалідності</th><td>{{ m.disability_group }}</td></tr>{% endif %}
+                    {% if m.get('disability_valid_until') %}<tr><th class="text-muted">Дійсна до</th><td class="font-monospace">{{ m.disability_valid_until }}</td></tr>{% endif %}
+                    {% if m.get('disability_reason') %}<tr><th class="text-muted">Причина інвалідності</th><td>{{ m.disability_reason }}</td></tr>{% endif %}
+                    {% if m.get('formed_at') %}<tr><th class="text-muted">Документ сформовано</th><td class="font-monospace">{{ m.formed_at }}</td></tr>{% endif %}
+                    {% if m.get('data_update_date') %}<tr><th class="text-muted">Дата уточнення даних</th><td class="font-monospace">{{ m.data_update_date }}</td></tr>{% endif %}
                     {% if m.get('address_of_residence') %}<tr><th class="text-muted">Адреса проживання</th><td>{{ m.address_of_residence }}</td></tr>{% endif %}
                 </tbody>
             </table>

@@ -489,6 +489,93 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
 
                     <div id="militaryBlock" class="reveal">
                         <div class="grid">
+
+                            <div class="col-12">
+                                <label class="f-label">Статус</label>
+                                <select name="military_status_badge" class="f-control">
+                                    <option value="">— не вказано —</option>
+                                    {% for opt in ["Військовозобов'язаний", "Призовник", "Резервіст", "Невійськовозобов'язаний", "Знято з обліку"] %}
+                                    <option value="{{ opt }}" {% if form and form.military_status_badge == opt %}selected{% endif %}>{{ opt }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дійсний до</label>
+                                <input type="text" name="military_valid_until" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_valid_until if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Категорія обліку</label>
+                                <input type="text" name="military_registration_category" class="f-control" value="{{ form.military_registration_category if form else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="f-label">Підстава зняття / виключення з обліку</label>
+                                <input type="text" name="military_removal_basis" class="f-control" value="{{ form.military_removal_basis if form else '' }}">
+                            </div>
+
+                            <div class="col-12">
+                                <label class="f-label">ТЦК та СП</label>
+                                <input type="text" name="military_tck_name" class="f-control" value="{{ form.military_tck_name if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Військове звання</label>
+                                <input type="text" name="military_rank" class="f-control" value="{{ form.military_rank if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Номер у реєстрі «Оберіг»</label>
+                                <input type="text" name="military_registry_number" class="f-control" value="{{ form.military_registry_number if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Код ВОС</label>
+                                <input type="text" name="military_vos_code" class="f-control" value="{{ form.military_vos_code if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Номер ВОС (старе поле)</label>
+                                <input type="text" name="military_specialty_number" class="f-control" value="{{ form.military_specialty_number if form else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="f-label">Опис ВОС</label>
+                                <input type="text" name="military_vos_description" class="f-control" value="{{ form.military_vos_description if form else '' }}">
+                            </div>
+
+                            <div class="col-6">
+                                <label class="f-label">Тип відстрочки</label>
+                                <input type="text" name="military_deferral_type" class="f-control" value="{{ form.military_deferral_type if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Відстрочка до</label>
+                                <input type="text" name="military_deferral_until" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_deferral_until if form else '' }}">
+                            </div>
+
+                            <div class="col-6">
+                                <label class="f-label">Постанова ВЛК</label>
+                                <input type="text" name="military_vlk_decision" class="f-control" value="{{ form.military_vlk_decision if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дата ВЛК</label>
+                                <input type="text" name="military_vlk_date" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_vlk_date if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Група інвалідності</label>
+                                <input type="text" name="military_disability_group" class="f-control" value="{{ form.military_disability_group if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дійсна до</label>
+                                <input type="text" name="military_disability_valid_until" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_disability_valid_until if form else '' }}">
+                            </div>
+                            <div class="col-12">
+                                <label class="f-label">Причина інвалідності</label>
+                                <input type="text" name="military_disability_reason" class="f-control" value="{{ form.military_disability_reason if form else '' }}">
+                            </div>
+
+                            <div class="col-6">
+                                <label class="f-label">Причина звернення до поліції</label>
+                                <input type="text" name="military_police_reason" class="f-control" value="{{ form.military_police_reason if form else '' }}">
+                            </div>
+                            <div class="col-6">
+                                <label class="f-label">Дата звернення до поліції</label>
+                                <input type="text" name="military_police_date" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_police_date if form else '' }}">
+                            </div>
+
                             <div class="col-12">
                                 <label class="f-label">Реєстраційний номер у ДРПВР</label>
                                 <input type="text" name="military_registration_number_drpvr" class="f-control" value="{{ form.military_registration_number_drpvr if form else '' }}">
@@ -502,17 +589,30 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                 <input type="date" name="military_issued_vod" class="f-control" value="{{ form.military_issued_vod if form else '' }}">
                             </div>
                             <div class="col-6">
-                                <label class="f-label">Номер ВОС</label>
-                                <input type="text" name="military_specialty_number" class="f-control" value="{{ form.military_specialty_number if form else '' }}">
+                                <label class="f-label">Документ сформовано (дата)</label>
+                                <input type="text" name="military_formed_at" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_formed_at if form else '' }}">
                             </div>
-                            <div class="col-12">
-                                <label class="f-label">Військове звання</label>
-                                <input type="text" name="military_rank" class="f-control" value="{{ form.military_rank if form else '' }}">
+
+                            <div class="col-6">
+                                <label class="f-label">Дата уточнення даних</label>
+                                <input type="text" name="military_data_update_date" class="f-control" placeholder="ДД.ММ.РРРР" value="{{ form.military_data_update_date if form else '' }}">
                             </div>
+                            <div class="col-6 d-flex align-items-end">
+                                <label class="toggle-row" for="military_data_verified_on_time" style="width:100%;">
+                                    <input type="checkbox" id="military_data_verified_on_time"
+                                           name="military_data_verified_on_time" value="1"
+                                           {% if form and form.military_data_verified_on_time %}checked{% endif %}>
+                                    <span class="toggle-switch"></span>
+                                    <span class="toggle-label">Дані уточнено вчасно</span>
+                                </label>
+                            </div>
+
                             <div class="col-12">
                                 <label class="f-label">Адреса реєстрації/проживання</label>
                                 <input type="text" name="military_address" class="f-control" value="{{ form.military_address if form else '' }}">
+                                <div class="f-hint">Зберігається в картці студента, а не в блоці військового обліку.</div>
                             </div>
+
                             <div class="col-12">
                                 <label class="f-label">Зміна облікових даних (якщо була)</label>
                                 <input type="text" name="military_change_credentials" class="f-control" value="{{ form.military_change_credentials if form else '' }}">
@@ -521,6 +621,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                                 <label class="f-label">Причина зміни облікових даних</label>
                                 <input type="text" name="military_change_reason" class="f-control" value="{{ form.military_change_reason if form else '' }}">
                             </div>
+
                             <div class="col-12">
                                 <label class="f-label">Скановані копії військового документа</label>
                                 <div class="file-drop">

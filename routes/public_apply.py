@@ -189,6 +189,26 @@ def _parse_pdf_ajax():
             'military_specialty_number': parsed.get('vos_code') or '',
             'military_rank': parsed.get('military_rank') or '',
             'military_address': parsed.get('address') or '',
+            # Нові поля «Резерв+» — підставляються в однойменні <input> форми.
+            'military_status_badge': parsed.get('status_badge') or '',
+            'military_valid_until': parsed.get('valid_until') or '',
+            'military_registration_category': parsed.get('registration_category') or '',
+            'military_removal_basis': parsed.get('removal_basis') or '',
+            'military_tck_name': parsed.get('tck_name') or '',
+            'military_registry_number': parsed.get('registry_number') or '',
+            'military_vos_code': parsed.get('vos_code') or '',
+            'military_vos_description': parsed.get('vos_description') or '',
+            'military_deferral_type': parsed.get('deferral_type') or '',
+            'military_deferral_until': parsed.get('deferral_until') or '',
+            'military_police_reason': parsed.get('police_reason') or '',
+            'military_police_date': parsed.get('police_date') or '',
+            'military_vlk_decision': parsed.get('vlk_decision') or '',
+            'military_vlk_date': parsed.get('vlk_date') or '',
+            'military_disability_group': parsed.get('disability_group') or '',
+            'military_disability_valid_until': parsed.get('disability_valid_until') or '',
+            'military_disability_reason': parsed.get('disability_reason') or '',
+            'military_formed_at': parsed.get('formed_at') or '',
+            'military_data_update_date': parsed.get('data_update_date') or '',
         }
 
         photo_url = None
@@ -324,6 +344,29 @@ def apply():
     is_foreign_document = 0
     reduced_program_claim = 0
     military_being_registered = 0
+    
+    # Нові поля «Резерв+» — читаємо з форми (можуть бути порожні,
+    # якщо абітурієнт їх не заповнював і не завантажував PDF).
+    military_status_badge = f('military_status_badge')
+    military_valid_until = f('military_valid_until')
+    military_registration_category = f('military_registration_category')
+    military_removal_basis = f('military_removal_basis')
+    military_tck_name = f('military_tck_name')
+    military_registry_number = f('military_registry_number')
+    military_vos_code = f('military_vos_code')
+    military_vos_description = f('military_vos_description')
+    military_deferral_type = f('military_deferral_type')
+    military_deferral_until = f('military_deferral_until')
+    military_police_reason = f('military_police_reason')
+    military_police_date = f('military_police_date')
+    military_vlk_decision = f('military_vlk_decision')
+    military_vlk_date = f('military_vlk_date')
+    military_disability_group = f('military_disability_group')
+    military_disability_valid_until = f('military_disability_valid_until')
+    military_disability_reason = f('military_disability_reason')
+    military_formed_at = f('military_formed_at')
+    military_data_verified_on_time = 1 if f('military_data_verified_on_time') else 0
+    military_data_update_date = f('military_data_update_date')
 
     last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
 
@@ -351,8 +394,16 @@ def apply():
             passport_issue_date, passport_valid_until, passport_unique_number,
             military_registration_number_drpvr, military_registration_document, military_issued_vod,
             military_specialty_number, military_rank, military_being_registered, military_address,
-            military_change_credentials, military_change_reason
-        ) VALUES (?, ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?)
+            military_change_credentials, military_change_reason,
+            military_status_badge, military_valid_until, military_registration_category,
+            military_removal_basis, military_tck_name, military_registry_number,
+            military_vos_code, military_vos_description,
+            military_deferral_type, military_deferral_until,
+            military_police_reason, military_police_date,
+            military_vlk_decision, military_vlk_date,
+            military_disability_group, military_disability_valid_until, military_disability_reason,
+            military_formed_at, military_data_verified_on_time, military_data_update_date
+        ) VALUES (?, ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     """, (
         request.remote_addr,
         last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date, f('tax_id'),
@@ -368,6 +419,14 @@ def apply():
         f('military_registration_number_drpvr'), f('military_registration_document'), military_issued_vod,
         f('military_specialty_number'), f('military_rank'), military_being_registered, f('military_address'),
         f('military_change_credentials'), f('military_change_reason'),
+        military_status_badge, military_valid_until, military_registration_category,
+        military_removal_basis, military_tck_name, military_registry_number,
+        military_vos_code, military_vos_description,
+        military_deferral_type, military_deferral_until,
+        military_police_reason, military_police_date,
+        military_vlk_decision, military_vlk_date,
+        military_disability_group, military_disability_valid_until, military_disability_reason,
+        military_formed_at, military_data_verified_on_time, military_data_update_date,
     ))
     pending_id = cur.lastrowid
 

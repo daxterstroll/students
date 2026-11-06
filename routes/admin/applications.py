@@ -432,18 +432,35 @@ def pending_student_review(pending_id):
                 'military_registration_number_drpvr', 'military_registration_document', 'military_issued_vod',
                 'military_specialty_number', 'military_rank', 'military_address',
                 'military_change_credentials', 'military_change_reason',
+                # Нові поля «Резерв+»
+                'military_status_badge', 'military_valid_until', 'military_registration_category',
+                'military_removal_basis', 'military_tck_name', 'military_registry_number',
+                'military_vos_code', 'military_vos_description',
+                'military_deferral_type', 'military_deferral_until',
+                'military_police_reason', 'military_police_date',
+                'military_vlk_decision', 'military_vlk_date',
+                'military_disability_group', 'military_disability_valid_until', 'military_disability_reason',
+                'military_formed_at', 'military_data_update_date',
             ]
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
+            # Чекбокс — окремо (0/1, а не None/'')
+            values['military_data_verified_on_time'] = 1 if request.form.get('military_data_verified_on_time') else 0
             if values.get('passport_document_type') not in PASSPORT_TYPES_ID_STYLE:
                 values['passport_valid_until'] = None
+
+            # military_data_verified_on_time — не TEXT, а INTEGER. У
+            # SQL UPDATE треба передавати 0/1, а не NULL. Додаємо його
+            # в кінець UPDATE окремим полем:
+            update_fields = [f for f in fields] + ['military_data_verified_on_time']
+            update_values = [values[f] for f in fields] + [values['military_data_verified_on_time']]
 
             if not values['last_name_UA'] or not values['first_name_UA'] or not values['birth_date']:
                 flash("Прізвище, ім'я і дата народження обов'язкові", "error")
             else:
-                set_clause = ", ".join(f"{k}=?" for k in fields)
+                set_clause = ", ".join(f"{k}=?" for k in update_fields)
                 conn.execute(
                     f"UPDATE pending_students SET {set_clause} WHERE id=?",
-                    list(values[k] for k in fields) + [pending_id]
+                    update_values + [pending_id]
                 )
                 conn.commit()
                 flash("Зміни збережено", "success")
@@ -649,9 +666,11 @@ def pending_student_review(pending_id):
                     (student_id, pending_id)
                 )
 
-            # Військові дані — military створюємо ЗАВЖДИ, якщо є скани
-            # або старі поля. Нові поля з PDF перенесе
-            # _promote_pending_military_to_student.
+            # Військові дані — military створюємо ЗАВЖДИ, якщо є скани,
+            # будь-яке з legacy-полів або будь-яке з нових полів
+            # «Резерв+». Поля з PDF (якщо PDF прикріплено) потім
+            # перезапише _promote_pending_military_to_student актуальними
+            # значеннями з парсера.
             has_military_scans = conn.execute(
                 "SELECT 1 FROM attachments "
                 "WHERE entity_type='pending_student_military' AND entity_id=? LIMIT 1",
@@ -663,19 +682,70 @@ def pending_student_review(pending_id):
                 row['military_registration_document'],
                 row['military_rank'],
             ])
+            has_new_military_fields = any([
+                row['military_status_badge'],
+                row['military_valid_until'],
+                row['military_registration_category'],
+                row['military_removal_basis'],
+                row['military_tck_name'],
+                row['military_registry_number'],
+                row['military_vos_code'],
+                row['military_vos_description'],
+                row['military_deferral_type'],
+                row['military_deferral_until'],
+                row['military_police_reason'],
+                row['military_police_date'],
+                row['military_vlk_decision'],
+                row['military_vlk_date'],
+                row['military_disability_group'],
+                row['military_disability_valid_until'],
+                row['military_disability_reason'],
+                row['military_formed_at'],
+                row['military_data_update_date'],
+            ])
 
             military_id = None
-            if has_military_scans or has_old_military_fields:
+            if has_military_scans or has_old_military_fields or has_new_military_fields:
                 cur_military = conn.execute("""
                     INSERT INTO military (
-                        student_id, registry_number, military_registration_document, formed_at,
+                        student_id,
+                        registry_number, military_registration_document, formed_at,
                         vos_code, military_rank,
-                        change_credentials, reason_for_changing_credentials
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        change_credentials, reason_for_changing_credentials,
+                        status_badge, valid_until, registration_category, removal_basis,
+                        tck_name, vos_description,
+                        deferral_type, deferral_until,
+                        police_reason, police_date,
+                        vlk_decision, vlk_date,
+                        disability_group, disability_valid_until, disability_reason,
+                        data_verified_on_time, data_update_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, row['military_registration_number_drpvr'], row['military_registration_document'],
-                    row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                    row['military_change_credentials'], row['military_change_reason'],
+                    student_id,
+                    row['military_registration_number_drpvr'],
+                    row['military_registration_document'],
+                    row['military_issued_vod'],
+                    row['military_specialty_number'],
+                    row['military_rank'],
+                    row['military_change_credentials'],
+                    row['military_change_reason'],
+                    row['military_status_badge'],
+                    row['military_valid_until'],
+                    row['military_registration_category'],
+                    row['military_removal_basis'],
+                    row['military_tck_name'],
+                    row['military_vos_description'],
+                    row['military_deferral_type'],
+                    row['military_deferral_until'],
+                    row['military_police_reason'],
+                    row['military_police_date'],
+                    row['military_vlk_decision'],
+                    row['military_vlk_date'],
+                    row['military_disability_group'],
+                    row['military_disability_valid_until'],
+                    row['military_disability_reason'],
+                    row['military_data_verified_on_time'] or 0,
+                    row['military_data_update_date'],
                 ))
                 military_id = cur_military.lastrowid
 
@@ -1412,6 +1482,7 @@ def update_request_review(request_id):
                             'status_badge': m.get('status_badge'),
                             'valid_until': m.get('valid_until'),
                             'registration_category': m.get('registration_category'),
+                            'removal_basis': m.get('removal_basis'),
                             'tck_name': m.get('tck_name'),
                             'military_rank': m.get('military_rank'),
                             'registry_number': m.get('registry_number'),
@@ -1419,8 +1490,13 @@ def update_request_review(request_id):
                             'vos_description': m.get('vos_description'),
                             'deferral_type': m.get('deferral_type'),
                             'deferral_until': m.get('deferral_until'),
+                            'police_reason': m.get('police_reason'),
+                            'police_date': m.get('police_date'),
                             'vlk_decision': m.get('vlk_decision'),
                             'vlk_date': m.get('vlk_date'),
+                            'disability_group': m.get('disability_group'),
+                            'disability_valid_until': m.get('disability_valid_until'),
+                            'disability_reason': m.get('disability_reason'),
                             'formed_at': m.get('formed_at'),
                             'military_registration_document': m.get('military_registration_document'),
                         }.items() if v

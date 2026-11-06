@@ -1086,11 +1086,45 @@ def resolve_frozen_student(frozen_id):
 
 def _do_resolve_frozen_student(frozen_id, student_id, target_group_id, target_group_name, comment, grades_to_transfer):
     """Виконує саме переведення: зміна групи, перенесення обраних оцінок, закриття заморожування."""
+    from routes.enrollments_service import add_enrollment
+
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    conn.execute("UPDATE students SET group_id = ? WHERE id = ?", (target_group_id, student_id))
+    # Реактивуємо/створюємо enrollment у цільовій групі (add_enrollment
+    # сам переактивує, якщо status був 'frozen'/'expelled'/'graduated',
+    # і знімає archived=TRUE при наявності активного enrollment'а).
+    # is_primary=False — не забираємо primary у тієї групи, де він уже є;
+    # якщо паралельник заморожений зі СВОЄЇ основної — нижче перевіримо.
+    ok, msg = add_enrollment(
+        student_id, target_group_id,
+        is_primary=False,
+        conn=conn,
+    )
+    if not ok:
+        conn.rollback()
+        conn.close()
+        flash(f"Не вдалося розморозити студента: {msg}", "error")
+        return redirect(url_for('admin.frozen_students'))
 
+    # Якщо в студента ще немає основної активної групи (напр. був
+    # заморожений зі своєї primary, і вона досі єдина) — робимо
+    # цільову групу основною.
+    has_primary = conn.execute(
+        "SELECT 1 FROM student_enrollments "
+        "WHERE student_id=? AND is_primary=1 AND status='active' LIMIT 1",
+        (student_id,),
+    ).fetchone()
+    if not has_primary:
+        conn.execute(
+            "UPDATE student_enrollments SET is_primary=1 "
+            "WHERE student_id=? AND group_id=? AND status='active'",
+            (student_id, target_group_id),
+        )
+        conn.execute(
+            "UPDATE students SET group_id=? WHERE id=?",
+            (target_group_id, student_id),
+        )
     for m in grades_to_transfer:
         if m['kind'] == 'subject':
             conn.execute("INSERT INTO grades (student_id, subject_id, grade) VALUES (?, ?, ?)",
@@ -1685,7 +1719,30 @@ def archive_group(group_id):
         return redirect(url_for('admin.manage_groups'))
 
     cursor.execute("UPDATE groups SET archived = TRUE WHERE id=?", (group_id,))
-    cursor.execute("UPDATE students SET archived = TRUE WHERE group_id=?", (group_id,))
+
+    # Спершу закриваємо enrollments у цій групі як 'graduated' — щоб
+    # паралельник не «зависав» з активним enrollment'ом у вже
+    # заархівованій групі.
+    from routes.enrollments_service import end_enrollment
+    students_in_group = cursor.execute(
+        "SELECT DISTINCT student_id FROM student_enrollments "
+        "WHERE group_id = ? AND status = 'active'",
+        (group_id,),
+    ).fetchall()
+    for row in students_in_group:
+        end_enrollment(row['student_id'], group_id, status='graduated', conn=conn)
+
+    # archived=TRUE — ЛИШЕ для студентів, у яких не лишилось жодного
+    # активного enrollment'а. Паралельник з активною групою залишається
+    # активним.
+    cursor.execute("""
+        UPDATE students SET archived = TRUE
+        WHERE group_id = ?
+          AND NOT EXISTS (
+              SELECT 1 FROM student_enrollments
+              WHERE student_id = students.id AND status = 'active'
+          )
+    """, (group_id,))
     conn.commit()
     conn.close()
 
@@ -1711,7 +1768,25 @@ def unarchive_group(group_id):
         return redirect(url_for('admin.archive'))
 
     cursor.execute("UPDATE groups SET archived = FALSE WHERE id=?", (group_id,))
-    cursor.execute("UPDATE students SET archived = FALSE WHERE group_id=?", (group_id,))
+
+    # Реактивуємо enrollment'и у цій групі для студентів, чия ця група —
+    # students.group_id (тобто хто «в ній» за карткою).
+    from routes.enrollments_service import add_enrollment
+    students_in_group = cursor.execute(
+        "SELECT id FROM students WHERE group_id = ?", (group_id,)
+    ).fetchall()
+    for row in students_in_group:
+        add_enrollment(row['id'], group_id, is_primary=False, conn=conn)
+
+    # Знімаємо archived=TRUE лише з тих, хто тепер має активний enrollment
+    cursor.execute("""
+        UPDATE students SET archived = FALSE
+        WHERE group_id = ?
+          AND EXISTS (
+              SELECT 1 FROM student_enrollments
+              WHERE student_id = students.id AND status = 'active'
+          )
+    """, (group_id,))
     conn.commit()
     conn.close()
 

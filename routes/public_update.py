@@ -160,6 +160,14 @@ def _parse_pdf_ajax_response(pdf_bytes):
         'military_vlk_decision': parsed.get('vlk_decision') or '',
         'military_vlk_date': parsed.get('vlk_date') or '',
         'military_address': parsed.get('address') or '',
+        'military_removal_basis': parsed.get('removal_basis') or '',
+        'military_police_reason': parsed.get('police_reason') or '',
+        'military_police_date': parsed.get('police_date') or '',
+        'military_disability_group': parsed.get('disability_group') or '',
+        'military_disability_valid_until': parsed.get('disability_valid_until') or '',
+        'military_disability_reason': parsed.get('disability_reason') or '',
+        'military_formed_at': parsed.get('formed_at') or '',
+        'military_data_update_date': parsed.get('data_update_date') or '',
     }
 
     photo_url = None
@@ -349,9 +357,11 @@ def update_info(token):
                 error=err, form=request.form,
             )
         submitted['military'] = {
+            # ── Нові поля «Резерв+» ──
             'status_badge': f('military_status_badge'),
             'valid_until': f('military_valid_until'),
             'registration_category': f('military_registration_category'),
+            'removal_basis': f('military_removal_basis'),
             'tck_name': f('military_tck_name'),
             'military_rank': f('military_rank'),
             'registry_number': f('military_registry_number'),
@@ -359,10 +369,22 @@ def update_info(token):
             'vos_description': f('military_vos_description'),
             'deferral_type': f('military_deferral_type'),
             'deferral_until': f('military_deferral_until'),
+            'police_reason': f('military_police_reason'),
+            'police_date': f('military_police_date'),
             'vlk_decision': f('military_vlk_decision'),
             'vlk_date': f('military_vlk_date'),
-            'formed_at': _iso_to_ua_date(f('military_issued_vod')),
+            'disability_group': f('military_disability_group'),
+            'disability_valid_until': f('military_disability_valid_until'),
+            'disability_reason': f('military_disability_reason'),
+            'formed_at': f('military_formed_at'),
+            'data_verified_on_time': 1 if f('military_data_verified_on_time') else 0,
+            'data_update_date': f('military_data_update_date'),
+            # ── Legacy / старі поля ──
             'military_registration_document': f('military_registration_document'),
+            'registry_number': f('military_registry_number'),
+            # legacy-варіанти тих самих даних:
+            'military_specialty_number': f('military_specialty_number'),
+            'military_registration_number_drpvr': f('military_registration_number_drpvr'),
             # адреса — в картку студента, не в military
             'address_of_residence': f('military_address'),
         }
