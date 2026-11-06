@@ -562,26 +562,6 @@ CREATE TABLE IF NOT EXISTS "frozen_students" (
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id)
 );
-CREATE TABLE IF NOT EXISTS "license_transfer_orders" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_number TEXT NOT NULL,
-    order_date TEXT NOT NULL,
-    scan_file TEXT,
-    created_by TEXT,
-    created_at TEXT DEFAULT (datetime('now', 'localtime'))
-);
-CREATE TABLE IF NOT EXISTS "license_transfer_order_students" (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    order_id INTEGER NOT NULL,
-    student_id INTEGER NOT NULL,
-    previous_license_id INTEGER,
-    new_license_id INTEGER NOT NULL,
-    FOREIGN KEY (order_id) REFERENCES license_transfer_orders(id),
-    FOREIGN KEY (student_id) REFERENCES students(id),
-    FOREIGN KEY (previous_license_id) REFERENCES institution_licenses(id),
-    FOREIGN KEY (new_license_id) REFERENCES institution_licenses(id)
-);
-
 -- ─── Військовий облік: довідники й журнали ───
 CREATE TABLE IF NOT EXISTS "tck_offices" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -700,6 +680,8 @@ def _add_column_if_missing(table, column, coltype):
 for _t in (
     'expulsion_order_students', 'expulsion_orders',
     'course_transfer_order_groups', 'course_transfer_orders',
+    # переведення між ліцензіями тепер пише в orders/order_items
+    'license_transfer_order_students', 'license_transfer_orders',
 ):
     row = cur.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_t,)
@@ -710,6 +692,25 @@ for _t in (
 
 
 print("── Міграція схеми ──")
+
+# ── user_specialties / user_degree_levels ──
+# Створюються на льоту з routes/user_scope.py, але фіксуємо в схемі.
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_specialties (
+        user_id INTEGER NOT NULL,
+        specialty_code TEXT NOT NULL,
+        PRIMARY KEY (user_id, specialty_code),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+""")
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_degree_levels (
+        user_id INTEGER NOT NULL,
+        degree_level TEXT NOT NULL,
+        PRIMARY KEY (user_id, degree_level),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+""")
 
 # students
 _add_column_if_missing('students', 'gender', "TEXT CHECK(gender IN ('M', 'F'))")
@@ -876,6 +877,12 @@ _add_column_if_missing('pending_students', 'military_disability_reason', 'TEXT')
 _add_column_if_missing('pending_students', 'military_formed_at', 'TEXT')
 _add_column_if_missing('pending_students', 'military_data_verified_on_time', 'INTEGER DEFAULT 0')
 _add_column_if_missing('pending_students', 'military_data_update_date', 'TEXT')
+# Додаток 4 (military_reports): відбиток і дата генерації.
+# Код створює їх на льоту через _ensure_dodatok4_columns(),
+# але для консистентності схеми — теж тут.
+_add_column_if_missing('military', 'dodatok4_sent_at',      'TEXT')
+_add_column_if_missing('military', 'dodatok4_fingerprint',  'TEXT')
+_add_column_if_missing('military', 'dodatok4_snapshot',     'TEXT')
 
 # institution_licenses
 _add_column_if_missing('institution_licenses', 'is_base', 'INTEGER NOT NULL DEFAULT 0')
@@ -1048,6 +1055,64 @@ _dup_count = cur.execute("""
         HAVING COUNT(*) > 1
     )
 """).fetchone()[0]
+
+# ── diplomas: прибрати legacy UNIQUE(student_id) ──
+# Раніше був "student_id INTEGER NOT NULL UNIQUE" (один диплом на студента),
+# але з впровадженням паралельного навчання ключ став (student_id, group_id).
+# SQLite не вміє DROP CONSTRAINT — перезбираємо таблицю.
+_has_legacy_unique = False
+try:
+    for _idx in cur.execute('PRAGMA index_list("diplomas")').fetchall():
+        # PRAGMA index_list → (seq, name, unique, origin, partial)
+        # origin='u' означає "auto-index від UNIQUE-констрейнту в CREATE TABLE"
+        if len(_idx) >= 4 and _idx[2] == 1 and _idx[3] == 'u':
+            _idx_cols = [c[2] for c in cur.execute(f'PRAGMA index_info("{_idx[1]}")').fetchall()]
+            if _idx_cols == ['student_id']:
+                _has_legacy_unique = True
+                break
+except sqlite3.Error as _e:
+    print(f"⚠️ Не вдалося перевірити індекси diplomas: {_e}")
+
+if _has_legacy_unique:
+    print("🔁 diplomas: прибираю legacy UNIQUE(student_id) — ключ стає (student_id, group_id)")
+    cur.execute('DROP TABLE IF EXISTS "diplomas_new"')
+    conn.commit()
+    cur.execute("PRAGMA foreign_keys = OFF")
+    try:
+        cur.executescript("""
+            CREATE TABLE "diplomas_new" (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id      INTEGER NOT NULL,
+                group_id        INTEGER,
+                diploma_number  TEXT,
+                appendix_number TEXT,
+                FOREIGN KEY (student_id) REFERENCES students(id),
+                FOREIGN KEY (group_id)   REFERENCES groups(id)
+            );
+            INSERT INTO "diplomas_new"
+                (id, student_id, group_id, diploma_number, appendix_number)
+                SELECT id, student_id, group_id, diploma_number, appendix_number
+                FROM "diplomas";
+            DROP TABLE "diplomas";
+            ALTER TABLE "diplomas_new" RENAME TO "diplomas";
+        """)
+        conn.commit()
+        _n = cur.execute('SELECT COUNT(*) FROM diplomas').fetchone()[0]
+        print(f"   ✅ перезбудовано, записів збережено: {_n}")
+    finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        cur.execute("PRAGMA foreign_keys = ON")
+
+# Після перезбору — UNIQUE-індекс на пару (student_id, group_id).
+# Partial (WHERE group_id IS NOT NULL), щоб legacy-записи без групи не блокувалися.
+cur.execute("""
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_diplomas_student_group_unique
+    ON diplomas(student_id, group_id)
+    WHERE group_id IS NOT NULL
+""")
 
 if _dup_count:
     print(f"⚠️ student_enrollments: знайдено {_dup_count} дублікатів пар (student_id, group_id) — чистка")

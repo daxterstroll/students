@@ -1346,7 +1346,14 @@ def add_student():
             )
             return redirect(url_for('students.student_details', student_id=existing_id))
 
-        conn.execute("""
+        # ── Кредити скороченої програми читаємо ДО INSERT ──
+        # (раніше це поле використовувалось у INSERT до визначення → NameError;
+        #  і add_enrollment викликався 3 рази поспіль із неправильним
+        #  student_id, бо після першого виклику last_insert_rowid()
+        #  повертає id з student_enrollments, а не з students)
+        program_credits_override = request.form.get('program_credits_override', type=int)
+
+        cur = conn.execute("""
             INSERT INTO students (
                 last_name_UA, first_name_UA, middle_name_UA,
                 last_name_ENG, first_name_ENG, birth_date,
@@ -1362,7 +1369,7 @@ def add_student():
             first_name_eng,
             birth_date,
             group_int,
-            request.form.get('edebo_code') or None,
+            edebo_code_form,
             request.form.get('tax_id') or None,
             license_id,
             phone,
@@ -1372,7 +1379,8 @@ def add_student():
             gender,
             program_credits_override,
         ))
-        student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        student_id = cur.lastrowid
+
         add_enrollment(
             student_id, group_int,
             is_primary=True,
@@ -1381,18 +1389,6 @@ def add_student():
             program_credits_override=program_credits_override,
             conn=conn,
         )
-        conn.commit()
-        student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        add_enrollment(student_id, group_int, is_primary=True,
-               license_id=license_id, edebo_code=edebo_code_form,
-               program_credits_override=program_credits_override,
-               conn=conn)
-        student_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        program_credits_override = request.form.get('program_credits_override', type=int)
-        add_enrollment(student_id, group_int, is_primary=True,
-               license_id=license_id, edebo_code=edebo_code_form,
-               program_credits_override=program_credits_override,
-               conn=conn)
         conn.commit()
 
         military_fields_list = [
