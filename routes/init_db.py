@@ -844,8 +844,6 @@ for _col, _type in [
     ('formed_at', 'TEXT'),
     ('data_verified_on_time', 'INTEGER DEFAULT 0'),
     ('data_update_date', 'TEXT'),
-    ('phone', 'TEXT'),
-    ('email', 'TEXT'),
     ('note_18', 'TEXT'),
     ('mobilized_date', 'TEXT'),
 ]:

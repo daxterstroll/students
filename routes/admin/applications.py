@@ -558,12 +558,21 @@ def pending_student_review(pending_id):
                     conn=conn,
                 )
             else:
+                from routes.gender import detect_gender_from_middle_name
+                gender = detect_gender_from_middle_name(row['middle_name_UA'])
                 cur = conn.execute("""
                     INSERT INTO students (
-                        last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
-                        group_id, license_id, phone, phone_backup, email
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (...))
+                        last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG,
+                        birth_date, tax_id, group_id, license_id,
+                        phone, phone_backup, email, gender
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'],
+                    row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], row['tax_id'],
+                    group_id, license_id,
+                    row['phone'], row['phone_backup'], row['email'],
+                    gender,
+                ))
                 student_id = cur.lastrowid
 
                 from routes.enrollments_service import add_enrollment
