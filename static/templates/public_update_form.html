@@ -189,8 +189,9 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                         <div class="col-12">
                             <label class="f-label">Тип документа</label>
 							<select name="passport_document_type" id="passport_document_type" class="f-control">
+								<option value="" selected>— не заповнено —</option>
 								{% for t in passport_types %}
-								<option value="{{ t }}" {% if t == passport_type_default %}selected{% endif %}>{{ t }}</option>
+								<option value="{{ t }}">{{ t }}</option>
 								{% endfor %}
 							</select>
                         </div>

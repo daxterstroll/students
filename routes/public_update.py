@@ -295,7 +295,10 @@ def update_info(token):
                 simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
                 error=err, form=request.form,
             )
-        if any([f('passport_number'), f('passport_document_type')]):
+        # Умова — лише за номером: тип може бути "" (порожня опція),
+        # тому any() з типом спрацьовував би завжди і створював би
+        # "фантомний паспорт" без номера.
+        if f('passport_number'):
             passport_doc_type = f('passport_document_type') if f('passport_document_type') in PASSPORT_TYPES else None
             submitted['passport'] = {
                 'document_type': passport_doc_type,
