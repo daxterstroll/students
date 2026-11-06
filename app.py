@@ -161,13 +161,13 @@ app.jinja_env.filters['format_grade'] = format_grade
 
 @app.template_filter('format_phone')
 def format_phone_filter(value):
-    """Красиве відображення українського номера: +380 (97) 123-45-67."""
     if not value:
         return '—'
-    s = str(value)
-    if len(s) == 13 and s.startswith('+380'):
-        return f"+380 ({s[4:6]}) {s[6:9]}-{s[9:11]}-{s[11:13]}"
-    return s
+    from routes.utils import normalize_phone_ua
+    canonical = normalize_phone_ua(value) or ''
+    if len(canonical) == 13 and canonical.startswith('+380'):
+        return f"+380 ({canonical[4:6]}) {canonical[6:9]}-{canonical[9:11]}-{canonical[11:13]}"
+    return str(value)  # іноземний / нерозпізнаний — як є
 
 @app.errorhandler(404)
 def handle_404(e):

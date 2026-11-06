@@ -681,8 +681,10 @@ def normalize_phone_ua(value):
         return '+3' + digits
 
     # Не схоже на український формат (напр. іноземний номер) —
-    # повертаємо як є, лише прибравши пробіли для однакового пошуку.
-    return s
+    # повертаємо канонічний вигляд: без роздільників, з провідним '+',
+    # якщо він був.
+    has_plus = s.lstrip().startswith('+')
+    return ('+' if has_plus else '') + digits
     
 def normalize_phone_pair(phone, phone_backup):
     """

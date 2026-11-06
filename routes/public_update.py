@@ -267,12 +267,17 @@ def update_info(token):
 
     submitted = {}
 
-    from routes.utils import normalize_phone_ua
+    from routes.utils import normalize_phone_pair
 
+    phone_norm, phone_backup_norm = normalize_phone_pair(
+        f('phone'), f('phone_backup')
+    )
     for key in SIMPLE_FIELDS:
         if key in allowed_fields:
-            if key in ('phone', 'phone_backup'):
-                submitted[key] = normalize_phone_ua(f(key))
+            if key == 'phone':
+                submitted[key] = phone_norm
+            elif key == 'phone_backup':
+                submitted[key] = phone_backup_norm
             else:
                 submitted[key] = f(key)
 

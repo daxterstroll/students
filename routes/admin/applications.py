@@ -442,12 +442,13 @@ def pending_student_review(pending_id):
                 'military_disability_group', 'military_disability_valid_until', 'military_disability_reason',
                 'military_formed_at', 'military_data_update_date',
             ]
-            from routes.utils import normalize_phone_ua
+            from routes.utils import normalize_phone_pair
 
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
             values['military_data_verified_on_time'] = 1 if request.form.get('military_data_verified_on_time') else 0
-            values['phone'] = normalize_phone_ua(values.get('phone'))
-            values['phone_backup'] = normalize_phone_ua(values.get('phone_backup'))
+            values['phone'], values['phone_backup'] = normalize_phone_pair(
+                values.get('phone'), values.get('phone_backup')
+            )
 
             # ── Паспорт: не зберігаємо "сміттєвий" тип без номера ──
             # Якщо номер паспорта порожній — вважаємо, що паспортний
@@ -606,8 +607,7 @@ def pending_student_review(pending_id):
                     row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'],
                     row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], row['tax_id'],
                     group_id, license_id,
-                    normalize_phone_ua(row['phone']),
-                    normalize_phone_ua(row['phone_backup']),
+                    *normalize_phone_pair(row['phone'], row['phone_backup']),
                     row['email'],
                     gender,
                 ))
@@ -900,12 +900,13 @@ def pending_student_review(pending_id):
                 updated_parts.append('особисті дані')
 
             if request.form.get('update_contacts'):
-                from routes.utils import normalize_phone_ua
+                from routes.utils import normalize_phone_pair
+                norm_phone, norm_backup = normalize_phone_pair(
+                    row['phone'], row['phone_backup']
+                )
                 conn.execute(
                     "UPDATE students SET phone=?, phone_backup=?, email=? WHERE id=?",
-                    (normalize_phone_ua(row['phone']),
-                     normalize_phone_ua(row['phone_backup']),
-                     row['email'], existing_id)
+                    (norm_phone, norm_backup, row['email'], existing_id)
                 )
                 updated_parts.append('контакти')
 
