@@ -267,9 +267,14 @@ def update_info(token):
 
     submitted = {}
 
+    from routes.utils import normalize_phone_ua
+
     for key in SIMPLE_FIELDS:
         if key in allowed_fields:
-            submitted[key] = f(key)
+            if key in ('phone', 'phone_backup'):
+                submitted[key] = normalize_phone_ua(f(key))
+            else:
+                submitted[key] = f(key)
 
     photo_path = None
     if 'photo' in allowed_fields:

@@ -442,9 +442,12 @@ def pending_student_review(pending_id):
                 'military_disability_group', 'military_disability_valid_until', 'military_disability_reason',
                 'military_formed_at', 'military_data_update_date',
             ]
+            from routes.utils import normalize_phone_ua
+
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
-            # Чекбокс — окремо (0/1, а не None/'')
             values['military_data_verified_on_time'] = 1 if request.form.get('military_data_verified_on_time') else 0
+            values['phone'] = normalize_phone_ua(values.get('phone'))
+            values['phone_backup'] = normalize_phone_ua(values.get('phone_backup'))
 
             # ── Паспорт: не зберігаємо "сміттєвий" тип без номера ──
             # Якщо номер паспорта порожній — вважаємо, що паспортний
@@ -558,6 +561,14 @@ def pending_student_review(pending_id):
                           AND LOWER_UA(first_name_UA) = LOWER_UA(?)
                           AND birth_date = ?
                     """, (row['last_name_UA'], row['first_name_UA'], row['birth_date'])).fetchone()
+            if not existing_student and row['phone']:
+                from routes.utils import normalize_phone_ua
+                norm_phone = normalize_phone_ua(row['phone'])
+                if norm_phone and norm_phone.startswith('+380'):
+                    existing_student = conn.execute(
+                        "SELECT id FROM students WHERE phone = ? OR phone_backup = ? LIMIT 1",
+                        (norm_phone, norm_phone)
+                    ).fetchone()
 
             if existing_student:
                 # Не дублюємо — реактивуємо enrollment і знімаємо з архіву.
@@ -595,7 +606,9 @@ def pending_student_review(pending_id):
                     row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'],
                     row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], row['tax_id'],
                     group_id, license_id,
-                    row['phone'], row['phone_backup'], row['email'],
+                    normalize_phone_ua(row['phone']),
+                    normalize_phone_ua(row['phone_backup']),
+                    row['email'],
                     gender,
                 ))
                 student_id = cur.lastrowid
@@ -887,9 +900,12 @@ def pending_student_review(pending_id):
                 updated_parts.append('особисті дані')
 
             if request.form.get('update_contacts'):
+                from routes.utils import normalize_phone_ua
                 conn.execute(
                     "UPDATE students SET phone=?, phone_backup=?, email=? WHERE id=?",
-                    (row['phone'], row['phone_backup'], row['email'], existing_id)
+                    (normalize_phone_ua(row['phone']),
+                     normalize_phone_ua(row['phone_backup']),
+                     row['email'], existing_id)
                 )
                 updated_parts.append('контакти')
 

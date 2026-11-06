@@ -322,15 +322,16 @@ def import_from_excel():
                             })
 
                     # ── G: Телефон ──
+                    from routes.utils import normalize_phone_ua
                     phone = None
                     phone_backup = None
                     if len(row) > 6 and row[6] not in (None, ''):
                         parts = [p.strip()
                                  for p in str(row[6]).split(',') if p.strip()]
                         if parts:
-                            phone = parts[0]
+                            phone = normalize_phone_ua(parts[0])
                         if len(parts) > 1:
-                            phone_backup = parts[1]
+                            phone_backup = normalize_phone_ua(parts[1])
 
                     # ── H: Email ──
                     email = (str(row[7]).strip()

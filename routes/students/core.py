@@ -465,11 +465,26 @@ def student_list():
         return redirect(url_for('students.student_list'))
 
     if search:
-        for word in search.split():
+        from routes.utils import normalize_phone_ua
+        # Якщо пошуковий запит виглядає як телефон — шукаємо за phone
+        normalized_search_phone = normalize_phone_ua(search)
+        is_phone_search = (
+            normalized_search_phone
+            and normalized_search_phone.startswith('+380')
+            and len(normalized_search_phone) == 13
+        )
+
+        if is_phone_search:
             where_clauses.append(
-                "(LOWER_UA(s.last_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.first_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.middle_name_UA) LIKE LOWER_UA(?))"
+                "(s.phone = ? OR s.phone_backup = ?)"
             )
-            params.extend([f'%{word}%', f'%{word}%', f'%{word}%'])
+            params.extend([normalized_search_phone, normalized_search_phone])
+        else:
+            for word in search.split():
+                where_clauses.append(
+                    "(LOWER_UA(s.last_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.first_name_UA) LIKE LOWER_UA(?) OR LOWER_UA(s.middle_name_UA) LIKE LOWER_UA(?))"
+                )
+                params.extend([f'%{word}%', f'%{word}%', f'%{word}%'])
 
     if sort_by == 'birth_date':
         where_clauses.append("LENGTH(s.birth_date) = 10 AND INSTR(s.birth_date, '.') = 3 AND INSTR(SUBSTR(s.birth_date, 4), '.') = 3")
@@ -1218,8 +1233,9 @@ def add_student():
             gender = detect_gender_from_middle_name(middle_name_ua)
 
         license_id = request.form.get('license_id') or None
-        phone = (request.form.get('phone') or '').strip() or None
-        phone_backup = (request.form.get('phone_backup') or '').strip() or None
+        from routes.utils import normalize_phone_ua
+        phone = normalize_phone_ua(request.form.get('phone'))
+        phone_backup = normalize_phone_ua(request.form.get('phone_backup'))
         email = (request.form.get('email') or '').strip() or None
         address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
         edebo_code_form = (request.form.get('edebo_code') or '').strip() or None
@@ -1694,8 +1710,9 @@ def edit_student(student_id):
             old_group = student['group_id']
             
             # license_id — НЕ обновляем здесь (управляется через enrollments).
-            phone = (request.form.get('phone') or '').strip() or None
-            phone_backup = (request.form.get('phone_backup') or '').strip() or None
+            from routes.utils import normalize_phone_ua
+            phone = normalize_phone_ua(request.form.get('phone'))
+            phone_backup = normalize_phone_ua(request.form.get('phone_backup'))
             email = (request.form.get('email') or '').strip() or None
             address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
 

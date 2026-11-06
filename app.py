@@ -159,6 +159,15 @@ app.register_blueprint(public_apply_bp)
 app.register_blueprint(public_update_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
+@app.template_filter('format_phone')
+def format_phone_filter(value):
+    """Красиве відображення українського номера: +380 (97) 123-45-67."""
+    if not value:
+        return '—'
+    s = str(value)
+    if len(s) == 13 and s.startswith('+380'):
+        return f"+380 ({s[4:6]}) {s[6:9]}-{s[9:11]}-{s[11:13]}"
+    return s
 
 @app.errorhandler(404)
 def handle_404(e):

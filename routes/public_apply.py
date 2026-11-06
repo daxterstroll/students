@@ -286,10 +286,12 @@ def apply():
     def f(name):
         return (request.form.get(name) or '').strip() or None
 
+    from routes.utils import normalize_phone_ua
+
     last_name_ua = f('last_name_UA')
     first_name_ua = f('first_name_UA')
     birth_date = _iso_to_ua_date(f('birth_date'))
-    phone = f('phone')
+    phone = normalize_phone_ua(f('phone'))
 
     if not last_name_ua or not first_name_ua or not birth_date or not phone:
         return render_template(
@@ -425,7 +427,7 @@ def apply():
     """, (
         request.remote_addr,
         last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date, f('tax_id'),
-        phone, f('phone_backup'), f('email'),
+        phone, normalize_phone_ua(f('phone_backup')), f('email'),
         f('document_type'), f('document_series'), f('document_number'), f('document_institution'),
         f('document_country'), document_date,
         is_foreign_document, f('reference_number'), f('reference_institution'),
