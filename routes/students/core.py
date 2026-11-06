@@ -1533,13 +1533,19 @@ def delete_photo(student_id):
 @students_bp.route('/students/<int:student_id>/freeze', methods=['POST'])
 @permission_required('manage_students')
 def freeze_student(student_id):
-    """Самостійне заморожування одного студента."""
+    """Самостійне заморожування одного студента (в обраній групі)."""
+    from routes.enrollments_service import end_enrollment
+
     conn = get_db()
     conn.row_factory = sqlite3.Row
     reason = (request.form.get('reason') or '').strip()
+    # Група, з якої заморожуємо. Якщо не вказано — primary (legacy-
+    # сумісність зі старим кодом).
+    group_id = request.form.get('group_id', type=int)
 
     student = conn.execute(
-        "SELECT group_id, COALESCE(archived, 0) AS archived FROM students WHERE id = ?", (student_id,)
+        "SELECT group_id, COALESCE(archived, 0) AS archived FROM students WHERE id = ?",
+        (student_id,),
     ).fetchone()
     if not student:
         conn.close()
@@ -1556,45 +1562,58 @@ def freeze_student(student_id):
         flash('Студент архівний - заморожування недоступне.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
-    if not student['group_id']:
+    if not group_id:
+        group_id = student['group_id']
+    if not group_id:
         conn.close()
         flash('Студент і так не прикріплений до жодної групи.', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    # Перевіряємо, що в цій групі є активний enrollment
+    active_enr = conn.execute(
+        "SELECT 1 FROM student_enrollments "
+        "WHERE student_id=? AND group_id=? AND status='active' LIMIT 1",
+        (student_id, group_id),
+    ).fetchone()
+    if not active_enr:
+        conn.close()
+        flash('У цій групі немає активного навчання.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
     document_files = request.files.getlist('document_files')
 
     cur = conn.execute(
-        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) VALUES (?, ?, NULL, ?, NULL, ?)",
-        (student_id, student['group_id'], reason, current_username())
+        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) "
+        "VALUES (?, ?, NULL, ?, NULL, ?)",
+        (student_id, group_id, reason, current_username()),
     )
     frozen_id = cur.lastrowid
-    saved_paths = save_multiple_attachments(conn, 'frozen_student', frozen_id, document_files, 'frozen_students', current_username())
+    saved_paths = save_multiple_attachments(
+        conn, 'frozen_student', frozen_id, document_files,
+        'frozen_students', current_username(),
+    )
     if saved_paths:
-        conn.execute("UPDATE frozen_students SET document_file = ? WHERE id = ?", (saved_paths[0], frozen_id))
-    # Закриваємо enrollment зі статусом 'frozen' — так само, як це вже
-    # роблять course_transfer_confirm() та graduation_confirm(). Без
-    # цього рядок у student_enrollments залишався зі status='active',
-    # і студент далі «просочувався» в ліцензійний звіт, аналітику та
-    # списки груп як активний.
-    #
-    # end_enrollment() автоматично знімає group_id (якщо це був
-    # primary) І може сам виставити archived=TRUE — для заморозки це
-    # неправильно (заморожений ≠ архівний), тому повертаємо
-    # archived=FALSE одразу після.
-    from routes.enrollments_service import end_enrollment
-    end_enrollment(student_id, student['group_id'], status='frozen', conn=conn)
-    conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
+        conn.execute(
+            "UPDATE frozen_students SET document_file = ? WHERE id = ?",
+            (saved_paths[0], frozen_id),
+        )
+
+    end_enrollment(student_id, group_id, status='frozen', conn=conn)
+    # archived=TRUE виставляє end_enrollment, якщо активних більше нема.
+    # Для паралельника archived=FALSE, бо є інші активні — це правильно.
     conn.commit()
     conn.close()
 
     log_action(
         current_username(),
-        f"заморозив студента (ID {student_id}) поза межами масового переведення",
-        details=f"причина: {reason}"
+        f"заморозив студента (ID {student_id}) у групі ID {group_id}",
+        details=f"причина: {reason}",
     )
-    flash('Студента заморожено. Керувати вирішенням - на сторінці «Заморожені студенти».', 'success')
+    flash(
+        'Студента заморожено в цій групі. Керувати вирішенням - на сторінці «Заморожені студенти».',
+        'success',
+    )
     return redirect(url_for('students.student_details', student_id=student_id))
-
 
 @students_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
 @login_required('')
@@ -1821,7 +1840,6 @@ def delete_student(student_id):
         conn.execute("DELETE FROM student_enrollments WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM grades WHERE student_id = ?", (student_id,))
-        conn.execute("DELETE FROM student_enrollments WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM activity_grades WHERE student_id = ?", (student_id,))
         conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
         conn.commit()

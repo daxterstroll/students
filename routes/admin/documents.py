@@ -116,9 +116,12 @@ def manage_education_documents():
                   AND e.status = 'active'
             WHERE COALESCE(s.archived, 0) = 0
               AND (e.id IS NOT NULL OR s.group_id = ?)
-              AND s.id NOT IN (SELECT student_id FROM education_documents)
+              AND s.id NOT IN (
+                  SELECT student_id FROM education_documents
+                  WHERE group_id = ? OR group_id IS NULL
+              )
             ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
-        """, (selected_group_id, selected_group_id))
+        """, (selected_group_id, selected_group_id, selected_group_id))
         students_without_docs = cursor.fetchall()
 
     # Основний запит документів
@@ -579,9 +582,12 @@ def manage_passport_documents():
                   AND e.status = 'active'
             WHERE COALESCE(s.archived, 0) = 0
               AND (e.id IS NOT NULL OR s.group_id = ?)
-              AND s.id NOT IN (SELECT student_id FROM passport_documents)
+              AND s.id NOT IN (
+                  SELECT student_id FROM passport_documents
+                  WHERE group_id = ? OR group_id IS NULL
+              )
             ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
-        """, (selected_group_id, selected_group_id))
+        """, (selected_group_id, selected_group_id, selected_group_id))
         students_without_docs = cursor.fetchall()
 
     cursor.execute("""

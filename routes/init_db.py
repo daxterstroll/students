@@ -517,6 +517,26 @@ CREATE TABLE IF NOT EXISTS "pending_students" (
     "military_address" TEXT,
     "military_change_credentials" TEXT,
     "military_change_reason" TEXT,
+    "military_status_badge" TEXT,
+    "military_valid_until" TEXT,
+    "military_registration_category" TEXT,
+    "military_removal_basis" TEXT,
+    "military_tck_name" TEXT,
+    "military_registry_number" TEXT,
+    "military_vos_code" TEXT,
+    "military_vos_description" TEXT,
+    "military_deferral_type" TEXT,
+    "military_deferral_until" TEXT,
+    "military_police_reason" TEXT,
+    "military_police_date" TEXT,
+    "military_vlk_decision" TEXT,
+    "military_vlk_date" TEXT,
+    "military_disability_group" TEXT,
+    "military_disability_valid_until" TEXT,
+    "military_disability_reason" TEXT,
+    "military_formed_at" TEXT,
+    "military_data_verified_on_time" INTEGER NOT NULL DEFAULT 0,
+    "military_data_update_date" TEXT,
     "status" TEXT NOT NULL DEFAULT 'new' CHECK("status" IN ('new', 'approved', 'rejected')),
     "reviewed_by" TEXT,
     "reviewed_at" TEXT,
@@ -800,17 +820,6 @@ cur.execute("""
 if cur.rowcount:
     print(f"➕ passport_documents: прив'язано до групи {cur.rowcount} записів")
 
-
-# Backfill: старі документи → до ОСНОВНОЇ групи студента
-cur.execute("""
-    UPDATE education_documents
-    SET group_id = (SELECT s.group_id FROM students s WHERE s.id = education_documents.student_id)
-    WHERE group_id IS NULL
-      AND EXISTS (SELECT 1 FROM students s WHERE s.id = education_documents.student_id AND s.group_id IS NOT NULL)
-""")
-if cur.rowcount:
-    print(f"➕ education_documents: прив'язано до групи {cur.rowcount} записів")
-
 # military — усі поля з v1/v2/v3
 for _col, _type in [
     ('category_override', "TEXT CHECK(category_override IN ('officer', 'rank'))"),
@@ -840,6 +849,33 @@ for _col, _type in [
     ('mobilized_date', 'TEXT'),
 ]:
     _add_column_if_missing('military', _col, _type)
+    
+# pending_students — нові поля «Резерв+» (Постанова №916/№812).
+# Раніше публічна анкета /apply збирала лише 8 legacy-полів
+# (military_registration_number_drpvr тощо), а решта 20+ полів
+# військового обліку при ручному заповненні губилась. Тепер
+# pending_students може зберігати ВЕСЬ набір полів military, і при
+# підтвердженні заявки вони переносяться в military 1-в-1.
+_add_column_if_missing('pending_students', 'military_status_badge', 'TEXT')
+_add_column_if_missing('pending_students', 'military_valid_until', 'TEXT')
+_add_column_if_missing('pending_students', 'military_registration_category', 'TEXT')
+_add_column_if_missing('pending_students', 'military_removal_basis', 'TEXT')
+_add_column_if_missing('pending_students', 'military_tck_name', 'TEXT')
+_add_column_if_missing('pending_students', 'military_registry_number', 'TEXT')
+_add_column_if_missing('pending_students', 'military_vos_code', 'TEXT')
+_add_column_if_missing('pending_students', 'military_vos_description', 'TEXT')
+_add_column_if_missing('pending_students', 'military_deferral_type', 'TEXT')
+_add_column_if_missing('pending_students', 'military_deferral_until', 'TEXT')
+_add_column_if_missing('pending_students', 'military_police_reason', 'TEXT')
+_add_column_if_missing('pending_students', 'military_police_date', 'TEXT')
+_add_column_if_missing('pending_students', 'military_vlk_decision', 'TEXT')
+_add_column_if_missing('pending_students', 'military_vlk_date', 'TEXT')
+_add_column_if_missing('pending_students', 'military_disability_group', 'TEXT')
+_add_column_if_missing('pending_students', 'military_disability_valid_until', 'TEXT')
+_add_column_if_missing('pending_students', 'military_disability_reason', 'TEXT')
+_add_column_if_missing('pending_students', 'military_formed_at', 'TEXT')
+_add_column_if_missing('pending_students', 'military_data_verified_on_time', 'INTEGER DEFAULT 0')
+_add_column_if_missing('pending_students', 'military_data_update_date', 'TEXT')
 
 # institution_licenses
 _add_column_if_missing('institution_licenses', 'is_base', 'INTEGER NOT NULL DEFAULT 0')

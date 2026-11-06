@@ -338,6 +338,101 @@
                 <label class="form-label">Причина зміни облікових даних</label>
                 <input type="text" name="military_change_reason" class="form-control" value="{{ row.military_change_reason or '' }}">
             </div>
+
+            <div class="col-12 mt-3 pt-3 border-top">
+                <h6 class="text-muted small text-uppercase mb-2">
+                    <i class="bi bi-file-earmark-pdf me-1"></i>Дані з PDF «Резерв+»
+                </h6>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Статус</label>
+                <select name="military_status_badge" class="form-select">
+                    <option value="" {% if not row.military_status_badge %}selected{% endif %}>— не вказано —</option>
+                    {% for opt in ["Військовозобов'язаний", "Призовник", "Резервіст", "Невійськовозобов'язаний", "Знято з обліку"] %}
+                    <option value="{{ opt }}" {% if row.military_status_badge == opt %}selected{% endif %}>{{ opt }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Категорія обліку</label>
+                <input type="text" name="military_registration_category" class="form-control" value="{{ row.military_registration_category or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Дійсний до</label>
+                <input type="text" name="military_valid_until" class="form-control" placeholder="ДД.ММ.РРРР" value="{{ row.military_valid_until or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Підстава зняття</label>
+                <input type="text" name="military_removal_basis" class="form-control" value="{{ row.military_removal_basis or '' }}">
+            </div>
+            <div class="col-12">
+                <label class="form-label">ТЦК та СП</label>
+                <input type="text" name="military_tck_name" class="form-control" value="{{ row.military_tck_name or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Номер у реєстрі «Оберіг»</label>
+                <input type="text" name="military_registry_number" class="form-control" value="{{ row.military_registry_number or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Код ВОС</label>
+                <input type="text" name="military_vos_code" class="form-control" value="{{ row.military_vos_code or '' }}">
+            </div>
+            <div class="col-12">
+                <label class="form-label">Опис ВОС</label>
+                <input type="text" name="military_vos_description" class="form-control" value="{{ row.military_vos_description or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Тип відстрочки</label>
+                <input type="text" name="military_deferral_type" class="form-control" value="{{ row.military_deferral_type or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Відстрочка до</label>
+                <input type="text" name="military_deferral_until" class="form-control" value="{{ row.military_deferral_until or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Постанова ВЛК</label>
+                <input type="text" name="military_vlk_decision" class="form-control" value="{{ row.military_vlk_decision or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Дата ВЛК</label>
+                <input type="text" name="military_vlk_date" class="form-control" value="{{ row.military_vlk_date or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Група інвалідності</label>
+                <input type="text" name="military_disability_group" class="form-control" value="{{ row.military_disability_group or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Дійсна до</label>
+                <input type="text" name="military_disability_valid_until" class="form-control" value="{{ row.military_disability_valid_until or '' }}">
+            </div>
+            <div class="col-12">
+                <label class="form-label">Причина інвалідності</label>
+                <input type="text" name="military_disability_reason" class="form-control" value="{{ row.military_disability_reason or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Причина звернення до поліції</label>
+                <input type="text" name="military_police_reason" class="form-control" value="{{ row.military_police_reason or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Дата звернення до поліції</label>
+                <input type="text" name="military_police_date" class="form-control" value="{{ row.military_police_date or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Документ сформовано</label>
+                <input type="text" name="military_formed_at" class="form-control" value="{{ row.military_formed_at or '' }}">
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Дата уточнення даних</label>
+                <input type="text" name="military_data_update_date" class="form-control" value="{{ row.military_data_update_date or '' }}">
+            </div>
+            <div class="col-12">
+                <div class="form-check">
+                    <input type="checkbox" name="military_data_verified_on_time" value="1"
+                           class="form-check-input" id="mil_verified_{{ row.id }}"
+                           {% if row.military_data_verified_on_time %}checked{% endif %}>
+                    <label class="form-check-label" for="mil_verified_{{ row.id }}">Дані уточнено вчасно</label>
+                </div>
+            </div>
         </div>
     </div>
 
