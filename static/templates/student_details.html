@@ -425,14 +425,14 @@
                             </div>
                         </div>
                         <div class="col-12"><hr class="my-1"></div>
-                        <div class="col-6">
-                            <div class="text-muted small">Телефон</div>
-                            <div>{{ val(student.phone | format_phone) }}</div>
-                        </div>
-                        <div class="col-6">
-                            <div class="text-muted small">Резервний телефон</div>
-                            <div>{{ val(student.phone_backup) }}</div>
-                        </div>
+						<div class="col-6">
+							<div class="text-muted small">Телефон</div>
+							<div>{{ val(student.phone | format_phone) }}</div>
+						</div>
+						<div class="col-6">
+							<div class="text-muted small">Резервний телефон</div>
+							<div>{{ val(student.phone_backup | format_phone) }}</div>
+						</div>
 						<div class="col-6">
 							<div class="text-muted small">Email</div>
 							<div>{{ val(student.email) }}</div>

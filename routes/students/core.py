@@ -15,6 +15,7 @@ import sqlite3
 from routes.utils import (
     generate_english_name, is_student_on_reduced_program, save_multiple_attachments,
     program_track_condition, apply_track_overrides, get_attachments, get_templates_with_metadata,
+    normalize_phone_pair,
 )
 from routes.gen_docx import gen_doc
 from routes import office_editor
@@ -1233,9 +1234,9 @@ def add_student():
             gender = detect_gender_from_middle_name(middle_name_ua)
 
         license_id = request.form.get('license_id') or None
-        from routes.utils import normalize_phone_ua
-        phone = normalize_phone_ua(request.form.get('phone'))
-        phone_backup = normalize_phone_ua(request.form.get('phone_backup'))
+        phone, phone_backup = normalize_phone_pair(
+            request.form.get('phone'), request.form.get('phone_backup')
+        )
         email = (request.form.get('email') or '').strip() or None
         address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
         edebo_code_form = (request.form.get('edebo_code') or '').strip() or None
@@ -1710,9 +1711,9 @@ def edit_student(student_id):
             old_group = student['group_id']
             
             # license_id — НЕ обновляем здесь (управляется через enrollments).
-            from routes.utils import normalize_phone_ua
-            phone = normalize_phone_ua(request.form.get('phone'))
-            phone_backup = normalize_phone_ua(request.form.get('phone_backup'))
+            phone, phone_backup = normalize_phone_pair(
+                request.form.get('phone'), request.form.get('phone_backup')
+            )
             email = (request.form.get('email') or '').strip() or None
             address_of_residence = (request.form.get('address_of_residence') or '').strip() or None
 

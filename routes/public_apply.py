@@ -286,12 +286,12 @@ def apply():
     def f(name):
         return (request.form.get(name) or '').strip() or None
 
-    from routes.utils import normalize_phone_ua
+    from routes.utils import normalize_phone_pair
 
     last_name_ua = f('last_name_UA')
     first_name_ua = f('first_name_UA')
     birth_date = _iso_to_ua_date(f('birth_date'))
-    phone = normalize_phone_ua(f('phone'))
+    phone, phone_backup = normalize_phone_pair(f('phone'), f('phone_backup'))
 
     if not last_name_ua or not first_name_ua or not birth_date or not phone:
         return render_template(
@@ -305,7 +305,7 @@ def apply():
     if not validation_error:
         validation_error = _validate_phone(phone, "Телефон")
     if not validation_error:
-        validation_error = _validate_phone(f('phone_backup'), "Резервний телефон")
+        validation_error = _validate_phone(phone_backup, "Резервний телефон")
     if validation_error:
         return render_template('public_apply.html', error=validation_error, form=request.form, **_birth_date_bounds())
 
@@ -427,7 +427,7 @@ def apply():
     """, (
         request.remote_addr,
         last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date, f('tax_id'),
-        phone, normalize_phone_ua(f('phone_backup')), f('email'),
+        phone, phone_backup, f('email'),
         f('document_type'), f('document_series'), f('document_number'), f('document_institution'),
         f('document_country'), document_date,
         is_foreign_document, f('reference_number'), f('reference_institution'),

@@ -74,7 +74,11 @@ def _collect_field_conflicts(existing, new_values):
             new_norm = _normalize_date_for_compare(new_val)
         elif field == 'gender':
             cur_norm = str(cur_raw).strip().upper()
-            new_norm = str(new_val).strip().upper()
+            new_norm = str(new_val).strip().upper()        
+        elif field in ('phone', 'phone_backup'):
+            from routes.utils import normalize_phone_ua
+            cur_norm = normalize_phone_ua(cur_raw) or ''
+            new_norm = normalize_phone_ua(new_val) or ''
         elif field in ('last_name_UA', 'first_name_UA', 'middle_name_UA'):
             # ФІО — через normalize_name_for_match: ігнорує апострофи
             # різних Unicode-варіантів, дефіс↔пробіл, регістр.
@@ -322,16 +326,17 @@ def import_from_excel():
                             })
 
                     # ── G: Телефон ──
-                    from routes.utils import normalize_phone_ua
+                    from routes.utils import normalize_phone_pair
                     phone = None
                     phone_backup = None
                     if len(row) > 6 and row[6] not in (None, ''):
                         parts = [p.strip()
                                  for p in str(row[6]).split(',') if p.strip()]
                         if parts:
-                            phone = normalize_phone_ua(parts[0])
-                        if len(parts) > 1:
-                            phone_backup = normalize_phone_ua(parts[1])
+                            phone, phone_backup = normalize_phone_pair(
+                                parts[0],
+                                parts[1] if len(parts) > 1 else None,
+                            )
 
                     # ── H: Email ──
                     email = (str(row[7]).strip()
