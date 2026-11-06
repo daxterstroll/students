@@ -2553,15 +2553,20 @@ def _dodatok4_diff(row) -> list:
 
 
 def _ensure_dodatok4_columns(conn):
-    """Ідемпотентно додає колонки обліку Додатка 4 у military."""
+    """
+    Колонки обліку Додатка 4 створюються у init_db.py.
+    Тут лише перевіряємо їхню наявність і попереджаємо, якщо БД стара —
+    НЕ робимо ALTER TABLE на льоту (це створює ризик блокувань і
+    розсинхрону зі схемою).
+    """
     existing = {row[1] for row in conn.execute('PRAGMA table_info(military)')}
-    if 'dodatok4_sent_at' not in existing:
-        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_sent_at TEXT')
-    if 'dodatok4_fingerprint' not in existing:
-        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_fingerprint TEXT')
-    if 'dodatok4_snapshot' not in existing:
-        conn.execute('ALTER TABLE military ADD COLUMN dodatok4_snapshot TEXT')
-    conn.commit()
+    required = {'dodatok4_sent_at', 'dodatok4_fingerprint', 'dodatok4_snapshot'}
+    missing = required - existing
+    if missing:
+        logger.error(
+            f"military не має колонок {sorted(missing)} — функціонал «Додаток 4» "
+            f"непрацездатний. Запустіть `python init_db.py` для оновлення схеми."
+        )
 
 
 def _dodatok4_fingerprint(row) -> str:
