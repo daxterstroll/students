@@ -630,3 +630,76 @@ def filter_students_for_item(students, item, conn, group_id):
     if item['reduced_only']:
         return [s for s in students if is_student_on_reduced_program(conn, s['id'], group_id)]
     return students
+    
+import re as _re_phone
+
+# Дозволені роздільники в номерах телефонів (пробіли, дефіси, дужки,
+# точки, неперервний пробіл) — прибираються при нормалізації.
+_PHONE_SEPARATORS_RE = _re_phone.compile(r'[\s\-\(\)\.\u00a0]')
+
+
+def normalize_phone_ua(value):
+    """
+    Нормалізує український номер телефону до канонічного вигляду
+    +380XXXXXXXXX (12 цифр з плюсом).
+
+    Приймає всі типові варіанти введення:
+        0971234567          → +380971234567
+        +380971234567       → +380971234567
+        380971234567        → +380971234567
+        80971234567         → +380971234567
+        097 123 45 67       → +380971234567
+        (097) 123-45-67     → +380971234567
+        +38 (097) 123 45 67 → +380971234567
+        +380-97-123-45-67   → +380971234567
+
+    Якщо номер не схожий на український (напр. іноземний студент
+    з польським/німецьким номером) — повертає його з прибраними
+    зайвими пробілами, БЕЗ примусової нормалізації (щоб не зіпсувати).
+
+    None / порожній рядок → None.
+    """
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+
+    digits = _PHONE_SEPARATORS_RE.sub('', s).lstrip('+')
+
+    # 12 цифр з 380 — вже канон (380 + 9 цифр)
+    if len(digits) == 12 and digits.startswith('380'):
+        return '+' + digits
+
+    # 10 цифр, починається з 0 — типовий український мобільний
+    # 067/068/096/097/098/050/066/095/099/063/073/093/091/092/094 тощо
+    if len(digits) == 10 and digits.startswith('0'):
+        return '+38' + digits
+
+    # 11 цифр, починається з 80 — «+» пропущено
+    if len(digits) == 11 and digits.startswith('80'):
+        return '+3' + digits
+
+    # Не схоже на український формат (напр. іноземний номер) —
+    # повертаємо як є, лише прибравши пробіли для однакового пошуку.
+    return s
+    
+def normalize_phone_pair(phone, phone_backup):
+    """
+    Нормалізує ОБИДВА телефони (основний і резервний) і прибирає
+    безглуздий дублікат, якщо після нормалізації вони виявились
+    однаковими (студент ввів той самий номер у різних форматах).
+
+    Повертає кортеж (phone, phone_backup), де phone_backup
+    гарантовано None, якщо він збігається з phone.
+
+    Це той випадок, коли "0971234567" і "+380971234567" — насправді
+    одне й те саме, і зберігати його двічі немає сенсу.
+    """
+    norm_phone = normalize_phone_ua(phone)
+    norm_backup = normalize_phone_ua(phone_backup)
+
+    if norm_backup and norm_phone and norm_backup == norm_phone:
+        norm_backup = None
+
+    return norm_phone, norm_backup

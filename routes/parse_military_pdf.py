@@ -328,7 +328,8 @@ def parse_reserve_plus_pdf(path):
             phone = second_val
         j += 1
     data['address'] = ' '.join(addr_parts).strip()
-    data['phone'] = phone
+    from routes.utils import normalize_phone_ua
+    data['phone'] = normalize_phone_ua(phone) or ''
 
     # ── Email ──
     email_i = _find_line_starting_with(cols, 'Email', start_idx=j)
