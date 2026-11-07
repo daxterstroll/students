@@ -200,6 +200,7 @@ FAQ_SECTION_PERMISSIONS = {
     'system': [
         'manage_users',
         'view_logs',
+        'custom_export', 
     ],
     'analytics': [
         'analytics',

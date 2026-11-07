@@ -119,6 +119,8 @@ NAV_SECTIONS = [
              'icon': 'bi-list-check', 'label': 'Звіт по ліцензіях'},
             {'perm': 'analytics', 'url': 'analytics.dashboard',
              'icon': 'bi-graph-up', 'label': 'Аналітика'},
+             {'perm': 'custom_export', 'url': 'admin.custom_export',
+             'icon': 'bi-file-earmark-excel', 'label': 'Кастомний експорт даних'},
             {'perm': 'view_logs', 'url': 'admin.view_logs',
              'icon': 'bi-file-earmark-binary', 'label': 'Логування'},
         ],
