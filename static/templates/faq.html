@@ -290,37 +290,126 @@
             </div>
         </div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-photo">
-                    <i class="bi bi-camera me-2"></i>Фото студента
-                </button>
-            </h2>
-            <div id="p-student-photo" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> на картці студента, кнопка «Завантажити фото» поруч з особистими даними.<br>
-                    <strong>Формат файлу:</strong> JPEG, PNG або WEBP, розміром до <strong>8 МБ</strong>.<br>
-                    <strong>Розмір фото:</strong> після завантаження з'являється рамка обрізки з фіксованим співвідношенням сторін <strong>3×4</strong>.<br>
-                    <strong>Автоматична обрізка з PDF «Резерв+»:</strong> система сама витягує фото і обрізає по центру навколо обличчя.
-                </div>
-            </div>
-        </div>
+		<div class="accordion-item">
+			<h2 class="accordion-header">
+				<button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-photo">
+					<i class="bi bi-camera me-2"></i>Фото студента
+				</button>
+			</h2>
+			<div id="p-student-photo" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+				<div class="accordion-body small">
+					<strong>Де:</strong> на картці студента, кнопка з іконкою камери поверх фото (або «Додати фото», якщо фото ще немає).<br>
+					<strong>Формат файлу:</strong> JPEG, PNG або WEBP, розміром до <strong>8 МБ</strong>.<br>
+					<strong>Процес завантаження — 2 кроки:</strong> вибір файлу → ручна обрізка рамкою 3×4 (можна посунути й масштабувати).<br>
+					<strong>Автоматична обрізка з PDF «Резерв+»:</strong> система сама витягує фото з PDF і обрізає <strong>навколо обличчя</strong> (детекція Haar cascade, за пропорціями ICAO: голова ≈76% висоти, верхній відступ ≈6%).<br>
+					<strong>Якщо обличчя не знайдено</strong> — обрізка по центру. У таких випадках обов'язково перевірте й виправте вручну.
+				</div>
+			</div>
+		</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-photo-bulk">
-                    <i class="bi bi-images me-2"></i>Масове завантаження фото
-                </button>
-            </h2>
-            <div id="p-photo-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> Імпорт → «Фото студентів (масово)».<br>
-                    <strong>Як користуватись — 4 кроки:</strong> вибір групи + файлів → зіставлення (авто + вручну) → попередній перегляд з ручною переобрізкою → підтвердження.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> у зіставленні беруть участь усі студенти групи, включно з тими, хто має цю групу як паралельну.<br>
-                    <strong>Назва файлу:</strong> «Прізвище Ім'я.jpg» дає найточніше автоматичне зіставлення.
-                </div>
-            </div>
-        </div>
+		<div class="accordion-item">
+			<h2 class="accordion-header">
+				<button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-photo-bulk">
+					<i class="bi bi-images me-2"></i>Масове завантаження фото
+				</button>
+			</h2>
+			<div id="p-photo-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+				<div class="accordion-body small">
+
+					<p class="mb-2">
+						<strong>Де:</strong> Імпорт → «Фото студентів (масово)».
+					</p>
+
+					<p class="mb-2">
+						<strong>Як користуватись — 3 кроки:</strong>
+					</p>
+					<ol class="mb-3">
+						<li>Оберіть усі файли одразу (без вибору групи).</li>
+						<li>Перевірте зіставлення зі студентами (авто + вручну).</li>
+						<li>Перегляньте обрізку (за потреби — виправте) і підтвердьте.</li>
+					</ol>
+
+					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
+						<i class="bi bi-people-fill me-1"></i>Без вибору групи — пошук серед усіх
+					</h6>
+					<p class="mb-2">
+						Оберіть файли — система шукатиме кожен серед <strong>усіх активних студентів, до яких у вас є доступ</strong>:
+						адміністратор бачить усіх, працівник — студентів своїх груп
+						(включно з тими, для кого ця група є паралельною).
+						Окремо вибирати групу не потрібно — достатньо назвати файл так, щоб система знайшла студента.
+					</p>
+
+					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
+						<i class="bi bi-search me-1"></i>Як називати файли для найкращого зіставлення
+					</h6>
+					<p class="mb-2">Пошук — <strong>по повному ФІБ</strong>, з підтримкою різних варіантів:</p>
+					<ul class="mb-3">
+						<li><code>Прізвище Ім'я.jpg</code> — базовий, найпоширеніший (напр. «Іваненко Іван.jpg»)</li>
+						<li><code>Прізвище Ім'я По-батькові.jpg</code> — найточніший (напр. «Іваненко Іван Петрович.jpg»)</li>
+						<li><code>Ім'я Прізвище.jpg</code> — порядок слів не важливий</li>
+						<li><code>Прізвище І.П..jpg</code> або <code>Прізвище І П.jpg</code> — за ініціалами</li>
+					</ul>
+
+					<div class="alert alert-light border small mb-3 py-2">
+						<i class="bi bi-info-circle me-1"></i>
+						Якщо у файлі лише прізвище (напр. «Іваненко.jpg») — система <strong>не вгадує</strong>, а показує рядок як пропущений. Так само правильно, бо в базі може бути 5 «Іваненків».
+					</div>
+
+					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
+						<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Кілька схожих студентів — оберете вручну
+					</h6>
+					<p class="mb-2">
+						Якщо у файлі «Вовчук Оксана.jpg», а в базі <strong>двоє</strong> — «Вовчук Оксана Петрівна» і «Вовчук Оксана Оксанівна»,
+						система <strong>не вгадає</strong>. Такий рядок буде позначено
+						<span class="badge bg-warning text-dark" style="font-size:.72rem;">кілька кандидатів</span>,
+						а під випадаючим списком з'являться кнопки:
+						<span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Петрівна</span>
+						<span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Оксанівна</span> —
+						обираєте ту, якій належить фото. Доти, доки не обрано — фото не збережеться.
+					</p>
+
+					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
+						<i class="bi bi-crop me-1"></i>Автоматична обрізка 3×4 — навколо обличчя
+					</h6>
+					<p class="mb-2">
+						Кожне фото обрізається <strong>навколо обличчя</strong> (детекція Haar cascade, пропорції ICAO):
+						голова займає ≈76% висоти, над волоссям — невеликий відступ.
+						Під кожним прев'ю в попередньому перегляді може бути бейдж:
+					</p>
+					<ul class="mb-3">
+						<li><strong>без бейджа</strong> — знайдено одне обличчя, обрізано навколо нього (звичайний випадок);</li>
+						<li>
+							<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> без обличчя</span>
+							— обличчя не знайдено, обрізано по центру.
+							<em>Обов'язково перевірте й виправте вручну.</em>
+						</li>
+						<li>
+							<span class="badge bg-info text-dark"><i class="bi bi-grid-3x3-gap"></i> N фото</span>
+							— на скані знайдено кілька однакових облич (типова розкладка з 3-4 фото 3×4 на аркуші).
+							Система обрала <strong>одне — найближче до центру аркуша</strong>.
+							Якщо це не та людина, або ви хочете інше з цих фото — натисніть «Змінити обрізку».
+						</li>
+					</ul>
+
+					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
+						<i class="bi bi-sliders me-1"></i>Ручна правка обрізки
+					</h6>
+					<p class="mb-2">
+						Кнопка «Змінити обрізку» на прев'ю відкриває <strong>оригінал фото</strong> (не обрізану версію) з уже виставленою рамкою 3×4 —
+						саме там, де був попередній кроп. Можна посунути рамку, змінити розмір, або розтягнути на весь кадр —
+						тоді фото стиснеться до центру.
+					</p>
+
+					<div class="alert alert-light border small mb-0 py-2">
+						<i class="bi bi-lightbulb me-1"></i>
+						<strong>Порада:</strong> якщо після пакетного завантаження на багатьох фото бейдж
+						«без обличчя» — це, скоріш за все, скани дуже низької роздільності.
+						Обробіть їх вручну через «Змінити обрізку» — це швидше, ніж перезавантажувати пакет.
+					</div>
+
+				</div>
+			</div>
+		</div>
 
         <div class="accordion-item">
             <h2 class="accordion-header">

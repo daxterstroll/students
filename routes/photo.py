@@ -138,77 +138,79 @@ def process_and_save_pending_photo_with_crop(file_bytes, crop_box, old_rel_path=
 # Розумна обрізка фото на документи (3×4) з пошуком обличчя (OpenCV).
 # --------------------------------------------------------------------
 
-_face_cascade = None
+_face_cascades = None
+
+
+def _get_face_cascades():
+    """
+    Повертає список каскадів для послідовної спроби: default + alt2.
+    alt2 іноді краще ловить обличчя на сканах із низьким контрастом.
+    Кешується — повторне завантаження .xml файлів недешеве.
+    """
+    global _face_cascades
+    if _face_cascades is not None:
+        return _face_cascades
+    try:
+        import cv2
+    except ImportError:
+        _face_cascades = []
+        return _face_cascades
+
+    paths = [
+        'haarcascade_frontalface_default.xml',
+        'haarcascade_frontalface_alt2.xml',
+    ]
+    result = []
+    for name in paths:
+        path = os.path.join(cv2.data.haarcascades, name)
+        if os.path.exists(path):
+            cascade = cv2.CascadeClassifier(path)
+            if not cascade.empty():
+                result.append(cascade)
+    _face_cascades = result
+    return result
 
 
 def _get_face_cascade():
-    global _face_cascade
-    if _face_cascade is not None:
-        return _face_cascade
-    try:
-        import cv2
-        cascade_path = os.path.join(
-            cv2.data.haarcascades,
-            'haarcascade_frontalface_default.xml',
-        )
-        if not os.path.exists(cascade_path):
-            return None
-        _face_cascade = cv2.CascadeClassifier(cascade_path)
-        return _face_cascade
-    except Exception:
-        return None
+    """Сумісність зі старим кодом (military.py тощо) — повертає перший
+    доступний каскад або None."""
+    cascades = _get_face_cascades()
+    return cascades[0] if cascades else None
 
 
-def smart_crop_to_id_photo(img):
+def _crop_around_face(face, img_width, img_height):
     """
-    Обрізка 3×4 навколо обличчя (як на фото на документи).
+    Розрахунок 3×4 crop навколо одного обличчя за пропорціями ICAO
+    (фото на документи): голова займає ~76% висоти, верхній відступ
+    ~6% над волоссям.
+
+    Повертає crop_box зі ЗВИЧАЙНИХ Python int (не numpy.int64) —
+    інакше json.dump() падає при збереженні manifest.json сесії
+    масового завантаження.
     """
-    try:
-        import cv2
-        import numpy as _np
-    except ImportError:
-        return auto_center_crop_box(img.width, img.height)
-
-    cascade = _get_face_cascade()
-    if cascade is None:
-        return auto_center_crop_box(img.width, img.height)
-
-    arr = _np.array(img)
-    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
-    h, w = gray.shape
-
-    faces = cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5,
-        minSize=(80, 80), flags=cv2.CASCADE_SCALE_IMAGE,
-    )
-    if len(faces) == 0:
-        return auto_center_crop_box(img.width, img.height)
-
-    fx, fy, fw, fh = max(faces, key=lambda r: r[2] * r[3])
+    fx, fy, fw, fh = face
     face_cx = fx + fw // 2
 
-    crop_h = int(fh * 2.0)
+    crop_h = int(fh * 1.7)
     crop_w = int(crop_h * TARGET_RATIO)
 
     x = face_cx - crop_w // 2
-    y = fy - int(fh * 0.3)
+    y = fy - int(fh * 0.4)
 
+    # Притискаємо до меж зображення
     if y < 0:
         y = 0
-    if y + crop_h > img.height:
-        if y > 0:
-            y = max(0, img.height - crop_h)
-        if y + crop_h > img.height:
-            crop_h = img.height - y
+    if y + crop_h > img_height:
+        y = max(0, img_height - crop_h)
+        crop_h = img_height - y
 
     if x < 0:
         x = 0
-    if x + crop_w > img.width:
-        if x > 0:
-            x = max(0, img.width - crop_w)
-        if x + crop_w > img.width:
-            crop_w = img.width - x
+    if x + crop_w > img_width:
+        x = max(0, img_width - crop_w)
+        crop_w = img_width - x
 
+    # Дотягуємо до 3:4 (якщо впирались у межі)
     current_ratio = crop_w / crop_h if crop_h else 0
     if abs(current_ratio - TARGET_RATIO) > 0.01:
         if current_ratio > TARGET_RATIO:
@@ -220,8 +222,125 @@ def smart_crop_to_id_photo(img):
             y += (crop_h - new_h) // 2
             crop_h = new_h
 
-    return (x, y, crop_w, crop_h)
+    return (int(x), int(y), int(crop_w), int(crop_h))
 
+
+def _detect_faces_and_crop(img):
+    """
+    Виявляє обличчя і повертає (crop_box, face_count).
+
+    Стратегія:
+      1. Пробуємо кожен каскад (default, потім alt2).
+      2. Для кожного — 2 прогони: з minSize від розміру зображення
+         і з трохи більшим minNeighbors (суворіше).
+      3. Беремо перший прогін, який знайшов хоч одне обличчя;
+         якщо такого нема — center-crop fallback.
+    """
+    try:
+        import cv2
+        import numpy as _np
+    except ImportError:
+        return auto_center_crop_box(img.width, img.height), 0
+
+    cascades = _get_face_cascades()
+    if not cascades:
+        return auto_center_crop_box(img.width, img.height), 0
+
+    arr = _np.array(img)
+    gray = cv2.cvtColor(arr, cv2.COLOR_RGB2GRAY)
+
+    # minSize залежить від розміру зображення — інакше на маленьких
+    # сканах (декілька фото 3×4 на одному аркуші) обличчя менші за
+    # фіксований 80×80 і не знаходяться взагалі.
+    min_face = max(24, min(img.width, img.height) // 15)
+
+    for cascade in cascades:
+        for min_neighbors in (4, 3):
+            try:
+                faces = cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=min_neighbors,
+                    minSize=(min_face, min_face),
+                    flags=cv2.CASCADE_SCALE_IMAGE,
+                )
+            except cv2.error:
+                continue
+
+            if len(faces) == 0:
+                continue
+
+            main_face = _select_main_face(faces, img.width, img.height)
+            if main_face is None:
+                continue
+
+            crop = _crop_around_face(main_face, img.width, img.height)
+            return crop, len(faces)
+
+    return auto_center_crop_box(img.width, img.height), 0
+
+
+def _select_main_face(faces, img_width, img_height):
+    """
+    Обирає ОДНЕ обличчя з переліку detected faces.
+
+    Логіка:
+      - 0 облич -> None
+      - 1 обличчя -> воно ж (звичайний портрет)
+      - 2+ облич ОДНАКОВОГО розміру, вирівняних по вертикалі
+        (типова сканована «розкладка» з 3-4 однакових фото 3×4
+        поруч на аркуші для друку) -> обираємо обличчя, найближче
+        до центру зображення (середина аркуша)
+      - інакше -> найбільше обличчя
+    """
+    if len(faces) == 0:
+        return None
+    if len(faces) == 1:
+        return faces[0]
+
+    largest = max(faces, key=lambda r: r[2] * r[3])
+    lx, ly, lw, lh = largest
+    largest_area = lw * lh
+
+    similar = []
+    for f in faces:
+        fx, fy, fw, fh = f
+        area = fw * fh
+        # Значно менше обличчя — не «та сама копія»
+        if area < largest_area * 0.6:
+            continue
+        # Не вирівняні по вертикалі — можливо, це різні люди
+        # (на груповому фото), а не однакова розкладка
+        if abs((fy + fh // 2) - (ly + lh // 2)) > lh * 0.4:
+            continue
+        similar.append(f)
+
+    if len(similar) >= 2:
+        cx = img_width / 2
+        cy = img_height / 2
+        return min(similar, key=lambda r: (
+            abs((r[0] + r[2] / 2) - cx) + abs((r[1] + r[3] / 2) - cy)
+        ))
+
+    return largest
+
+
+def smart_crop_to_id_photo(img):
+    """
+    Обрізка 3×4 навколо обличчя (як на фото на документи).
+    Повертає тільки crop_box (x, y, w, h) — як і раніше.
+    """
+    crop_box, _face_count = _detect_faces_and_crop(img)
+    return crop_box
+
+
+def smart_crop_to_id_photo_with_info(img):
+    """
+    Те саме, але повертає (crop_box, face_count).
+    Потрібно, коли caller хоче знати, скільки облич знайдено
+    (напр. щоб показати в UI «виявлено 3 фото — обрізано одне»).
+    """
+    return _detect_faces_and_crop(img)
 
 def process_and_save_pending_photo_smart(file_bytes):
     img = load_and_validate_image(file_bytes)
