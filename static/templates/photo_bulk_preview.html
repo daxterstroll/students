@@ -10,7 +10,19 @@
     {% if unmatched %}
     <div class="alert alert-warning small">
         <strong>{{ unmatched|length }} файл(ів) пропущено</strong> (не зіставлено зі студентом) - вони не будуть збережені:
-        <ul class="mb-0 mt-1">{% for u in unmatched %}<li>{{ u.filename }}</li>{% endfor %}</ul>
+        <ul class="mb-0 mt-1">
+			{% for u in unmatched %}
+			<li>
+				{{ u.filename }}
+				{% if u.status == 'ambiguous' %}
+				<span class="badge bg-info text-dark ms-1"
+					  title="Було кілька однаково схожих студентів — треба обрати вручну">
+					кілька кандидатів
+				</span>
+				{% endif %}
+			</li>
+			{% endfor %}
+		</ul>
     </div>
     {% endif %}
 
@@ -21,7 +33,14 @@
     </div>
     {% endif %}
 
-    <p class="text-muted small">Фото обрізані автоматично по центру. Якщо людина на фото вийшла не по центру - натисніть «Змінити обрізку» під конкретним фото.</p>
+    <p class="text-muted small">
+    Фото обрізані автоматично <strong>навколо обличчя</strong>.
+    <span class="badge bg-info text-dark"><i class="bi bi-grid-3x3-gap"></i> N фото</span>
+    означає, що на скані знайдено декілька однакових облич — обрано одне (найближче до центру).
+    <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> без обличчя</span>
+    означає, що обличчя не знайдено — обрізано по центру, обов'язково перевірте й обріжте вручну.
+    Для ручної правки — кнопка «Змінити обрізку» під конкретним фото.
+</p>
 
     <div class="row g-3 mb-4">
         {% for item in matched %}
@@ -30,10 +49,31 @@
                  src="{{ url_for('photo_bulk.preview_image', token=token, file_key=item.file_key) }}"
                  class="img-fluid rounded shadow-sm mb-1" style="aspect-ratio: 3/4; object-fit: cover; width:100%;" alt="">
             <div class="small fw-semibold text-truncate">{{ item.student_name }}</div>
-            <button type="button" class="btn btn-outline-secondary btn-sm mt-1 w-100 js-recrop-btn"
-                    data-file-key="{{ item.file_key }}" data-token="{{ token }}">
-                <i class="bi bi-crop me-1"></i>Змінити обрізку
-            </button>
+			{% if item.face_count is not none %}
+				{% if item.face_count == 0 %}
+				<div class="mt-1">
+					<span class="badge bg-warning text-dark"
+						  title="Обличчя не знайдено — обрізано по центру. Перевірте обрізку вручну.">
+						<i class="bi bi-exclamation-triangle"></i> без обличчя
+					</span>
+				</div>
+				{% elif item.face_count >= 2 %}
+				<div class="mt-1">
+					<span class="badge bg-info text-dark"
+						  title="На скані {{ item.face_count }} облич — обрано одне (найближче до центру)">
+						<i class="bi bi-grid-3x3-gap"></i> {{ item.face_count }} фото
+					</span>
+				</div>
+				{% endif %}
+			{% endif %}
+			<button type="button" class="btn btn-outline-secondary btn-sm mt-1 w-100 js-recrop-btn"
+					data-file-key="{{ item.file_key }}" data-token="{{ token }}"
+					data-crop-x="{{ item.crop_box[0] }}"
+					data-crop-y="{{ item.crop_box[1] }}"
+					data-crop-w="{{ item.crop_box[2] }}"
+					data-crop-h="{{ item.crop_box[3] }}">
+				<i class="bi bi-crop me-1"></i>Змінити обрізку
+			</button>
         </div>
         {% endfor %}
     </div>
@@ -57,11 +97,18 @@
                 <h5 class="modal-title"><i class="bi bi-crop me-2"></i>Обрізка 3×4</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body">
-                <div style="max-height: 60vh; overflow: hidden; background:#222;">
-                    <img id="recropImage" src="" style="max-width: 100%; display:block;">
-                </div>
-            </div>
+			<div class="modal-body">
+				<p class="small text-muted mb-2">
+					<i class="bi bi-info-circle me-1"></i>
+					Показано <strong>оригінал</strong> зображення, поверх — рамка 3×4
+					з поточним кропом. Посуньте або змініть розмір рамки, щоб обрати
+					потрібну область. Якщо розтягнути рамку на весь кадр — у результат
+					піде центр зображення (система стисне до 3×4).
+				</p>
+				<div style="max-height: 60vh; overflow: hidden; background:#222;">
+					<img id="recropImage" src="" style="max-width: 100%; display:block;">
+				</div>
+			</div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
                 <button type="button" id="recropSaveBtn" class="btn btn-primary">
@@ -79,6 +126,8 @@ window.addEventListener('load', function () {
     let cropper = null;
     let currentFileKey = null;
     let currentToken = null;
+    let currentCropBox = null;
+
     const modalEl = document.getElementById('recropModal');
     const modal = new bootstrap.Modal(modalEl);
     const recropImg = document.getElementById('recropImage');
@@ -88,7 +137,23 @@ window.addEventListener('load', function () {
         btn.addEventListener('click', function () {
             currentFileKey = btn.dataset.fileKey;
             currentToken = btn.dataset.token;
-            recropImg.src = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}".replace('__KEY__', currentFileKey) + '?v=' + Date.now();
+
+            // Поточний кроп — щоб Cropper відкрився вже на правильній
+            // області, а не з autoCropArea 0.9 (дефолт).
+            const cx = parseFloat(btn.dataset.cropX);
+            const cy = parseFloat(btn.dataset.cropY);
+            const cw = parseFloat(btn.dataset.cropW);
+            const ch = parseFloat(btn.dataset.cropH);
+            if (!isNaN(cx) && !isNaN(cy) && cw > 0 && ch > 0) {
+                currentCropBox = { x: cx, y: cy, width: cw, height: ch };
+            } else {
+                currentCropBox = null;
+            }
+
+            // GET-запит повертає оригінал (не preview) — саме це
+            // потрібно для ручної переобрізки.
+            recropImg.src = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}"
+                .replace('__KEY__', currentFileKey) + '?v=' + Date.now();
             modal.show();
         });
     });
@@ -100,6 +165,18 @@ window.addEventListener('load', function () {
             viewMode: 1,
             autoCropArea: 0.9,
             background: false,
+            // ready — момент, коли Cropper завантажив зображення й
+            // знає його реальні розміри. Тільки тут можна коректно
+            // виставити setData в координатах оригіналу.
+            ready: function () {
+                if (currentCropBox) {
+                    try {
+                        cropper.setData(currentCropBox);
+                    } catch (e) {
+                        console.warn('Не вдалося встановити початковий кроп:', e);
+                    }
+                }
+            },
         });
     });
 
@@ -119,7 +196,9 @@ window.addEventListener('load', function () {
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Зберігаємо...';
 
-        const url = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}".replace('__KEY__', currentFileKey);
+        const url = "{{ url_for('photo_bulk.recrop', token=token, file_key='__KEY__') }}"
+            .replace('__KEY__', currentFileKey);
+
         fetch(url, { method: 'POST', body: formData })
             .then(r => r.json())
             .then(function (resp) {
