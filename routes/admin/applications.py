@@ -887,28 +887,70 @@ def pending_student_review(pending_id):
 
             updated_parts = []
 
-            if request.form.get('update_personal'):
-                conn.execute("""
-                    UPDATE students SET last_name_UA=?, first_name_UA=?, middle_name_UA=?,
-                                         last_name_ENG=?, first_name_ENG=?, birth_date=?, tax_id=?
-                    WHERE id=?
-                """, (
-                    row['last_name_UA'], row['first_name_UA'], row['middle_name_UA'],
-                    row['last_name_ENG'], row['first_name_ENG'], row['birth_date'], row['tax_id'],
-                    existing_id
-                ))
-                updated_parts.append('особисті дані')
+            # ── Особисті дані: КОЖНЕ поле окремо ──
+            PERSONAL_FIELD_MAP = [
+                ('last_name_UA',   'last_name_UA',   'Прізвище (укр.)'),
+                ('first_name_UA',  'first_name_UA',  "Ім'я (укр.)"),
+                ('middle_name_UA', 'middle_name_UA', 'По батькові'),
+                ('last_name_ENG',  'last_name_ENG',  'Прізвище (лат.)'),
+                ('first_name_ENG', 'first_name_ENG', "Ім'я (лат.)"),
+                ('birth_date',     'birth_date',     'Дата народження'),
+                ('tax_id',         'tax_id',         'ІПН'),
+            ]
+            personal_updates = {}
+            personal_labels = []
+            for form_key, db_col, label in PERSONAL_FIELD_MAP:
+                if request.form.get(f'update_{form_key}'):
+                    personal_updates[db_col] = row[db_col]
+                    personal_labels.append(label)
 
-            if request.form.get('update_contacts'):
-                from routes.utils import normalize_phone_pair
-                norm_phone, norm_backup = normalize_phone_pair(
-                    row['phone'], row['phone_backup']
-                )
+            if personal_updates:
+                set_clause = ', '.join(f"{col}=?" for col in personal_updates)
                 conn.execute(
-                    "UPDATE students SET phone=?, phone_backup=?, email=? WHERE id=?",
-                    (norm_phone, norm_backup, row['email'], existing_id)
+                    f"UPDATE students SET {set_clause} WHERE id=?",
+                    list(personal_updates.values()) + [existing_id],
                 )
-                updated_parts.append('контакти')
+                updated_parts.append('особисті: ' + ', '.join(personal_labels))
+
+            # ── Контакти: КОЖНЕ поле окремо ──
+            from routes.utils import normalize_phone_pair
+
+            update_phone  = bool(request.form.get('update_phone'))
+            update_backup = bool(request.form.get('update_phone_backup'))
+            update_email  = bool(request.form.get('update_email'))
+
+            contacts_updates = {}
+            if update_phone or update_backup:
+                current = conn.execute(
+                    "SELECT phone, phone_backup FROM students WHERE id=?",
+                    (existing_id,),
+                ).fetchone()
+                cur_phone  = current['phone']        if current else None
+                cur_backup = current['phone_backup'] if current else None
+
+                # Якщо поле НЕ оновлюємо — беремо поточне значення з БД,
+                # щоб normalize_phone_pair коректно відпрацював пару.
+                new_phone_val  = row['phone']        if update_phone  else cur_phone
+                new_backup_val = row['phone_backup'] if update_backup else cur_backup
+                norm_phone, norm_backup = normalize_phone_pair(
+                    new_phone_val, new_backup_val
+                )
+
+                if update_phone:
+                    contacts_updates['phone'] = norm_phone
+                if update_backup:
+                    contacts_updates['phone_backup'] = norm_backup
+
+            if update_email:
+                contacts_updates['email'] = row['email']
+
+            if contacts_updates:
+                set_clause = ', '.join(f"{col}=?" for col in contacts_updates)
+                conn.execute(
+                    f"UPDATE students SET {set_clause} WHERE id=?",
+                    list(contacts_updates.values()) + [existing_id],
+                )
+                updated_parts.append('контакти: ' + ', '.join(contacts_updates.keys()))
 
             if request.form.get('update_photo') and row['photo_path']:
                 try:

@@ -337,79 +337,148 @@
                             </div>
                         </div>
                         <div class="action-card__body">
-                            {% set has_update_options = (row.phone or row.phone_backup or row.email)
-                                or row.photo_path
-                                or row.document_type or row.document_number
-                                or row.passport_number
-                                or (row.military_registration_number_drpvr or row.military_registration_document or row.military_rank or row.military_status_badge or row.military_tck_name) %}
-                            {% if has_update_options %}
-                            <form method="post"
-                                  onsubmit="return confirm('Оновити дані студента «{{ existing_full['last_name_UA'] }} {{ existing_full['first_name_UA'] }}»?\nНового студента не буде створено.');">
-                                <input type="hidden" name="action" value="update_existing">
-                                <input type="hidden" name="existing_student_id" value="{{ existing_full['id'] }}">
+{# ═══ Обчислюємо різниці ОДИН раз — для рішення "чи показувати форму"
+   і для рендеру чекбоксів усередині неї. ═══ #}
+{% set pii_defs = [
+    ('last_name_UA',   'last_name_UA',   'Прізвище (укр.)'),
+    ('first_name_UA',  'first_name_UA',  "Ім'я (укр.)"),
+    ('middle_name_UA', 'middle_name_UA', 'По батькові'),
+    ('last_name_ENG',  'last_name_ENG',  'Прізвище (лат.)'),
+    ('first_name_ENG', 'first_name_ENG', "Ім'я (лат.)"),
+    ('birth_date',     'birth_date',     'Дата народження'),
+    ('tax_id',         'tax_id',         'ІПН'),
+] %}
+{% set pii_diff_rows = [] %}
+{% for form_key, db_col, label in pii_defs %}
+    {% set nv = row[db_col] if db_col in row.keys() else '' %}
+    {% set ov = existing_full[db_col] if db_col in existing_full.keys() else '' %}
+    {% if nv and (nv|string|trim) != (ov|string|trim) %}
+        {% set _ = pii_diff_rows.append({'form_key': form_key, 'label': label, 'new': nv, 'old': ov}) %}
+    {% endif %}
+{% endfor %}
 
-                                {% if row.phone or row.phone_backup or row.email %}
-                                <div class="form-check mb-2">
-                                    <input type="checkbox" name="update_contacts" id="up_contacts"
-                                           class="form-check-input">
-                                    <label for="up_contacts" class="form-check-label small">
-                                        <strong>Контакти</strong>
-                                        ({{ row.phone or '—' }}{% if row.phone_backup %}, {{ row.phone_backup }}{% endif %}{% if row.email %}, {{ row.email }}{% endif %})
-                                    </label>
-                                </div>
-                                {% endif %}
+{% set contact_diff_rows = [] %}
+{% if row.phone and (row.phone|string|trim) != ((existing_full.phone or '')|string|trim) %}
+    {% set _ = contact_diff_rows.append({'form_key': 'phone', 'label': 'Телефон', 'new': row.phone, 'old': existing_full.phone}) %}
+{% endif %}
+{% if row.phone_backup and (row.phone_backup|string|trim) != ((existing_full.phone_backup or '')|string|trim) %}
+    {% set _ = contact_diff_rows.append({'form_key': 'phone_backup', 'label': 'Резервний телефон', 'new': row.phone_backup, 'old': existing_full.phone_backup}) %}
+{% endif %}
+{% if row.email and (row.email|string|trim) != ((existing_full.email or '')|string|trim) %}
+    {% set _ = contact_diff_rows.append({'form_key': 'email', 'label': 'Email', 'new': row.email, 'old': existing_full.email}) %}
+{% endif %}
 
-                                {% if row.photo_path %}
-                                <div class="form-check mb-2">
-                                    <input type="checkbox" name="update_photo" id="up_photo"
-                                           class="form-check-input">
-                                    <label for="up_photo" class="form-check-label small">
-                                        <strong>Фото</strong> із цієї заявки
-                                    </label>
-                                </div>
-                                {% endif %}
+{# Фото/документ/паспорт/військові — це "додати новий запис",
+   а не "змінити поле", тому їх наявність сама по собі дає право
+   показати форму, навіть якщо всі текстові поля збігаються. #}
+{% set has_attachment_options = row.photo_path
+    or row.document_type or row.document_number
+    or row.passport_number
+    or (row.military_registration_number_drpvr or row.military_registration_document
+        or row.military_rank or row.military_status_badge or row.military_tck_name) %}
 
-                                {% if row.document_type or row.document_number %}
-                                <div class="form-check mb-2">
-                                    <input type="checkbox" name="add_document" id="up_document"
-                                           class="form-check-input">
-                                    <label for="up_document" class="form-check-label small">
-                                        <strong>Документ про освіту</strong> як новий запис
-                                        ({{ row.document_type or '' }}{% if row.document_number %} №{{ row.document_number }}{% endif %})
-                                    </label>
-                                </div>
-                                {% endif %}
+{% set has_update_options = pii_diff_rows or contact_diff_rows or has_attachment_options %}
 
-                                {% if row.passport_number %}
-                                <div class="form-check mb-2">
-                                    <input type="checkbox" name="add_passport" id="up_passport"
-                                           class="form-check-input">
-                                    <label for="up_passport" class="form-check-label small">
-                                        <strong>Паспорт</strong> як новий запис
-                                        ({{ row.passport_document_type or '' }}{% if row.passport_number %} №{{ row.passport_number }}{% endif %})
-                                    </label>
-                                </div>
-                                {% endif %}
+{% if has_update_options %}
+<form method="post"
+      onsubmit="return confirm('Оновити дані студента «{{ existing_full['last_name_UA'] }} {{ existing_full['first_name_UA'] }}»?\nНового студента не буде створено.');">
+    <input type="hidden" name="action" value="update_existing">
+    <input type="hidden" name="existing_student_id" value="{{ existing_full['id'] }}">
 
-                                {% if row.military_registration_number_drpvr or row.military_registration_document or row.military_rank or row.military_status_badge or row.military_tck_name %}
-                                <div class="form-check mb-2">
-                                    <input type="checkbox" name="add_military" id="up_military"
-                                           class="form-check-input">
-                                    <label for="up_military" class="form-check-label small">
-                                        <strong>Військові дані</strong> — оновити порожні поля
-                                    </label>
-                                </div>
-                                {% endif %}
+    {% if pii_diff_rows %}
+    <div class="mb-2">
+        <div class="small fw-semibold text-muted mb-1">
+            Особисті дані (оберіть, що оновити):
+            <button type="button" class="btn btn-link btn-sm p-0 ms-2"
+                    onclick="this.closest('form').querySelectorAll('input[type=checkbox][name^=update_]').forEach(c=>c.checked=true)">
+                обрати всі поля картки
+            </button>
+        </div>
+        {% for p in pii_diff_rows %}
+        <div class="form-check mb-1">
+            <input type="checkbox" name="update_{{ p.form_key }}"
+                   id="up_{{ p.form_key }}" class="form-check-input">
+            <label for="up_{{ p.form_key }}" class="form-check-label small">
+                <strong>{{ p.label }}:</strong>
+                {% if p.old %}<span class="text-muted text-decoration-line-through">{{ p.old }}</span> → {% endif %}
+                <span class="text-success">{{ p.new }}</span>
+            </label>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
 
-                                <button type="submit" class="btn btn-sm btn-primary mt-2">
-                                    <i class="bi bi-arrow-repeat me-1"></i> Оновити обрані поля
-                                </button>
-                            </form>
-                            {% else %}
-                            <div class="text-muted small">
-                                Заявка не містить полів для оновлення.
-                            </div>
-                            {% endif %}
+    {% if contact_diff_rows %}
+    <div class="mb-2">
+        <div class="small fw-semibold text-muted mb-1">Контакти (оберіть, що оновити):</div>
+        {% for p in contact_diff_rows %}
+        <div class="form-check mb-1">
+            <input type="checkbox" name="update_{{ p.form_key }}"
+                   id="up_{{ p.form_key }}" class="form-check-input">
+            <label for="up_{{ p.form_key }}" class="form-check-label small">
+                <strong>{{ p.label }}:</strong>
+                {% if p.old %}<span class="text-muted text-decoration-line-through">{{ p.old }}</span> → {% endif %}
+                <span class="text-success">{{ p.new }}</span>
+            </label>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if row.photo_path %}
+    <div class="form-check mb-2">
+        <input type="checkbox" name="update_photo" id="up_photo"
+               class="form-check-input">
+        <label for="up_photo" class="form-check-label small">
+            <strong>Фото</strong> із цієї заявки
+        </label>
+    </div>
+    {% endif %}
+
+    {% if row.document_type or row.document_number %}
+    <div class="form-check mb-2">
+        <input type="checkbox" name="add_document" id="up_document"
+               class="form-check-input">
+        <label for="up_document" class="form-check-label small">
+            <strong>Документ про освіту</strong> як новий запис
+            ({{ row.document_type or '' }}{% if row.document_number %} №{{ row.document_number }}{% endif %})
+        </label>
+    </div>
+    {% endif %}
+
+    {% if row.passport_number %}
+    <div class="form-check mb-2">
+        <input type="checkbox" name="add_passport" id="up_passport"
+               class="form-check-input">
+        <label for="up_passport" class="form-check-label small">
+            <strong>Паспорт</strong> як новий запис
+            ({{ row.passport_document_type or '' }}{% if row.passport_number %} №{{ row.passport_number }}{% endif %})
+        </label>
+    </div>
+    {% endif %}
+
+    {% if row.military_registration_number_drpvr or row.military_registration_document
+          or row.military_rank or row.military_status_badge or row.military_tck_name %}
+    <div class="form-check mb-2">
+        <input type="checkbox" name="add_military" id="up_military"
+               class="form-check-input">
+        <label for="up_military" class="form-check-label small">
+            <strong>Військові дані</strong> — оновити порожні поля
+        </label>
+    </div>
+    {% endif %}
+
+    <button type="submit" class="btn btn-sm btn-primary mt-2">
+        <i class="bi bi-arrow-repeat me-1"></i> Оновити обрані поля
+    </button>
+</form>
+{% else %}
+<div class="text-muted small">
+    <i class="bi bi-check-circle text-success me-1"></i>
+    Заявка не містить жодного поля, яке відрізняється від картки студента.
+    Оновлювати нічого.
+</div>
+{% endif %}
                         </div>
                     </div>
                 </div>
