@@ -153,7 +153,7 @@ def _normalize_gender(raw):
     return None
 
 
-REPORTS_DIR = os.path.join(os.getcwd(), 'import_reports')
+REPORTS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'import_reports')
 REPORTS_TTL_SECONDS = 24 * 3600  # звіти живуть 1 добу
 
 

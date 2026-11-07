@@ -1421,7 +1421,7 @@ def license_report_export_word():
 
             doc.add_paragraph()
 
-    output_path = os.path.join('static', 'uploads', f"license_report_{uuid.uuid4().hex}.docx")
+    output_path = os.path.join('static', 'uploads', 'license_reports', f"license_report_{uuid.uuid4().hex}.docx")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     doc.save(output_path)
 

@@ -37,7 +37,7 @@ from routes.helpers import current_username
 
 import_grades_bp = Blueprint('import_grades', __name__)
 
-SESSIONS_DIR = os.path.join(os.getcwd(), 'import_sessions')
+SESSIONS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'import_sessions')
 SESSION_TTL_SECONDS = 6 * 3600
 
 

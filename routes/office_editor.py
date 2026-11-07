@@ -82,7 +82,7 @@ if not ONLYOFFICE_VERIFY_SSL:
 office_bp = Blueprint('office', __name__, url_prefix='/office')
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SESSIONS_DIR = os.path.join(BASE_DIR, 'office_sessions')
+SESSIONS_DIR = os.path.join(BASE_DIR, 'static', 'uploads', 'office_sessions')
 os.makedirs(SESSIONS_DIR, exist_ok=True)
 
 # ----------------------------------------------------------------------

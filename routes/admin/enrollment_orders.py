@@ -815,7 +815,7 @@ from datetime import datetime
 from pathlib import Path
 from flask import jsonify
 
-BULK_SESSIONS_DIR = Path('import_sessions') / 'enrollment_bulk'
+BULK_SESSIONS_DIR = Path('static') / 'uploads' / 'import_sessions' / 'enrollment_bulk'
 BULK_SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 BULK_SESSION_TTL = 3600  # 1 година
 
