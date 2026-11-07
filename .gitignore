@@ -1,11 +1,8 @@
 generated_docs/
 uploads/
-photo_bulk_sessions/
 template_word/
 temp_preview/
 logs/
-office_sessions/
-import_sessions/
 *.db
 *.db-shm
 *.db-wal
@@ -191,6 +188,3 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-/tmp_military_bulk
-/import_reports
-/import_reports

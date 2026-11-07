@@ -830,7 +830,7 @@ def manage_passport_documents():
 # routes/admin/documents.py — на початку файлу вже є: import os, json, uuid, time
 # додайте константу поруч із TEMP_PREVIEW_FOLDER:
 
-PASSPORT_REPORTS_DIR = os.path.join(os.getcwd(), 'import_reports')
+PASSPORT_REPORTS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'import_reports')
 
 
 @admin_bp.route('/admin/import_passport_documents', methods=['GET', 'POST'])

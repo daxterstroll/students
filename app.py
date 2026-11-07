@@ -41,22 +41,27 @@ app = Flask(
 
 @app.before_request
 def block_templates_static_access():
+    """Забороняє прямий доступ через /static/ до:
+       - templates/ (сирі Jinja-шаблони);
+       - тимчасових папок військових PDF (скан-копії «Резерв+»);
+       - сесійних папок, у яких лежать згенеровані .docx,
+         Excel-стани імпорту, JSON-звіти та тимчасові фото —
+         усе це з персональними даними студентів і не повинно
+         відкриватися за прямим URL, навіть якщо файл існує.
     """
-    Забороняє прямий доступ через /static/ до:
-
-      1. Папки templates/ - без цього можна було б завантажити сирий
-         невідрендерений Jinja-шаблон.
-
-      2. Тимчасових папок військових PDF - там персональні дані
-         (скан-копії «Резерв+»), які не повинні відкриватися за
-         прямим URL /static/uploads/tmp_military_* /... поки їх не
-         підтвердили і не перенесли в постійну папку.
-    """
-    if request.path.startswith('/static/templates/'):
-        abort(404)
-    if (request.path.startswith('/static/uploads/tmp_military_pdf/') or
-            request.path.startswith('/static/uploads/tmp_military_bulk/')):
-        abort(404)
+    blocked_prefixes = (
+        '/static/templates/',
+        '/static/uploads/tmp_military_pdf/',
+        '/static/uploads/tmp_military_bulk/',
+        '/static/uploads/import_reports/',
+        '/static/uploads/import_sessions/',
+        '/static/uploads/office_sessions/',
+        '/static/uploads/photo_bulk_sessions/',
+        '/static/uploads/license_reports/', 
+    )
+    for prefix in blocked_prefixes:
+        if request.path.startswith(prefix):
+            abort(404)
 
 
 @app.context_processor

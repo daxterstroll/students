@@ -29,7 +29,7 @@ from routes.photo import (
 
 photo_bulk_bp = Blueprint('photo_bulk', __name__)
 
-SESSIONS_DIR = os.path.join(os.getcwd(), 'photo_bulk_sessions')
+SESSIONS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'photo_bulk_sessions')
 SESSION_TTL_SECONDS = 6 * 3600
 
 
