@@ -385,14 +385,16 @@ def apply():
     if not f('passport_number'):
         passport_document_type = None
         passport_series_val = None
+        passport_number_val = None          # ← додано
         passport_issued_by_val = None
-        passport_issue_date_val = None
+        passport_issue_date = None          # ← перейменовано з _val
         passport_valid_until = None
         passport_unique_number_val = None
     else:
         passport_series_val = f('passport_series')
+        passport_number_val = f('passport_number')   # ← додано
         passport_issued_by_val = f('passport_issued_by')
-        passport_issue_date_val = _iso_to_ua_date(f('passport_issue_date'))
+        passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))  # ← перейменовано
         passport_valid_until = (
             _iso_to_ua_date(f('passport_valid_until'))
             if passport_document_type in PASSPORT_TYPES_ID_STYLE else None
