@@ -1,0 +1,542 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Кастомний експорт даних{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+
+<style>
+    .ce-tabs .nav-link { color: var(--ink-text); }
+    .ce-tabs .nav-link.active {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        font-weight: 600;
+        color: var(--ink-text);
+    }
+    html[data-theme="dark"] .ce-tabs .nav-link.active {
+        background: rgba(200,162,74,.18);
+        color: var(--brass-lt);
+    }
+    .ce-preset-btn {
+        border-radius: 999px;
+        font-size: .82rem;
+        white-space: nowrap;
+    }
+    .ce-column-check {
+        padding: .25rem .4rem;
+        border-radius: 6px;
+        transition: background .15s ease;
+    }
+    .ce-column-check:hover { background: var(--brass-soft); }
+    .ce-column-check input { margin-right: .4rem; }
+    .ce-counter-pill {
+        background: var(--brass-soft);
+        border: 1px solid var(--brass-semi);
+        color: var(--ink-text);
+        padding: .4rem .9rem;
+        border-radius: 999px;
+        font-weight: 700;
+    }
+    html[data-theme="dark"] .ce-counter-pill { color: var(--brass-lt); }
+
+    .ce-form-section {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1rem;
+        background: var(--paper-2);
+    }
+    .ce-form-section h6 {
+        color: var(--heading, var(--ink-text));
+        font-size: .85rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        font-weight: 700;
+        margin-bottom: .85rem;
+    }
+    .ce-columns-scroll {
+        max-height: 65vh;
+        overflow-y: auto;
+        padding-right: .4rem;
+    }
+    .ce-sticky-actions {
+        position: sticky;
+        bottom: 0;
+        background: var(--paper);
+        padding: .75rem 1rem;
+        border-top: 1px solid var(--line);
+        z-index: 10;
+        margin: 1rem -1.5rem -1rem;
+    }
+</style>
+
+<div class="container-fluid py-4">
+
+    {{ ui.page_header(
+        'bi-file-earmark-excel',
+        'Кастомний експорт даних',
+        'Оберіть фільтри, колонки та формат — і отримайте готовий файл'
+    ) }}
+
+    {# ── Пресети ── #}
+    <div class="ce-form-section">
+        <h6><i class="bi bi-lightning-charge me-1"></i>Швидкі пресети</h6>
+        <div class="d-flex flex-wrap gap-2">
+            {% for p in presets %}
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary ce-preset-btn js-preset"
+                    data-preset="{{ p.key }}"
+                    title="{{ p.description }}">
+                {{ p.label }}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('admin.custom_export_download') }}"
+          id="exportForm">
+
+        <input type="hidden" name="post_filter" id="postFilterInput" value="">
+
+        <div class="row g-3">
+
+            {# ── ЛІВА КОЛОНКА: ФІЛЬТРИ ── #}
+            <div class="col-lg-6">
+
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-funnel me-1"></i>Режим рядків</h6>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mode" value="student"
+                               id="modeStudent" {% if mode != 'enrollment' %}checked{% endif %}>
+                        <label class="form-check-label" for="modeStudent">
+                            <strong>Один рядок на студента</strong> — береться основна група
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="mode" value="enrollment"
+                               id="modeEnrollment" {% if mode == 'enrollment' %}checked{% endif %}>
+                        <label class="form-check-label" for="modeEnrollment">
+                            <strong>Один рядок на навчання</strong> — усі enrollment'и
+                            (для паралельного навчання студент з'явиться кілька разів)
+                        </label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" name="include_no_enrollment" value="1"
+                               id="includeNoEnrollment"
+                               {% if form.get('include_no_enrollment') == '1' %}checked{% endif %}>
+                        <label class="form-check-label small text-muted" for="includeNoEnrollment">
+                            Включити студентів без enrollment'ів (архівні, заморожені, без груп)
+                        </label>
+                    </div>
+                </div>
+
+                {# ── Вік та особисті ── #}
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-person-badge me-1"></i>Вік та особисті дані</h6>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Вік від (років)</label>
+                            <input type="number" class="form-control form-control-sm" name="min_age"
+                                   value="{{ form.get('min_age', '') }}" min="0" max="120"
+                                   placeholder="напр. 26">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Вік до (років)</label>
+                            <input type="number" class="form-control form-control-sm" name="max_age"
+                                   value="{{ form.get('max_age', '') }}" min="0" max="120"
+                                   placeholder="напр. 60">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Стать</label>
+                            <select class="form-select form-select-sm" name="gender">
+                                <option value="">Будь-яка</option>
+                                <option value="Чоловіча" {% if form.get('gender') == 'Чоловіча' %}selected{% endif %}>Чоловіча</option>
+                                <option value="Жіноча" {% if form.get('gender') == 'Жіноча' %}selected{% endif %}>Жіноча</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {# ── Група та навчання ── #}
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-mortarboard me-1"></i>Група та навчання</h6>
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label small">Група</label>
+                            <select class="form-select form-select-sm" name="group_id">
+                                <option value="">Усі групи</option>
+                                {% for g in choices.groups %}
+                                <option value="{{ g.id }}" {% if form.get('group_id')|int == g.id %}selected{% endif %}>
+                                    {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Ступінь</label>
+                            <select class="form-select form-select-sm" name="degree_level">
+                                <option value="">Усі</option>
+                                {% for d in choices.degree_levels %}
+                                <option value="{{ d }}" {% if form.get('degree_level') == d %}selected{% endif %}>{{ d }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Форма навчання</label>
+                            <select class="form-select form-select-sm" name="study_form">
+                                <option value="">Усі</option>
+                                {% for f in choices.study_forms %}
+                                <option value="{{ f }}" {% if form.get('study_form') == f %}selected{% endif %}>{{ f }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Курс</label>
+                            <select class="form-select form-select-sm" name="course">
+                                <option value="">Усі</option>
+                                {% for c in choices.courses %}
+                                <option value="{{ c }}" {% if form.get('course')|int == c %}selected{% endif %}>{{ c }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Рік вступу (від)</label>
+                            <input type="number" class="form-control form-control-sm" name="start_year_from"
+                                   value="{{ form.get('start_year_from', '') }}" min="2000" max="2100" placeholder="від">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Рік вступу (до)</label>
+                            <input type="number" class="form-control form-control-sm" name="start_year_to"
+                                   value="{{ form.get('start_year_to', '') }}" min="2000" max="2100" placeholder="до">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Ліцензія</label>
+                            <select class="form-select form-select-sm" name="license_id">
+                                <option value="">Усі</option>
+                                {% for l in choices.licenses %}
+                                <option value="{{ l.id }}" {% if form.get('license_id')|int == l.id %}selected{% endif %}>
+                                    {{ l.short_name_ua or l.name_ua }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Статус навчання (можна кілька)</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for s, label in [
+                                    ('active', 'Активне'),
+                                    ('graduated', 'Випущено'),
+                                    ('expelled', 'Відраховано'),
+                                    ('frozen', 'Заморожено'),
+                                    ('none', 'Без enrollment'),
+                                ] %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="enrollment_status" value="{{ s }}"
+                                           id="status_{{ s }}"
+                                           {% if s in (form.getlist('enrollment_status') or ['active']) %}checked{% endif %}>
+                                    <label class="form-check-label small" for="status_{{ s }}">{{ label }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Програма</label>
+                            <select class="form-select form-select-sm" name="is_reduced">
+                                <option value="">Будь-яка</option>
+                                <option value="yes" {% if form.get('is_reduced') == 'yes' %}selected{% endif %}>Лише скорочена</option>
+                                <option value="no" {% if form.get('is_reduced') == 'no' %}selected{% endif %}>Лише повна</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {# ── Наявність даних ── #}
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-check2-square me-1"></i>Наявність даних</h6>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label small">Архівні студенти</label>
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" name="include_archived" value="1"
+                                       id="includeArchived"
+                                       {% if form.get('include_archived') == '1' %}checked{% endif %}>
+                                <label class="form-check-label small" for="includeArchived">Включити</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Заморожені</label>
+                            <div class="form-check form-switch mt-1">
+                                <input class="form-check-input" type="checkbox" name="include_frozen" value="1"
+                                       id="includeFrozen"
+                                       {% if form.get('include_frozen') == '1' %}checked{% endif %}>
+                                <label class="form-check-label small" for="includeFrozen">Включити</label>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Паспорт</label>
+                            <select class="form-select form-select-sm" name="has_passport">
+                                <option value="">Будь-який</option>
+                                <option value="yes" {% if form.get('has_passport') == 'yes' %}selected{% endif %}>Лише з паспортом</option>
+                                <option value="no" {% if form.get('has_passport') == 'no' %}selected{% endif %}>Лише без паспорта</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small">Типи паспортів (якщо заповнено)</label>
+                            <div class="d-flex flex-wrap gap-2">
+                                {% for pt in passport_types %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="passport_type" value="{{ pt }}"
+                                           id="pt_{{ loop.index }}"
+                                           {% if pt in form.getlist('passport_type') %}checked{% endif %}>
+                                    <label class="form-check-label small" for="pt_{{ loop.index }}">{{ pt }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Військовий облік</label>
+                            <select class="form-select form-select-sm" name="has_military">
+                                <option value="">Будь-який</option>
+                                <option value="yes" {% if form.get('has_military') == 'yes' %}selected{% endif %}>Лише з обліком</option>
+                                <option value="no" {% if form.get('has_military') == 'no' %}selected{% endif %}>Лише без обліку</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Документ про освіту</label>
+                            <select class="form-select form-select-sm" name="has_education_doc">
+                                <option value="">Будь-який</option>
+                                <option value="yes" {% if form.get('has_education_doc') == 'yes' %}selected{% endif %}>Лише з документом</option>
+                                <option value="no" {% if form.get('has_education_doc') == 'no' %}selected{% endif %}>Лише без документа</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Фото</label>
+                            <select class="form-select form-select-sm" name="has_photo">
+                                <option value="">Будь-який</option>
+                                <option value="yes" {% if form.get('has_photo') == 'yes' %}selected{% endif %}>Лише з фото</option>
+                                <option value="no" {% if form.get('has_photo') == 'no' %}selected{% endif %}>Лише без фото</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small">Наказ про зарахування</label>
+                            <select class="form-select form-select-sm" name="has_enrollment_order">
+                                <option value="">Будь-який</option>
+                                <option value="yes" {% if form.get('has_enrollment_order') == 'yes' %}selected{% endif %}>Лише з наказом</option>
+                                <option value="no" {% if form.get('has_enrollment_order') == 'no' %}selected{% endif %}>Лише без наказу</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ── ПРАВА КОЛОНКА: КОЛОНКИ ── #}
+            <div class="col-lg-6">
+                <div class="ce-form-section">
+                    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+                        <h6 class="mb-0"><i class="bi bi-columns-gap me-1"></i>Колонки для виводу</h6>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="selectAllCols">Обрати всі</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="clearAllCols">Зняти всі</button>
+                        </div>
+                    </div>
+
+                    <div class="ce-columns-scroll">
+                        {% for grp in column_groups %}
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between align-items-center px-1 py-1"
+                                 style="background: var(--paper-2); border-radius: 6px;">
+                                <strong class="small text-uppercase" style="letter-spacing:.05em;">
+                                    {{ grp.label }}
+                                </strong>
+                                <button type="button"
+                                        class="btn btn-link btn-sm py-0 px-1 js-toggle-group"
+                                        data-group="{{ grp.key }}">усі</button>
+                            </div>
+                            <div class="row g-0 mt-1">
+                                {% for key, label in grp.columns %}
+                                <div class="col-sm-6">
+                                    <label class="ce-column-check d-flex align-items-center">
+                                        <input type="checkbox" name="columns" value="{{ key }}"
+                                               class="form-check-input js-col-cb"
+                                               data-group="{{ grp.key }}"
+                                               {% if key in selected_columns %}checked{% endif %}>
+                                        <span class="small">{{ label }}</span>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {# ── Сортування ── #}
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-sort-alpha-down me-1"></i>Сортування</h6>
+                    <div class="row g-2">
+                        <div class="col-8">
+                            <label class="form-label small">За колонкою</label>
+                            <select class="form-select form-select-sm" name="sort_by" id="sortBy">
+                                {% for grp in column_groups %}
+                                {% for key, label in grp.columns %}
+                                <option value="{{ key }}" {% if sort_by == key %}selected{% endif %}>
+                                    {{ grp.label }} → {{ label }}
+                                </option>
+                                {% endfor %}
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small">Порядок</label>
+                            <select class="form-select form-select-sm" name="sort_order">
+                                <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>↑ За зростанням</option>
+                                <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>↓ За спаданням</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                {# ── Формат ── #}
+                <div class="ce-form-section">
+                    <h6><i class="bi bi-file-earmark-arrow-down me-1"></i>Формат файлу</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for fmt, label in [
+                            ('xlsx', 'XLSX (Excel)'),
+                            ('csv', 'CSV (для Excel/1С)'),
+                            ('docx', 'DOCX (Word)'),
+                            ('json', 'JSON'),
+                        ] %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="format"
+                                   value="{{ fmt }}" id="fmt_{{ fmt }}"
+                                   {% if fmt == 'xlsx' %}checked{% endif %}>
+                            <label class="form-check-label small fw-semibold" for="fmt_{{ fmt }}">{{ label }}</label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Панель дій ── #}
+        <div class="ce-sticky-actions d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <button type="button" class="btn btn-outline-secondary" id="btnPreview">
+                    <i class="bi bi-calculator me-1"></i>Порахувати записи
+                </button>
+                <span class="ce-counter-pill ms-2" id="countPill" style="display:none;"></span>
+            </div>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Скасувати</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-download me-1"></i>Завантажити
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+{# ── Дані пресетів — вбудовані в JS ── #}
+<script>
+const PRESETS = {{ presets|tojson }};
+
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('exportForm');
+
+    // ── Пресети ──
+    document.querySelectorAll('.js-preset').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const key = btn.dataset.preset;
+            const preset = PRESETS.find(function (p) { return p.key === key; });
+            if (!preset) return;
+
+            // Скинути всю форму
+            form.reset();
+
+            // Активи фільтрів
+            const f = preset.filters || {};
+            Object.keys(f).forEach(function (name) {
+                const value = f[name];
+                const inputs = form.querySelectorAll('[name="' + name + '"]');
+                inputs.forEach(function (input) {
+                    if (input.type === 'checkbox') {
+                        if (Array.isArray(value)) {
+                            input.checked = value.indexOf(input.value) !== -1;
+                        } else {
+                            input.checked = (input.value == value || input.checked);
+                        }
+                    } else if (input.type === 'radio') {
+                        input.checked = (input.value == value);
+                    } else {
+                        input.value = value;
+                    }
+                });
+            });
+
+            // Колонки
+            const cols = new Set(preset.columns || []);
+            document.querySelectorAll('.js-col-cb').forEach(function (cb) {
+                cb.checked = cols.has(cb.value);
+            });
+
+            // post_filter
+            const pf = document.getElementById('postFilterInput');
+            if (pf) pf.value = preset.post_filter || '';
+
+            document.getElementById('countPill').style.display = 'none';
+        });
+    });
+
+    // ── "усі" для категорії ──
+    document.querySelectorAll('.js-toggle-group').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const group = btn.dataset.group;
+            const cbs = document.querySelectorAll('.js-col-cb[data-group="' + group + '"]');
+            const allChecked = Array.from(cbs).every(function (cb) { return cb.checked; });
+            cbs.forEach(function (cb) { cb.checked = !allChecked; });
+        });
+    });
+
+    // ── Обрати / зняти всі колонки ──
+    document.getElementById('selectAllCols').addEventListener('click', function () {
+        document.querySelectorAll('.js-col-cb').forEach(function (cb) { cb.checked = true; });
+    });
+    document.getElementById('clearAllCols').addEventListener('click', function () {
+        document.querySelectorAll('.js-col-cb').forEach(function (cb) { cb.checked = false; });
+    });
+
+    // ── Підрахунок ──
+    document.getElementById('btnPreview').addEventListener('click', function () {
+        const pill = document.getElementById('countPill');
+        pill.style.display = '';
+        pill.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Рахуємо…';
+
+        const fd = new FormData(form);
+        // Видаляємо columns — на підрахунок не впливають
+        fd.delete('columns');
+        fd.delete('format');
+        fd.delete('sort_by');
+        fd.delete('sort_order');
+
+        fetch("{{ url_for('admin.custom_export_preview') }}", {
+            method: 'POST',
+            body: fd,
+        })
+        .then(r => r.json())
+        .then(function (data) {
+            if (data.error) {
+                pill.innerHTML = '<i class="bi bi-x-circle text-danger me-1"></i>' + data.error;
+                return;
+            }
+            pill.innerHTML = '<i class="bi bi-people me-1"></i>Знайдено: <strong>'
+                + data.count + '</strong> з ' + data.total;
+        })
+        .catch(function () {
+            pill.innerHTML = '<i class="bi bi-x-circle text-danger me-1"></i>Помилка';
+        });
+    });
+});
+</script>
+
+{% endblock %}

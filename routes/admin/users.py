@@ -26,6 +26,7 @@ PERMISSION_DEFINITIONS = [
     ('study_periods', 'Періоди навчання', 'students'),
     ('manage_passport_documents', 'Паспортні документи', 'students'),
     ('manage_education_documents', 'Документи про освіту', 'students'),
+    
 
     ('manage_groups', 'Групи', 'education'),
     ('manage_specialties', 'Спеціальності', 'education'),
@@ -58,6 +59,7 @@ PERMISSION_DEFINITIONS = [
     ('license_report', 'Звіт по ліцензіях', 'licenses'),
 
     ('analytics', 'Аналітика', 'reports'),
+    ('custom_export', 'Кастомний експорт даних', 'reports'),
     ('manage_military_reports', 'Військовий облік (дашборд, додатки)', 'reports'),
 ]
 
