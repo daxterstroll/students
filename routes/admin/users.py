@@ -1,3 +1,4 @@
+
 """
 routes/admin/users.py
 ======================
@@ -36,6 +37,8 @@ PERMISSION_DEFINITIONS = [
     ('manage_accreditations', 'Акредитації', 'education'),
     ('manage_subjects', 'Предмети', 'education'),
     ('manage_activities', 'Практики / курсові / атестації', 'education'),
+    ('manage_exam_sessions', 'Сесії та відомості', 'education'),
+    ('transfer_exam_grades', 'Перенос оцінок із сесій у план', 'education'),
 
     ('manage_courses', 'Курси (канбан, переведення)', 'movement'),
     ('manage_expulsion', 'Відрахування', 'movement'),
@@ -80,23 +83,12 @@ PERMISSION_GROUPS = [
 
 
 def _ensure_user_scope_tables(conn):
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS user_specialties (
-            user_id INTEGER NOT NULL,
-            specialty_code TEXT NOT NULL,
-            PRIMARY KEY (user_id, specialty_code),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS user_degree_levels (
-            user_id INTEGER NOT NULL,
-            degree_level TEXT NOT NULL,
-            PRIMARY KEY (user_id, degree_level),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-    """)
-    conn.commit()
+    from routes.user_scope import ensure_user_scope_tables
+    ensure_user_scope_tables(conn)
+    try:
+        conn.commit()
+    except Exception:
+        pass
 
 
 def _permissions_by_group():
@@ -260,7 +252,11 @@ def _load_scope_options(conn):
         WHERE COALESCE(is_active, 1) = 1
         ORDER BY id
     """).fetchall()
-    return groups, specialties, degrees
+    knowledge_areas = conn.execute("""
+        SELECT code, name_ua FROM knowledge_fields
+        ORDER BY code
+    """).fetchall()
+    return groups, specialties, degrees, knowledge_areas
 
 
 @admin_bp.route('/admin/users/add', methods=['GET', 'POST'])
@@ -277,6 +273,7 @@ def add_user():
         group_ids = [g for g in request.form.getlist('group_id') if g]
         specialty_codes = [s for s in request.form.getlist('specialty_code') if s]
         degree_levels = [d for d in request.form.getlist('degree_level') if d]
+        knowledge_codes = [k for k in request.form.getlist('knowledge_field_code') if k]
         perms = [p for p in request.form.getlist('permissions') if p in PERMISSIONS]
 
         if not username or not password:
@@ -322,12 +319,17 @@ def add_user():
                     "INSERT INTO user_degree_levels (user_id, degree_level) VALUES (?, ?)",
                     (uid, deg),
                 )
+            for kc in knowledge_codes:
+                conn.execute(
+                    "INSERT INTO user_knowledge_areas (user_id, knowledge_field_code) VALUES (?, ?)",
+                    (uid, kc),
+                )
             conn.commit()
             log_action(
                 current_username(),
                 f'створив користувача {username}',
                 details=f'роль={role}, прав={len(perms)}, груп={len(group_ids)}, '
-                        f'спец={len(specialty_codes)}, ступенів={len(degree_levels)}',
+                        f'спец={len(specialty_codes)}, ступенів={len(degree_levels)}, галузей={len(knowledge_codes)}',
             )
             flash(f'Користувача «{username}» створено', 'success')
             conn.close()
@@ -337,7 +339,7 @@ def add_user():
             flash('Такий логін уже існує', 'error')
             return redirect(url_for('admin.add_user'))
 
-    groups, specialties, degrees = _load_scope_options(conn)
+    groups, specialties, degrees, knowledge_areas = _load_scope_options(conn)
     conn.close()
     return render_template(
         'add_user.html',
@@ -374,6 +376,7 @@ def edit_user(user_id):
         group_ids = [g for g in request.form.getlist('group_id') if g]
         specialty_codes = [s for s in request.form.getlist('specialty_code') if s]
         degree_levels = [d for d in request.form.getlist('degree_level') if d]
+        knowledge_codes = [k for k in request.form.getlist('knowledge_field_code') if k]
         perms = [p for p in request.form.getlist('permissions') if p in PERMISSIONS]
 
         is_admin = 1 if role == 'admin' else 0
@@ -402,12 +405,18 @@ def edit_user(user_id):
                 "INSERT INTO user_degree_levels (user_id, degree_level) VALUES (?, ?)",
                 (user_id, deg),
             )
+        conn.execute("DELETE FROM user_knowledge_areas WHERE user_id=?", (user_id,))
+        for kc in knowledge_codes:
+            conn.execute(
+                "INSERT INTO user_knowledge_areas (user_id, knowledge_field_code) VALUES (?, ?)",
+                (user_id, kc),
+            )
         conn.commit()
         log_action(
             current_username(),
             f"редагував користувача {user['username']} (ID {user_id})",
             details=f'роль={role}, прав={len(perms)}, груп={len(group_ids)}, '
-                    f'спец={len(specialty_codes)}, ступенів={len(degree_levels)}',
+                    f'спец={len(specialty_codes)}, ступенів={len(degree_levels)}, галузей={len(knowledge_codes)}',
         )
         flash('Дані користувача оновлено', 'success')
         conn.close()
@@ -419,7 +428,7 @@ def edit_user(user_id):
         current_perms = []
 
     current_group_ids = [
-        r['group_id']
+        int(r['group_id'])
         for r in conn.execute(
             "SELECT group_id FROM user_groups WHERE user_id=?", (user_id,)
         ).fetchall()
@@ -436,8 +445,14 @@ def edit_user(user_id):
             "SELECT degree_level FROM user_degree_levels WHERE user_id=?", (user_id,)
         ).fetchall()
     ]
+    current_knowledge = [
+        r['knowledge_field_code']
+        for r in conn.execute(
+            "SELECT knowledge_field_code FROM user_knowledge_areas WHERE user_id=?", (user_id,)
+        ).fetchall()
+    ]
 
-    groups, specialties, degrees = _load_scope_options(conn)
+    groups, specialties, degrees, knowledge_areas = _load_scope_options(conn)
     conn.close()
     return render_template(
         'edit_user.html',
@@ -445,12 +460,14 @@ def edit_user(user_id):
         groups=groups,
         specialties=specialties,
         degrees=degrees,
+        knowledge_areas=knowledge_areas,
         permission_groups=PERMISSION_GROUPS,
         permissions_by_group=_permissions_by_group(),
         selected_permissions=current_perms,
         selected_group_ids=current_group_ids,
         selected_specialties=current_specialties,
         selected_degrees=current_degrees,
+        selected_knowledge=current_knowledge,
     )
 
 
@@ -508,6 +525,7 @@ def delete_user(user_id):
     conn.execute("DELETE FROM user_groups WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM user_specialties WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM user_degree_levels WHERE user_id=?", (user_id,))
+    conn.execute("DELETE FROM user_knowledge_areas WHERE user_id=?", (user_id,))
     conn.execute("DELETE FROM users WHERE id=?", (user_id,))
     conn.commit()
     conn.close()

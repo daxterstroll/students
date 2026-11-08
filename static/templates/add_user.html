@@ -1,3 +1,4 @@
+
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Додати користувача{% endblock %}
@@ -337,50 +338,102 @@ html[data-theme="dark"] .users-page .perm-group-card .perm-group-head {
                     </div>
                 </div>
 
+                
                 <div class="col-12">
                     <hr>
                     <label class="form-label fw-semibold">Доступ до контингенту</label>
                     <p class="form-text mb-2">
-                        Якщо нічого не обрано — працівник не бачить студентів (окрім адміністратора).
-                        Можна комбінувати групи, спеціальності та ступені.
+                        <strong>Нічого не обрано</strong> — доступу до студентів немає (адмін бачить усе завжди).
+                        <strong>Спеціальність + ступінь + галузь</strong> комбінуються через <strong>перетин</strong>
+                        (наприклад, «Бакалавр» і галузь «F» → лише бакалаври галузі F).
+                        Окремо обрані <strong>групи</strong> додаються завжди.
                     </p>
+                    {% set sg = selected_group_ids|default([]) %}
+                    {% set ss = selected_specialties|default([]) %}
+                    {% set sd = selected_degrees|default([]) %}
+                    {% set sk = selected_knowledge|default([]) %}
+                    {% if sg or ss or sd or sk %}
+                    <div class="alert alert-info py-2 small mb-3">
+                        <strong>Зараз має доступ:</strong>
+                        {% if sg %}<div>Групи: {{ sg|length }} обрано</div>{% endif %}
+                        {% if ss %}<div>Спеціальності: {{ ss|join(', ') }}</div>{% endif %}
+                        {% if sd %}<div>Ступені: {{ sd|join(', ') }}</div>{% endif %}
+                        {% if sk %}<div>Галузі: {{ sk|join(', ') }}</div>{% endif %}
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning py-2 small mb-3">
+                        Зараз <strong>нічого не обрано</strong> — доступу до контингенту немає.
+                    </div>
+                    {% endif %}
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small">Групи</label>
-                    <select name="group_id" class="form-select" multiple size="10">
+
+                <div class="col-md-6 col-lg-3 mb-3">
+                    <label class="form-label small fw-semibold">Групи</label>
+                    <div class="border rounded p-2" style="max-height:220px; overflow-y:auto;">
                         {% for group in groups %}
-                        <option value="{{ group.id }}"
-                            {% if group.id in selected_group_ids %}selected{% endif %}>
-                            {{ group.display_name }}
-                        </option>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="group_id"
+                                   id="scope_g_{{ group.id }}" value="{{ group.id }}"
+                                   {% if group.id in sg or (group.id|string) in sg %}checked{% endif %}>
+                            <label class="form-check-label small" for="scope_g_{{ group.id }}">{{ group.display_name }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">Немає груп</div>
                         {% endfor %}
-                    </select>
-                    <div class="form-text">Ctrl/⌘ — кілька</div>
+                    </div>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small">Спеціальності</label>
-                    <select name="specialty_code" class="form-select" multiple size="10">
+
+                <div class="col-md-6 col-lg-3 mb-3">
+                    <label class="form-label small fw-semibold">Спеціальності</label>
+                    <div class="border rounded p-2" style="max-height:220px; overflow-y:auto;">
                         {% for s in specialties %}
-                        <option value="{{ s.code }}"
-                            {% if s.code in selected_specialties %}selected{% endif %}>
-                            {{ s.code }} — {{ s.name_ua }}
-                        </option>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="specialty_code"
+                                   id="scope_s_{{ s.code }}" value="{{ s.code }}"
+                                   {% if s.code in ss %}checked{% endif %}>
+                            <label class="form-check-label small" for="scope_s_{{ s.code }}">{{ s.code }} — {{ s.name_ua }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">Немає спеціальностей</div>
                         {% endfor %}
-                    </select>
-                    <div class="form-text">Усі групи спеціальності</div>
+                    </div>
+                    <div class="form-text">Усі групи цієї спеціальності</div>
                 </div>
-                <div class="col-md-4">
-                    <label class="form-label small">Ступені</label>
-                    <select name="degree_level" class="form-select" multiple size="10">
+
+                <div class="col-md-6 col-lg-3 mb-3">
+                    <label class="form-label small fw-semibold">Ступені</label>
+                    <div class="border rounded p-2" style="max-height:220px; overflow-y:auto;">
                         {% for d in degrees %}
-                        <option value="{{ d.name_ua }}"
-                            {% if d.name_ua in selected_degrees %}selected{% endif %}>
-                            {{ d.name_ua }}
-                        </option>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="degree_level"
+                                   id="scope_d_{{ loop.index }}" value="{{ d.name_ua }}"
+                                   {% if d.name_ua in sd %}checked{% endif %}>
+                            <label class="form-check-label small" for="scope_d_{{ loop.index }}">{{ d.name_ua }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">Немає ступенів</div>
                         {% endfor %}
-                    </select>
-                    <div class="form-text">Усі групи ступеня</div>
+                    </div>
+                    <div class="form-text">Усі групи цього ступеня</div>
                 </div>
+
+                <div class="col-md-6 col-lg-3 mb-3">
+                    <label class="form-label small fw-semibold">Галузі знань</label>
+                    <div class="border rounded p-2" style="max-height:220px; overflow-y:auto;">
+                        {% for k in knowledge_areas|default([]) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="knowledge_field_code"
+                                   id="scope_k_{{ k.code }}" value="{{ k.code }}"
+                                   {% if k.code in sk %}checked{% endif %}>
+                            <label class="form-check-label small" for="scope_k_{{ k.code }}">{{ k.code }} — {{ k.name_ua }}</label>
+                        </div>
+                        {% else %}
+                        <div class="text-muted small">Немає галузей</div>
+                        {% endfor %}
+                    </div>
+                    <div class="form-text">Усі групи цієї галузі</div>
+                </div>
+
 
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">

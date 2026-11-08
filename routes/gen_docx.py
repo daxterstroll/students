@@ -1,3 +1,4 @@
+
 import os
 import re
 import sqlite3
@@ -865,3 +866,527 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         raise
 
     return out
+
+
+
+# ── Відомість сесії (той самий стек що gen_doc: DocxTemplate) ──────
+
+def _vidomist_template_path():
+    candidates = [
+        os.path.join('static', 'templates', 'word', 'vidomist_sheet.docx'),
+        os.path.join(os.path.dirname(__file__), '..', 'static', 'templates', 'word', 'vidomist_sheet.docx'),
+    ]
+    for p in candidates:
+        ap = os.path.abspath(p)
+        if os.path.isfile(ap):
+            return ap
+    return os.path.abspath(candidates[0])
+
+
+def _vidomist_format_specialty(code, name):
+    code = (code or '').strip()
+    name = (name or '').strip()
+    if not code and not name:
+        return ''
+    if not code:
+        return name
+    if not name:
+        return code
+    if name == code or name.startswith(code + ' '):
+        return name
+    parts = name.split(None, 1)
+    if parts and parts[0].upper() == code.upper():
+        return name
+    return f'{code} {name}'.strip()
+
+
+def _vidomist_roman(course):
+    m = {1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V', 6: 'VI'}
+    try:
+        return m.get(int(course), str(course or ''))
+    except (TypeError, ValueError):
+        return str(course or '')
+
+
+def _vidomist_semester_word(sem):
+    m = {1: 'перший', 2: 'другий', 3: 'третій'}
+    try:
+        return m.get(int(sem), str(sem or ''))
+    except (TypeError, ValueError):
+        return str(sem or '')
+
+
+def _vidomist_ects(points):
+    if points is None or points == '':
+        return ''
+    try:
+        p = int(points)
+    except (TypeError, ValueError):
+        return ''
+    if p >= 90: return 'A'
+    if p >= 82: return 'B'
+    if p >= 74: return 'C'
+    if p >= 64: return 'D'
+    if p >= 60: return 'E'
+    if p >= 35: return 'FX'
+    return 'F'
+
+
+def _vidomist_national(points, control_form):
+    if points is None or points == '':
+        return ''
+    try:
+        p = int(points)
+    except (TypeError, ValueError):
+        return ''
+    if (control_form or '') == 'Залік':
+        return 'Зараховано' if p >= 60 else 'Незараховано'
+    if p >= 90: return 'Відмінно / Excellent'
+    if p >= 82: return 'Добре/ Good'
+    if p >= 74: return 'Добре/ Good'
+    if p >= 64: return 'Задовільно/ Satisfactory'
+    if p >= 60: return 'Задовільно/ Satisfactory'
+    return 'Незадовільно/ Fail'
+
+
+def _vidomist_build_context(sheet, students):
+    """Контекст для DocxTemplate — ті самі ключі що {{ }} у шаблоні."""
+    sheet = dict(sheet) if not isinstance(sheet, dict) else sheet
+    control = sheet.get('control_form') or 'Екзамен'
+    teacher = sheet.get('teacher_name') or ''
+
+    rows = []
+    for i, st in enumerate(students or []):
+        if not isinstance(st, dict):
+            try:
+                st = dict(st)
+            except Exception:
+                st = {}
+        pts = st.get('points')
+        nat = st.get('national_grade') or _vidomist_national(pts, control)
+        ects = st.get('ects') or _vidomist_ects(pts)
+        def _v(x):
+            return '' if x is None else x
+        rows.append({
+            'n': i + 1,
+            'full_name': st.get('full_name') or '',
+            'edebo_code': st.get('edebo_code') or '',
+            'work_topic': st.get('work_topic') or '',
+            'points_mid': _v(st.get('points_mid')),
+            'points_current': _v(st.get('points_current')),
+            'points_exam': _v(st.get('points_exam')),
+            'points': _v(pts),
+            'national_grade': nat or '',
+            'ects': ects or '',
+            'teacher_sign': st.get('teacher_sign') or teacher or '',
+        })
+
+    buckets = {k: 0 for k in ('A', 'B', 'C', 'D', 'E', 'FX', 'F', 'absent')}
+    for s in rows:
+        if s['points'] == '' or s['points'] is None:
+            buckets['absent'] += 1
+        else:
+            key = (s['ects'] or 'F').upper()
+            buckets[key if key in buckets else 'F'] += 1
+    total = max(len(rows), 1)
+    quality = buckets['A'] + buckets['B'] + buckets['C']
+    absolute = quality + buckets['D'] + buckets['E']
+
+    form = sheet.get('study_form') or ''
+    num = sheet.get('statement_number') or ''
+    inst = (sheet.get('institution_name_and_status') or
+            'ПВНЗ „Європейський університет“\nЛьвівська філія')
+    if '  ' in inst and '\n' not in inst and 'філія' in inst.lower():
+        # розбити заклад / філія
+        import re
+        m = re.match(r'^(.*університет[^\"]*[\"“]?)\s+(Львівська\s+філія)\s*$', inst, re.I)
+        if m:
+            inst = m.group(1).strip() + '\n' + m.group(2).strip()
+
+    ctx = {
+        'institution': inst,
+        'faculty': sheet.get('faculty') or sheet.get('department') or 'Інформаційні системи та технології',
+        'specialty': _vidomist_format_specialty(sheet.get('specialty_code'), sheet.get('specialty')),
+        'course': _vidomist_roman(sheet.get('course')),
+        'group_name': sheet.get('group_name') or '',
+        'study_form': form,
+        'study_form_part': f'({form})' if form else '',
+        'academic_year': sheet.get('academic_year') or '',
+        'degree_level': sheet.get('degree_level') or '',
+        'statement_title': f'ВІДОМІСТЬ  № {num}.'.strip() if num else 'ВІДОМІСТЬ',
+        'statement_number': num,
+        'exam_date': sheet.get('exam_date') or '',
+        'discipline_name': sheet.get('discipline_name') or '',
+        'semester_word': _vidomist_semester_word(sheet.get('semester')),
+        'semester': str(sheet.get('semester') or ''),
+        'control_form': (control or '').lower(),
+        'hours_credits': sheet.get('hours_credits') or '',
+        'teacher_name': teacher,
+        'license_name': sheet.get('license_name') or None,
+        'students': rows,
+        'stats_a_label': 'А (90-100)', 'stats_a_count': str(buckets['A']),
+        'stats_a_pct': f"{buckets['A']/total:.1%}",
+        'stats_b_label': 'В(82-89)', 'stats_b_count': str(buckets['B']),
+        'stats_b_pct': f"{buckets['B']/total:.1%}",
+        'stats_c_label': 'С(74-81)', 'stats_c_count': str(buckets['C']),
+        'stats_c_pct': f"{buckets['C']/total:.1%}",
+        'stats_d_label': 'D(64-73)', 'stats_d_count': str(buckets['D']),
+        'stats_d_pct': f"{buckets['D']/total:.1%}",
+        'stats_e_label': 'E(60-63)', 'stats_e_count': str(buckets['E']),
+        'stats_e_pct': f"{buckets['E']/total:.1%}",
+        'stats_fx_label': 'FX(35-59)', 'stats_fx_count': str(buckets['FX']),
+        'stats_fx_pct': f"{buckets['FX']/total:.1%}",
+        'stats_f_label': 'F(1-34)', 'stats_f_count': str(buckets['F']),
+        'stats_f_pct': f"{buckets['F']/total:.1%}",
+        'stats_abs_label': "Не з'явився", 'stats_abs_count': str(buckets['absent']),
+        'stats_abs_pct': f"{buckets['absent']/total:.1%}",
+        'stats_quality': f"{quality/total:.1%}",
+        'stats_absolute': f"{absolute/total:.1%}",
+    }
+    return ctx, rows
+
+
+def _vidomist_fill_students_table(doc, students_rows):
+    """
+    Як insert_subjects_table: після render дописати рядки студентів.
+    Шукає таблицю з «Прізвище» / «№» у шапці; клонує останній (зразок) рядок.
+    """
+    from copy import deepcopy
+    from docx.document import Document as DocType
+
+    table = None
+    for t in doc.tables:
+        if not t.rows:
+            continue
+        head = ' '.join((c.text or '') for c in t.rows[0].cells).lower()
+        if 'прізвище' in head or '№' in head or 'з/п' in head or 'з\\п' in head:
+            table = t
+            break
+    if table is None:
+        return
+
+    header_rows = 1
+    if len(table.rows) >= 2:
+        head2 = ' '.join((c.text or '') for c in table.rows[1].cells).lower()
+        if any(x in head2 for x in ('міжсесій', 'поточн', 'іспит', 'ects', 'підсумков', 'нац')):
+            header_rows = 2
+
+    sample_idx = header_rows if len(table.rows) > header_rows else max(0, header_rows - 1)
+    sample_tr = deepcopy(table.rows[sample_idx]._tr)
+    n_grid = len(table.rows[sample_idx].cells)
+
+    # map columns by header text
+    texts = [''] * n_grid
+    for ri in range(min(header_rows, len(table.rows))):
+        for i, c in enumerate(table.rows[ri].cells):
+            if i >= n_grid:
+                break
+            tx = (c.text or '').strip().lower().replace('\n', ' ')
+            if tx:
+                texts[i] = (texts[i] + ' ' + tx).strip() if texts[i] else tx
+
+    def find(*needles):
+        for i, tx in enumerate(texts):
+            for n in needles:
+                if n in tx:
+                    return i
+        return None
+
+    roles = {
+        'n': find('№', 'з\\п', 'з/п') if find('№', 'з\\п', 'з/п') is not None else 0,
+        'name': find('прізвище', 'піб', 'студент'),
+        'edebo': find('індив', 'план'),
+        'mid': find('міжсесій'),
+        'current': find('поточн'),
+        'exam': find('іспит', 'залік'),
+        'total': find('підсумков', '100 баль'),
+        'national': find('нац', 'національ'),
+        'ects': find('ects'),
+        'sign': find('підпис'),
+    }
+
+    # remove data rows after header
+    tbl = table._tbl
+    while len(table.rows) > header_rows:
+        tbl.remove(table.rows[-1]._tr)
+
+    def write_cell(row, idx, value):
+        if idx is None or idx < 0 or idx >= len(row.cells):
+            return
+        cell = row.cells[idx]
+        text = '' if value is None else str(value)
+        if not cell.paragraphs:
+            return
+        p = cell.paragraphs[0]
+        if p.runs:
+            p.runs[0].text = text
+            for r in p.runs[1:]:
+                r.text = ''
+        else:
+            p.add_run(text)
+
+    for s in students_rows:
+        tbl.append(deepcopy(sample_tr))
+        row = table.rows[-1]
+        write_cell(row, roles.get('n'), s.get('n'))
+        write_cell(row, roles.get('name'), s.get('full_name'))
+        write_cell(row, roles.get('edebo'), s.get('edebo_code'))
+        write_cell(row, roles.get('mid'), s.get('points_mid'))
+        write_cell(row, roles.get('current'), s.get('points_current'))
+        write_cell(row, roles.get('exam'), s.get('points_exam'))
+        write_cell(row, roles.get('total'), s.get('points'))
+        write_cell(row, roles.get('national'), s.get('national_grade'))
+        write_cell(row, roles.get('ects'), s.get('ects'))
+        write_cell(row, roles.get('sign'), s.get('teacher_sign'))
+
+
+def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Система'):
+    """
+    Відомість сесії — той самий механізм що gen_doc:
+      DocxTemplate(template).render(context) → save
+
+    Таблиця студентів: без {%tr %} (Word ламає endfor) —
+    після render рядки додаються як у insert_subjects_table.
+    """
+    if template is None:
+        template = _vidomist_template_path()
+    if not os.path.exists(template):
+        global_logger.error(f"Шаблон відомості не знайдено: {template}")
+        raise FileNotFoundError(f"Шаблон відомості не знайдено: {template}")
+
+    context, rows = _vidomist_build_context(sheet, students)
+
+    try:
+        doc = DocxTemplate(template)
+        global_logger.debug(f"Відомість: шаблон {template} завантажено")
+    except Exception as e:
+        global_logger.error(f"Помилка завантаження шаблону відомості: {e}")
+        raise
+
+    try:
+        doc.render(context)
+        global_logger.debug("Відомість: render OK")
+    except Exception as e:
+        global_logger.error(f"Помилка render відомості: {e}")
+        raise
+
+    # Дописати студентів у таблицю (стиль рядка-зразка з шаблону)
+    try:
+        _vidomist_fill_students_table(doc, rows)
+    except Exception as e:
+        global_logger.warning(f"Відомість: заповнення таблиці студентів: {e}")
+
+    disc = (sheet.get('discipline_name') if isinstance(sheet, dict) else None) or ''
+    log_action(user_name, f"згенерував відомість '{disc}'", None)
+
+    if out:
+        try:
+            doc.save(out)
+            global_logger.debug(f"Відомість збережено: {out}")
+        except Exception as e:
+            global_logger.error(f"Помилка збереження відомості {out}: {e}")
+            raise
+        return out
+
+    from io import BytesIO
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    return buf
+
+
+
+# ── Загальна відомість сесії (шаблон + таблиця кодом) ──────────────
+
+def _vidomist_summary_template_path():
+    candidates = [
+        os.path.join('static', 'templates', 'word', 'vidomist_summary.docx'),
+        os.path.join(os.path.dirname(__file__), '..', 'static', 'templates', 'word', 'vidomist_summary.docx'),
+    ]
+    for p in candidates:
+        ap = os.path.abspath(p)
+        if os.path.isfile(ap):
+            return ap
+    return os.path.abspath(candidates[0])
+
+
+def _vidomist_insert_summary_table(document, sheets, order, names, grades):
+    """Вставка таблиці на місце маркера. Без merge комірок (стабільний XML)."""
+    from docx.shared import Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    MARKERS = ('<<<GRADES_TABLE>>>', '{{ grades_table }}')
+    marker = None
+    for p in document.paragraphs:
+        text = p.text or ''
+        if any(m in text for m in MARKERS):
+            marker = p
+            break
+    if marker is None:
+        for p in document.paragraphs:
+            if 'декан' in (p.text or '').lower():
+                marker = p
+                break
+
+    sheets = sheets or []
+    order = order or []
+    n_disc = len(sheets)
+    cols = 2 + n_disc * 3 + 1
+    if cols < 3:
+        cols = 3
+
+    def set_text(cell, text, bold=False, size=8, left=False):
+        cell.text = ''
+        p = cell.paragraphs[0]
+        run = p.add_run('' if text is None else str(text))
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(size)
+        run.bold = bold
+        p.alignment = WD_ALIGN_PARAGRAPH.LEFT if left else WD_ALIGN_PARAGRAPH.CENTER
+
+    table = document.add_table(rows=2 + len(order), cols=cols)
+    try:
+        table.style = 'Table Grid'
+    except Exception:
+        pass
+
+    set_text(table.rows[0].cells[0], '№', bold=True)
+    set_text(table.rows[0].cells[1], "Прізвище, ім'я та по батькові", bold=True)
+    for i, sh in enumerate(sheets):
+        base = 2 + i * 3
+        title = (sh.get('discipline_name') or '')[:40]
+        ctrl = sh.get('control_form') or ''
+        # без merge: назва в першій з трьох колонок, підписи в рядку 1
+        set_text(table.rows[0].cells[base], f'{title} ({ctrl})', bold=True, size=7)
+        set_text(table.rows[0].cells[base + 1], '', bold=True, size=7)
+        set_text(table.rows[0].cells[base + 2], '', bold=True, size=7)
+        for j, h in enumerate(['нац.', 'бали', 'ECTS']):
+            set_text(table.rows[1].cells[base + j], h, bold=True, size=7)
+    avg_col = 2 + n_disc * 3
+    set_text(table.rows[0].cells[avg_col], 'Середній бал', bold=True, size=8)
+    set_text(table.rows[1].cells[0], '', size=7)
+    set_text(table.rows[1].cells[1], '', size=7)
+    set_text(table.rows[1].cells[avg_col], 'бали', bold=True, size=7)
+
+    for ri, sid in enumerate(order):
+        row = table.rows[ri + 2]
+        set_text(row.cells[0], ri + 1, size=8)
+        set_text(row.cells[1], names.get(sid, ''), size=8, left=True)
+        pts_list = []
+        for i, sh in enumerate(sheets):
+            base = 2 + i * 3
+            g = (grades.get(sid) or {}).get(sh['id']) or {}
+            set_text(row.cells[base], g.get('national_grade') or '', size=7)
+            pts = g.get('points')
+            set_text(row.cells[base + 1], '' if pts is None else pts, size=8)
+            set_text(row.cells[base + 2], g.get('ects') or '', size=8)
+            if pts is not None and pts != '':
+                try:
+                    pts_list.append(float(pts))
+                except (TypeError, ValueError):
+                    pass
+        avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
+        set_text(row.cells[avg_col], avg, bold=True, size=8)
+
+    if marker is not None:
+        # перенести таблицю одразу ПІСЛЯ маркера, маркер прибрати
+        try:
+            marker._p.addnext(table._tbl)
+        except Exception:
+            marker._element.addnext(table._tbl)
+        try:
+            parent = marker._element.getparent()
+            parent.remove(marker._element)
+        except Exception:
+            for r in marker.runs:
+                r.text = ''
+
+
+def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None, out=None, user_name='Система'):
+    """
+    1) DocxTemplate.render шапки
+    2) save → відкрити як чистий Document
+    3) вставити таблицю (валідний docx)
+    """
+    from io import BytesIO
+    from docx import Document as DocxDocument
+
+    session_meta = dict(session_meta) if not isinstance(session_meta, dict) else session_meta
+    sheets = [dict(s) if not isinstance(s, dict) else s for s in (sheets or [])]
+
+    def _g(st, key, default=None):
+        if isinstance(st, dict):
+            return st.get(key, default)
+        try:
+            return st[key]
+        except Exception:
+            return default
+
+    order, names, grades = [], {}, {}
+    for sh in sheets:
+        for st in (by_sheet_students.get(sh['id']) or []):
+            sid = _g(st, 'student_id') or _g(st, 'full_name')
+            try:
+                sid_key = int(sid)
+            except (TypeError, ValueError):
+                sid_key = sid
+            if sid_key not in names:
+                order.append(sid_key)
+                names[sid_key] = _g(st, 'full_name') or ''
+                grades[sid_key] = {}
+            grades[sid_key][sh['id']] = {
+                'national_grade': _g(st, 'national_grade') or '',
+                'points': _g(st, 'points'),
+                'ects': _g(st, 'ects') or '',
+            }
+
+    form = session_meta.get('study_form') or ''
+    ctx = {
+        'institution': session_meta.get('institution_name_and_status')
+            or 'ПВНЗ „Європейський університет“\\nЛьвівська філія',
+        'group_name': session_meta.get('group_name') or '',
+        'course': _vidomist_roman(session_meta.get('course')),
+        'study_form': form,
+        'academic_year': session_meta.get('academic_year') or '',
+        'semester': str(session_meta.get('semester') or ''),
+        'degree_level': session_meta.get('degree_level') or '',
+        'specialty': _vidomist_format_specialty(
+            session_meta.get('specialty_code'), session_meta.get('specialty')),
+        'session_name': session_meta.get('name') or session_meta.get('session_name') or '',
+        'grades_table': '<<<GRADES_TABLE>>>',
+    }
+
+    if template is None:
+        template = _vidomist_summary_template_path()
+    if not os.path.exists(template):
+        global_logger.error(f"Шаблон загальної відомості не знайдено: {template}")
+        raise FileNotFoundError(f"Шаблон загальної відомості не знайдено: {template}")
+
+    try:
+        tpl = DocxTemplate(template)
+        tpl.render(ctx)
+        tmp = BytesIO()
+        tpl.save(tmp)
+        tmp.seek(0)
+        document = DocxDocument(tmp)
+    except Exception as e:
+        global_logger.error(f"Помилка render загальної відомості: {e}")
+        raise
+
+    try:
+        _vidomist_insert_summary_table(document, sheets, order, names, grades)
+    except Exception as e:
+        global_logger.warning(f"Загальна відомість: таблиця: {e}", exc_info=True)
+
+    try:
+        log_action(user_name, f"згенерував загальну відомість сесії '{ctx.get('session_name')}'", None)
+    except Exception:
+        pass
+
+    if out:
+        document.save(out)
+        return out
+    buf = BytesIO()
+    document.save(buf)
+    buf.seek(0)
+    return buf

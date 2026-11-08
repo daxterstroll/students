@@ -1,3 +1,4 @@
+
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="docxcompose")
 
@@ -19,6 +20,7 @@ from routes.photo_bulk import photo_bulk_bp
 from routes.military_reports import military_reports_bp
 from routes.public_apply import public_apply_bp
 from routes.public_update import public_update_bp
+from routes.exam_sessions import exam_sessions_bp
 from routes.utils import logger
 from routes.gen_docx import format_grade
 
@@ -162,6 +164,7 @@ app.register_blueprint(photo_bulk_bp)
 app.register_blueprint(military_reports_bp)
 app.register_blueprint(public_apply_bp)
 app.register_blueprint(public_update_bp)
+app.register_blueprint(exam_sessions_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
 @app.template_filter('format_phone')

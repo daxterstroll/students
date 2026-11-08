@@ -1,0 +1,71 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Нова відомість{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width:720px">
+  {{ ui.page_header('bi-file-earmark-plus', 'Нова відомість', es.name) }}
+  <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}"
+     class="btn btn-sm btn-outline-secondary mb-3">← До сесії</a>
+
+  <form method="post" class="card card-body">
+    <div class="mb-3">
+      <label class="form-label">Назва дисципліни *</label>
+      <input type="text" name="discipline_name" class="form-control" required
+             placeholder="Наприклад: Мови програмування для аналітичних досліджень">
+    </div>
+
+    <div class="row g-2">
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Тип (для переносу в план)</label>
+        <select name="entity_kind" class="form-select">
+          <option value="subject">Предмет</option>
+          <option value="practice">Практика</option>
+          <option value="coursework">Курсова</option>
+          <option value="attestation">Атестація</option>
+        </select>
+        <div class="form-text">Для курсової/атестації тему вкажете кожному студенту у відомості.</div>
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Форма контролю</label>
+        <select name="control_form" class="form-select">
+          <option value="Залік">Залік</option>
+          <option value="Екзамен">Екзамен</option>
+        </select>
+      </div>
+      <div class="col-md-4 mb-3">
+        <label class="form-label">Години / кредити</label>
+        <input type="text" name="hours_credits" class="form-control" placeholder="150/5.0">
+      </div>
+    </div>
+
+    <div class="row g-2">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Викладач</label>
+        <input type="text" name="teacher_name" class="form-control" placeholder="проф. Сушинський О.Є.">
+      </div>
+      <div class="col-md-3 mb-3">
+        <label class="form-label">Дата проведення</label>
+        <input type="text" name="exam_date" class="form-control" placeholder="15 грудня 2026">
+      </div>
+      <div class="col-md-3 mb-3">
+        <label class="form-label">№ відомості</label>
+        <input type="text" name="statement_number" class="form-control" placeholder="26">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label">Ліцензія</label>
+      <select name="license_id" class="form-select">
+        <option value="">— без ліцензії / не вказано —</option>
+        {% for l in licenses %}
+        <option value="{{ l.id }}">{{ l.name }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Студенти з різними ліцензіями — окремі відомості.</div>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Створити і сформувати список студентів</button>
+  </form>
+</div>
+{% endblock %}

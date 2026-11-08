@@ -1,3 +1,4 @@
+
 """
 routes/nav.py
 =============
@@ -66,6 +67,10 @@ NAV_SECTIONS = [
              'icon': 'bi-kanban', 'label': 'Курси'},
             {'perm': 'manage_subjects', 'url': 'admin.manage_subjects',
              'icon': 'bi-journal', 'label': 'Предмети'},
+            {'perm': 'manage_exam_sessions', 'url': 'exam_sessions.sessions_list',
+             'icon': 'bi-clipboard2-check', 'label': 'Сесії та відомості'},
+            {'perm': 'transfer_exam_grades', 'url': 'exam_sessions.transfer_queue',
+             'icon': 'bi-arrow-left-right', 'label': 'Перенос оцінок із сесій'},
             {'perm': 'manage_activities', 'url': 'admin.manage_activities',
              'icon': 'bi-journal-bookmark-fill', 'label': 'Практика / атестація / курсові'},
             {'perm': 'manage_education_documents', 'url': 'admin.manage_education_documents',

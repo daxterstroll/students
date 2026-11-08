@@ -1,0 +1,376 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}{{ sheet.discipline_name }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+{% set status_ua = {
+  'draft': 'Чернетка',
+  'sent': 'Надіслано викладачу',
+  'submitted': 'Оцінки здано',
+  'approved': 'Затверджено',
+  'locked': 'Заблоковано'
+} %}
+{% set status_badge = {
+  'draft': 'secondary',
+  'sent': 'info',
+  'submitted': 'primary',
+  'approved': 'success',
+  'locked': 'dark'
+} %}
+{% set kind_ua = {
+  'subject': 'Предмет',
+  'practice': 'Практика',
+  'coursework': 'Курсова',
+  'attestation': 'Атестація'
+} %}
+
+<div class="container py-4">
+  {{ ui.page_header('bi-file-earmark-text', sheet.discipline_name,
+     sheet.session_name ~ ' · ' ~ sheet.group_name ~ ' · ' ~ (sheet.license_name or 'без ліцензії')) }}
+
+  <a href="{{ url_for('exam_sessions.session_detail', session_id=sheet.session_id) }}"
+     class="btn btn-sm btn-outline-secondary mb-3">← До сесії</a>
+
+  <div class="row g-3 mb-3">
+    {# ========== Ліва колонка: метадані ========== #}
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <strong>Метадані відомості</strong>
+            <span class="badge text-bg-{{ status_badge.get(sheet.status, 'secondary') }}">
+              {{ status_ua.get(sheet.status, sheet.status) }}
+            </span>
+          </div>
+
+          <form method="post">
+            <input type="hidden" name="action" value="save_meta">
+
+            <div class="mb-3">
+              <label class="form-label small mb-1">Дисципліна</label>
+              <input class="form-control form-control-sm" name="discipline_name"
+                     value="{{ sheet.discipline_name }}"
+                     {% if sheet.status == 'locked' %}readonly{% endif %}>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small mb-1">Тип (для переносу в план)</label>
+                <select name="entity_kind" class="form-select form-select-sm"
+                        {% if sheet.status == 'locked' %}disabled{% endif %}>
+                  {% for k, label in kind_ua.items() %}
+                  <option value="{{ k }}" {% if sheet.entity_kind == k %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Форма контролю</label>
+                <select name="control_form" class="form-select form-select-sm"
+                        {% if sheet.status == 'locked' %}disabled{% endif %}>
+                  <option value="Залік" {% if sheet.control_form == 'Залік' %}selected{% endif %}>Залік</option>
+                  <option value="Екзамен" {% if sheet.control_form == 'Екзамен' %}selected{% endif %}>Екзамен</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small mb-1">Викладач</label>
+              <input class="form-control form-control-sm" name="teacher_name"
+                     value="{{ sheet.teacher_name or '' }}"
+                     {% if sheet.status == 'locked' %}readonly{% endif %}>
+            </div>
+
+            <div class="row g-2 mb-3">
+              <div class="col-6">
+                <label class="form-label small mb-1">Години / кредити</label>
+                <input class="form-control form-control-sm" name="hours_credits"
+                       value="{{ sheet.hours_credits or '' }}"
+                       {% if sheet.status == 'locked' %}readonly{% endif %}>
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Дата проведення</label>
+                <input class="form-control form-control-sm" name="exam_date"
+                       value="{{ sheet.exam_date or '' }}"
+                       {% if sheet.status == 'locked' %}readonly{% endif %}>
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small mb-1">№ відомості</label>
+              <input class="form-control form-control-sm" name="statement_number"
+                     value="{{ sheet.statement_number or '' }}"
+                     {% if sheet.status == 'locked' %}readonly{% endif %}>
+            </div>
+
+            {% if sheet.status != 'locked' %}
+            <button type="submit" class="btn btn-sm btn-outline-primary">Зберегти метадані</button>
+            {% endif %}
+          
+<script>
+(function () {
+  function bindRow(row) {
+    var mid = row.querySelector('input[name^="points_mid_"]');
+    var cur = row.querySelector('input[name^="points_current_"]');
+    var exam = row.querySelector('input[name^="points_exam_"]');
+    var total = row.querySelector('input[name^="points_"]');
+    if (!total) return;
+    // points_ must not match points_mid etc — already name^="points_" matches all!
+    total = row.querySelector('input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])');
+    if (!total || !mid || !cur || !exam) return;
+
+    function parse(v) {
+      v = (v || '').toString().trim();
+      if (v === '') return null;
+      var n = parseInt(v, 10);
+      return isNaN(n) ? null : n;
+    }
+    function recalc() {
+      var a = parse(mid.value), b = parse(cur.value), c = parse(exam.value);
+      if (a === null && b === null && c === null) {
+        total.readOnly = false;
+        total.classList.remove('bg-light');
+        return;
+      }
+      var sum = (a || 0) + (b || 0) + (c || 0);
+      if (sum > 100) sum = 100;
+      total.value = sum;
+      total.readOnly = true;
+      total.classList.add('bg-light');
+    }
+    mid.addEventListener('input', recalc);
+    cur.addEventListener('input', recalc);
+    exam.addEventListener('input', recalc);
+    total.addEventListener('input', function () {
+      // ручне введення підсумку — очищаємо компоненти
+      if (!total.readOnly) {
+        mid.value = '';
+        cur.value = '';
+        exam.value = '';
+      }
+    });
+    recalc();
+  }
+  document.querySelectorAll('table tbody tr').forEach(bindRow);
+})();
+</script>
+
+</form>
+        </div>
+      </div>
+    </div>
+
+    {# ========== Права колонка: дії ========== #}
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-body">
+          <strong class="d-block mb-1">Дії з відомістю</strong>
+          <p class="small text-muted mb-3">Робіть кроки по порядку. Кожна кнопка робить лише те, що описано.</p>
+
+          <div class="d-flex flex-column gap-3">
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">1. Список студентів</div>
+              <div class="small text-muted mb-2">
+                Список уже сформовано з групи та ліцензії. «Оновити» — лише якщо з’явились нові студенти
+                (поки викладач ще не здав оцінки).
+              </div>
+              {% if sheet.status in ('draft', 'sent') %}
+              <form method="post">
+                <input type="hidden" name="action" value="refresh_students">
+                <button type="submit" class="btn btn-sm btn-outline-secondary">Оновити список студентів</button>
+              </form>
+              {% else %}
+              <span class="badge text-bg-light text-muted border">Недоступно після здачі оцінок</span>
+              {% endif %}
+            </div>
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">2. Посилання для викладача</div>
+              <div class="small text-muted mb-2">
+                Секретне посилання: викладач <strong>без логіну</strong> проставляє лише бали.
+                Після повторної генерації старе посилання перестає діяти.
+              </div>
+              <form method="post" class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="hidden" name="action" value="issue_token">
+                <label class="small text-muted mb-0">Днів дії</label>
+                <input type="number" name="token_days" value="21" min="1" max="90"
+                       class="form-control form-control-sm" style="width:4.5rem">
+                <button type="submit" class="btn btn-sm btn-primary">Створити / оновити посилання</button>
+              </form>
+              {% if teacher_link %}
+              <div class="alert alert-success py-2 small mt-2 mb-0">
+                <div class="fw-semibold mb-1">Поточне посилання — скопіюйте й надішліть викладачу</div>
+                <input class="form-control form-control-sm font-monospace" readonly
+                       value="{{ teacher_link }}" onclick="this.select()">
+                {% if sheet.token_expires_at %}
+                <div class="text-muted mt-1">Діє до {{ sheet.token_expires_at }}</div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">3. Оцінки</div>
+              <div class="small text-muted mb-0">
+                Викладач вводить бали за посиланням, або ви — у таблиці нижче («Зберегти оцінки»).
+                Нац. шкала та ECTS рахуються автоматично. До затвердження оцінки <strong>лише тут</strong>, не в картках студентів.
+              </div>
+            </div>
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">4. Затвердження</div>
+              <div class="small text-muted mb-2">
+                Оцінки фінальні для цієї відомості. Викладач більше не зможе їх змінити.
+                Далі — (окремим правом) перенос у навчальний план.
+              </div>
+              {% if sheet.status in ('submitted', 'sent') %}
+              <form method="post" onsubmit="return confirm('Затвердити відомість? Викладач більше не зможе змінювати оцінки.')">
+                <input type="hidden" name="action" value="approve">
+                <button type="submit" class="btn btn-sm btn-success">Затвердити відомість</button>
+              </form>
+              {% elif sheet.status == 'approved' %}
+              <span class="badge text-bg-success">Уже затверджено</span>
+              {% elif sheet.status == 'locked' %}
+              <span class="badge text-bg-dark">Заблоковано</span>
+              {% else %}
+              <span class="badge text-bg-light text-muted border">Спочатку потрібні оцінки або посилання викладачу</span>
+              {% endif %}
+            </div>
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">5. Завантаження відомості</div>
+              <div class="small text-muted mb-2">
+                Формат Word (як у шаблонах документів системи).
+              </div>
+              <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-sm btn-primary"
+                   href="{{ url_for('exam_sessions.sheet_word', sheet_id=sheet.id) }}">
+                  <i class="bi bi-file-earmark-word"></i> Word (відомість)
+                </a>
+</div>
+            </div>
+
+            <div class="border-bottom pb-3">
+              <div class="fw-semibold mb-1">6. Перенос у навчальний план</div>
+              <div class="small text-muted mb-2">
+                Записує оцінки в предмети / практики / курсові / атестації групи.
+                Лише після затвердження і з правом «Перенос оцінок із сесій» (часто адмін).
+              </div>
+              {% if can_transfer and sheet.status in ('approved', 'locked') %}
+              <a class="btn btn-sm btn-warning"
+                 href="{{ url_for('exam_sessions.transfer_sheet', sheet_id=sheet.id) }}">
+                Перенести в план…
+              </a>
+              {% if sheet.linked_entity_type %}
+              <div class="small text-success mt-1">
+                Уже прив’язано: {{ kind_ua.get(sheet.linked_entity_type, sheet.linked_entity_type) }} #{{ sheet.linked_entity_id }}
+                {% if sheet.linked_at %} ({{ sheet.linked_at }}){% endif %}
+              </div>
+              {% endif %}
+              {% else %}
+              <span class="badge text-bg-light text-muted border">
+                {% if sheet.status not in ('approved', 'locked') %}Спочатку затвердіть відомість
+                {% else %}Немає права на перенос{% endif %}
+              </span>
+              {% endif %}
+            </div>
+
+            <div>
+              <div class="fw-semibold mb-1">7. Блокування (опційно)</div>
+              <div class="small text-muted mb-2">
+                Забороняє подальші правки. Після переносу в план або архівування сесії.
+              </div>
+              {% if sheet.status == 'approved' %}
+              <form method="post" onsubmit="return confirm('Заблокувати відомість? Редагування буде неможливе.')">
+                <input type="hidden" name="action" value="lock">
+                <button type="submit" class="btn btn-sm btn-outline-dark">Заблокувати</button>
+              </form>
+              {% elif sheet.status == 'locked' %}
+              <span class="badge text-bg-dark">Уже заблоковано</span>
+              {% else %}
+              <span class="badge text-bg-light text-muted border">Доступно після затвердження</span>
+              {% endif %}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ========== Таблиця студентів ========== #}
+  <form method="post">
+    <input type="hidden" name="action" value="save_grades">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span>Студенти ({{ students|length }})</span>
+        {% if sheet.status != 'locked' %}
+        <button type="submit" class="btn btn-sm btn-primary">Зберегти оцінки</button>
+        {% endif %}
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th rowspan="2" style="width:2.5rem">№</th>
+              <th rowspan="2">ПІБ</th>
+              <th rowspan="2">№ індив. навч. плану</th>
+              {% if sheet.entity_kind in ('attestation', 'coursework') %}
+              <th rowspan="2">Тема роботи</th>
+              {% endif %}
+              <th colspan="6" class="text-center">Оцінка</th>
+              <th rowspan="2">Підпис викладача</th>
+            </tr>
+            <tr>
+              <th style="width:5.5rem" class="small">Міжсесійний контроль</th>
+              <th style="width:5.5rem" class="small">Поточні бали</th>
+              <th style="width:5.5rem" class="small">Іспит / Залік</th>
+              <th style="width:5.5rem" class="small">Підсумкова</th>
+              <th style="width:6rem" class="small">Нац. шкала</th>
+              <th style="width:3.5rem" class="small">ECTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for st in students %}
+            <tr>
+              <td class="text-muted">{{ st.position }}</td>
+              <td>{{ st.full_name }}</td>
+              <td class="small font-monospace">{{ st.edebo_code or '—' }}</td>
+              {% if sheet.entity_kind in ('attestation', 'coursework') %}
+              <td>
+                {% if sheet.status != 'locked' %}
+                <input type="text" class="form-control form-control-sm"
+                       name="work_topic_{{ st.student_id }}" value="{{ st.work_topic or '' }}">
+                {% else %}{{ st.work_topic or '—' }}{% endif %}
+              </td>
+              {% endif %}
+              {% if sheet.status != 'locked' %}
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
+                         title="Або введіть підсумок напряму, або заповніть 3 компоненти зліва (тоді підсумок = сума)"></td>
+              {% else %}
+              <td>{{ st.points_mid if st.points_mid is not none else '—' }}</td>
+              <td>{{ st.points_current if st.points_current is not none else '—' }}</td>
+              <td>{{ st.points_exam if st.points_exam is not none else '—' }}</td>
+              <td>{{ st.points if st.points is not none else '—' }}</td>
+              {% endif %}
+              <td class="small">{{ st.national_grade or '—' }}</td>
+              <td>{{ st.ects or '—' }}</td>
+              <td class="small">{{ sheet.teacher_name or '—' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="12" class="text-muted text-center py-3">Список порожній</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}

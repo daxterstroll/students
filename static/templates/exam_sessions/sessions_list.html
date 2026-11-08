@@ -1,0 +1,94 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Сесії та відомості{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+{% set status_ua = {'draft': 'Чернетка', 'open': 'Відкрита', 'closed': 'Закрита'} %}
+{% set status_badge = {'draft': 'secondary', 'open': 'success', 'closed': 'dark'} %}
+<div class="container py-4">
+  {{ ui.page_header('bi-clipboard2-check', 'Сесії та відомості', 'Екзаменаційні відомості окремо від навчального плану') }}
+
+  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-end mb-3">
+    <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
+      <div>
+        <label class="form-label small mb-0">Група</label>
+        <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Усі</option>
+          {% for g in groups %}
+          <option value="{{ g.id }}" {% if filter_group == g.id %}selected{% endif %}>
+            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-0">Рік</label>
+        <select name="academic_year" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Усі</option>
+          {% for y in years %}
+          <option value="{{ y }}" {% if filter_year == y %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label small mb-0">Статус</label>
+        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">Усі</option>
+          {% for s, lab in status_ua.items() %}
+          <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ lab }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+    {% if filter_group %}
+    <a class="btn btn-outline-success btn-sm"
+       href="{{ url_for('exam_sessions.group_course_summary', group_id=filter_group, academic_year=filter_year or None) }}">
+      <i class="bi bi-file-earmark-spreadsheet me-1"></i>Зведена по групі (Excel)
+    </a>
+    {% endif %}
+    <a href="{{ url_for('exam_sessions.session_new') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg me-1"></i>Нова сесія
+    </a>
+  </div>
+
+  {% if rows %}
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Назва</th>
+            <th>Група</th>
+            <th>Рік / сем.</th>
+            <th>Статус</th>
+            <th>Відомостей</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr>
+            <td>{{ r.name }}</td>
+            <td>{{ r.group_name }} <span class="text-muted small">курс {{ r.course }}</span></td>
+            <td>{{ r.academic_year }} / {{ r.semester }}</td>
+            <td>
+              <span class="badge text-bg-{{ status_badge.get(r.status, 'secondary') }}">
+                {{ status_ua.get(r.status, r.status) }}
+              </span>
+            </td>
+            <td>{{ r.sheets_count }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('exam_sessions.session_detail', session_id=r.id) }}">Відкрити</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+    {{ ui.empty_state('bi-clipboard2', 'Сесій ще немає або немає доступу до груп') }}
+  {% endif %}
+</div>
+{% endblock %}

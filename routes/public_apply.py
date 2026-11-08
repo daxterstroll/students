@@ -402,54 +402,94 @@ def apply():
         passport_unique_number_val = f('passport_unique_number')
 
     conn = get_db()
-    cur = conn.execute("""
-        INSERT INTO pending_students (
-            submitted_ip,
-            last_name_UA, first_name_UA, middle_name_UA, last_name_ENG, first_name_ENG, birth_date, tax_id,
-            phone, phone_backup, email,
-            document_type, document_series, document_number, document_institution, document_country, document_date,
-            is_foreign_document, foreign_reference_number, foreign_reference_institution,
-            foreign_reference_country, foreign_reference_issue_date,
-            recognition_certificate_number, recognition_issuer, recognition_date,
-            reduced_program_claim, reduced_program_specialty, reduced_program_institution,
-            passport_document_type, passport_series, passport_number, passport_issued_by,
-            passport_issue_date, passport_valid_until, passport_unique_number,
-            military_registration_number_drpvr, military_registration_document, military_issued_vod,
-            military_specialty_number, military_rank, military_being_registered, military_address,
-            military_change_credentials, military_change_reason,
-            military_status_badge, military_valid_until, military_registration_category,
-            military_removal_basis, military_tck_name, military_registry_number,
-            military_vos_code, military_vos_description,
-            military_deferral_type, military_deferral_until,
-            military_police_reason, military_police_date,
-            military_vlk_decision, military_vlk_date,
-            military_disability_group, military_disability_valid_until, military_disability_reason,
-            military_formed_at, military_data_verified_on_time, military_data_update_date
-        ) VALUES (?, ?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?, ?,?,?,?,?,?,?,?, ?,?,?, ?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?, ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    """, (
-        request.remote_addr,
-        last_name_ua, first_name_ua, f('middle_name_UA'), last_name_eng, first_name_eng, birth_date, f('tax_id'),
-        phone, phone_backup, f('email'),
-        f('document_type'), f('document_series'), f('document_number'), f('document_institution'),
-        f('document_country'), document_date,
-        is_foreign_document, f('reference_number'), f('reference_institution'),
-        f('reference_country'), _iso_to_ua_date(f('reference_issue_date')),
-        f('recognition_certificate_number'), f('recognition_issuer'), _iso_to_ua_date(f('recognition_date')),
-        reduced_program_claim, None, None,
-        passport_document_type, passport_series_val, passport_number_val, passport_issued_by_val,
-        passport_issue_date, passport_valid_until, passport_unique_number_val,
-        f('military_registration_number_drpvr'), f('military_registration_document'), military_issued_vod,
-        f('military_specialty_number'), f('military_rank'), military_being_registered, f('military_address'),
-        f('military_change_credentials'), f('military_change_reason'),
-        military_status_badge, military_valid_until, military_registration_category,
-        military_removal_basis, military_tck_name, military_registry_number,
-        military_vos_code, military_vos_description,
-        military_deferral_type, military_deferral_until,
-        military_police_reason, military_police_date,
-        military_vlk_decision, military_vlk_date,
-        military_disability_group, military_disability_valid_until, military_disability_reason,
-        military_formed_at, military_data_verified_on_time, military_data_update_date,
-    ))
+
+    # Усі поля збираємо в ОДИН словник, а колонки й placeholder'и
+    # генеруються з нього автоматично - кількість ? завжди дорівнює
+    # кількості колонок. Раніше ці дві речі тримались вручну в двох
+    # різних місцях і розійшлися на одне поле після додавання
+    # military_*-полів (63 ? проти 64 колонок).
+    pending_fields = {
+        'submitted_ip':                      request.remote_addr,
+
+        'last_name_UA':                      last_name_ua,
+        'first_name_UA':                     first_name_ua,
+        'middle_name_UA':                    f('middle_name_UA'),
+        'last_name_ENG':                     last_name_eng,
+        'first_name_ENG':                    first_name_eng,
+        'birth_date':                        birth_date,
+        'tax_id':                            f('tax_id'),
+
+        'phone':                             phone,
+        'phone_backup':                      phone_backup,
+        'email':                             f('email'),
+
+        'document_type':                     f('document_type'),
+        'document_series':                   f('document_series'),
+        'document_number':                   f('document_number'),
+        'document_institution':              f('document_institution'),
+        'document_country':                  f('document_country'),
+        'document_date':                     document_date,
+
+        'is_foreign_document':               is_foreign_document,
+        'foreign_reference_number':          f('reference_number'),
+        'foreign_reference_institution':     f('reference_institution'),
+        'foreign_reference_country':         f('reference_country'),
+        'foreign_reference_issue_date':      _iso_to_ua_date(f('reference_issue_date')),
+        'recognition_certificate_number':    f('recognition_certificate_number'),
+        'recognition_issuer':                f('recognition_issuer'),
+        'recognition_date':                  _iso_to_ua_date(f('recognition_date')),
+
+        'reduced_program_claim':             reduced_program_claim,
+        'reduced_program_specialty':         None,
+        'reduced_program_institution':       None,
+
+        'passport_document_type':            passport_document_type,
+        'passport_series':                   passport_series_val,
+        'passport_number':                   passport_number_val,
+        'passport_issued_by':                passport_issued_by_val,
+        'passport_issue_date':               passport_issue_date,
+        'passport_valid_until':              passport_valid_until,
+        'passport_unique_number':            passport_unique_number_val,
+
+        'military_registration_number_drpvr': f('military_registration_number_drpvr'),
+        'military_registration_document':    f('military_registration_document'),
+        'military_issued_vod':               military_issued_vod,
+        'military_specialty_number':         f('military_specialty_number'),
+        'military_rank':                     f('military_rank'),
+        'military_being_registered':         military_being_registered,
+        'military_address':                  f('military_address'),
+        'military_change_credentials':       f('military_change_credentials'),
+        'military_change_reason':            f('military_change_reason'),
+
+        'military_status_badge':             military_status_badge,
+        'military_valid_until':              military_valid_until,
+        'military_registration_category':    military_registration_category,
+        'military_removal_basis':            military_removal_basis,
+        'military_tck_name':                 military_tck_name,
+        'military_registry_number':          military_registry_number,
+        'military_vos_code':                 military_vos_code,
+        'military_vos_description':          military_vos_description,
+        'military_deferral_type':            military_deferral_type,
+        'military_deferral_until':           military_deferral_until,
+        'military_police_reason':            military_police_reason,
+        'military_police_date':              military_police_date,
+        'military_vlk_decision':             military_vlk_decision,
+        'military_vlk_date':                 military_vlk_date,
+        'military_disability_group':         military_disability_group,
+        'military_disability_valid_until':   military_disability_valid_until,
+        'military_disability_reason':        military_disability_reason,
+        'military_formed_at':                military_formed_at,
+        'military_data_verified_on_time':    military_data_verified_on_time,
+        'military_data_update_date':         military_data_update_date,
+    }
+
+    columns = list(pending_fields.keys())
+    placeholders = ', '.join('?' for _ in columns)
+    cur = conn.execute(
+        f"INSERT INTO pending_students ({', '.join(columns)}) "
+        f"VALUES ({placeholders})",
+        list(pending_fields.values()),
+    )
     pending_id = cur.lastrowid
 
     # ═══════════════════════════════════════════════════════════

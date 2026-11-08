@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ sheet.discipline_name }} — відомість</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+<div class="container py-4" style="max-width:960px">
+  <div class="card shadow-sm mb-3">
+    <div class="card-body">
+      <h1 class="h4 mb-1">{{ sheet.discipline_name }}</h1>
+      <div class="text-muted small">
+        {{ sheet.group_name }} · курс {{ sheet.course }} · {{ sheet.study_form }} ·
+        {{ sheet.academic_year }} · семестр {{ sheet.semester }}
+        {% if sheet.license_name %} · ліцензія {{ sheet.license_name }}{% endif %}
+      </div>
+      <div class="small mt-1">
+        {{ sheet.control_form }}
+        {% if sheet.hours_credits %} · {{ sheet.hours_credits }}{% endif %}
+        {% if sheet.exam_date %} · {{ sheet.exam_date }}{% endif %}
+        {% if sheet.teacher_name %} · {{ sheet.teacher_name }}{% endif %}
+      </div>
+      {% if readonly %}
+      <div class="alert alert-warning py-2 mt-3 mb-0 small">
+        Відомість затверджено або заблоковано — лише перегляд.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat, msg in messages %}
+      <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' }} py-2">{{ msg }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="post">
+    <div class="card shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <thead class="table-light">
+            <tr>
+              <th rowspan="2">#</th>
+              <th rowspan="2">Студент</th>
+              {% if sheet.entity_kind in ('attestation', 'coursework') %}
+              <th rowspan="2">Тема роботи</th>
+              {% endif %}
+              <th colspan="6" class="text-center">Оцінка</th>
+              <th rowspan="2">Підпис</th>
+            </tr>
+            <tr>
+              <th class="small">Міжсесійний контроль</th>
+              <th class="small">Поточні бали</th>
+              <th class="small">Іспит / Залік</th>
+              <th class="small">Підсумкова</th>
+              <th class="small">Нац.</th>
+              <th class="small">ECTS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for st in students %}
+            <tr>
+              <td class="text-muted">{{ st.position }}</td>
+              <td>{{ st.full_name }}</td>
+              {% if sheet.entity_kind in ('attestation', 'coursework') %}
+              <td>
+                {% if not readonly %}
+                <input type="text" class="form-control form-control-sm"
+                       name="work_topic_{{ st.student_id }}" value="{{ st.work_topic or '' }}">
+                {% else %}<span class="small">{{ st.work_topic or '—' }}</span>{% endif %}
+              </td>
+              {% endif %}
+              {% if not readonly %}
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+                         name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
+                         title="Або введіть підсумок напряму, або 3 компоненти (сума)"></td>
+              {% else %}
+              <td>{{ st.points_mid if st.points_mid is not none else '—' }}</td>
+              <td>{{ st.points_current if st.points_current is not none else '—' }}</td>
+              <td>{{ st.points_exam if st.points_exam is not none else '—' }}</td>
+              <td>{{ st.points if st.points is not none else '—' }}</td>
+              {% endif %}
+              <td class="small">{{ st.national_grade or '—' }}</td>
+              <td>{{ st.ects or '—' }}</td>
+              <td class="small">{{ sheet.teacher_name or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if not readonly %}
+      <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <span class="small text-muted">Національна шкала та ECTS порахуються після збереження</span>
+        <button type="submit" class="btn btn-primary">Зберегти оцінки</button>
+      </div>
+      {% endif %}
+    </div>
+  
+<script>
+(function () {
+  function bindRow(row) {
+    var mid = row.querySelector('input[name^="points_mid_"]');
+    var cur = row.querySelector('input[name^="points_current_"]');
+    var exam = row.querySelector('input[name^="points_exam_"]');
+    var total = row.querySelector('input[name^="points_"]');
+    if (!total) return;
+    // points_ must not match points_mid etc — already name^="points_" matches all!
+    total = row.querySelector('input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])');
+    if (!total || !mid || !cur || !exam) return;
+
+    function parse(v) {
+      v = (v || '').toString().trim();
+      if (v === '') return null;
+      var n = parseInt(v, 10);
+      return isNaN(n) ? null : n;
+    }
+    function recalc() {
+      var a = parse(mid.value), b = parse(cur.value), c = parse(exam.value);
+      if (a === null && b === null && c === null) {
+        total.readOnly = false;
+        total.classList.remove('bg-light');
+        return;
+      }
+      var sum = (a || 0) + (b || 0) + (c || 0);
+      if (sum > 100) sum = 100;
+      total.value = sum;
+      total.readOnly = true;
+      total.classList.add('bg-light');
+    }
+    mid.addEventListener('input', recalc);
+    cur.addEventListener('input', recalc);
+    exam.addEventListener('input', recalc);
+    total.addEventListener('input', function () {
+      // ручне введення підсумку — очищаємо компоненти
+      if (!total.readOnly) {
+        mid.value = '';
+        cur.value = '';
+        exam.value = '';
+      }
+    });
+    recalc();
+  }
+  document.querySelectorAll('table tbody tr').forEach(bindRow);
+})();
+</script>
+
+</form>
+</div>
+</body>
+</html>

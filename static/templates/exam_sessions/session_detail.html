@@ -1,0 +1,123 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}{{ es.name }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+{% set sess_status_ua = {'draft': 'Чернетка', 'open': 'Відкрита', 'closed': 'Закрита'} %}
+{% set sheet_status_ua = {
+  'draft': 'Чернетка',
+  'sent': 'Надіслано викладачу',
+  'submitted': 'Оцінки здано',
+  'approved': 'Затверджено',
+  'locked': 'Заблоковано'
+} %}
+{% set sheet_badge = {
+  'draft': 'secondary',
+  'sent': 'info',
+  'submitted': 'primary',
+  'approved': 'success',
+  'locked': 'dark'
+} %}
+{% set kind_ua = {
+  'subject': 'Предмет',
+  'practice': 'Практика',
+  'coursework': 'Курсова',
+  'attestation': 'Атестація'
+} %}
+
+<div class="container py-4">
+  {{ ui.page_header('bi-clipboard2-check', es.name,
+     es.group_name ~ ' · ' ~ es.academic_year ~ ' · семестр ' ~ es.semester) }}
+
+  <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary mb-3">← До списку</a>
+
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="post" class="row g-2 align-items-end">
+        <input type="hidden" name="action" value="update_meta">
+        <div class="col-md-5">
+          <label class="form-label small mb-1">Назва</label>
+          <input type="text" name="name" class="form-control form-control-sm" value="{{ es.name }}">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small mb-1">Статус сесії</label>
+          <select name="status" class="form-select form-select-sm">
+            {% for s, lab in sess_status_ua.items() %}
+            <option value="{{ s }}" {% if es.status == s %}selected{% endif %}>{{ lab }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-sm btn-outline-primary w-100">Зберегти</button>
+        </div>
+      </form>
+      <div class="small text-muted mt-2">
+        {{ es.specialty }} · {{ es.degree_level }} · {{ es.study_form }} · курс {{ es.course }}
+        {% if licenses %}
+        · ліцензії в групі:
+        {% for l in licenses %}{{ l.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+    <h2 class="h5 mb-0">Відомості</h2>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-sm btn-outline-primary"
+         href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
+        <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
+      </a>
+      <a class="btn btn-sm btn-primary" href="{{ url_for('exam_sessions.sheet_new', session_id=es.id) }}">
+        <i class="bi bi-plus-lg"></i> Додати відомість
+      </a>
+    </div>
+  </div>
+
+  {% if sheets %}
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Дисципліна</th>
+            <th>Тип</th>
+            <th>Контроль</th>
+            <th>Ліцензія</th>
+            <th>Студ.</th>
+            <th>Оцінено</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sheets %}
+          <tr>
+            <td>{{ s.discipline_name }}</td>
+            <td class="small">{{ kind_ua.get(s.entity_kind, s.entity_kind) }}</td>
+            <td>{{ s.control_form }}</td>
+            <td>{{ s.license_name or '—' }}</td>
+            <td>{{ s.students_count }}</td>
+            <td>{{ s.graded_count }}</td>
+            <td>
+              <span class="badge text-bg-{{ sheet_badge.get(s.status, 'secondary') }}">
+                {{ sheet_status_ua.get(s.status, s.status) }}
+              </span>
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="alert alert-light border mb-0">
+    Відомостей ще немає. Створіть окрему відомість на кожну дисципліну та ліцензію.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

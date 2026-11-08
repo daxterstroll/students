@@ -1,0 +1,45 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перенос: {{ sheet.discipline_name }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+{% set kind_ua = {
+  'subject': 'Предмет',
+  'practice': 'Практика',
+  'coursework': 'Курсова',
+  'attestation': 'Атестація'
+} %}
+<div class="container py-4" style="max-width:720px">
+  {{ ui.page_header('bi-arrow-left-right', 'Перенос у навчальний план', sheet.discipline_name) }}
+
+  <a href="{{ url_for('exam_sessions.transfer_queue') }}" class="btn btn-sm btn-outline-secondary mb-3">← Черга</a>
+
+  <div class="alert alert-light border small">
+    Група: <strong>{{ sheet.group_name }}</strong> ·
+    тип відомості: <strong>{{ kind_ua.get(sheet.entity_kind, sheet.entity_kind) }}</strong> ·
+    таблиця плану: <code>{{ entity_table }}</code>
+  </div>
+
+  {% if candidates %}
+  <form method="post" class="card card-body"
+        onsubmit="return confirm('Записати оцінки в основну базу?')">
+    <label class="form-label">Елемент плану (спочатку — найближчі за назвою)</label>
+    <select name="target_id" class="form-select mb-3" required size="{{ [candidates|length, 12]|min }}">
+      {% for c in candidates %}
+      <option value="{{ c.id }}" {% if loop.first %}selected{% endif %}>
+        {{ c.name }}{% if c.code %} [{{ c.code }}]{% endif %}
+        · {{ c.credits }} кр. · {{ c.type }}
+        {% if c.score %} · збіг {{ (c.score * 100)|round(0) }}%{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-warning">Перенести оцінки</button>
+  </form>
+  {% else %}
+  <div class="alert alert-warning mb-0">
+    У групи немає записів типу «{{ kind_ua.get(sheet.entity_kind, sheet.entity_kind) }}».
+    Спочатку додайте предмет/практику/курсову/атестацію в навчальний план групи, потім поверніться сюди.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

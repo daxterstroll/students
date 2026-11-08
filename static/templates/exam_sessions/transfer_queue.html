@@ -1,0 +1,64 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перенос оцінок із сесій{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+{% set kind_ua = {
+  'subject': 'Предмет',
+  'practice': 'Практика',
+  'coursework': 'Курсова',
+  'attestation': 'Атестація'
+} %}
+<div class="container py-4">
+  {{ ui.page_header('bi-arrow-left-right', 'Перенос оцінок із сесій',
+     'Затверджені відомості → предмети / практики / курсові / атестації') }}
+
+  {% if rows %}
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Дисципліна</th>
+            <th>Група</th>
+            <th>Сесія</th>
+            <th>Тип</th>
+            <th>Ліцензія</th>
+            <th>Студ.</th>
+            <th>Прив’язка</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="{% if r.linked_entity_id %}table-success{% endif %}">
+            <td>{{ r.discipline_name }}</td>
+            <td>{{ r.group_name }}</td>
+            <td class="small">{{ r.academic_year }} / сем. {{ r.semester }}</td>
+            <td class="small">{{ kind_ua.get(r.entity_kind, r.entity_kind) }}</td>
+            <td>{{ r.license_name or '—' }}</td>
+            <td>{{ r.students_count }}</td>
+            <td class="small">
+              {% if r.linked_entity_id %}
+                {{ kind_ua.get(r.linked_entity_type, r.linked_entity_type) }} #{{ r.linked_entity_id }}
+              {% else %}
+                <span class="text-warning">не прив’язано</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('exam_sessions.transfer_sheet', sheet_id=r.id) }}">
+                {% if r.linked_entity_id %}Змінити{% else %}Перенести{% endif %}
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+    {{ ui.empty_state('bi-inbox', 'Немає затверджених відомостей у вашому скоупі') }}
+  {% endif %}
+</div>
+{% endblock %}
