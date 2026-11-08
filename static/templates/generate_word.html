@@ -30,7 +30,24 @@
                 <i class="bi bi-file-earmark-word-fill"></i>
             </div>
             <div class="group-select-body">
-                <div class="group-select-name">{{ g.name }}</div>
+                <div class="group-select-name">
+					{{ g.name }}
+					{% if g.status and g.status != 'active' %}
+						{% set status_label = {
+							'graduated': 'випуск',
+							'expelled': 'відраховано',
+							'frozen': 'заморожено',
+							'archived': 'архів',
+						}.get(g.status, g.status) %}
+						{% set status_class = {
+							'graduated': 'bg-success-subtle text-success-emphasis',
+							'expelled': 'bg-danger-subtle text-danger-emphasis',
+							'frozen': 'bg-info-subtle text-info-emphasis',
+							'archived': 'bg-secondary-subtle text-secondary-emphasis',
+						}.get(g.status, 'bg-secondary') %}
+						<span class="badge {{ status_class }} ms-2">{{ status_label }}</span>
+					{% endif %}
+				</div>
                 <div class="group-select-meta">
                     {{ g.start_year }} рік вступу
                     <span class="group-select-sep">·</span>

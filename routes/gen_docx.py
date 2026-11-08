@@ -1,4 +1,3 @@
-
 import os
 import re
 import sqlite3
@@ -113,7 +112,6 @@ def get_study_periods(cursor, student_id, group_id=None, lang='ua',
     
 def insert_subjects_table(doc, student_id):
     """Вставка таблицы с предметами и оценками студента."""
-    # global_logger.debug(f"Запуск insert_subjects_table для student_id={student_id}")
     conn = get_db()
     conn.row_factory = sqlite3.Row
     student = conn.execute("""
@@ -138,7 +136,6 @@ def insert_subjects_table(doc, student_id):
     """, (student_id, student['group_id'])).fetchall()
 
     if not subjects:
-        # global_logger.warning(f"Предметы для студента ID {student_id}, group_id={student['group_id']} не найдены")
         conn.close()
         return False
 
@@ -172,8 +169,6 @@ def clean_text(text):
     if text is None:
         return ''
     text = str(text).encode('utf-8').decode('utf-8', errors='ignore')
-    # text = re.sub(r'[^\x20-\x7E\xA0-\xFF\u0400-\u04FF\u2014\u2013\n]', '', text)
-    # global_logger.debug(f"clean_text input: '{text}', output: '{text.strip()}'")
     return text.strip()
 
 def format_grade(grade, subject_type):
@@ -208,20 +203,7 @@ def format_grade(grade, subject_type):
         return "Ошибка: введите число от 0 до 100" if subject_type == "Залік" else ""
 
 def get_subjects_grades(student_id, group_id):
-    """Получение данных о предметах и их оценках.
-
-    Якщо студент навчається за скороченою програмою відносно своєї
-    групи (program_credits_override менше за program_credits групи -
-    напр. вступив одразу на 2 курс з визнанням частини кредитів
-    диплома бакалавра):
-      - предмети з subjects.full_program_only=1 виключаються зі
-        списку - вони стосуються лише повної програми;
-      - для спільних предметів, де subjects.reduced_credits заповнено,
-        підміняється значення credits - той самий предмет може мати
-        меншу кількість кредитів у скороченій програмі (напр. курсова
-        робота 20 кредитів у повній, 10 - у скороченій).
-    """
-    # global_logger.debug(f"Запуск get_subjects_grades для student_id={student_id}, group_id={group_id}")
+    """Получение данных о предметах и их оценках."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
@@ -239,7 +221,6 @@ def get_subjects_grades(student_id, group_id):
 
         results = conn.execute(query, params).fetchall()
         subjects = [dict(r) for r in results]
-        # global_logger.debug(f"Получено {len(subjects)} предметов: {subjects}")
         valid_subjects = []
         for subject in subjects:
             if all(key in subject for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
@@ -259,13 +240,7 @@ def get_subjects_grades(student_id, group_id):
         conn.close()
 
 def get_practice_data(student_id, group_id):
-    """Получение данных о практиках и их оценках.
-
-    Той самий принцип скороченої програми, що й у get_subjects_grades:
-    виключення full_program_only=1 і підміна кредитів через
-    reduced_credits, якщо заповнено.
-    """
-    # global_logger.debug(f"Запуск get_practice_data для student_id={student_id}, group_id={group_id}")
+    """Получение данных о практиках и их оценках."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
@@ -283,7 +258,6 @@ def get_practice_data(student_id, group_id):
 
         results = conn.execute(query, params).fetchall()
         practices = [dict(r) for r in results]
-        # global_logger.debug(f"Получено {len(practices)} практик: {practices}")
         valid_practices = []
         for practice in practices:
             if all(key in practice for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
@@ -303,11 +277,7 @@ def get_practice_data(student_id, group_id):
         conn.close()
 
 def get_coursework_data(student_id, group_id):
-    """Получение данных о курсовых работах и их оценках.
-
-    Той самий принцип скороченої програми, що й у get_subjects_grades.
-    """
-    # global_logger.debug(f"Запуск get_coursework_data для student_id={student_id}, group_id={group_id}")
+    """Получение данных о курсовых работах и их оценках."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
@@ -325,7 +295,6 @@ def get_coursework_data(student_id, group_id):
 
         results = conn.execute(query, params).fetchall()
         courseworks = [dict(r) for r in results]
-        # global_logger.debug(f"Получено {len(courseworks)} курсовых работ: {courseworks}")
         valid_courseworks = []
         for coursework in courseworks:
             if all(key in coursework for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade']):
@@ -345,11 +314,7 @@ def get_coursework_data(student_id, group_id):
         conn.close()
 
 def get_attestation_data(student_id, group_id):
-    """Получение данных об аттестациях и их оценках.
-
-    Той самий принцип скороченої програми, що й у get_subjects_grades.
-    """
-    # global_logger.debug(f"Запуск get_attestation_data для student_id={student_id}, group_id={group_id}")
+    """Получение данных об аттестациях и их оценках."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
@@ -367,7 +332,6 @@ def get_attestation_data(student_id, group_id):
 
         results = conn.execute(query, params).fetchall()
         attestations = [dict(r) for r in results]
-        # global_logger.debug(f"Получено {len(attestations)} аттестаций: {attestations}")
         valid_attestations = []
         for attestation in attestations:
             if all(key in attestation for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade', 'student_name']):
@@ -387,24 +351,7 @@ def get_attestation_data(student_id, group_id):
         conn.close()
 
 def apply_reduced_program_texts(student_dict):
-    """Якщо студент навчається за скороченою програмою відносно своєї
-    групи (program_credits_override менше за program_credits групи -
-    напр. вступив одразу на 2 курс з визнанням частини кредитів
-    попереднього диплома):
-      - підміняє "Вимоги для вступу", "Програма підготовки включає" і
-        "Програмні результати навчання" на відповідні _reduced-варіанти
-        групи, якщо вони заповнені (порожній _reduced-текст лишає
-        звичайний текст групи - щоб не ламати документи для груп, де
-        скорочений варіант ще не заповнили);
-      - підміняє саме значення student_dict['program_credits'] на
-        program_credits_override, щоб розрахунок "study_years"/
-        "end_year" нижче за текстом (а також пункт додатку "Тривалість
-        освітньої програми в кредитах та/або роках") показував РЕАЛЬНУ
-        кількість кредитів студента, а не кредити групи.
-    Викликається до розбиття program_includes/learning_outcomes на
-    рядки і до обчислення study_years/end_year, щоб обидва спирались
-    вже на підмінене значення.
-    """
+    """Якщо студент навчається за скороченою програмою - підміняє тексти."""
     override = student_dict.get('program_credits_override')
     base = student_dict.get('program_credits')
     try:
@@ -418,9 +365,6 @@ def apply_reduced_program_texts(student_dict):
     for field in ('entry_requirements', 'entry_requirements_en',
                   'program_includes', 'program_includes_en',
                   'learning_outcomes', 'learning_outcomes_en'):
-        # Колонки в БД називаються "..._reduced" (укр.) і
-        # "..._reduced_en" (англ.) - тобто "_reduced" завжди ПЕРЕД
-        # "_en", а не в кінці назви поля.
         if field.endswith('_en'):
             reduced_key = f"{field[:-3]}_reduced_en"
         else:
@@ -435,30 +379,17 @@ def apply_reduced_program_texts(student_dict):
 def gen_doc(student: dict, military: dict, template='template.docx', out='out.docx', user_name='Система'):
     """Генерирует документ для студента на основе шаблона."""
     global_logger.debug(f"Запуск gen_doc: student_id={student.get('id', 'unknown')}, template={template}, out={out}")
-    
-    # Проверка входных данных
-    # global_logger.debug(f"Входные данные student: {dict(student)}")
-    # if military:
-        # global_logger.debug(f"Входные данные military: {dict(military)}")
-    # else:
-        # global_logger.debug("Данные military отсутствуют")
 
-    # Проверка существования шаблона
     if not os.path.exists(template):
         global_logger.error(f"Шаблон {template} не найден")
         raise FileNotFoundError(f"Шаблон {template} не найден")
 
     try:
         doc = DocxTemplate(template)
-        global_logger.debug(f"Шаблон {template} успешно загружен")
     except Exception as e:
         global_logger.error(f"Ошибка при загрузке шаблона {template}: {str(e)}")
         raise
 
-    # Получение данных о документах об образовании — для КОНКРЕТНОЇ групи,
-    # для якої генерується документ. Fallback на group_id IS NULL — щоб
-    # старі «загальні» документи підтягувалися, коли для групи свого
-    # немає. Пріоритет: спочатку документ конкретної групи, потім NULL.
     _group_id = student['group_id'] if 'group_id' in student.keys() else None
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -478,30 +409,18 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     """, (student['id'], _group_id, _group_id)).fetchone()
     conn.close()
 
-    # Преобразование словарей
     student_dict = {k: clean_text(v) for k, v in dict(student).items()}
     military_dict = {k: clean_text(v) for k, v in dict(military).items()} if military else {}
 
-    # Періоди навчання — для ТІЄЇ групи, для якої генерується документ.
-    # Робимо це ТУТ, ПІСЛЯ student_dict, щоб student_dict['group_id']
-    # уже був доступний (при паралельному навчанні в кожної групи свої
-    # періоди). НЕ дублювати цей блок у кінці функції.
     conn = get_db()
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
         current_group_id = student_dict.get('group_id')
-        names_ua, dates_ua = get_study_periods(
-            cursor, student_dict['id'], group_id=current_group_id, lang='ua'
-        )
-        names_en, dates_en = get_study_periods(
-            cursor, student_dict['id'], group_id=current_group_id, lang='en'
-        )
+        names_ua, dates_ua = get_study_periods(cursor, student_dict['id'], group_id=current_group_id, lang='ua')
+        names_en, dates_en = get_study_periods(cursor, student_dict['id'], group_id=current_group_id, lang='en')
     except Exception as e:
-        global_logger.error(
-            f"Ошибка при получении периодов навчання для студента ID "
-            f"{student_dict.get('id', 'unknown')}: {e}"
-        )
+        global_logger.error(f"Ошибка при получении периодов навчання: {e}")
         names_ua = "Львівська філія Приватного вищого навчального закладу «Європейський університет»"
         dates_ua = ''
         names_en = "Lviv Branch of Private Higher Education Establishment «European University»"
@@ -509,34 +428,25 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     finally:
         conn.close()
 
-    # Якщо студент на скороченій програмі...
     apply_reduced_program_texts(student_dict)
 
-    # Добавление данных об образовании в student_dict
     if education_docs:
         for key, value in dict(education_docs).items():
             student_dict[key] = clean_text(value) if value else ''
 
-    # Форматирование birth_date
     birth_date = student_dict.get('birth_date', '')
-    # global_logger.debug(f"Исходная birth_date: '{birth_date}', тип: {type(birth_date)}")
     if birth_date:
         try:
             date_obj = datetime.strptime(birth_date, '%d.%m.%Y')
             birth_date = date_obj.strftime('%d/%m/%Y')
-            # global_logger.debug(f"Отформатированная birth_date: '{birth_date}'")
         except ValueError:
             try:
                 date_obj = datetime.strptime(birth_date, '%Y-%m-%d')
                 birth_date = date_obj.strftime('%d/%m/%Y')
-                # global_logger.debug(f"Отформатированная birth_date (альтернативный формат): '{birth_date}'")
             except ValueError:
-                # global_logger.warning(f"Неизвестный формат birth_date: '{birth_date}', оставляем как есть")
                 birth_date = student_dict['birth_date']
-    
     student_dict['birth_date'] = birth_date
 
-    # Вычисление study_years на основе program_credits
     program_credits = student_dict.get('program_credits', '')
     study_years = ''
     try:
@@ -547,20 +457,14 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             study_years = '3'
         elif credits == 120:
             study_years = '2'
-        elif credits == 90:  # Для магистратуры
+        elif credits == 90:
             study_years = '1.5'
         else:
-            study_years = str(credits // 60)  # Общее правило: 60 кредитов = 1 год
-        # global_logger.debug(f"program_credits: {program_credits}, study_years: {study_years}")
+            study_years = str(credits // 60)
     except (ValueError, TypeError):
-        # global_logger.warning(f"Невалидное значение program_credits: '{program_credits}', study_years оставлено пустым")
         study_years = ''
-    
     student_dict['study_years'] = study_years
-    
-    # Вычисление study_form_eu на основе study_form
-    # (раніше обчислювалось лише для шаблонів з "adddiplom" у назві -
-    # тепер доступне у будь-якому шаблоні)
+
     study_form = student_dict.get('study_form', '')
     study_form_eu = ''
     if study_form == 'Денна':
@@ -571,11 +475,8 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         study_form_eu = 'Distance'
     else:
         study_form_eu = study_form
-    # global_logger.debug(f"study_form: {study_form}, study_form_eu: {study_form_eu}")
-
     student_dict['study_form_eu'] = study_form_eu
-    
-    # Вычисление end_year на основе start_year, program_credits и degree_level
+
     end_year = ''
     start_year = student_dict.get('start_year', '')
     program_credits = student_dict.get('program_credits', '')
@@ -590,60 +491,29 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
                 elif credits == 180:
                     end_year = str(year + 3)
             elif degree_level == 'Магістр':
-                if credits == 90:
-                    end_year = str(year + 2)  # Магистратура 1.5-2 года
-                elif credits == 120:
+                if credits in (90, 120):
                     end_year = str(year + 2)
             else:
-                end_year = str(year + (credits // 60))  # Общее правило
-        # global_logger.debug(f"start_year: {start_year}, program_credits: {program_credits}, degree_level: {degree_level}, end_year: {end_year}")
+                end_year = str(year + (credits // 60))
     except (ValueError, TypeError) as e:
-        global_logger.warning(f"Ошибка при расчёте end_year: start_year='{start_year}', program_credits='{program_credits}', degree_level='{degree_level}', ошибка: {str(e)}")
+        global_logger.warning(f"Ошибка при расчёте end_year: {e}")
         end_year = ''
-    
     student_dict['end_year'] = end_year
-    
     student_dict['end_year_short'] = student_dict['end_year'][-2:] if student_dict['end_year'] else ''
-
-    # Проверка новых полей, включая недавно добавленные
-    new_fields = [
-        'qualification_name', 'degree_level', 'specialty', 'educational_program', 'knowledge_area',
-        'qualification_name_en', 'degree_level_en', 'specialty_en', 'educational_program_en', 'knowledge_area_en',
-        'program_credits', 'study_years', 'study_form', 'study_form_eu', 'start_year', 'end_year', 'end_year_short', 
-        'institution_name_and_status', 'institution_name_and_status_en',
-        'entry_requirements', 'entry_requirements_en',
-        'learning_outcomes', 'learning_outcomes_en', 'program_includes', 'program_includes_en',
-        'document_type', 'document_number', 'institution_name', 'country', 'completion_date',
-        'document_type_en', 'institution_name_en', 'country_en',
-        'reference_number', 'reference_institution', 'reference_country', 'reference_issue_date',
-        'reference_institution_en', 'reference_country_en',
-        'recognition_certificate_number', 'recognition_issuer', 'recognition_date',
-        'recognition_issuer_en'
-    ]
-    # global_logger.debug(f"Новые поля в student_dict: {[(k, student_dict.get(k, '')) for k in new_fields]}")
 
     if degree_level == "Магістр":
         student_dict['top_qualification_text'] = "- підготовка кваліфікаційної роботи / preparation of qualification work"
         student_dict['bottom_qualification_text'] = "- захист кваліфікаційної роботи / defense of qualification work"
 
-    # Обработка текста для полей с разделением на отдельные строки по \n и удалением лишнего \n
     fields_to_process = ['program_includes', 'program_includes_en', 'learning_outcomes', 'learning_outcomes_en']
     for field in fields_to_process:
         if field in student_dict and student_dict[field]:
             lines = student_dict[field].split('\n')
             cleaned_lines = [line.strip() for line in lines if line.strip()]
             student_dict[field] = cleaned_lines
-            # global_logger.debug(f"Обработан {field} как список: {student_dict[field]}")
 
-    # Об'єднаем словари
     context = {**student_dict, **military_dict}
-    # global_logger.debug(f"Контекст перед рендерингом: {context}")
 
-    # Фото студента (3х4, якщо завантажене на сторінці студента) - як
-    # InlineImage для шаблонів, у яких є картинка-плейсхолдер
-    # {{ student_photo }}. Якщо фото немає - ключ просто не додається в
-    # контекст, і плейсхолдер у шаблоні лишиться порожнім (не ламає
-    # рендеринг решти документа).
     photo_rel = student_dict.get('photo')
     if photo_rel:
         photo_full_path = os.path.join(os.getcwd(), 'static', photo_rel)
@@ -653,28 +523,16 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             except Exception as e:
                 global_logger.error(f"Не вдалося вставити фото студента (ID {student_dict.get('id')}): {e}")
 
-    # Дані для диплома (список оцінок з предметів, практик, курсових,
-    # атестацій) - раніше збиралися лише для шаблонів з "adddiplom" у
-    # назві, тепер доступні у будь-якому шаблоні.
     try:
         if 'group_id' in student_dict and 'id' in student_dict:
             context['subjects_grades'] = get_subjects_grades(student_dict['id'], student_dict['group_id']) or []
             context['practice_data'] = get_practice_data(student_dict['id'], student_dict['group_id']) or []
             context['coursework_data'] = get_coursework_data(student_dict['id'], student_dict['group_id']) or []
             context['attestation_data'] = get_attestation_data(student_dict['id'], student_dict['group_id']) or []
-            # global_logger.debug(f"Данные для диплома: subjects_grades={context['subjects_grades']}, "
-                        # f"practice_data={context['practice_data']}, "
-                        # f"coursework_data={context['coursework_data']}, "
-                        # f"attestation_data={context['attestation_data']}")
     except Exception as e:
-        global_logger.error(f"Ошибка при получении данных для диплома для студента ID {student_dict.get('id', 'unknown')}: {e}")
+        global_logger.error(f"Ошибка при получении данных для диплома: {e}")
         raise
-    
-    # -----------------------------
-    # Автоподстановка аккредитации для диплома с отладкой
-    # (раніше обчислювалось лише для шаблонів з "adddiplom" у назві,
-    # тепер доступне у будь-якому шаблоні)
-    # -----------------------------
+
     try:
         conn = get_db()
         conn.row_factory = sqlite3.Row
@@ -683,46 +541,25 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             FROM accreditations
             WHERE degree = ? AND specialty = ?
             ORDER BY id DESC LIMIT 1
-        """, (
-            student_dict.get('degree_level', ''),
-            student_dict.get('specialty', '')
-        )).fetchone()
+        """, (student_dict.get('degree_level', ''), student_dict.get('specialty', ''))).fetchone()
         conn.close()
-
         if acc:
             context['accreditation_text'] = acc['text_ua']
             context['accreditation_text_en'] = acc['text_en']
-            # Вывод для отладки
-            #print("=== Автоподстановка аккредитации ===")
-            #print("UA:", acc['text_ua'])
-            #print("EN:", acc['text_en'])
-            #global_logger.debug(f"Автоподстановка аккредитации: UA='{acc['text_ua']}', EN='{acc['text_en']}'")
         else:
             context['accreditation_text'] = ''
             context['accreditation_text_en'] = ''
-            #print("=== Автоподстановка аккредитации ===")
-            #print("Аккредитация не найдена для ступені и спеціальності:")
-            #print("degree_level:", student_dict.get('degree_level', ''))
-            #print("specialty:", student_dict.get('specialty', ''))
-            #global_logger.debug(f"Аккредитация не найдена: degree_level='{student_dict.get('degree_level', '')}', specialty='{student_dict.get('specialty', '')}'")
-
     except Exception as e:
-        global_logger.error(f"Ошибка при получении аккредитации для диплома студента ID {student_dict.get('id', 'unknown')}: {e}")
+        global_logger.error(f"Ошибка при получении аккредитации: {e}")
         context['accreditation_text'] = ''
         context['accreditation_text_en'] = ''
 
-    # Проверка на диплом с отличием
-    # (раніше обчислювалось лише для "adddiplom"; за замовчуванням тут
-    # раніше стояло прізвище студента - це виглядало як забутий
-    # налагоджувальний код, а не навмисна поведінка, тому прибрано)
     context['diploma_with_honor_text'] = ''
     context['diploma_with_honor_text_en'] = ''
 
     all_grades = []
-
     if context.get('subjects_grades'):
         all_grades += context['subjects_grades']
-
     if context.get('practice_data'):
         all_grades += context['practice_data']
 
@@ -733,31 +570,20 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
 
     for g in all_grades:
         grade_text = g.get('grade', '')
-
         if not grade_text:
             continue
-
         total_grades += 1
-
         if ' A' in grade_text:
             excellent_count += 1
-
         elif ' D' in grade_text or ' E' in grade_text:
             satisfactory_count += 1
-
-        # Fx / F (або текст без літери, напр. "Незадовільно / Fail") -
-        # це провал, а не «просто не A/D/E». Без цієї гілки студент із
-        # 45 Fx і рештою A отримував «Диплом з відзнакою».
         elif ' Fx' in grade_text or ' F' in grade_text or 'Незадовільно' in grade_text or 'Fail' in grade_text:
             fail_count += 1
 
-    # аттестация
     attestation_grade = ''
-
     if context.get('attestation_data'):
         attestation_grade = next(
-            (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')),
-            ''
+            (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')), ''
         )
 
     diploma_with_honours = (
@@ -775,18 +601,8 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         context['diploma_with_honor_text'] = 'Інформація відсутня'
         context['diploma_with_honor_text_en'] = 'Information is absent'
 
-    
-    
-    # -----------------------------
-    # Подтягиваем диплом и додаток для Word
-    # -----------------------------
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    # Номери диплома/додатка беруться для КОНКРЕТНОЇ групи, під яку
-    # генерується документ (student_dict['group_id']), а не «будь-який»
-    # номер студента. Якщо для цієї групи номер ще не заводили — у
-    # документі номер буде порожнім, і адмін побачить, що треба заповнити
-    # (Довідники → Номери диплому / додатку → ця група).
     diploma_row = conn.execute("""
         SELECT diploma_number, appendix_number
         FROM diplomas
@@ -794,12 +610,10 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         ORDER BY id DESC LIMIT 1
     """, (student['id'], student_dict.get('group_id'))).fetchone()
     conn.close()
-    
-    # Якщо періодів немає (дати порожні) — формуємо дати та назву на основі даних студента
+
     if not dates_ua:
         start_year = student_dict.get('start_year', '')
         end_year = student_dict.get('end_year', '')
-        
         if start_year and end_year:
             if end_year >= "2025":
                 dates_ua = f"з 01/09/{start_year} до 30/09/{end_year}"
@@ -808,22 +622,45 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
                 dates_ua = f"01/09/{start_year}–30/09/{end_year}"
                 dates_en = f"01/09/{start_year}–30/09/{end_year}"
 
-        # Раніше тут було жорстке порівняння з двома захардкодженими
-        # рядками (Львівська філія / основний заклад) - ламалось би для
-        # будь-якої третьої ліцензії (напр. Польської). Тепер
-        # institution_name_and_status/_en беруться напряму з ліцензії
-        # студента (routes/students.py, routes/admin.py) - тому просто
-        # використовуємо їх як є, без порівняння.
-        
         def _institution_short_name(full_text):
-            """'Назва «Х». Приватна форма... Ліцензія...' -> 'Назва «Х»' (до першої »).
-            Якщо лапок немає - повертає '', і тоді лишається назва за замовчуванням."""
+            """Скорочує повну назву закладу до першої лапкової частини.
+
+            Приклади:
+              'Приватний ВНЗ «Європейський університет». Приватна форма...'
+                → 'Приватний ВНЗ «Європейський університет»'
+              "Private Higher Educational Institution 'European University'. Private..."
+                → "Private Higher Educational Institution 'European University'"
+
+            ПРОБЛЕМА, яку вирішує ця версія:
+              Київська ліцензія в seed-даних має UA з «...», а EN — з одинарними
+              лапками '...'. Попередня версія шукала тільки «» → на EN
+              повертала '' → fallback на default (Lviv Branch) → у документі
+              UA показував Київ, а EN — Львів. Тепер підтримуються всі типові
+              види лапок, і UA+EN беруться з ОДНІЄЇ ліцензії послідовно.
+            """
             if not full_text:
                 return ''
-            end = full_text.find('»')
-            return full_text[:end + 1].strip() if end != -1 else ''    
-        
-        
+
+            # Порядок важливий: спершу типографські «» та “”, потім прямі.
+            quote_pairs = [
+                ('«', '»'),   # French quotes — укр. типографіка
+                ('“', '”'),   # curly double
+                ('„', '“'),   # German-style
+                ('"', '"'),   # straight double
+                ("'", "'"),   # straight single (SQLite seed: 'European University')
+            ]
+
+            for open_q, close_q in quote_pairs:
+                start = full_text.find(open_q)
+                if start == -1:
+                    continue
+                end = full_text.find(close_q, start + len(open_q))
+                if end == -1:
+                    continue
+                return full_text[:end + len(close_q)].strip()
+
+            return ''
+
         names_ua = _institution_short_name(student_dict.get('institution_name_and_status', '')) or names_ua
         names_en = _institution_short_name(student_dict.get('institution_name_and_status_en', '')) or names_en
 
@@ -831,36 +668,29 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     context['study_period_dates'] = _to_richtext_multiline(dates_ua, font_size_pt=8, font_name='Times New Roman')
     context['study_period_names_en'] = _to_richtext_multiline(names_en, font_size_pt=8, font_name='Times New Roman')
     context['study_period_dates_en'] = _to_richtext_multiline(dates_en, font_size_pt=8, font_name='Times New Roman')
-    
-    
 
     if diploma_row:
-        # дополняем нулями до 6 цифр
         diploma_number = diploma_row['diploma_number'] or ''
         appendix_number = diploma_row['appendix_number'] or ''
-
         diploma_number = diploma_number.zfill(6) if diploma_number else ''
         appendix_number = appendix_number.zfill(6) if appendix_number else ''
-
         context['diploma_number'] = diploma_number
         context['appendix_number'] = appendix_number
     else:
         context['diploma_number'] = ''
         context['appendix_number'] = ''
-        
+
     try:
         doc.render(context)
-        global_logger.debug("Шаблон успешно отрендерен")
     except Exception as e:
-        global_logger.error(f"Ошибка при рендеринге документа для студента ID {student_dict.get('id', 'unknown')}: {e}")
+        global_logger.error(f"Ошибка при рендеринге документа: {e}")
         raise
 
     student_name = f"{student_dict.get('last_name_UA', '')} {student_dict.get('first_name_UA', '')}".strip()
     log_action(user_name, f"згенерував документ '{out}' для студента {student_name}", student_dict.get('group_id'))
-    
+
     try:
         doc.save(out)
-        global_logger.debug(f"Документ сохранён как {out}")
     except Exception as e:
         global_logger.error(f"Ошибка при сохранении документа {out}: {e}")
         raise
@@ -997,7 +827,6 @@ def _vidomist_build_context(sheet, students):
     inst = (sheet.get('institution_name_and_status') or
             'ПВНЗ „Європейський університет“\nЛьвівська філія')
     if '  ' in inst and '\n' not in inst and 'філія' in inst.lower():
-        # розбити заклад / філія
         import re
         m = re.match(r'^(.*університет[^\"]*[\"“]?)\s+(Львівська\s+філія)\s*$', inst, re.I)
         if m:
@@ -1052,7 +881,6 @@ def _vidomist_fill_students_table(doc, students_rows):
     Шукає таблицю з «Прізвище» / «№» у шапці; клонує останній (зразок) рядок.
     """
     from copy import deepcopy
-    from docx.document import Document as DocType
 
     table = None
     for t in doc.tables:
@@ -1075,7 +903,6 @@ def _vidomist_fill_students_table(doc, students_rows):
     sample_tr = deepcopy(table.rows[sample_idx]._tr)
     n_grid = len(table.rows[sample_idx].cells)
 
-    # map columns by header text
     texts = [''] * n_grid
     for ri in range(min(header_rows, len(table.rows))):
         for i, c in enumerate(table.rows[ri].cells):
@@ -1105,7 +932,6 @@ def _vidomist_fill_students_table(doc, students_rows):
         'sign': find('підпис'),
     }
 
-    # remove data rows after header
     tbl = table._tbl
     while len(table.rows) > header_rows:
         tbl.remove(table.rows[-1]._tr)
@@ -1141,13 +967,7 @@ def _vidomist_fill_students_table(doc, students_rows):
 
 
 def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Система'):
-    """
-    Відомість сесії — той самий механізм що gen_doc:
-      DocxTemplate(template).render(context) → save
-
-    Таблиця студентів: без {%tr %} (Word ламає endfor) —
-    після render рядки додаються як у insert_subjects_table.
-    """
+    """Відомість сесії — DocxTemplate.render + дописування рядків таблиці."""
     if template is None:
         template = _vidomist_template_path()
     if not os.path.exists(template):
@@ -1158,19 +978,16 @@ def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Си
 
     try:
         doc = DocxTemplate(template)
-        global_logger.debug(f"Відомість: шаблон {template} завантажено")
     except Exception as e:
         global_logger.error(f"Помилка завантаження шаблону відомості: {e}")
         raise
 
     try:
         doc.render(context)
-        global_logger.debug("Відомість: render OK")
     except Exception as e:
         global_logger.error(f"Помилка render відомості: {e}")
         raise
 
-    # Дописати студентів у таблицю (стиль рядка-зразка з шаблону)
     try:
         _vidomist_fill_students_table(doc, rows)
     except Exception as e:
@@ -1182,7 +999,6 @@ def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Си
     if out:
         try:
             doc.save(out)
-            global_logger.debug(f"Відомість збережено: {out}")
         except Exception as e:
             global_logger.error(f"Помилка збереження відомості {out}: {e}")
             raise
@@ -1210,10 +1026,68 @@ def _vidomist_summary_template_path():
     return os.path.abspath(candidates[0])
 
 
+def _ensure_sectpr(document):
+    """Гарантує, що в документі є body-level w:sectPr.
+
+    Деякі .docx-шаблони (згенеровані не Word'ом, конвертовані,
+    пошкоджені ручним редагуванням XML) не мають w:sectPr у
+    w:body. python-docx у такому разі має порожній
+    document.sections, і document.add_table() падає з:
+        IndexError: list index out of range
+        (document._block_width → self.sections[-1])
+
+    Ця функція вставляє стандартний A4 landscape sectPr з полями
+    ~1 см, якщо його немає. Word і далі вільно редагує документ.
+    """
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    try:
+        _ = document.sections[-1]
+        return  # sectPr уже є
+    except (IndexError, KeyError):
+        pass
+
+    body = document.element.body
+    if body.find(qn('w:sectPr')) is not None:
+        return
+
+    sectPr = OxmlElement('w:sectPr')
+
+    pgSz = OxmlElement('w:pgSz')
+    pgSz.set(qn('w:w'), '16838')
+    pgSz.set(qn('w:h'), '11906')
+    pgSz.set(qn('w:orient'), 'landscape')
+    sectPr.append(pgSz)
+
+    pgMar = OxmlElement('w:pgMar')
+    pgMar.set(qn('w:top'),    '567')
+    pgMar.set(qn('w:right'),  '567')
+    pgMar.set(qn('w:bottom'), '567')
+    pgMar.set(qn('w:left'),   '567')
+    pgMar.set(qn('w:header'), '708')
+    pgMar.set(qn('w:footer'), '708')
+    pgMar.set(qn('w:gutter'), '0')
+    sectPr.append(pgMar)
+
+    body.append(sectPr)
+
+
 def _vidomist_insert_summary_table(document, sheets, order, names, grades):
-    """Вставка таблиці на місце маркера. Без merge комірок (стабільний XML)."""
+    """Вставляє зведену таблицю замість маркера `<<<GRADES_TABLE>>>`
+    (або перед словом «декан», якщо маркера немає).
+
+    Фінальна перевірка гарантує, що:
+      - після КОЖНОЇ <w:tbl> у body стоїть <w:p> (вимога OOXML);
+      - <w:sectPr> — рівно ОДИН і він — ОСТАННІЙ елемент <w:body>
+        (Word цього вимагає строго, LibreOffice прощає).
+    """
     from docx.shared import Pt
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+
+    _ensure_sectpr(document)
 
     MARKERS = ('<<<GRADES_TABLE>>>', '{{ grades_table }}')
     marker = None
@@ -1231,9 +1105,7 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
     sheets = sheets or []
     order = order or []
     n_disc = len(sheets)
-    cols = 2 + n_disc * 3 + 1
-    if cols < 3:
-        cols = 3
+    cols = max(3, 2 + n_disc * 3 + 1)
 
     def set_text(cell, text, bold=False, size=8, left=False):
         cell.text = ''
@@ -1256,7 +1128,6 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
         base = 2 + i * 3
         title = (sh.get('discipline_name') or '')[:40]
         ctrl = sh.get('control_form') or ''
-        # без merge: назва в першій з трьох колонок, підписи в рядку 1
         set_text(table.rows[0].cells[base], f'{title} ({ctrl})', bold=True, size=7)
         set_text(table.rows[0].cells[base + 1], '', bold=True, size=7)
         set_text(table.rows[0].cells[base + 2], '', bold=True, size=7)
@@ -1288,28 +1159,61 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
         avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
         set_text(row.cells[avg_col], avg, bold=True, size=8)
 
+    # ── Переміщення таблиці на місце маркера ──
     if marker is not None:
-        # перенести таблицю одразу ПІСЛЯ маркера, маркер прибрати
         try:
             marker._p.addnext(table._tbl)
         except Exception:
-            marker._element.addnext(table._tbl)
+            pass
         try:
-            parent = marker._element.getparent()
-            parent.remove(marker._element)
+            for r in list(marker.runs):
+                r._r.getparent().remove(r._r)
         except Exception:
-            for r in marker.runs:
-                r.text = ''
+            pass
+        try:
+            marker._p.getparent().remove(marker._p)
+        except Exception:
+            pass
 
+    # ═══════════════════════════════════════════════════════════════
+    #  ФІНАЛЬНА НОРМАЛІЗАЦІЯ <w:body> ПІД ВИМОГИ WORD
+    # ═══════════════════════════════════════════════════════════════
+    body = document._element.body
+
+    # 1) після КОЖНОЇ <w:tbl> має бути <w:p>
+    for child in list(body):
+        if child.tag == qn('w:tbl'):
+            nxt = child.getnext()
+            if nxt is None or nxt.tag != qn('w:p'):
+                child.addnext(OxmlElement('w:p'))
+
+    # 2) <w:sectPr> має бути РІВНО ОДИН і ОСТАННІЙ елемент body.
+    #    Прибираємо будь-які дублікати sectPr у body.
+    all_sectPrs = body.findall(qn('w:sectPr'))
+    if len(all_sectPrs) > 1:
+        global_logger.warning(
+            f"[vidomist_summary] Знайдено {len(all_sectPrs)} <w:sectPr> у body — "
+            f"залишаю тільки останній"
+        )
+        for extra in all_sectPrs[:-1]:
+            body.remove(extra)
+        all_sectPrs = [all_sectPrs[-1]]
+
+    # 3) Якщо sectPr є — переміщуємо його в САМИЙ КІНЕЦЬ body
+    #    (Word жорстко вимагає, щоб sectPr був останнім).
+    if all_sectPrs:
+        sectPr = all_sectPrs[0]
+        if body[-1] is not sectPr:
+            body.remove(sectPr)
+            body.append(sectPr)
+            global_logger.debug(
+                "[vidomist_summary] <w:sectPr> переміщено в кінець body"
+            )
 
 def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None, out=None, user_name='Система'):
-    """
-    1) DocxTemplate.render шапки
-    2) save → відкрити як чистий Document
-    3) вставити таблицю (валідний docx)
-    """
+    """Загальна відомість сесії: DocxTemplate.render + вставка таблиці."""
     from io import BytesIO
-    from docx import Document as DocxDocument
+    from docx.oxml.ns import qn
 
     session_meta = dict(session_meta) if not isinstance(session_meta, dict) else session_meta
     sheets = [dict(s) if not isinstance(s, dict) else s for s in (sheets or [])]
@@ -1343,7 +1247,7 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
     form = session_meta.get('study_form') or ''
     ctx = {
         'institution': session_meta.get('institution_name_and_status')
-            or 'ПВНЗ „Європейський університет“\\nЛьвівська філія',
+            or 'ПВНЗ „Європейський університет“\nЛьвівська філія',
         'group_name': session_meta.get('group_name') or '',
         'course': _vidomist_roman(session_meta.get('course')),
         'study_form': form,
@@ -1353,7 +1257,11 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
         'specialty': _vidomist_format_specialty(
             session_meta.get('specialty_code'), session_meta.get('specialty')),
         'session_name': session_meta.get('name') or session_meta.get('session_name') or '',
-        'grades_table': '<<<GRADES_TABLE>>>',
+        # 'grades_table' НАВМИСНО відсутній: замість Jinja-плейсхолдера
+        # {{ grades_table }} вписуйте в шаблон звичайний текст
+        # <<<GRADES_TABLE>>> — код його знайде сам і замінить
+        # таблицею. Через {{ }} docxtpl розбиває маркер на кілька runs
+        # і ламає XML, який Word не пробачає (а LibreOffice прощає).
     }
 
     if template is None:
@@ -1362,13 +1270,13 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
         global_logger.error(f"Шаблон загальної відомості не знайдено: {template}")
         raise FileNotFoundError(f"Шаблон загальної відомості не знайдено: {template}")
 
+    # ── БЕЗ roundtrip через tpl.save() → DocxDocument() ──
+    # DocxTemplate успадкований від Document, тому працюємо з tpl
+    # напряму. Раніше робили дві серіалізації поспіль — Word часто
+    # цього не прощає (LibreOffice — прощає).
     try:
-        tpl = DocxTemplate(template)
-        tpl.render(ctx)
-        tmp = BytesIO()
-        tpl.save(tmp)
-        tmp.seek(0)
-        document = DocxDocument(tmp)
+        document = DocxTemplate(template)
+        document.render(ctx)
     except Exception as e:
         global_logger.error(f"Помилка render загальної відомості: {e}")
         raise
@@ -1376,7 +1284,11 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
     try:
         _vidomist_insert_summary_table(document, sheets, order, names, grades)
     except Exception as e:
-        global_logger.warning(f"Загальна відомість: таблиця: {e}", exc_info=True)
+        global_logger.error(
+            f"Загальна відомість: НЕ вдалося вставити таблицю: {e}",
+            exc_info=True,
+        )
+        raise
 
     try:
         log_action(user_name, f"згенерував загальну відомість сесії '{ctx.get('session_name')}'", None)
@@ -1386,7 +1298,41 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
     if out:
         document.save(out)
         return out
+
     buf = BytesIO()
     document.save(buf)
+    buf.seek(0)
+
+    # ─── Діагностика: структура + zip/XML ───
+    body = document._element.body
+    sectPrs = body.findall(qn('w:sectPr'))
+    last_tag = body[-1].tag.split('}')[-1] if len(body) else '—'
+    global_logger.info(
+        f"[vidomist_summary] sections={len(document.sections)}, "
+        f"paragraphs={len(document.paragraphs)}, "
+        f"tables={len(document.tables)}, "
+        f"sectPr_count={len(sectPrs)}, "
+        f"last_body_child={last_tag}, "
+        f"sheets={len(sheets)}, students={len(order)}"
+    )
+
+    import zipfile
+    import xml.etree.ElementTree as ET
+    try:
+        with zipfile.ZipFile(buf) as zf:
+            names_in_zip = zf.namelist()
+            required = ['[Content_Types].xml', 'word/document.xml',
+                        'word/_rels/document.xml.rels']
+            missing = [r for r in required if r not in names_in_zip]
+            ET.fromstring(zf.read('word/document.xml'))
+            global_logger.info(
+                f"[vidomist_summary] zip OK: {len(names_in_zip)} entries, "
+                f"missing={missing or 'немає'}"
+            )
+    except Exception as e:
+        global_logger.error(
+            f"[vidomist_summary] ФАЙЛ НЕВАЛІДНИЙ: {e}", exc_info=True
+        )
+
     buf.seek(0)
     return buf

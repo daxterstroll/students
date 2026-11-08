@@ -628,3 +628,55 @@ def session_summary_word(session_id):
         mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     )
 
+
+@exam_sessions_bp.route('/admin/exam-sessions/<int:session_id>/summary-xlsx')
+@permission_required('manage_exam_sessions')
+def session_summary_xlsx(session_id):
+    """Загальна відомість сесії (усі дисципліни × студенти) в Excel."""
+    from routes.exam_sessions.excel_export import build_session_summary_xlsx
+
+    conn = _conn()
+    es = conn.execute("""
+        SELECT es.*, g.name AS group_name, g.course, g.study_form, g.specialty,
+               g.specialty_code, g.degree_level, g.knowledge_area,
+               g.institution_name_and_status
+        FROM exam_sessions es
+        JOIN groups g ON g.id = es.group_id
+        WHERE es.id = ?
+    """, (session_id,)).fetchone()
+    if not es or not user_can_access_group(conn, session, es['group_id']):
+        conn.close()
+        flash('Немає доступу', 'error')
+        return redirect(url_for('exam_sessions.sessions_list'))
+
+    sheets = conn.execute("""
+        SELECT ss.*, l.short_name_ua AS license_name
+        FROM session_sheets ss
+        LEFT JOIN institution_licenses l ON l.id = ss.license_id
+        WHERE ss.session_id = ?
+        ORDER BY ss.discipline_name, ss.license_id
+    """, (session_id,)).fetchall()
+    sheets = [dict(s) for s in sheets]
+
+    by_students = {}
+    for sh in sheets:
+        by_students[sh['id']] = _load_students(conn, sh['id'])
+
+    meta = dict(es)
+    conn.close()
+
+    bio = build_session_summary_xlsx(meta, sheets, by_students)
+    fname = f"zagalna_sesia_{session_id}_{meta.get('group_name') or ''}.xlsx"
+    fname = ''.join(c if c.isalnum() or c in '._- ' else '_' for c in fname)
+
+    logger.info(
+        f"[summary_xlsx] session={session_id}, sheets={len(sheets)}, "
+        f"students={len({s for v in by_students.values() for s in [x.get('student_id') for x in v]})}"
+    )
+
+    return send_file(
+        bio,
+        as_attachment=True,
+        download_name=fname,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )

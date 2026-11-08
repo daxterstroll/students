@@ -65,9 +65,14 @@
     <h2 class="h5 mb-0">Відомості</h2>
     <div class="d-flex flex-wrap gap-2">
       <a class="btn btn-sm btn-outline-primary"
-         href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
-        <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
-      </a>
+<a class="btn btn-sm btn-success"
+   href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=es.id) }}">
+    <i class="bi bi-file-earmark-excel"></i> Загальна відомість (Excel)
+</a>
+<a class="btn btn-sm btn-outline-primary"
+   href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
+    <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
+</a>
       <a class="btn btn-sm btn-primary" href="{{ url_for('exam_sessions.sheet_new', session_id=es.id) }}">
         <i class="bi bi-plus-lg"></i> Додати відомість
       </a>

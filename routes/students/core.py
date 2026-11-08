@@ -1973,7 +1973,21 @@ def generate(student_id):
         flash("Студента не знайдено", "error")
         return redirect(url_for('students.student_list'))
 
-    student_groups = _groups_for_student(conn, student_id)
+    # Для ГЕНЕРАЦІЇ ДОКУМЕНТІВ — активні + історичні групи
+    # (випускник/відрахований повинен мати можливість отримати документ).
+    student_groups = _groups_for_student(conn, student_id, include_inactive=True)
+
+    if not student_groups:
+        conn.close()
+        flash(
+            "У студента немає жодної групи (навіть історичної) — "
+            "неможливо згенерувати документ. Додайте його в групу "
+            "через картку студента.",
+            "error",
+        )
+        return redirect(url_for(
+            'students.student_details', student_id=student_id,
+        ))
 
     if not _user_can_access_student(session, student_groups, student_basic['group_id']):
         conn.close()

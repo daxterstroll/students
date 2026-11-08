@@ -18,24 +18,94 @@ from routes.helpers import current_username
 from routes.students import students_bp
 import sqlite3
 from routes.utils import is_student_on_reduced_program, program_track_condition, apply_track_overrides
-from routes.enrollments_service import get_active_group_ids_for_student
+from routes.enrollments_service import get_active_group_ids_for_student, ensure_enrollments_table
 from datetime import datetime
 
 
-def _groups_for_student(conn, student_id):
-    """Повертає список усіх активних груп студента (dict).
-    Кожен елемент: {'id', 'name', 'start_year', 'study_form', 'program_credits'}.
+def _groups_for_student(conn, student_id, include_inactive=False):
+    """Повертає список груп студента (dict).
+
+    include_inactive=False (за замовчуванням) — лише активні enrollments.
+        Використовується на сторінках редагування оцінок / активностей
+        (редагувати оцінки в закритій групі не має сенсу).
+
+    include_inactive=True — активні + історичні (graduated / expelled /
+        frozen) + legacy fallback на students.group_id.
+        Використовується для генерації документів: випускник або
+        відрахований студент повинен мати можливість отримати додаток
+        до диплому / інший документ для СВОЄЇ колишньої групи.
+
+    Кожен елемент результату:
+        {'id', 'name', 'start_year', 'study_form', 'program_credits',
+         'status', 'is_primary'}
     """
-    group_ids = get_active_group_ids_for_student(student_id, conn=conn)
+    if not include_inactive:
+        group_ids = get_active_group_ids_for_student(student_id, conn=conn)
+        result = []
+        for gid in group_ids:
+            row = conn.execute(
+                "SELECT id, name, start_year, study_form, program_credits "
+                "FROM groups WHERE id = ?",
+                (gid,),
+            ).fetchone()
+            if row:
+                d = dict(row)
+                d['status'] = 'active'
+                d['is_primary'] = True
+                result.append(d)
+        return result
+
+    # ── include_inactive=True: активні + історичні ──
+    ensure_enrollments_table(conn)
+    rows = conn.execute("""
+        SELECT e.group_id, e.status, e.is_primary,
+               g.id, g.name, g.start_year, g.study_form, g.program_credits
+        FROM student_enrollments e
+        JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ?
+        ORDER BY
+            CASE e.status WHEN 'active' THEN 0 ELSE 1 END,
+            e.is_primary DESC,
+            e.id DESC
+    """, (student_id,)).fetchall()
+
     result = []
-    for gid in group_ids:
-        row = conn.execute(
-            "SELECT id, name, start_year, study_form, program_credits "
-            "FROM groups WHERE id = ?",
-            (gid,),
-        ).fetchone()
+    seen = set()
+    for r in rows:
+        gid = r['group_id']
+        if gid in seen:
+            continue
+        seen.add(gid)
+        result.append({
+            'id': r['id'],
+            'name': r['name'],
+            'start_year': r['start_year'],
+            'study_form': r['study_form'],
+            'program_credits': r['program_credits'],
+            'status': r['status'],
+            'is_primary': bool(r['is_primary']),
+        })
+
+    # Legacy-fallback: студент без жодного enrollment'а, але з group_id
+    if not result:
+        row = conn.execute("""
+            SELECT s.group_id AS gid,
+                   g.id, g.name, g.start_year, g.study_form, g.program_credits
+            FROM students s
+            JOIN groups g ON g.id = s.group_id
+            WHERE s.id = ?
+        """, (student_id,)).fetchone()
         if row:
-            result.append(dict(row))
+            result.append({
+                'id': row['id'],
+                'name': row['name'],
+                'start_year': row['start_year'],
+                'study_form': row['study_form'],
+                'program_credits': row['program_credits'],
+                'status': 'archived',
+                'is_primary': True,
+            })
+
     return result
 
 

@@ -652,3 +652,249 @@ def _roman(course):
         return m.get(int(course), str(course or ''))
     except (TypeError, ValueError):
         return str(course or '')
+
+
+def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> BytesIO:
+    """
+    Загальна відомість сесії в Excel — усі дисципліни × усі студенти.
+    Повторює структуру gen_vidomist_summary (Word), але у форматі .xlsx:
+
+      ┌──────────────────────────────────────────────────────────────┐
+      │                   ВІДОМІСТЬ <назва сесії>                     │
+      │ ПВНЗ «Європейський університет», Львівська філія              │
+      │ Група: … | Курс: … | Форма: … | Ступінь: …                   │
+      │ Спеціальність: …                                             │
+      │ Навчальний рік: … | Семестр: …                                │
+      ├────┬────────────┬───────┬───────┬───────┬─────┬──────────────┤
+      │    │            │ Дисц1                │ …   │              │
+      │ №  │    ПІБ     ├───────┼───────┼───────┼─────┤ Середній бал │
+      │    │            │ нац.  │ бали  │ ECTS  │ …   │              │
+      ├────┼────────────┼───────┼───────┼───────┼─────┼──────────────┤
+      │ 1  │ Іваненко… │   A   │  92   │   A   │ …   │     92.0     │
+      └────┴────────────┴───────┴───────┴───────┴─────┴──────────────┘
+
+    Параметри — ті самі, що й у `gen_vidomist_summary`:
+      session_meta        — dict з полями сесії (name, group_name, course,
+                            study_form, degree_level, specialty, specialty_code,
+                            academic_year, semester, institution_name_and_status)
+      sheets              — список dict (id, discipline_name, control_form, …)
+      by_sheet_students   — {sheet_id: [{student_id, full_name, points,
+                            national_grade, ects}, …], …}
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    def _g(st, key, default=None):
+        if isinstance(st, dict):
+            return st.get(key, default)
+        try:
+            return st[key]
+        except Exception:
+            return default
+
+    session_meta = dict(session_meta) if not isinstance(session_meta, dict) else session_meta
+    sheets = [dict(s) if not isinstance(s, dict) else s for s in (sheets or [])]
+
+    # ── порядок студентів + оцінки ──
+    order, names, grades = [], {}, {}
+    for sh in sheets:
+        for st in (by_sheet_students.get(sh['id']) or []):
+            sid = _g(st, 'student_id') or _g(st, 'full_name')
+            try:
+                sid_key = int(sid)
+            except (TypeError, ValueError):
+                sid_key = sid
+            if sid_key not in names:
+                order.append(sid_key)
+                names[sid_key] = _g(st, 'full_name') or ''
+                grades[sid_key] = {}
+            grades[sid_key][sh['id']] = {
+                'national_grade': _g(st, 'national_grade') or '',
+                'points': _g(st, 'points'),
+                'ects': _g(st, 'ects') or '',
+            }
+
+    n_disc = len(sheets)
+    n_students = len(order)
+    # № + ПІБ + 3×n_disc + Середній бал
+    cols = 2 + n_disc * 3 + 1
+    avg_col = 3 + n_disc * 3
+
+    # ── стилі ──
+    FONT_NAME = 'Times New Roman'
+    f_title  = Font(name=FONT_NAME, size=14, bold=True)
+    f_header = Font(name=FONT_NAME, size=9, bold=True)
+    f_body   = Font(name=FONT_NAME, size=9)
+    f_bold   = Font(name=FONT_NAME, size=9, bold=True)
+
+    thin = Side(style='thin', color='888888')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    left   = Alignment(horizontal='left',   vertical='center', wrap_text=True)
+    header_fill = PatternFill('solid', fgColor='E8E0CC')  # світло-кремовий
+    zebra_fill  = PatternFill('solid', fgColor='F7F3EA')  # дуже світлий
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Загальна відомість'
+
+    def put(row, col, value, font=None, align=None, fill=None, border_=None):
+        cell = ws.cell(row=row, column=col, value=value)
+        if font:    cell.font = font
+        if align:   cell.alignment = align
+        if fill:    cell.fill = fill
+        if border_: cell.border = border_
+        return cell
+
+    # ── шапка документа ──
+    r = 1
+
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
+    title = 'ВІДОМІСТЬ'
+    if session_meta.get('name'):
+        title += ' — ' + session_meta['name']
+    put(r, 1, title, f_title, center)
+    ws.row_dimensions[r].height = 24
+    r += 1
+
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
+    inst = (session_meta.get('institution_name_and_status')
+            or 'ПВНЗ «Європейський університет», Львівська філія')
+    inst = inst.replace('\n', ', ')
+    put(r, 1, inst, f_body, left)
+    r += 1
+
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
+    parts = []
+    if session_meta.get('group_name'):  parts.append(f"Група: {session_meta['group_name']}")
+    if session_meta.get('course'):      parts.append(f"Курс: {session_meta['course']}")
+    if session_meta.get('study_form'):  parts.append(f"Форма: {session_meta['study_form']}")
+    if session_meta.get('degree_level'):parts.append(f"Ступінь: {session_meta['degree_level']}")
+    put(r, 1, ' | '.join(parts) if parts else '', f_body, left)
+    r += 1
+
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
+    spec_code = session_meta.get('specialty_code') or ''
+    spec_name = session_meta.get('specialty') or ''
+    spec_text = f"Спеціальність: {spec_code} {spec_name}".strip().rstrip(':').strip()
+    if spec_code or spec_name:
+        put(r, 1, spec_text, f_body, left)
+    r += 1
+
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
+    ys = []
+    if session_meta.get('academic_year'): ys.append(f"Навчальний рік: {session_meta['academic_year']}")
+    if session_meta.get('semester'):      ys.append(f"Семестр: {session_meta['semester']}")
+    put(r, 1, ' | '.join(ys) if ys else '', f_body, left)
+    r += 1
+
+    r += 1  # порожній рядок
+
+    # ── таблиця ──
+    header_row_1 = r
+    header_row_2 = r + 1
+    data_start   = r + 2
+
+    # Рядок 1: № | ПІБ | Дисципліна 1 (merge 3) | … | Середній бал (merge 2)
+    put(header_row_1, 1, '№', f_header, center, header_fill, border)
+    put(header_row_1, 2, "Прізвище, ім'я та по батькові",
+        f_header, center, header_fill, border)
+
+    for i, sh in enumerate(sheets):
+        base_col = 3 + i * 3
+        title_d = sh.get('discipline_name') or ''
+        ctrl    = sh.get('control_form') or ''
+        text = f'{title_d} ({ctrl})' if ctrl else title_d
+        put(header_row_1, base_col, text, f_header, center, header_fill, border)
+        if base_col + 2 > base_col:
+            ws.merge_cells(
+                start_row=header_row_1, start_column=base_col,
+                end_row=header_row_1,   end_column=base_col + 2,
+            )
+        for cc in range(base_col, base_col + 3):
+            ws.cell(row=header_row_1, column=cc).border = border
+
+    put(header_row_1, avg_col, 'Середній бал',
+        f_header, center, header_fill, border)
+    ws.merge_cells(
+        start_row=header_row_1, start_column=avg_col,
+        end_row=header_row_2,   end_column=avg_col,
+    )
+    ws.cell(row=header_row_2, column=avg_col).border = border
+
+    # вертикальне об'єднання № і ПІБ
+    ws.merge_cells(start_row=header_row_1, start_column=1, end_row=header_row_2, end_column=1)
+    ws.merge_cells(start_row=header_row_1, start_column=2, end_row=header_row_2, end_column=2)
+    ws.cell(row=header_row_2, column=1).border = border
+    ws.cell(row=header_row_2, column=2).border = border
+
+    # Рядок 2: нац. | бали | ECTS для кожного предмета
+    for i in range(n_disc):
+        base_col = 3 + i * 3
+        for j, h in enumerate(['нац.', 'бали', 'ECTS']):
+            put(header_row_2, base_col + j, h, f_header, center, header_fill, border)
+
+    ws.row_dimensions[header_row_1].height = 40
+    ws.row_dimensions[header_row_2].height = 20
+
+    # ── дані ──
+    for ri, sid in enumerate(order):
+        row = data_start + ri
+        is_zebra = ri % 2 == 1
+        fill = zebra_fill if is_zebra else None
+
+        put(row, 1, ri + 1, f_body, center, fill, border)
+        put(row, 2, names.get(sid, ''), f_body, left, fill, border)
+
+        pts_list = []
+        for i, sh in enumerate(sheets):
+            base_col = 3 + i * 3
+            g = (grades.get(sid) or {}).get(sh['id']) or {}
+            put(row, base_col,     g.get('national_grade') or '', f_body, center, fill, border)
+            pts = g.get('points')
+            put(row, base_col + 1, '' if pts is None else pts,  f_body, center, fill, border)
+            put(row, base_col + 2, g.get('ects') or '',        f_body, center, fill, border)
+            if pts is not None and pts != '':
+                try:
+                    pts_list.append(float(pts))
+                except (TypeError, ValueError):
+                    pass
+
+        avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
+        put(row, avg_col, avg, f_bold, center, fill, border)
+
+        ws.row_dimensions[row].height = 16
+
+    # ── ширини колонок ──
+    ws.column_dimensions['A'].width = 5
+    ws.column_dimensions['B'].width = 32
+    for i in range(n_disc):
+        base_col = 3 + i * 3
+        for j in range(3):
+            ws.column_dimensions[get_column_letter(base_col + j)].width = 8
+    ws.column_dimensions[get_column_letter(avg_col)].width = 10
+
+    # ── зручності ──
+    ws.freeze_panes = ws.cell(row=data_start, column=3)   # шапка не прокручується
+    ws.print_title_rows = f'{header_row_1}:{header_row_2}'  # шапка на кожній сторінці при друці
+
+    # ── налаштування сторінки ──
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = ws.PAPERSIZE_A4
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
+    # ── підсумковий блок ──
+    footer_row = data_start + n_students + 1
+    ws.merge_cells(start_row=footer_row, start_column=1,
+                   end_row=footer_row, end_column=cols)
+    put(footer_row, 1, f"Усього студентів: {n_students} | "
+                       f"Дисциплін: {n_disc}",
+        f_bold, left)
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
