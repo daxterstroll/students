@@ -693,7 +693,7 @@ def courses():
 
 
 @admin_bp.route('/admin/course_transfer', methods=['GET', 'POST'])
-@permission_required('manage_courses')
+@permission_required('manage_course_transfer')  
 def course_transfer():
     """
     Крок 1 -> 2 процесу "Перевести на наступний курс".
@@ -769,7 +769,7 @@ def course_transfer():
 
 
 @admin_bp.route('/admin/course_transfer/confirm', methods=['POST'])
-@permission_required('manage_courses')
+@permission_required('manage_course_transfer') 
 def course_transfer_confirm():
     """Крок 3: переведення на курс — тільки orders (без legacy-таблиць).
 
@@ -1179,7 +1179,7 @@ def resolve_frozen_student_confirm(frozen_id):
 
 
 @admin_bp.route('/admin/graduation', methods=['GET', 'POST'])
-@permission_required('manage_courses')
+@permission_required('manage_graduation')
 def graduation():
     """
     Крок 1 -> 2 процесу "Оформити випуск" - той самий механізм, що й
@@ -1272,7 +1272,7 @@ def graduation():
 
 
 @admin_bp.route('/admin/graduation/confirm', methods=['POST'])
-@permission_required('manage_courses')
+@permission_required('manage_graduation')
 def graduation_confirm():
     """Підтвердження випуску з обов'язковим наказом (orders).
 

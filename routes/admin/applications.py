@@ -1321,7 +1321,7 @@ def pending_student_photo(pending_id):
 # ═══════════════════════════════════════════════════════════════════════
 
 @admin_bp.route('/admin/update_requests')
-@permission_required('manage_students')
+@permission_required('manage_update_requests')
 def update_requests():
     """Список заявок на оновлення даних наявного студента."""
     conn = get_db()
@@ -1352,7 +1352,7 @@ def update_requests():
 
 
 @admin_bp.route('/admin/update_requests/<int:request_id>/photo', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('manage_update_requests')
 def update_request_photo(request_id):
     """Ручна (пере)обрізка фото, надісланого через /update-info."""
     conn = get_db()
@@ -1408,7 +1408,7 @@ def update_request_photo(request_id):
 
 
 @admin_bp.route('/admin/update_requests/<int:request_id>', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('manage_update_requests')
 def update_request_review(request_id):
     """Перегляд однієї заявки на оновлення."""
     conn = get_db()

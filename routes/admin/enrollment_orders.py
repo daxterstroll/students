@@ -36,7 +36,7 @@ def _can_manage_orders() -> bool:
     if session.get('is_admin'):
         return True
     perms = set(session.get('permissions') or [])
-    return bool(perms & {'manage_orders', 'manage_students', 'manage_expulsion'})
+    return 'create_enrollment_order' in perms
 
 def _parse_bulk_line(line: str) -> dict | None:
     """
@@ -79,7 +79,7 @@ def _parse_bulk_line(line: str) -> dict | None:
 
 
 @admin_bp.route('/admin/orders/enrollment', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('create_enrollment_order')
 def enrollment_order():
     """
     Крок 1–2 майстра: вибір групи (або всіх без наказу) і відмітка
@@ -1182,7 +1182,7 @@ def _process_bulk_text(raw_text: str):
 
 # ── Форма ──────────────────────────────────────────────────────────
 @admin_bp.route('/admin/orders/enrollment/bulk', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('create_enrollment_order')
 def enrollment_bulk():
     if not _can_manage_orders():
         flash('Немає доступу до наказів.', 'error')
@@ -1198,7 +1198,7 @@ def enrollment_bulk():
 
 # ── Чанкове завантаження ──────────────────────────────────────────
 @admin_bp.route('/admin/orders/enrollment/bulk/upload_chunk', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('create_enrollment_order') 
 def enrollment_bulk_upload_chunk():
     if not _can_manage_orders():
         return jsonify(ok=False, error='forbidden'), 403
@@ -1223,7 +1223,7 @@ def enrollment_bulk_upload_chunk():
 
 
 @admin_bp.route('/admin/orders/enrollment/bulk/finalize', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('create_enrollment_order')
 def enrollment_bulk_finalize():
     if not _can_manage_orders():
         flash('Немає доступу.', 'error')
@@ -1250,7 +1250,7 @@ def enrollment_bulk_finalize():
 
 # ── Превью (окремий GET за токеном) ───────────────────────────────
 @admin_bp.route('/admin/orders/enrollment/bulk/preview/<token>')
-@permission_required('manage_students')
+@permission_required('create_enrollment_order')
 def enrollment_bulk_preview(token):
     if not re.fullmatch(r'[0-9a-f]{16}', token or ''):
         flash('Невірний токен', 'error')
@@ -1274,7 +1274,7 @@ def enrollment_bulk_preview(token):
 
 
 @admin_bp.route('/admin/orders/enrollment/bulk/confirm', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('create_enrollment_order')
 def enrollment_bulk_confirm():
     if not _can_manage_orders():
         flash('Немає доступу.', 'error')

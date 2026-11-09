@@ -162,56 +162,65 @@ def _compute_military_completeness(military_row):
 FAQ_SECTION_PERMISSIONS = {
     'students': [
         'manage_students',
+        'manage_pending_students',
+        'manage_update_requests',
         'manage_passport_documents',
         'manage_education_documents',
-        'manage_pending_students',
         'study_periods',
     ],
     'education': [
+        'manage_groups',
         'manage_specialties',
         'manage_degree_levels',
         'manage_educational_programs',
         'manage_qualification_names',
         'manage_accreditations',
+        'manage_subjects',
+        'manage_activities',
+        'manage_diplomas',
     ],
     'courses': [
         'manage_courses',
-        'manage_groups',
-        'manage_subjects',
-        'manage_activities',
+        'manage_course_transfer',
+        'manage_graduation',
         'manage_expulsion',
         'manage_frozen_students',
         'archive',
     ],
+    'orders': [
+        'manage_orders',
+        'create_enrollment_order',
+    ],
+    'exam_sessions': [
+        'manage_exam_sessions',
+        'transfer_exam_grades',
+    ],
     'import': [
         'import_from_excel',
         'import_passport_documents',
-        'import_subjects',
         'import_education_docs',
+        'import_subjects',
         'import_grades',
         'import_military_pdf',
         'bulk_photos',
     ],
-    'bulk': [
+    'export': [
         'group_export',
-        'manage_diplomas',
-        'manage_templates',
-    ],
-    'system': [
-        'manage_users',
-        'view_logs',
-        'custom_export', 
-    ],
-    'analytics': [
-        'analytics',
-    ],
-    'military': [
-        'manage_military_reports',
     ],
     'licenses': [
         'manage_licenses',
         'manage_license_transfer',
         'license_report',
+    ],
+    'system': [
+        'manage_users',
+        'view_logs',
+        'analytics',
+        'custom_export',
+        'manage_templates',
+    ],
+    'military': [
+        'manage_military_reports',
     ],
 }
 
@@ -1956,7 +1965,7 @@ def generate_update_link(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/generate', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('group_export') 
 def generate(student_id):
     """Генерація документа. 2-кроковий вибір групи для паралельного
     навчання + ліцензія з enrollment обраної групи."""

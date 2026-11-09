@@ -18,52 +18,67 @@ import re
 
 # ── Усі права + підписи + групи для UI ──────────────────────────
 PERMISSION_DEFINITIONS = [
-    # (code, label, group_key)
-    ('manage_users', 'Користувачі та права', 'system'),
-    ('view_logs', 'Журнал дій', 'system'),
+    # ─── Система ────────────────────────────────────────────────
+    ('manage_users',                'Користувачі та права',                     'system'),
+    ('view_logs',                   'Журнал дій',                                'system'),
+    ('analytics',                   'Аналітика',                                 'system'),
+    ('custom_export',               'Кастомний експорт даних',                    'system'),
+    ('manage_templates',            'Шаблони документів',                        'system'),
 
-    ('manage_students', 'Студенти (картки, список)', 'students'),
-    ('manage_pending_students', 'Заявки на вступ', 'students'),
-    ('study_periods', 'Періоди навчання', 'students'),
-    ('manage_passport_documents', 'Паспортні документи', 'students'),
-    ('manage_education_documents', 'Документи про освіту', 'students'),
-    
+    # ─── Студенти (базове) ──────────────────────────────────────
+    ('manage_students',             'Студенти — список і картка',                'students'),
+    ('manage_pending_students',     'Заявки на реєстрацію',                      'students'),
+    ('manage_update_requests',      'Заявки на оновлення даних',                 'students'),
+    ('manage_passport_documents',   'Паспортні дані',                            'students'),
+    ('manage_education_documents',  'Документи про освіту',                      'students'),
+    ('study_periods',               'Періоди навчання',                          'students'),
 
-    ('manage_groups', 'Групи', 'education'),
-    ('manage_specialties', 'Спеціальності', 'education'),
-    ('manage_degree_levels', 'Ступені', 'education'),
-    ('manage_educational_programs', 'Освітні програми', 'education'),
-    ('manage_qualification_names', 'Назви кваліфікацій', 'education'),
-    ('manage_accreditations', 'Акредитації', 'education'),
-    ('manage_subjects', 'Предмети', 'education'),
-    ('manage_activities', 'Практики / курсові / атестації', 'education'),
-    ('manage_exam_sessions', 'Сесії та відомості', 'education'),
-    ('transfer_exam_grades', 'Перенос оцінок із сесій у план', 'education'),
+    # ─── Освітня програма ───────────────────────────────────────
+    ('manage_groups',               'Групи',                                     'education'),
+    ('manage_specialties',          'Спеціальності',                             'education'),
+    ('manage_degree_levels',        'Ступені',                                   'education'),
+    ('manage_educational_programs', 'Освітні програми',                          'education'),
+    ('manage_qualification_names',  'Назви кваліфікацій',                        'education'),
+    ('manage_accreditations',       'Акредитації',                               'education'),
+    ('manage_subjects',             'Предмети',                                  'education'),
+    ('manage_activities',           'Практики / курсові / атестації',            'education'),
+    ('manage_diplomas',             'Номери диплому / додатку',                  'education'),
 
-    ('manage_courses', 'Курси (канбан, переведення)', 'movement'),
-    ('manage_expulsion', 'Відрахування', 'movement'),
-    ('manage_frozen_students', 'Заморожені студенти', 'movement'),
-    ('archive', 'Архів груп', 'movement'),
+    # ─── Рух студентів ──────────────────────────────────────────
+    ('manage_courses',              'Курси (дошка)',                             'movement'),
+    ('manage_course_transfer',      'Переведення на курс',                       'movement'),
+    ('manage_graduation',           'Оформлення випуску',                        'movement'),
+    ('manage_expulsion',            'Відрахування',                              'movement'),
+    ('manage_frozen_students',      'Заморожені студенти',                       'movement'),
+    ('archive',                     'Архів груп',                                'movement'),
 
-    ('import_from_excel', 'Імпорт студентів з Excel', 'import'),
-    ('import_passport_documents', 'Імпорт паспортів', 'import'),
-    ('import_education_docs', 'Імпорт документів про освіту', 'import'),
-    ('import_subjects', 'Імпорт предметів', 'import'),
-    ('import_grades', 'Імпорт оцінок', 'import'),
-    ('import_military_pdf', 'Масовий імпорт PDF «Резерв+»', 'import'),
-    ('bulk_photos', 'Масове завантаження фото', 'import'),
+    # ─── Накази ─────────────────────────────────────────────────
+    ('manage_orders',               'Реєстр наказів',                            'orders'),
+    ('create_enrollment_order',     'Наказ про зарахування',                     'orders'),
 
-    ('group_export', 'Експорт групи / фото', 'docs'),
-    ('manage_diplomas', 'Дипломи та додатки', 'docs'),
-    ('manage_templates', 'Шаблони документів', 'docs'),
+    # ─── Сесії ──────────────────────────────────────────────────
+    ('manage_exam_sessions',        'Сесії та відомості',                        'sessions'),
+    ('transfer_exam_grades',        'Перенос оцінок із сесій у план',            'sessions'),
 
-    ('manage_licenses', 'Ліцензії закладу', 'licenses'),
-    ('manage_license_transfer', 'Переведення між ліцензіями', 'licenses'),
-    ('license_report', 'Звіт по ліцензіях', 'licenses'),
+    # ─── Імпорт ─────────────────────────────────────────────────
+    ('import_from_excel',           'Імпорт студентів з Excel',                  'import'),
+    ('import_passport_documents',   'Імпорт паспортів',                          'import'),
+    ('import_education_docs',       'Імпорт документів про освіту',              'import'),
+    ('import_subjects',             'Імпорт предметів',                          'import'),
+    ('import_grades',               'Імпорт оцінок',                             'import'),
+    ('import_military_pdf',         'Масовий імпорт PDF «Резерв+»',              'import'),
+    ('bulk_photos',                 'Масове завантаження фото',                  'import'),
 
-    ('analytics', 'Аналітика', 'reports'),
-    ('custom_export', 'Кастомний експорт даних', 'reports'),
-    ('manage_military_reports', 'Військовий облік (дашборд, додатки)', 'reports'),
+    # ─── Експорт ────────────────────────────────────────────────
+    ('group_export',                'Масова генерація документів',               'export'),
+
+    # ─── Ліцензії ───────────────────────────────────────────────
+    ('manage_licenses',             'Ліцензії закладу',                          'licenses'),
+    ('manage_license_transfer',     'Переведення між ліцензіями',                'licenses'),
+    ('license_report',              'Звіт по ліцензіях',                         'licenses'),
+
+    # ─── Військовий облік ───────────────────────────────────────
+    ('manage_military_reports',     'Військовий облік (дашборд, додатки)',       'military'),
 ]
 
 PERMISSIONS = [p[0] for p in PERMISSION_DEFINITIONS]
@@ -71,14 +86,16 @@ PERMISSIONS = [p[0] for p in PERMISSION_DEFINITIONS]
 PERMISSION_LABELS = {code: label for code, label, _ in PERMISSION_DEFINITIONS}
 
 PERMISSION_GROUPS = [
-    ('system', 'Система'),
-    ('students', 'Студенти та документи'),
+    ('system',    'Система'),
+    ('students',  'Студенти та документи'),
     ('education', 'Освітня програма'),
-    ('movement', 'Рух контингенту'),
-    ('import', 'Імпорт і масові операції'),
-    ('docs', 'Документи та експорт'),
-    ('licenses', 'Ліцензії'),
-    ('reports', 'Звіти та військовий облік'),
+    ('movement',  'Рух контингенту'),
+    ('orders',    'Накази'),
+    ('sessions',  'Сесії та відомості'),
+    ('import',    'Імпорт і масові операції'),
+    ('export',    'Експорт'),
+    ('licenses',  'Ліцензії'),
+    ('military',  'Військовий облік'),
 ]
 
 

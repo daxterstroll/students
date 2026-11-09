@@ -124,8 +124,8 @@
             </div>
         </div>
     </div>
-
 {% endif %}
+
     {{ ui.section_title('Довідник сторінок') }}
     <p class="text-muted small">Що робить кожна сторінка, які дані туди вносити і де вони з'являться у згенерованих документах.</p>
 
@@ -137,1512 +137,1236 @@
 </div>
 {% endif %}
 
-        {% if 'students' in (faq_sections or []) %}
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: СТУДЕНТИ
+   ══════════════════════════════════════════════════════════════════ #}
+{% if 'students' in (faq_sections or []) %}
 <div class="faq-category-title">Студенти</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-students">
-                    <i class="bi bi-people me-2"></i>Студенти (головна)
-                </button>
-            </h2>
-            <div id="p-students" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Список усіх студентів з пошуком за ПІБ, фільтром по групі та індикаторами заповненості. Не-адміністратори бачать лише студентів своїх груп. Звідси відкривається картка студента — центральна точка для всіх подальших дій із конкретною людиною.<br>
-                    <strong>Фільтр «Ліцензія»</strong> — показує студентів, які мають <strong>хоч один активний enrollment</strong> під цією ліцензією (а не лише «основну»). Студент, що вчиться одночасно під Львівською і Польською, знайдеться в обох фільтрах. Пункт <em>«— без ліцензії —»</em> показує студентів, чиї enrollments ще не мають проставленої ліцензії.<br>
-                    <strong>Фільтр «Група»</strong> — показує студентів, які мають активний enrollment у цій групі (не лише основну).<br>
-                    <strong>Паралельне навчання:</strong> якщо студент вчиться у двох і більше групах — біля основної групи бейдж <em>«+N»</em> із підказкою, у яких ще групах він перебуває.<br>
-                    <strong>Заповненість:</strong> смужка «особисті дані» + значки статусу (червоний — не все заповнено, зелений — повністю): фото, оцінки, практика/курсові/атестація, військові дані, PDF «Резерв+», паспортні дані, документ про освіту.<br>
-                    <strong>Військова заповненість залежить від статусу:</strong> «Військовозобов'язаний»/«Резервіст» — 14 полів, «Призовник» — 9, «Знято з обліку» — 8.
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-students">
+                <i class="bi bi-people me-2"></i>Студенти (головна)
+            </button>
+        </h2>
+        <div id="p-students" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Список усіх студентів з пошуком за ПІБ, фільтром по групі та індикаторами заповненості. Не-адміністратори бачать лише студентів своїх груп. Звідси відкривається картка студента — центральна точка для всіх подальших дій із конкретною людиною.<br>
+                <strong>Фільтр «Ліцензія»</strong> — показує студентів, які мають <strong>хоч один активний enrollment</strong> під цією ліцензією (а не лише «основну»). Студент, що вчиться одночасно під Львівською і Польською, знайдеться в обох фільтрах. Пункт <em>«— без ліцензії —»</em> показує студентів, чиї enrollments ще не мають проставленої ліцензії.<br>
+                <strong>Фільтр «Група»</strong> — показує студентів, які мають активний enrollment у цій групі (не лише основну).<br>
+                <strong>Паралельне навчання:</strong> якщо студент вчиться у двох і більше групах — біля основної групи бейдж <em>«+N»</em> із підказкою, у яких ще групах він перебуває.<br>
+                <strong>Заповненість:</strong> смужка «особисті дані» + значки статусу (червоний — не все заповнено, зелений — повністю): фото, оцінки, практика/курсові/атестація, військові дані, PDF «Резерв+», паспортні дані, документ про освіту.<br>
+                <strong>Військова заповненість залежить від статусу:</strong> «Військовозобов'язаний»/«Резервіст» — 14 полів, «Призовник» — 9, «Знято з обліку» — 8.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_pending_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-pending">
+                <i class="bi bi-person-plus me-2"></i>Заявки на реєстрацію (публічна анкета)
+            </button>
+        </h2>
+        <div id="p-pending" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                ...Дані потрапляють не одразу до бази, а в заявку на модерацію.
+                <strong>Телефони</strong> (основний і резервний) нормалізуються автоматично — так само, як і при ручному додаванні студента: до формату <code>+380XXXXXXXXX</code>, без збереження резервного, якщо він виявився тим самим номером, що й основний.<br>
+                <strong>Військовий облік:</strong> анкета тепер приймає <strong>усі 26 полів</strong> військового обліку (статус, ТЦК, реєстр «Оберіг», ВОС, відстрочка, ВЛК, інвалідність, звернення до поліції, зміна облікових даних тощо) — не лише старі 8 полів. Абітурієнт може заповнити їх вручну або завантажити PDF «Резерв+».<br>
+                <strong>⚡ Швидке заповнення з PDF «Резерв+»:</strong> угорі анкети — блок «⚡ Швидке заповнення». Система розпізнає PDF і автозаповнює <strong>всі</strong> 26 полів військового обліку + ПІБ, дату народження, ІПН, телефон, email, адресу + фото 3×4.<br>
+                <strong>Де опрацювати:</strong> Навчальний процес → Заявки на реєстрацію. Вкладки Нові/Підтверджені/Відхилені; якщо ПІБ+дата народження збігаються з наявним студентом — позначка «дублікат?».<br>
+                <strong>Підтвердження:</strong> адмін обирає групу, <strong>ліцензію для першого навчання</strong> і, за потреби, кредити скороченої програми. Обрана ліцензія записується <strong>до нового enrollment'а</strong>.<br>
+                <strong>Автоперенос військових даних з PDF:</strong> якщо PDF прикріплений — при підтвердженні перепарситься і перенесе <strong>ВСІ 26 полів</strong> до картки (включно з тими, які абітурієнт не бачив у формі).
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_update_requests') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-update-requests">
+                <i class="bi bi-link-45deg me-2"></i>Заявки на оновлення даних (посилання <code>/update-info</code>)
+            </button>
+        </h2>
+        <div id="p-update-requests" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Для чого:</strong> одноразове токен-посилання, за яким студент заповнює лише дозволені поля. Заповнене лягає на модерацію.<br>
+                <strong>Телефони</strong> (основний і резервний) нормалізуються автоматично — так само, як і при ручному додаванні студента: до формату <code>+380XXXXXXXXX</code>, без збереження резервного, якщо він виявився тим самим номером.<br>
+                <strong>Генерація:</strong> Картка студента → «Посилання для оновлення». Обираєте галочками, які поля дозволити.<br>
+                <strong>Термін дії:</strong> 1 доба або до першого успішного заповнення.<br>
+                <strong>Військовий облік:</strong> так само, як і в анкеті <code>/apply</code>, форма оновлення приймає <strong>усі 26 полів</strong> військового обліку.<br>
+                <strong>⚡ Швидке заповнення з PDF «Резерв+»:</strong> якщо дозволено військові дані — на формі з'явиться блок «⚡ Швидке заповнення» з автозаповненням <strong>усіх</strong> військових полів.<br>
+                <strong>Де опрацювати:</strong> Навчальний процес → «Заявки на оновлення даних». На кроці перевірки адмін бачить усі поля (включно з новими), може відхилити або застосувати вибірково.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-card">
+                <i class="bi bi-person-vcard me-2"></i>Картка студента / Додати / Редагувати
+            </button>
+        </h2>
+        <div id="p-student-card" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> ПІБ українською; прізвище та ім'я англійською (авто-транслітерація — звірте із закордонним паспортом); дата народження; код ЄДЕБО; група; ідентифікаційний код (ІПН), телефон, резервний телефон, email; фото.<br>
+                <strong>Телефони:</strong> можна вводити у будь-якому вигляді (<code>0971234567</code>, <code>+380971234567</code>, <code>(097) 123-45-67</code>) — система сама приведе їх до формату <code>+380XXXXXXXXX</code>. Якщо основний і резервний виявляться тим самим номером — резервний зберігатися не буде (щоб не дублювати один номер двічі). Іноземні номери зберігаються як введені, лише без зайвих пробілів.<br>
+                <strong>Поле «Ліцензія вступу»</strong> є <strong>лише на формі «Додати студента»</strong> — воно задає ліцензію для першого enrollment'а. На формі «Редагувати студента» цього поля немає — ліцензія керується окремо для кожної групи в блоці <strong>«Навчання (групи)»</strong>.<br>
+                <strong><i class="bi bi-exclamation-triangle text-warning me-1"></i>Зміна основної групи на формі «Редагувати»:</strong> тепер автоматично створює (або робить primary) відповідний enrollment у новій групі. Старий enrollment не видаляється — він залишається активним, але втрачає статус primary, тому для паралельного студента обидві групи зберігаються.<br>
+                <strong>Порожні поля:</strong> на картці незаповнене поле показує приглушений напис «Інформація відсутня».
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-enrollments">
+                <i class="bi bi-mortarboard me-2"></i>Навчання (групи) — ліцензія на кожну групу окремо
+            </button>
+        </h2>
+        <div id="p-enrollments" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Блок на картці студента (одразу під основною інформацією). Тут — увесь перелік груп, у яких студент навчається або навчався, із зазначенням ліцензії для кожної групи.<br>
+                <strong>Навіщо:</strong> ліцензія — властивість <strong>конкретного навчання</strong>. Один студент може одночасно вчитися під Львівською (бакалавр) і під Польською (магістр).<br>
+                <strong>Як змінити ліцензію конкретної групи:</strong> кнопка <strong>«Змінити ліцензію»</strong> у рядку цієї групи — відкривається діалог, де вказується нова ліцензія + номер/дата <strong>наказу про переведення між ліцензіями</strong>.<br>
+                <strong>Додати паралельне навчання:</strong> у нижній частині блоку — кнопка «Додати паралельне навчання» (обов'язково номер і дата <strong>наказу про зарахування</strong>).<br>
+                <strong>Змінити код ЄДЕБО для групи:</strong> кнопка «Змінити ЄДЕБО» — наказ <strong>не потрібен</strong>, зміна набирає чинності одразу.<br>
+                <strong>Скорочена програма:</strong> кнопка «Скорочена програма» дозволяє вказати, скільки кредитів студент має освоїти саме в цій групі (менше за програму групи). Наказ <strong>не потрібен</strong>.<br>
+                <strong>Основна група:</strong> позначена бейджем «основне». Можна призначити основною будь-яку з активних груп кнопкою-зірочкою.<br>
+                <strong>Завершити навчання в групі:</strong> кнопки «Оформити випуск» і «Відрахувати» (обидві створюють наказ). Студент лишається в системі, але enrollment отримує статус «graduated»/«expelled».<br>
+                <strong>Важливо:</strong> для паралельного студента закриття однієї групи НЕ закриває інші — вони продовжують працювати.<br>
+                <strong><i class="bi bi-exclamation-triangle text-warning me-1"></i>Корекція без наказу:</strong> якщо <strong>адміністратор</strong> помилково зарахував студента не в ту групу (або стався інший збій) — у будь-якому діалозі (додати/змінити ліцензію/випуск/відрахування) є галочка <strong>«Змінити без наказу»</strong> з обов'язковою причиною. Такий запис позначається бейджем <strong>«корекція»</strong> і фіксується в журналі як «КОРЕКЦІЯ (без наказу)». Використовуйте лише для виправлення помилок.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-reenrollment">
+                <i class="bi bi-arrow-repeat me-2"></i>Що робити, якщо студент вже навчався / поступає ще раз
+            </button>
+        </h2>
+        <div id="p-reenrollment" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+
+                <p class="mb-3">Є <strong>3 основні сценарії</strong>, коли людина вже фігурує в базі й хоче навчатися ще. Від сценарію залежить, як правильно діяти.</p>
+
+                <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid var(--brass) !important;">
+                    <h6 class="mb-2"><i class="bi bi-mortarboard me-2"></i>Сценарій A: поступає на другу спеціальність, продовжуючи першу</h6>
+                    <p class="mb-2"><em>Наприклад: зараз бакалавр «Комп'ютерні науки», хоче паралельно магістратуру «Менеджмент».</em></p>
+                    <ol class="mb-0">
+                        <li>На сторінці «Студенти» знайдіть цього студента (пошук за ПІБ або ІПН).</li>
+                        <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → кнопка <strong>«Додати паралельне навчання»</strong>.</li>
+                        <li>Виберіть нову групу + ліцензію + заповніть номер і дату <strong>наказу про зарахування</strong>.</li>
+                        <li>Статус: у студента буде <strong>2 активні enrollments</strong> (бакалаврат + магістратура). Основна група не змінюється (бакалаврат залишається «основне»).</li>
+                    </ol>
+                    <p class="mb-0 mt-2 small text-muted"><strong>Масова альтернатива:</strong> якщо таких студентів багато — Імпорт з Excel, де є колонки A (ID нової групи) + L (ID існуючого студента). Все інше — не заповнюйте (не перезапишеться).</p>
+                </div>
+
+                <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid var(--stamp) !important;">
+                    <h6 class="mb-2"><i class="bi bi-arrow-counterclockwise me-2"></i>Сценарій B: повертається після відрахування</h6>
+                    <p class="mb-2"><em>Наприклад: відрахований рік тому, поновлюється в тій самій або новій групі.</em></p>
+                    <ol class="mb-0">
+                        <li>Знайдіть студента (він у базі, але в архіві).</li>
+                        <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → <strong>«Додати паралельне навчання»</strong> з номером і датою <strong>наказу про поновлення</strong>.</li>
+                        <li>Перевірте, чи правильно переїхала основна група: якщо поновлюється в ту саму групу — вона автоматично знову стане основною. Якщо в нову — стара залишиться «graduated/expelled», нова стане «основне».</li>
+                        <li>Студент автоматично <strong>знімається з архіву</strong> (зникає бейдж «в архіві»).</li>
+                    </ol>
+                    <p class="mb-0 mt-2 small text-muted"><strong>Через імпорт:</strong> те саме, тільки в колонці L вкажіть student_id. У звіті рядок з'явиться як <em>«Реактивовано з архіву»</em>, а не «Паралельне навчання».</p>
+                </div>
+
+                <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid #4a6ea8 !important;">
+                    <h6 class="mb-2"><i class="bi bi-award me-2"></i>Сценарій C: друга вища освіта після випуску</h6>
+                    <p class="mb-2"><em>Наприклад: випустився з бакалаврату у 2023, зараз вступає на магістратуру.</em></p>
+                    <ol class="mb-0">
+                        <li>Студент уже в базі, стара група в архіві, стара enrollment має статус <code>graduated</code>.</li>
+                        <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → <strong>«Додати паралельне навчання»</strong> з номером/датою нового <strong>наказу про зарахування</strong>.</li>
+                        <li>Опційно — поставте галочку «Зробити цю групу основною» (щоб у документах по замовчуванню підтягувалась магістратура, а не архівний бакалаврат).</li>
+                        <li>Стара enrollment залишається в історії зі статусом <code>graduated</code>, нова — активна. Студент не архівується.</li>
+                    </ol>
+                    <p class="mb-0 mt-2 small text-muted"><strong>Через імпорт:</strong> колонка L = ID студента, колонка M = <code>1</code> (якщо треба зробити нову групу основною), все інше — порожнє.</p>
+                </div>
+
+                <div class="alert alert-light border small mb-0">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>Загальне правило:</strong> у картці студента одна людина = одна картка, скільки б груп у неї не було. Групи — це <em>enrollments</em>, а не дублікати студента. Ніколи не створюйте нового студента з тим самим ІПН — це призведе до двох карток однієї людини. Якщо сумніваєтесь — пошукайте за ІПН перед створенням.
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-pending">
-                    <i class="bi bi-person-plus me-2"></i>Заявки на реєстрацію (публічна анкета)
-                </button>
-            </h2>
-            <div id="p-pending" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    ...Дані потрапляють не одразу до бази, а в заявку на модерацію.
-<strong>Телефони</strong> (основний і резервний) нормалізуються автоматично — так само, як і при ручному додаванні студента: до формату <code>+380XXXXXXXXX</code>, без збереження резервного, якщо він виявився тим самим номером, що й основний.<br>
-                    <strong>Військовий облік:</strong> анкета тепер приймає <strong>усі 26 полів</strong> військового обліку (статус, ТЦК, реєстр «Оберіг», ВОС, відстрочка, ВЛК, інвалідність, звернення до поліції, зміна облікових даних тощо) — не лише старі 8 полів. Абітурієнт може заповнити їх вручну або завантажити PDF «Резерв+».<br>
-                    <strong>⚡ Швидке заповнення з PDF «Резерв+»:</strong> угорі анкети — блок «⚡ Швидке заповнення». Система розпізнає PDF і автозаповнює <strong>всі</strong> 26 полів військового обліку + ПІБ, дату народження, ІПН, телефон, email, адресу + фото 3×4.<br>
-                    <strong>Де опрацювати:</strong> Навчальний процес → Заявки на реєстрацію. Вкладки Нові/Підтверджені/Відхилені; якщо ПІБ+дата народження збігаються з наявним студентом — позначка «дублікат?».<br>
-                    <strong>Підтвердження:</strong> адмін обирає групу, <strong>ліцензію для першого навчання</strong> і, за потреби, кредити скороченої програми. Обрана ліцензія записується <strong>до нового enrollment'а</strong>.<br>
-                    <strong>Автоперенос військових даних з PDF:</strong> якщо PDF прикріплений — при підтвердженні перепарситься і перенесе <strong>ВСІ 26 полів</strong> до картки (включно з тими, які абітурієнт не бачив у формі).
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-photo">
+                <i class="bi bi-camera me-2"></i>Фото студента
+            </button>
+        </h2>
+        <div id="p-student-photo" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Де:</strong> на картці студента, кнопка з іконкою камери поверх фото (або «Додати фото», якщо фото ще немає).<br>
+                <strong>Формат файлу:</strong> JPEG, PNG або WEBP, розміром до <strong>8 МБ</strong>.<br>
+                <strong>Процес завантаження — 2 кроки:</strong> вибір файлу → ручна обрізка рамкою 3×4 (можна посунути й масштабувати).<br>
+                <strong>Автоматична обрізка з PDF «Резерв+»:</strong> система сама витягує фото з PDF і обрізає <strong>навколо обличчя</strong> (детекція Haar cascade, за пропорціями ICAO: голова ≈76% висоти, верхній відступ ≈6%).<br>
+                <strong>Якщо обличчя не знайдено</strong> — обрізка по центру. У таких випадках обов'язково перевірте й виправте вручну.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('bulk_photos') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-photo-bulk">
+                <i class="bi bi-images me-2"></i>Масове завантаження фото
+            </button>
+        </h2>
+        <div id="p-photo-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Імпорт → «Фото студентів (масово)».</p>
+                <p class="mb-2"><strong>Як користуватись — 3 кроки:</strong></p>
+                <ol class="mb-3">
+                    <li>Оберіть усі файли одразу (без вибору групи).</li>
+                    <li>Перевірте зіставлення зі студентами (авто + вручну).</li>
+                    <li>Перегляньте обрізку (за потреби — виправте) і підтвердьте.</li>
+                </ol>
+
+                <h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;"><i class="bi bi-people-fill me-1"></i>Без вибору групи — пошук серед усіх</h6>
+                <p class="mb-2">Оберіть файли — система шукатиме кожен серед <strong>усіх активних студентів, до яких у вас є доступ</strong>: адміністратор бачить усіх, працівник — студентів своїх груп (включно з тими, для кого ця група є паралельною). Окремо вибирати групу не потрібно — достатньо назвати файл так, щоб система знайшла студента.</p>
+
+                <h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;"><i class="bi bi-search me-1"></i>Як називати файли для найкращого зіставлення</h6>
+                <p class="mb-2">Пошук — <strong>по повному ФІБ</strong>, з підтримкою різних варіантів:</p>
+                <ul class="mb-3">
+                    <li><code>Прізвище Ім'я.jpg</code> — базовий, найпоширеніший (напр. «Іваненко Іван.jpg»)</li>
+                    <li><code>Прізвище Ім'я По-батькові.jpg</code> — найточніший (напр. «Іваненко Іван Петрович.jpg»)</li>
+                    <li><code>Ім'я Прізвище.jpg</code> — порядок слів не важливий</li>
+                    <li><code>Прізвище І.П..jpg</code> або <code>Прізвище І П.jpg</code> — за ініціалами</li>
+                </ul>
+
+                <div class="alert alert-light border small mb-3 py-2">
+                    <i class="bi bi-info-circle me-1"></i>Якщо у файлі лише прізвище (напр. «Іваненко.jpg») — система <strong>не вгадує</strong>, а показує рядок як пропущений. Так само правильно, бо в базі може бути 5 «Іваненків».
+                </div>
+
+                <h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;"><i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Кілька схожих студентів — оберете вручну</h6>
+                <p class="mb-2">Якщо у файлі «Вовчук Оксана.jpg», а в базі <strong>двоє</strong> — «Вовчук Оксана Петрівна» і «Вовчук Оксана Оксанівна», система <strong>не вгадає</strong>. Такий рядок буде позначено <span class="badge bg-warning text-dark" style="font-size:.72rem;">кілька кандидатів</span>, а під випадаючим списком з'являться кнопки: <span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Петрівна</span> <span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Оксанівна</span> — обираєте ту, якій належить фото. Доти, доки не обрано — фото не збережеться.</p>
+
+                <h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;"><i class="bi bi-crop me-1"></i>Автоматична обрізка 3×4 — навколо обличчя</h6>
+                <p class="mb-2">Кожне фото обрізається <strong>навколо обличчя</strong> (детекція Haar cascade, пропорції ICAO): голова займає ≈76% висоти, над волоссям — невеликий відступ. Під кожним прев'ю в попередньому перегляді може бути бейдж:</p>
+                <ul class="mb-3">
+                    <li><strong>без бейджа</strong> — знайдено одне обличчя, обрізано навколо нього (звичайний випадок);</li>
+                    <li><span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> без обличчя</span> — обличчя не знайдено, обрізано по центру. <em>Обов'язково перевірте й виправте вручну.</em></li>
+                    <li><span class="badge bg-info text-dark"><i class="bi bi-grid-3x3-gap"></i> N фото</span> — на скані знайдено кілька однакових облич (типова розкладка з 3-4 фото 3×4 на аркуші). Система обрала <strong>одне — найближче до центру аркуша</strong>. Якщо це не та людина, або ви хочете інше з цих фото — натисніть «Змінити обрізку».</li>
+                </ul>
+
+                <h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;"><i class="bi bi-sliders me-1"></i>Ручна правка обрізки</h6>
+                <p class="mb-2">Кнопка «Змінити обрізку» на прев'ю відкриває <strong>оригінал фото</strong> (не обрізану версію) з уже виставленою рамкою 3×4 — саме там, де був попередній кроп. Можна посунути рамку, змінити розмір, або розтягнути на весь кадр — тоді фото стиснеться до центру.</p>
+
+                <div class="alert alert-light border small mb-0 py-2">
+                    <i class="bi bi-lightbulb me-1"></i><strong>Порада:</strong> якщо після пакетного завантаження на багатьох фото бейдж «без обличчя» — це, скоріш за все, скани дуже низької роздільності. Обробіть їх вручну через «Змінити обрізку» — це швидше, ніж перезавантажувати пакет.
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-update-requests">
-                    <i class="bi bi-link-45deg me-2"></i>Заявки на оновлення даних (посилання <code>/update-info</code>)
-                </button>
-            </h2>
-            <div id="p-update-requests" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Для чого:</strong> одноразове токен-посилання, за яким студент заповнює лише дозволені поля. Заповнене лягає на модерацію.<br>
-<strong>Телефони</strong> (основний і резервний) нормалізуються автоматично — так само, як і при ручному додаванні студента: до формату <code>+380XXXXXXXXX</code>, без збереження резервного, якщо він виявився тим самим номером.<br>
-                    <strong>Генерація:</strong> Картка студента → «Посилання для оновлення». Обираєте галочками, які поля дозволити.<br>
-                    <strong>Термін дії:</strong> 1 доба або до першого успішного заповнення.<br>
-                    <strong>Військовий облік:</strong> так само, як і в анкеті <code>/apply</code>, форма оновлення приймає <strong>усі 26 полів</strong> військового обліку.<br>
-                    <strong>⚡ Швидке заповнення з PDF «Резерв+»:</strong> якщо дозволено військові дані — на формі з'явиться блок «⚡ Швидке заповнення» з автозаповненням <strong>усіх</strong> військових полів.<br>
-                    <strong>Де опрацювати:</strong> Навчальний процес → «Заявки на оновлення даних». На кроці перевірки адмін бачить усі поля (включно з новими), може відхилити або застосувати вибірково.
-                </div>
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-military">
+                <i class="bi bi-shield me-2"></i>Військові дані студента (структура «Резерв+»)
+            </button>
+        </h2>
+        <div id="p-military" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Де:</strong> Картка студента → «Військові дані».<br>
+                <strong>26 полів з офіційного документа:</strong> статус, ТЦК, звання, ВОС (код і опис), номер у реєстрі «Оберіг», відстрочка (тип і до), ВЛК (постанова і дата), інвалідність (група, дійсна до, причина), звернення до поліції (причина і дата), категорія обліку, підстава зняття, документ військового обліку, дата формування, дата уточнення даних, «дані уточнено вчасно» тощо.<br>
+                <strong>Дата народження, ІПН, адреса проживання, телефон і email</strong> — тепер у картці студента, а не у військових даних.<br>
+                <strong>⚡ Завантаження PDF «Резерв+»:</strong> блок зверху сторінки — система розпізнає PDF і показує попередній перегляд змін перед застосуванням. Усі 26 полів підставляються з PDF автоматично.<br>
+                <strong>Історія змін:</strong> внизу сторінки — таблиця останніх 200 змін із колонками: коли, хто, джерело (PDF або вручну), розділ, поле, було, стало.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-card">
-                    <i class="bi bi-person-vcard me-2"></i>Картка студента / Додати / Редагувати
-                </button>
-            </h2>
-            <div id="p-student-card" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> ПІБ українською; прізвище та ім'я англійською (авто-транслітерація — звірте із закордонним паспортом); дата народження; код ЄДЕБО; група; ідентифікаційний код (ІПН), телефон, резервний телефон, email; фото.<br>
-<strong>Телефони:</strong> можна вводити у будь-якому вигляді (<code>0971234567</code>, <code>+380971234567</code>, <code>(097) 123-45-67</code>) — система сама приведе їх до формату <code>+380XXXXXXXXX</code>. Якщо основний і резервний виявляться тим самим номером — резервний зберігатися не буде (щоб не дублювати один номер двічі). Іноземні номери зберігаються як введені, лише без зайвих пробілів.<br>
-                    <strong>Поле «Ліцензія вступу»</strong> є <strong>лише на формі «Додати студента»</strong> — воно задає ліцензію для першого enrollment'а. На формі «Редагувати студента» цього поля немає — ліцензія керується окремо для кожної групи в блоці <strong>«Навчання (групи)»</strong>.<br>
-                    <strong><i class="bi bi-exclamation-triangle text-warning me-1"></i>Зміна основної групи на формі «Редагувати»:</strong> тепер автоматично створює (або робить primary) відповідний enrollment у новій групі. Старий enrollment не видаляється — він залишається активним, але втрачає статус primary, тому для паралельного студента обидві групи зберігаються.<br>
-                    <strong>Порожні поля:</strong> на картці незаповнене поле показує приглушений напис «Інформація відсутня».
-                </div>
+    {% if has_perm('import_military_pdf') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-military-bulk">
+                <i class="bi bi-files-alt me-2"></i>Пакетний імпорт PDF «Резерв+» (декілька файлів одразу)
+            </button>
+        </h2>
+        <div id="p-military-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Де:</strong> Імпорт → «PDF «Резерв+» (пакетно)».<br>
+                <strong>Як користуватись:</strong> завантаження файлів → попередній перегляд зі змінами по кожному студенту → застосування вибраних.<br>
+                <strong>Тимчасові файли</strong> зберігаються в <code>static/uploads/tmp_military_bulk/&lt;token&gt;/</code>, прямий доступ через <code>/static/</code> заблокований.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-enrollments">
-                    <i class="bi bi-mortarboard me-2"></i>Навчання (групи) — ліцензія на кожну групу окремо
-                </button>
-            </h2>
-            <div id="p-enrollments" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Блок на картці студента (одразу під основною інформацією). Тут — увесь перелік груп, у яких студент навчається або навчався, із зазначенням ліцензії для кожної групи.<br>
-                    <strong>Навіщо:</strong> ліцензія — властивість <strong>конкретного навчання</strong>. Один студент може одночасно вчитися під Львівською (бакалавр) і під Польською (магістр).<br>
-                    <strong>Як змінити ліцензію конкретної групи:</strong> кнопка <strong>«Змінити ліцензію»</strong> у рядку цієї групи — відкривається діалог, де вказується нова ліцензія + номер/дата <strong>наказу про переведення між ліцензіями</strong>.<br>
-                    <strong>Додати паралельне навчання:</strong> у нижній частині блоку — кнопка «Додати паралельне навчання» (обов'язково номер і дата <strong>наказу про зарахування</strong>).<br>
-                    <strong>Змінити код ЄДЕБО для групи:</strong> кнопка «Змінити ЄДЕБО» — наказ <strong>не потрібен</strong>, зміна набирає чинності одразу.<br>
-                    <strong>Скорочена програма:</strong> кнопка «Скорочена програма» дозволяє вказати, скільки кредитів студент має освоїти саме в цій групі (менше за програму групи). Наказ <strong>не потрібен</strong>.<br>
-                    <strong>Основна група:</strong> позначена бейджем «основне». Можна призначити основною будь-яку з активних груп кнопкою-зірочкою.<br>
-                    <strong>Завершити навчання в групі:</strong> кнопки «Оформити випуск» і «Відрахувати» (обидві створюють наказ). Студент лишається в системі, але enrollment отримує статус «graduated»/«expelled».<br>
-                    <strong>Важливо:</strong> для паралельного студента закриття однієї групи НЕ закриває інші — вони продовжують працювати.<br>
-                    <strong><i class="bi bi-exclamation-triangle text-warning me-1"></i>Корекція без наказу:</strong> якщо <strong>адміністратор</strong> помилково зарахував студента не в ту групу (або стався інший збій) — у будь-якому діалозі (додати/змінити ліцензію/випуск/відрахування) є галочка <strong>«Змінити без наказу»</strong> з обов'язковою причиною. Такий запис позначається бейджем <strong>«корекція»</strong> і фіксується в журналі як «КОРЕКЦІЯ (без наказу)». Використовуйте лише для виправлення помилок.
-                </div>
+    {% if has_perm('manage_passport_documents') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-passport">
+                <i class="bi bi-person-vcard me-2"></i>Паспортні дані
+            </button>
+        </h2>
+        <div id="p-passport" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> Навчальний процес → Паспортні дані — паспорт (книжка) або ID-картка. Тип, серія (лише для книжки), номер, ким видано, дата видачі, дійсний до, номер запису в ЄДДР (лише для ID-картки). Можна кілька записів на студента (історія), кожен — до 5 сканів.<br>
+                <strong>Паспорт прив'язаний до СТУДЕНТА, не до групи:</strong> при паралельному навчанні один і той самий паспорт видно в обох групах. Дропдаун «Студент (без паспортних даних)» показує всіх активних студентів групи, включно з паралельними.
             </div>
         </div>
-		
-		<div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-reenrollment">
-                    <i class="bi bi-arrow-repeat me-2"></i>Що робити, якщо студент вже навчався / поступає ще раз
-                </button>
-            </h2>
-            <div id="p-reenrollment" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
+    </div>
+    {% endif %}
 
-                    <p class="mb-3">Є <strong>3 основні сценарії</strong>, коли людина вже фігурує в базі й хоче навчатися ще. Від сценарію залежить, як правильно діяти.</p>
-
-                    <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid var(--brass) !important;">
-                        <h6 class="mb-2"><i class="bi bi-mortarboard me-2"></i>Сценарій A: поступає на другу спеціальність, продовжуючи першу</h6>
-                        <p class="mb-2"><em>Наприклад: зараз бакалавр «Комп'ютерні науки», хоче паралельно магістратуру «Менеджмент».</em></p>
-                        <ol class="mb-0">
-                            <li>На сторінці «Студенти» знайдіть цього студента (пошук за ПІБ або ІПН).</li>
-                            <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → кнопка <strong>«Додати паралельне навчання»</strong>.</li>
-                            <li>Виберіть нову групу + ліцензію + заповніть номер і дату <strong>наказу про зарахування</strong>.</li>
-                            <li>Статус: у студента буде <strong>2 активні enrollments</strong> (бакалаврат + магістратура). Основна група не змінюється (бакалаврат залишається «основне»).</li>
-                        </ol>
-                        <p class="mb-0 mt-2 small text-muted"><strong>Масова альтернатива:</strong> якщо таких студентів багато — Імпорт з Excel, де є колонки A (ID нової групи) + L (ID існуючого студента). Все інше — не заповнюйте (не перезапишеться).</p>
-                    </div>
-
-                    <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid var(--stamp) !important;">
-                        <h6 class="mb-2"><i class="bi bi-arrow-counterclockwise me-2"></i>Сценарій B: повертається після відрахування</h6>
-                        <p class="mb-2"><em>Наприклад: відрахований рік тому, поновлюється в тій самій або новій групі.</em></p>
-                        <ol class="mb-0">
-                            <li>Знайдіть студента (він у базі, але в архіві).</li>
-                            <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → <strong>«Додати паралельне навчання»</strong> з номером і датою <strong>наказу про поновлення</strong>.</li>
-                            <li>Перевірте, чи правильно переїхала основна група: якщо поновлюється в ту саму групу — вона автоматично знову стане основною. Якщо в нову — стара залишиться «graduated/expelled», нова стане «основне».</li>
-                            <li>Студент автоматично <strong>знімається з архіву</strong> (зникає бейдж «в архіві»).</li>
-                        </ol>
-                        <p class="mb-0 mt-2 small text-muted"><strong>Через імпорт:</strong> те саме, тільки в колонці L вкажіть student_id. У звіті рядок з'явиться як <em>«Реактивовано з архіву»</em>, а не «Паралельне навчання».</p>
-                    </div>
-
-                    <div class="mb-3 p-3 border rounded-3" style="border-left: 3px solid #4a6ea8 !important;">
-                        <h6 class="mb-2"><i class="bi bi-award me-2"></i>Сценарій C: друга вища освіта після випуску</h6>
-                        <p class="mb-2"><em>Наприклад: випустився з бакалаврату у 2023, зараз вступає на магістратуру.</em></p>
-                        <ol class="mb-0">
-                            <li>Студент уже в базі, стара група в архіві, стара enrollment має статус <code>graduated</code>.</li>
-                            <li>Відкрийте картку → блок <strong>«Навчання (групи)»</strong> → <strong>«Додати паралельне навчання»</strong> з номером/датою нового <strong>наказу про зарахування</strong>.</li>
-                            <li>Опційно — поставте галочку «Зробити цю групу основною» (щоб у документах по замовчуванню підтягувалась магістратура, а не архівний бакалаврат).</li>
-                            <li>Стара enrollment залишається в історії зі статусом <code>graduated</code>, нова — активна. Студент не архівується.</li>
-                        </ol>
-                        <p class="mb-0 mt-2 small text-muted"><strong>Через імпорт:</strong> колонка L = ID студента, колонка M = <code>1</code> (якщо треба зробити нову групу основною), все інше — порожнє.</p>
-                    </div>
-
-                    <div class="alert alert-light border small mb-0">
-                        <i class="bi bi-info-circle me-1"></i>
-                        <strong>Загальне правило:</strong> у картці студента одна людина = одна картка, скільки б груп у неї не було. Групи — це <em>enrollments</em>, а не дублікати студента. Ніколи не створюйте нового студента з тим самим ІПН — це призведе до двох карток однієї людини. Якщо сумніваєтесь — пошукайте за ІПН перед створенням.
-                    </div>
-                </div>
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-grades">
+                <i class="bi bi-journal-check me-2"></i>Оцінки студента
+            </button>
+        </h2>
+        <div id="p-grades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> оцінку за кожен предмет групи. Якщо студент паралельно вчиться у двох групах — спершу оберіть групу, потім виставляйте оцінки з її предметів (2-step UI).<br>
+                <strong>На картці студента:</strong> оцінка показана кольоровою позначкою.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-		<div class="accordion-item">
-			<h2 class="accordion-header">
-				<button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-photo">
-					<i class="bi bi-camera me-2"></i>Фото студента
-				</button>
-			</h2>
-			<div id="p-student-photo" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-				<div class="accordion-body small">
-					<strong>Де:</strong> на картці студента, кнопка з іконкою камери поверх фото (або «Додати фото», якщо фото ще немає).<br>
-					<strong>Формат файлу:</strong> JPEG, PNG або WEBP, розміром до <strong>8 МБ</strong>.<br>
-					<strong>Процес завантаження — 2 кроки:</strong> вибір файлу → ручна обрізка рамкою 3×4 (можна посунути й масштабувати).<br>
-					<strong>Автоматична обрізка з PDF «Резерв+»:</strong> система сама витягує фото з PDF і обрізає <strong>навколо обличчя</strong> (детекція Haar cascade, за пропорціями ICAO: голова ≈76% висоти, верхній відступ ≈6%).<br>
-					<strong>Якщо обличчя не знайдено</strong> — обрізка по центру. У таких випадках обов'язково перевірте й виправте вручну.
-				</div>
-			</div>
-		</div>
-
-		<div class="accordion-item">
-			<h2 class="accordion-header">
-				<button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-photo-bulk">
-					<i class="bi bi-images me-2"></i>Масове завантаження фото
-				</button>
-			</h2>
-			<div id="p-photo-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-				<div class="accordion-body small">
-
-					<p class="mb-2">
-						<strong>Де:</strong> Імпорт → «Фото студентів (масово)».
-					</p>
-
-					<p class="mb-2">
-						<strong>Як користуватись — 3 кроки:</strong>
-					</p>
-					<ol class="mb-3">
-						<li>Оберіть усі файли одразу (без вибору групи).</li>
-						<li>Перевірте зіставлення зі студентами (авто + вручну).</li>
-						<li>Перегляньте обрізку (за потреби — виправте) і підтвердьте.</li>
-					</ol>
-
-					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
-						<i class="bi bi-people-fill me-1"></i>Без вибору групи — пошук серед усіх
-					</h6>
-					<p class="mb-2">
-						Оберіть файли — система шукатиме кожен серед <strong>усіх активних студентів, до яких у вас є доступ</strong>:
-						адміністратор бачить усіх, працівник — студентів своїх груп
-						(включно з тими, для кого ця група є паралельною).
-						Окремо вибирати групу не потрібно — достатньо назвати файл так, щоб система знайшла студента.
-					</p>
-
-					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
-						<i class="bi bi-search me-1"></i>Як називати файли для найкращого зіставлення
-					</h6>
-					<p class="mb-2">Пошук — <strong>по повному ФІБ</strong>, з підтримкою різних варіантів:</p>
-					<ul class="mb-3">
-						<li><code>Прізвище Ім'я.jpg</code> — базовий, найпоширеніший (напр. «Іваненко Іван.jpg»)</li>
-						<li><code>Прізвище Ім'я По-батькові.jpg</code> — найточніший (напр. «Іваненко Іван Петрович.jpg»)</li>
-						<li><code>Ім'я Прізвище.jpg</code> — порядок слів не важливий</li>
-						<li><code>Прізвище І.П..jpg</code> або <code>Прізвище І П.jpg</code> — за ініціалами</li>
-					</ul>
-
-					<div class="alert alert-light border small mb-3 py-2">
-						<i class="bi bi-info-circle me-1"></i>
-						Якщо у файлі лише прізвище (напр. «Іваненко.jpg») — система <strong>не вгадує</strong>, а показує рядок як пропущений. Так само правильно, бо в базі може бути 5 «Іваненків».
-					</div>
-
-					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
-						<i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i>Кілька схожих студентів — оберете вручну
-					</h6>
-					<p class="mb-2">
-						Якщо у файлі «Вовчук Оксана.jpg», а в базі <strong>двоє</strong> — «Вовчук Оксана Петрівна» і «Вовчук Оксана Оксанівна»,
-						система <strong>не вгадає</strong>. Такий рядок буде позначено
-						<span class="badge bg-warning text-dark" style="font-size:.72rem;">кілька кандидатів</span>,
-						а під випадаючим списком з'являться кнопки:
-						<span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Петрівна</span>
-						<span class="btn btn-outline-warning btn-sm py-0 px-2" style="font-size:.75rem; pointer-events:none;">Вовчук Оксана Оксанівна</span> —
-						обираєте ту, якій належить фото. Доти, доки не обрано — фото не збережеться.
-					</p>
-
-					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
-						<i class="bi bi-crop me-1"></i>Автоматична обрізка 3×4 — навколо обличчя
-					</h6>
-					<p class="mb-2">
-						Кожне фото обрізається <strong>навколо обличчя</strong> (детекція Haar cascade, пропорції ICAO):
-						голова займає ≈76% висоти, над волоссям — невеликий відступ.
-						Під кожним прев'ю в попередньому перегляді може бути бейдж:
-					</p>
-					<ul class="mb-3">
-						<li><strong>без бейджа</strong> — знайдено одне обличчя, обрізано навколо нього (звичайний випадок);</li>
-						<li>
-							<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> без обличчя</span>
-							— обличчя не знайдено, обрізано по центру.
-							<em>Обов'язково перевірте й виправте вручну.</em>
-						</li>
-						<li>
-							<span class="badge bg-info text-dark"><i class="bi bi-grid-3x3-gap"></i> N фото</span>
-							— на скані знайдено кілька однакових облич (типова розкладка з 3-4 фото 3×4 на аркуші).
-							Система обрала <strong>одне — найближче до центру аркуша</strong>.
-							Якщо це не та людина, або ви хочете інше з цих фото — натисніть «Змінити обрізку».
-						</li>
-					</ul>
-
-					<h6 class="fw-semibold mt-3 mb-1" style="font-size:.85rem;">
-						<i class="bi bi-sliders me-1"></i>Ручна правка обрізки
-					</h6>
-					<p class="mb-2">
-						Кнопка «Змінити обрізку» на прев'ю відкриває <strong>оригінал фото</strong> (не обрізану версію) з уже виставленою рамкою 3×4 —
-						саме там, де був попередній кроп. Можна посунути рамку, змінити розмір, або розтягнути на весь кадр —
-						тоді фото стиснеться до центру.
-					</p>
-
-					<div class="alert alert-light border small mb-0 py-2">
-						<i class="bi bi-lightbulb me-1"></i>
-						<strong>Порада:</strong> якщо після пакетного завантаження на багатьох фото бейдж
-						«без обличчя» — це, скоріш за все, скани дуже низької роздільності.
-						Обробіть їх вручну через «Змінити обрізку» — це швидше, ніж перезавантажувати пакет.
-					</div>
-
-				</div>
-			</div>
-		</div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-military">
-                    <i class="bi bi-shield me-2"></i>Військові дані студента (структура «Резерв+»)
-                </button>
-            </h2>
-            <div id="p-military" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> Картка студента → «Військові дані».<br>
-                    <strong>26 полів з офіційного документа:</strong> статус, ТЦК, звання, ВОС (код і опис), номер у реєстрі «Оберіг», відстрочка (тип і до), ВЛК (постанова і дата), інвалідність (група, дійсна до, причина), звернення до поліції (причина і дата), категорія обліку, підстава зняття, документ військового обліку, дата формування, дата уточнення даних, «дані уточнено вчасно» тощо.<br>
-                    <strong>Дата народження, ІПН, адреса проживання, телефон і email</strong> — тепер у картці студента, а не у військових даних.<br>
-                    <strong>⚡ Завантаження PDF «Резерв+»:</strong> блок зверху сторінки — система розпізнає PDF і показує попередній перегляд змін перед застосуванням. Усі 26 полів підставляються з PDF автоматично.<br>
-                    <strong>Історія змін:</strong> внизу сторінки — таблиця останніх 200 змін із колонками: коли, хто, джерело (PDF або вручну), розділ, поле, було, стало.
-                </div>
+    {% if has_perm('manage_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-actgrades">
+                <i class="bi bi-clipboard-check me-2"></i>Оцінки за практику / атестацію / курсові
+            </button>
+        </h2>
+        <div id="p-actgrades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> оцінки за кожну активність + тему кваліфікаційної роботи для атестації. При паралельному навчанні — 2-step UI: спершу оберіть групу.<br>
+                <strong>У документах:</strong> відповідні рядки таблиці компонентів додатка з оцінками.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-military-bulk">
-                    <i class="bi bi-files-alt me-2"></i>Пакетний імпорт PDF «Резерв+» (декілька файлів одразу)
-                </button>
-            </h2>
-            <div id="p-military-bulk" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> Імпорт → «PDF «Резерв+» (пакетно)».<br>
-                    <strong>Як користуватись:</strong> завантаження файлів → попередній перегляд зі змінами по кожному студенту → застосування вибраних.<br>
-                    <strong>Тимчасові файли</strong> зберігаються в <code>static/uploads/tmp_military_bulk/&lt;token&gt;/</code>, прямий доступ через <code>/static/</code> заблокований.
-                </div>
+    {% if has_perm('study_periods') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-periods">
+                <i class="bi bi-calendar-range me-2"></i>Періоди навчання студента
+            </button>
+        </h2>
+        <div id="p-periods" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> якщо студент навчався в кількох філіях/закладах або з перервами — кожен період окремо. Для цілої групи одразу — Навчальний процес → Періоди навчання.<br>
+                <strong>Масове призначення:</strong> можна обрати «Усій групі» (тоді період отримують <strong>усі</strong> студенти групи, включно з паралельними) або «Кільком зі групи» (лише обрані).<br>
+                <strong>У документах:</strong> багаторядкові поля «де навчався» і «в які роки».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-passport">
-                    <i class="bi bi-person-vcard me-2"></i>Паспортні дані
-                </button>
-            </h2>
-            <div id="p-passport" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> Навчальний процес → Паспортні дані — паспорт (книжка) або ID-картка. Тип, серія (лише для книжки), номер, ким видано, дата видачі, дійсний до, номер запису в ЄДДР (лише для ID-картки). Можна кілька записів на студента (історія), кожен — до 5 сканів.<br>
-                    <strong>Паспорт прив'язаний до СТУДЕНТА, не до групи:</strong> при паралельному навчанні один і той самий паспорт видно в обох групах. Дропдаун «Студент (без паспортних даних)» показує всіх активних студентів групи, включно з паралельними.
-                </div>
+    {% if has_perm('group_export') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-generate">
+                <i class="bi bi-file-earmark-word me-2"></i>Генерувати документ
+            </button>
+        </h2>
+        <div id="p-generate" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Якщо студент вчиться в одній групі — одразу відкривається вибір шаблону. Якщо у кількох — спершу оберіть <strong>групу</strong>, для якої генеруєте документ.<br>
+                Документ відкривається для перегляду й редагування прямо в браузері → «Завершити і завантажити». Зміни в редакторі потрапляють у завантажений файл.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-grades">
-                    <i class="bi bi-journal-check me-2"></i>Оцінки студента
-                </button>
-            </h2>
-            <div id="p-grades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> оцінку за кожен предмет групи. Якщо студент паралельно вчиться у двох групах — спершу оберіть групу, потім виставляйте оцінки з її предметів (2-step UI).<br>
-                    <strong>На картці студента:</strong> оцінка показана кольоровою позначкою.
-                </div>
-            </div>
-        </div>
+{% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-actgrades">
-                    <i class="bi bi-clipboard-check me-2"></i>Оцінки за практику / атестацію / курсові
-                </button>
-            </h2>
-            <div id="p-actgrades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> оцінки за кожну активність + тему кваліфікаційної роботи для атестації. При паралельному навчанні — 2-step UI: спершу оберіть групу.<br>
-                    <strong>У документах:</strong> відповідні рядки таблиці компонентів додатка з оцінками.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-periods">
-                    <i class="bi bi-calendar-range me-2"></i>Періоди навчання студента
-                </button>
-            </h2>
-            <div id="p-periods" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> якщо студент навчався в кількох філіях/закладах або з перервами — кожен період окремо. Для цілої групи одразу — Навчальний процес → Періоди навчання.<br>
-                    <strong>Масове призначення:</strong> можна обрати «Усій групі» (тоді період отримують <strong>усі</strong> студенти групи, включно з паралельними) або «Кільком зі групи» (лише обрані).<br>
-                    <strong>У документах:</strong> багаторядкові поля «де навчався» і «в які роки».
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-generate">
-                    <i class="bi bi-file-earmark-word me-2"></i>Генерувати документ
-                </button>
-            </h2>
-            <div id="p-generate" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Якщо студент вчиться в одній групі — одразу відкривається вибір шаблону. Якщо у кількох — спершу оберіть <strong>групу</strong>, для якої генеруєте документ.<br>
-                    Документ відкривається для перегляду й редагування прямо в браузері → «Завершити і завантажити». Зміни в редакторі потрапляють у завантажений файл.
-                </div>
-            </div>
-        </div>
-
-        {% endif %}
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: ОСВІТНЯ ПРОГРАМА ТА ДОВІДНИКИ
+   ══════════════════════════════════════════════════════════════════ #}
 {% if 'education' in (faq_sections or []) %}
 <div class="faq-category-title">Освітня програма та довідники</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-groups">
-                    <i class="bi bi-person-rolodex me-2"></i>Навчальний процес → Групи
-                </button>
-            </h2>
-            <div id="p-groups" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Найважливіша сторінка для додатка до диплома.</strong><br>
-                    <strong>Що вводите вручну:</strong> рік вступу, форма навчання, кредити, ступінь (зі списку), спеціальність (зі списку), найменування та статус закладу (зі списку), вимоги до вступу, результати навчання, «програма включає».<br>
-                    <strong>Що обчислюється автоматично:</strong> курс, назва групи, Specialty (EN), ISCED-F, Галузь знань (EN), Degree Level (EN), Освітня програма (EN), Назва кваліфікації (EN).<br>
-                    <strong>Знімок, а не жива прив'язка:</strong> щоб підтягнути свіжі дані каталогу — відкрийте групу на редагування і збережіть ще раз.<br>
-                    <strong>Кількість студентів</strong> — включає паралельних студентів (тих, хто має активний enrollment у цій групі).
-                </div>
+    {% if has_perm('manage_groups') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-groups">
+                <i class="bi bi-person-rolodex me-2"></i>Навчальний процес → Групи
+            </button>
+        </h2>
+        <div id="p-groups" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Найважливіша сторінка для додатка до диплома.</strong><br>
+                <strong>Що вводите вручну:</strong> рік вступу, форма навчання, кредити, ступінь (зі списку), спеціальність (зі списку), найменування та статус закладу (зі списку), вимоги до вступу, результати навчання, «програма включає».<br>
+                <strong>Що обчислюється автоматично:</strong> курс, назва групи, Specialty (EN), ISCED-F, Галузь знань (EN), Degree Level (EN), Освітня програма (EN), Назва кваліфікації (EN).<br>
+                <strong>Знімок, а не жива прив'язка:</strong> щоб підтягнути свіжі дані каталогу — відкрийте групу на редагування і збережіть ще раз.<br>
+                <strong>Кількість студентів</strong> — включає паралельних студентів (тих, хто має активний enrollment у цій групі).
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-specialties">
-                    <i class="bi bi-diagram-3 me-2"></i>Довідники та система → Спеціальності
-                </button>
-            </h2>
-            <div id="p-specialties" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Каталог за Постановою КМУ №1021. <strong>Скорочена назва</strong> обов'язкова — з неї + курс складається назва групи. <strong>Назва (англ.)</strong> — для Specialty (EN). <strong>ISCED-F (укр./англ.)</strong> — для кодів ISCED-F. <strong>Власні спеціальності</strong> — додаються з badge «власна».
-                </div>
+    {% if has_perm('manage_specialties') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-specialties">
+                <i class="bi bi-diagram-3 me-2"></i>Довідники та система → Спеціальності
+            </button>
+        </h2>
+        <div id="p-specialties" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Каталог за Постановою КМУ №1021. <strong>Скорочена назва</strong> обов'язкова — з неї + курс складається назва групи. <strong>Назва (англ.)</strong> — для Specialty (EN). <strong>ISCED-F (укр./англ.)</strong> — для кодів ISCED-F. <strong>Власні спеціальності</strong> — додаються з badge «власна».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-degree-levels">
-                    <i class="bi bi-mortarboard-fill me-2"></i>Довідники та система → Ступені
-                </button>
-            </h2>
-            <div id="p-degree-levels" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Список ступенів. Поле <strong>«Суфікс у назві групи»</strong> — коротка позначка, що додається до назви групи: <code>м</code> для магістра (<code>КНм-1</code>), <code>ф</code> для доктора філософії (<code>КНф-1</code>), порожньо — без суфіксу (<code>КН-1</code>).
-                </div>
+    {% if has_perm('manage_degree_levels') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-degree-levels">
+                <i class="bi bi-mortarboard-fill me-2"></i>Довідники та система → Ступені
+            </button>
+        </h2>
+        <div id="p-degree-levels" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Список ступенів. Поле <strong>«Суфікс у назві групи»</strong> — коротка позначка, що додається до назви групи: <code>м</code> для магістра (<code>КНм-1</code>), <code>ф</code> для доктора філософії (<code>КНф-1</code>), порожньо — без суфіксу (<code>КН-1</code>).
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-edu-programs">
-                    <i class="bi bi-journal-bookmark me-2"></i>Довідники та система → Освітня програма
-                </button>
-            </h2>
-            <div id="p-edu-programs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Назва освітньої програми — окремо для кожної <strong>трійки «спеціальність + ступінь + рік вступу»</strong>. На сторінці «Групи» підставляється автоматично.
-                </div>
+    {% if has_perm('manage_educational_programs') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-edu-programs">
+                <i class="bi bi-journal-bookmark me-2"></i>Довідники та система → Освітня програма
+            </button>
+        </h2>
+        <div id="p-edu-programs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Назва освітньої програми — окремо для кожної <strong>трійки «спеціальність + ступінь + рік вступу»</strong>. На сторінці «Групи» підставляється автоматично.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-qualification-names">
-                    <i class="bi bi-mortarboard-fill me-2"></i>Довідники та система → Назва кваліфікації
-                </button>
-            </h2>
-            <div id="p-qualification-names" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Той самий принцип, що й в «Освітній програмі», тільки для <strong>назви кваліфікації</strong>.
-                </div>
+    {% if has_perm('manage_qualification_names') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-qualification-names">
+                <i class="bi bi-mortarboard-fill me-2"></i>Довідники та система → Назва кваліфікації
+            </button>
+        </h2>
+        <div id="p-qualification-names" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Той самий принцип, що й в «Освітній програмі», тільки для <strong>назви кваліфікації</strong>.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-subjects">
-                    <i class="bi bi-book me-2"></i>Навчальний процес → Предмети
-                </button>
-            </h2>
-            <div id="p-subjects" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> предмети кожної групи: код, назва укр., назва англ., кредити, тип.<br>
-                    <strong>Форма вводу оцінок</strong> (кнопка «Оцінки» біля предмета) показує <strong>усіх студентів групи</strong>, включно з паралельними (через активний enrollment).<br>
-                    <strong>Скорочена програма:</strong> під кнопкою «Скорочена програма ▾» можна вказати, кому саме показувати предмет (усім / лише повній / лише скороченій) і, за потреби, окремі кредити й тип контролю.
-                </div>
+    {% if has_perm('manage_subjects') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-subjects">
+                <i class="bi bi-book me-2"></i>Навчальний процес → Предмети
+            </button>
+        </h2>
+        <div id="p-subjects" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> предмети кожної групи: код, назва укр., назва англ., кредити, тип.<br>
+                <strong>Форма вводу оцінок</strong> (кнопка «Оцінки» біля предмета) показує <strong>усіх студентів групи</strong>, включно з паралельними (через активний enrollment).<br>
+                <strong>Скорочена програма:</strong> під кнопкою «Скорочена програма ▾» можна вказати, кому саме показувати предмет (усім / лише повній / лише скороченій) і, за потреби, окремі кредити й тип контролю.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-activities">
-                    <i class="bi bi-briefcase me-2"></i>Навчальний процес → Практика / атестація / курсові
-                </button>
-            </h2>
-            <div id="p-activities" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> для кожної групи — практики, курсові та підсумкову атестацію.<br>
-                    <strong>Форма вводу оцінок</strong> показує <strong>усіх студентів групи</strong> (включно з паралельними).<br>
-                    <strong>Скорочена програма:</strong> той самий механізм, що й у предметах.
-                </div>
+    {% if has_perm('manage_activities') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-activities">
+                <i class="bi bi-briefcase me-2"></i>Навчальний процес → Практика / атестація / курсові
+            </button>
+        </h2>
+        <div id="p-activities" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> для кожної групи — практики, курсові та підсумкову атестацію.<br>
+                <strong>Форма вводу оцінок</strong> показує <strong>усіх студентів групи</strong> (включно з паралельними).<br>
+                <strong>Скорочена програма:</strong> той самий механізм, що й у предметах.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-edudocs">
-                    <i class="bi bi-mortarboard me-2"></i>Навчальний процес → Документи освіти
-                </button>
-            </h2>
-            <div id="p-edudocs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> попередній документ про освіту кожного студента: тип (укр.+англ.), номер, заклад (укр.+англ.), країна (укр.+англ.), дата завершення.<br>
-                    <strong>Прив'язка до групи:</strong> документ може бути прив'язаний до конкретної групи (напр. диплом бакалавра — для магістратури, атестат — для бакалаврату), або «загальний» для всіх груп.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> дропдаун «Студент (без документів)» показує всіх активних студентів групи (включно з паралельними).
-                    <strong>При імпорті з Excel:</strong> документ спершу прив'язується до <strong>основної групи</strong> студента. Якщо потрібна інша група — переприв'яжіть у картці студента після імпорту (dropdown «Для якої групи»). Детальніше — блок «Імпорт і масові операції при паралельному навчанні».
-                </div>
+    {% if has_perm('manage_education_documents') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-edudocs">
+                <i class="bi bi-mortarboard me-2"></i>Навчальний процес → Документи освіти
+            </button>
+        </h2>
+        <div id="p-edudocs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> попередній документ про освіту кожного студента: тип (укр.+англ.), номер, заклад (укр.+англ.), країна (укр.+англ.), дата завершення.<br>
+                <strong>Прив'язка до групи:</strong> документ може бути прив'язаний до конкретної групи (напр. диплом бакалавра — для магістратури, атестат — для бакалаврату), або «загальний» для всіх груп.<br>
+                <strong>Паралельні студенти підтримуються:</strong> дропдаун «Студент (без документів)» показує всіх активних студентів групи (включно з паралельними).
+                <strong>При імпорті з Excel:</strong> документ спершу прив'язується до <strong>основної групи</strong> студента. Якщо потрібна інша група — переприв'яжіть у картці студента після імпорту (dropdown «Для якої групи»). Детальніше — блок «Імпорт і масові операції при паралельному навчанні».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-diplomas">
-                    <i class="bi bi-journal-bookmark me-2"></i>Навчальний процес → Номери диплому / додатку
-                </button>
-            </h2>
-            <div id="p-diplomas" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що вносити:</strong> номер диплома і номер додатка для кожного студента <strong>окремо для кожної групи</strong>. Номери можна вводити без провідних нулів — система сама доповнить до 6 цифр.<br>
-                    <strong>Ключове:</strong> номер диплома зберігається за парою «студент + група». Студент, що випускається з двох програм — має <strong>два різні</strong> номери (по одному на кожну групу).<br>
-                    <strong>Як користуватись:</strong> оберіть групу у випадаючому списку — побачите всіх студентів цієї групи (включно з паралельними) і лише ті номери, що належать цій групі.<br>
-                    <strong>У документах:</strong> при генерації документа для конкретної групи підставляються номери, заведені <strong>саме для цієї групи</strong>.
-                </div>
+    {% if has_perm('manage_diplomas') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-diplomas">
+                <i class="bi bi-journal-bookmark me-2"></i>Навчальний процес → Номери диплому / додатку
+            </button>
+        </h2>
+        <div id="p-diplomas" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що вносити:</strong> номер диплома і номер додатка для кожного студента <strong>окремо для кожної групи</strong>. Номери можна вводити без провідних нулів — система сама доповнить до 6 цифр.<br>
+                <strong>Ключове:</strong> номер диплома зберігається за парою «студент + група». Студент, що випускається з двох програм — має <strong>два різні</strong> номери (по одному на кожну групу).<br>
+                <strong>Як користуватись:</strong> оберіть групу у випадаючому списку — побачите всіх студентів цієї групи (включно з паралельними) і лише ті номери, що належать цій групі.<br>
+                <strong>У документах:</strong> при генерації документа для конкретної групи підставляються номери, заведені <strong>саме для цієї групи</strong>.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-accred">
-                    <i class="bi bi-patch-check me-2"></i>Довідники та система → Акредитації
-                </button>
-            </h2>
-            <div id="p-accred" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Для кожної пари «ступінь + спеціальність» — текст акредитації українською та англійською. У документах підставляється автоматично за ступенем і спеціальністю групи.
-                </div>
+    {% if has_perm('manage_accreditations') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-accred">
+                <i class="bi bi-patch-check me-2"></i>Довідники та система → Акредитації
+            </button>
+        </h2>
+        <div id="p-accred" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Для кожної пари «ступінь + спеціальність» — текст акредитації українською та англійською. У документах підставляється автоматично за ступенем і спеціальністю групи.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        {% endif %}
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: КУРСИ ТА РУХ СТУДЕНТІВ
+   ══════════════════════════════════════════════════════════════════ #}
 {% if 'courses' in (faq_sections or []) %}
 <div class="faq-category-title">Курси та рух студентів</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-courses">
-                    <i class="bi bi-kanban me-2"></i>Курси
-                </button>
-            </h2>
-            <div id="p-courses" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Дошка-огляд: усі активні групи, згруповані по поточному курсу. У кожній картці групи — спеціальність, форма навчання, рік вступу, кількість активних студентів (включно з паралельними), а також (якщо є) кількість студентів на скороченій програмі.<br>
-                    Це вхідна точка до двох дій: <strong>«Перевести на наступний курс»</strong> і <strong>«Оформити випуск»</strong>.
-                </div>
+    {% if has_perm('manage_courses') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-courses">
+                <i class="bi bi-kanban me-2"></i>Курси
+            </button>
+        </h2>
+        <div id="p-courses" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Дошка-огляд: усі активні групи, згруповані по поточному курсу. У кожній картці групи — спеціальність, форма навчання, рік вступу, кількість активних студентів (включно з паралельними), а також (якщо є) кількість студентів на скороченій програмі.<br>
+                Це вхідна точка до двох дій: <strong>«Перевести на наступний курс»</strong> і <strong>«Оформити випуск»</strong>.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-course-transfer">
-                    <i class="bi bi-arrow-up-circle me-2"></i>Перевести на наступний курс
-                </button>
-            </h2>
-            <div id="p-course-transfer" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Оформлення щорічного наказу про переведення — у 3 кроки: вибір груп → перевірка студентів (з можливістю виключення з обов'язковою причиною) → номер і дата наказу + скан.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> на кроці перевірки показуються <strong>усі</strong> студенти групи, включно з тими, хто має цю групу як паралельну.<br>
-                    <strong>Виключення паралельного студента з ОДНІЄЇ групи</strong> не впливає на його навчання в іншій групі — enrollment у ній залишається активним.<br>
-                    <strong>Результат:</strong> обрані групи отримують курс +1, назва перераховується. Невиключені студенти лишаються у своїх (вже «старших») групах. Виключені — переносяться в «Заморожені студенти».
-                </div>
+    {% if has_perm('manage_course_transfer') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-course-transfer">
+                <i class="bi bi-arrow-up-circle me-2"></i>Перевести на наступний курс
+            </button>
+        </h2>
+        <div id="p-course-transfer" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Оформлення щорічного наказу про переведення — у 3 кроки: вибір груп → перевірка студентів (з можливістю виключення з обов'язковою причиною) → номер і дата наказу + скан.<br>
+                <strong>Паралельні студенти підтримуються:</strong> на кроці перевірки показуються <strong>усі</strong> студенти групи, включно з тими, хто має цю групу як паралельну.<br>
+                <strong>Виключення паралельного студента з ОДНІЄЇ групи</strong> не впливає на його навчання в іншій групі — enrollment у ній залишається активним.<br>
+                <strong>Результат:</strong> обрані групи отримують курс +1, назва перераховується. Невиключені студенти лишаються у своїх (вже «старших») групах. Виключені — переносяться в «Заморожені студенти».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-frozen">
-                    <i class="bi bi-snow me-2"></i>Заморожені студенти
-                </button>
-            </h2>
-            <div id="p-frozen" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Студенти, тимчасово виключені з переведення на курс чи з випуску — двома розділами: активні (не вирішено) та історія (вирішено).<br>
-                    <strong>Дія «Вирішити»</strong> — повернути студента до обраної групи (з необов'язковим коментарем).<br>
-                    <strong>Заморожування паралельного студента</strong> (напр. з однієї з двох груп) — це закриття лише конкретного enrollment'а. В іншій групі студент залишається активним.
-                </div>
+    {% if has_perm('manage_frozen_students') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-frozen">
+                <i class="bi bi-snow me-2"></i>Заморожені студенти
+            </button>
+        </h2>
+        <div id="p-frozen" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Студенти, тимчасово виключені з переведення на курс чи з випуску — двома розділами: активні (не вирішено) та історія (вирішено).<br>
+                <strong>Дія «Вирішити»</strong> — повернути студента до обраної групи (з необов'язковим коментарем).<br>
+                <strong>Заморожування паралельного студента</strong> (напр. з однієї з двох груп) — це закриття лише конкретного enrollment'а. В іншій групі студент залишається активним.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-graduation">
-                    <i class="bi bi-mortarboard me-2"></i>Оформити випуск
-                </button>
-            </h2>
-            <div id="p-graduation" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Той самий механізм, що й «Перевести на наступний курс», але:
-                    <ul class="mb-2">
-                        <li>Список показує <strong>лише групи, які вже на останньому курсі</strong> своєї програми.</li>
-                        <li><strong>Паралельні студенти підтримуються:</strong> на кроці перевірки показуються <strong>усі</strong> студенти групи (включно з тими, хто має цю групу як паралельну).</li>
-                        <li>Кожен студент випускається <strong>з конкретної групи</strong>. Якщо він паралельно вчиться в іншій групі — там він залишається активним, enrollment НЕ закривається.</li>
-                        <li>Виключення паралельного студента з однієї групи з причиною — закриває лише цей enrollment (статус «frozen»), інші залишаються.</li>
-                    </ul>
-                </div>
+    {% if has_perm('manage_graduation') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-graduation">
+                <i class="bi bi-mortarboard me-2"></i>Оформити випуск
+            </button>
+        </h2>
+        <div id="p-graduation" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Той самий механізм, що й «Перевести на наступний курс», але:
+                <ul class="mb-2">
+                    <li>Список показує <strong>лише групи, які вже на останньому курсі</strong> своєї програми.</li>
+                    <li><strong>Паралельні студенти підтримуються:</strong> на кроці перевірки показуються <strong>усі</strong> студенти групи (включно з тими, хто має цю групу як паралельну).</li>
+                    <li>Кожен студент випускається <strong>з конкретної групи</strong>. Якщо він паралельно вчиться в іншій групі — там він залишається активним, enrollment НЕ закривається.</li>
+                    <li>Виключення паралельного студента з однієї групи з причиною — закриває лише цей enrollment (статус «frozen»), інші залишаються.</li>
+                </ul>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-expulsion">
-                    <i class="bi bi-person-x me-2"></i>Наказ про відрахування
-                </button>
-            </h2>
-            <div id="p-expulsion" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Студенти для наказу можуть прийти <strong>з двох джерел одночасно</strong>: з активних груп (обираєте групи, потім студентів) і зі списку «Заморожені студенти». Обидва джерела зливаються в один спільний перелік на кроці перевірки.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> форма показують <strong>усіх</strong> студентів групи. Якщо студент паралельно вчиться в іншій групі, і ви відраховуєте його лише з цієї — інший enrollment НЕ закривається, студент залишається активним.<br>
-                    <strong>Результат:</strong> студенти, у яких <strong>не залишилося жодного активного enrollment</strong>, отримують архівний статус. Ті, хто має інші активні enrollments, продовжують вчитися.
-                </div>
+    {% if has_perm('manage_expulsion') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-expulsion">
+                <i class="bi bi-person-x me-2"></i>Наказ про відрахування
+            </button>
+        </h2>
+        <div id="p-expulsion" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Студенти для наказу можуть прийти <strong>з двох джерел одночасно</strong>: з активних груп (обираєте групи, потім студентів) і зі списку «Заморожені студенти». Обидва джерела зливаються в один спільний перелік на кроці перевірки.<br>
+                <strong>Паралельні студенти підтримуються:</strong> форма показують <strong>усіх</strong> студентів групи. Якщо студент паралельно вчиться в іншій групі, і ви відраховуєте його лише з цієї — інший enrollment НЕ закривається, студент залишається активним.<br>
+                <strong>Результат:</strong> студенти, у яких <strong>не залишилося жодного активного enrollment</strong>, отримують архівний статус. Ті, хто має інші активні enrollments, продовжують вчитися.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-orders">
-                    <i class="bi bi-journal-text me-2"></i>Реєстр наказів (<code>/admin/orders</code>)
-                </button>
-            </h2>
-            <div id="p-orders" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що це:</strong> єдиний реєстр усіх наказів системи — зарахування, переведення на курс, відрахування, випуск, переведення між ліцензіями.<br>
-                    <strong>Фільтри:</strong> по типу, пошук за номером/назвою/приміткою, окремий фільтр «Лише дублікати номерів».<br>
-                    <strong>Дублікати номерів:</strong> якщо той самий номер наказу зустрічається в кількох записах — біля нього бейдж <em>×N</em>, а зверху сторінки — плашка з переліком таких номерів і кнопка «Показати лише дублікати».<br>
-                    <strong>Дії з наказом:</strong> перегляд (картка з позиціями й сканами), редагування реквізитів, додавання/видалення студента, видалення наказу.<br>
-                    <strong>Перенесення студента між наказами одного типу:</strong> у картці наказу виберіть цільовий наказ у колонці «Перенести в наказ».<br>
-                    <strong>Об'єднання наказів:</strong> на сторінці списку позначте 2+ накази <strong>одного типу</strong> → кнопка «Об'єднати обрані» → у діалозі оберіть головний наказ (у нього переносити), за потреби скоригуйте номер/дату/примітку. Усі позиції, скани й посилання з інших наказів переїдуть у головний; решта наказів буде видалена. Дублікати (той самий студент у тій самій групі) пропускаються. Дію <strong>не можна скасувати</strong>.<br>
-                    <strong>Для паралельного студента</strong> всі його enrollments відображаються в картці студента (блок «Накази»), де видно наказ, групу, ліцензію, дату.
-                </div>
+    {% if has_perm('archive') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-archive">
+                <i class="bi bi-archive me-2"></i>Навчальний процес → Архів груп
+            </button>
+        </h2>
+        <div id="p-archive" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Випущені групи переносяться в архів: зникають з активних списків, але всі дані зберігаються. Будь-яку групу можна повернути з архіву.<br>
+                <strong>Щодо паралельних студентів:</strong> архівування групи вручну (кнопкою) не зачіпає їхні enrollments в інших групах. Автоматичний випуск через «Оформити випуск» коректно закриває enrollment лише цієї групи.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-enrollment-order">
-                    <i class="bi bi-file-earmark-plus me-2"></i>Наказ про зарахування (bulk, <code>/admin/orders/enrollment</code>)
-                </button>
-            </h2>
-            <div id="p-enrollment-order" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Для чого:</strong> оформлення наказу про зарахування одразу для групи студентів.<br>
-                    <strong>Як користуватись:</strong> оберіть групу → позначте студентів → вкажіть номер і дату наказу + скан.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> на кроці вибору кожен рядок — це пара «студент × група», тому паралельник з'являється окремим рядком для кожної своєї групи. Можна створити один наказ для кількох груп одночасно. Дублікати (той самий студент у тій самій групі) — пропускаються.
-                </div>
-            </div>
-        </div>
-		{% if 'manage_exam_sessions' in (session.get('permissions') or []) or session.get('is_admin') %}
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-exam-sessions">
-                    <i class="bi bi-clipboard2-check me-2"></i>Сесії та відомості
-                </button>
-            </h2>
-            <div id="p-exam-sessions" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-
-                    <p class="mb-2">
-                        <strong>Для чого:</strong> окремий контур для екзаменаційних відомостей — не змішується з поточними
-                        оцінками в картці студента. Відомість створюється для конкретної дисципліни й конкретної ліцензії
-                        (щоб паралельні студенти під різними ліцензіями не змішувались).
-                    </p>
-
-                    <p class="mb-2">
-                        <strong>Де:</strong> Навчальний процес → <em>Сесії та відомості</em>.
-                    </p>
-
-                    <p class="mb-2">
-                        <strong>Хто заповнює:</strong> викладач — за одноразовим токен-посиланням (без логіну),
-                        або відповідальний — безпосередньо в картці відомості.
-                    </p>
-
-                    <p class="mb-2">
-                        <strong>Національна шкала та ECTS</strong> оновлюються <strong>у реальному часі</strong> —
-                        ще до натискання «Зберегти». Так одразу видно, яка буде підсумкова оцінка.
-                        Кнопка «Зберегти» лише фіксує вже обчислені значення у відомості й надсилає її на затвердження.
-                    </p>
-
-                    <p class="mb-2"><strong>Підсумкова оцінка</strong> рахується двома способами на вибір:</p>
-                    <ul class="mb-2">
-                        <li>
-                            <strong>Із трьох компонентів</strong> — «Міжсесійний контроль» + «Поточні бали» + «Іспит / Залік».
-                            Як тільки ви вводите хоча б одне з цих полів, «Підсумкова» автоматично стає сумою
-                            (кожне порожнє = 0, максимум 100) і стає недоступною для ручного введення.
-                        </li>
-                        <li>
-                            <strong>Вручну</strong> — якщо вводите число прямо в «Підсумкова», три компоненти очищуються.
-                        </li>
-                    </ul>
-
-                    <p class="mb-2">
-                        <strong>Затвердження:</strong> після здачі оцінок відповідальний затверджує відомість —
-                        викладач більше не може її редагувати. Далі (окремим правом «Перенос оцінок із сесій»)
-                        оцінки переносяться в навчальний план: у предмети / практики / курсові / атестації.
-                    </p>
-
-                    <p class="mb-2">
-                        <strong>Тема кваліфікаційної роботи:</strong> для атестацій і курсових у таблиці є окреме поле
-                        «Тема роботи» — його заповнюють персонально кожному студенту. Під час переносу в навчальний план
-                        тема автоматично переноситься в картку студента (поле «Тема» в атестації), а в додатку до диплому
-                        показується у форматі
-                        <em>«Назва атестації «Тема» / Name of attestation «Topic»»</em> —
-                        англійська частина перекладається автоматично.
-                    </p>
-
-                    <p class="mb-0">
-                        <strong>Права доступу:</strong>
-                        <code>manage_exam_sessions</code> — створення сесій і відомостей, генерація посилання для
-                        викладача, затвердження, завантаження .docx/.xlsx.
-                        <code>transfer_exam_grades</code> — перенос затверджених оцінок у навчальний план.
-                    </p>
-
-                </div>
-            </div>
-        </div>
 {% endif %}
-        {% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: НАКАЗИ
+   ══════════════════════════════════════════════════════════════════ #}
+{% if 'orders' in (faq_sections or []) %}
+<div class="faq-category-title">Накази</div>
+
+    {% if has_perm('manage_orders') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-orders">
+                <i class="bi bi-journal-text me-2"></i>Реєстр наказів (<code>/admin/orders</code>)
+            </button>
+        </h2>
+        <div id="p-orders" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що це:</strong> єдиний реєстр усіх наказів системи — зарахування, переведення на курс, відрахування, випуск, переведення між ліцензіями.<br>
+                <strong>Фільтри:</strong> по типу, пошук за номером/назвою/приміткою, окремий фільтр «Лише дублікати номерів».<br>
+                <strong>Дублікати номерів:</strong> якщо той самий номер наказу зустрічається в кількох записах — біля нього бейдж <em>×N</em>, а зверху сторінки — плашка з переліком таких номерів і кнопка «Показати лише дублікати».<br>
+                <strong>Дії з наказом:</strong> перегляд (картка з позиціями й сканами), редагування реквізитів, додавання/видалення студента, видалення наказу.<br>
+                <strong>Перенесення студента між наказами одного типу:</strong> у картці наказу виберіть цільовий наказ у колонці «Перенести в наказ».<br>
+                <strong>Об'єднання наказів:</strong> на сторінці списку позначте 2+ накази <strong>одного типу</strong> → кнопка «Об'єднати обрані» → у діалозі оберіть головний наказ (у нього переносити), за потреби скоригуйте номер/дату/примітку. Усі позиції, скани й посилання з інших наказів переїдуть у головний; решта наказів буде видалена. Дублікати (той самий студент у тій самій групі) пропускаються. Дію <strong>не можна скасувати</strong>.<br>
+                <strong>Для паралельного студента</strong> всі його enrollments відображаються в картці студента (блок «Накази»), де видно наказ, групу, ліцензію, дату.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('create_enrollment_order') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-enrollment-order">
+                <i class="bi bi-file-earmark-plus me-2"></i>Наказ про зарахування (bulk, <code>/admin/orders/enrollment</code>)
+            </button>
+        </h2>
+        <div id="p-enrollment-order" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Для чого:</strong> оформлення наказу про зарахування одразу для групи студентів.<br>
+                <strong>Як користуватись:</strong> оберіть групу → позначте студентів → вкажіть номер і дату наказу + скан.<br>
+                <strong>Паралельні студенти підтримуються:</strong> на кроці вибору кожен рядок — це пара «студент × група», тому паралельник з'являється окремим рядком для кожної своєї групи. Можна створити один наказ для кількох груп одночасно. Дублікати (той самий студент у тій самій групі) — пропускаються.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: СЕСІЇ ТА ВІДОМОСТІ
+   ══════════════════════════════════════════════════════════════════ #}
+{% if 'exam_sessions' in (faq_sections or []) %}
+<div class="faq-category-title">Сесії та відомості</div>
+
+    {% if has_perm('manage_exam_sessions') or has_perm('transfer_exam_grades') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-exam-sessions">
+                <i class="bi bi-clipboard2-check me-2"></i>Сесії та відомості
+            </button>
+        </h2>
+        <div id="p-exam-sessions" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Для чого:</strong> окремий контур для екзаменаційних відомостей — не змішується з поточними оцінками в картці студента. Відомість створюється для конкретної дисципліни й конкретної ліцензії (щоб паралельні студенти під різними ліцензіями не змішувались).</p>
+                <p class="mb-2"><strong>Де:</strong> Навчальний процес → <em>Сесії та відомості</em>.</p>
+                <p class="mb-2"><strong>Хто заповнює:</strong> викладач — за одноразовим токен-посиланням (без логіну), або відповідальний — безпосередньо в картці відомості.</p>
+                <p class="mb-2"><strong>Національна шкала та ECTS</strong> оновлюються <strong>у реальному часі</strong> — ще до натискання «Зберегти». Кнопка «Зберегти» лише фіксує вже обчислені значення у відомості й надсилає її на затвердження.</p>
+                <p class="mb-2"><strong>Підсумкова оцінка</strong> рахується двома способами на вибір: із трьох компонентів (сума) або вручну.</p>
+                <p class="mb-2"><strong>Затвердження:</strong> після здачі оцінок відповідальний затверджує відомість — викладач більше не може її редагувати. Далі (окремим правом «Перенос оцінок із сесій») оцінки переносяться в навчальний план.</p>
+                <p class="mb-2"><strong>Тема кваліфікаційної роботи:</strong> для атестацій і курсових — окреме поле «Тема роботи», переноситься в картку студента під час переносу в навчальний план.</p>
+                <p class="mb-0"><strong>Права доступу:</strong> <code>manage_exam_sessions</code> — створення сесій/відомостей, генерація посилання викладачу, затвердження, завантаження .docx/.xlsx. <code>transfer_exam_grades</code> — перенос затверджених оцінок у навчальний план.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: ІМПОРТ
+   ══════════════════════════════════════════════════════════════════ #}
 {% if 'import' in (faq_sections or []) %}
 <div class="faq-category-title">Імпорт</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-imports">
-                    <i class="bi bi-file-earmark-excel me-2"></i>Імпорти з Excel (студенти / предмети / документи про освіту)
-                </button>
-            </h2>
-            <div id="p-imports" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
+    {% if has_perm('import_from_excel') or has_perm('import_subjects') or has_perm('import_education_docs') or has_perm('import_passport_documents') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-imports">
+                <i class="bi bi-file-earmark-excel me-2"></i>Імпорти з Excel (студенти / предмети / документи про освіту)
+            </button>
+        </h2>
+        <div id="p-imports" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Імпорт студентів</strong> — масове додавання студентів групи з Excel-файлу. Підтримує <strong>4 сценарії</strong> для кожного рядка:</p>
+                <ul class="mb-2">
+                    <li>🆕 <strong>Новий студент</strong> — створюється запис у картці + enrollment в обраній групі;</li>
+                    <li>🔀 <strong>Паралельне навчання</strong> — студент уже є в базі, але в іншій групі: створюється ще один enrollment. Основна група <strong>не змінюється</strong>;</li>
+                    <li>🔄 <strong>Реактивація</strong> — студент був відрахований/випущений/заморожений у цій групі: enrollment перевідкривається як активний;</li>
+                    <li>🚫 <strong>Пропуск</strong> — уже активно навчається в цій групі (дублікат).</li>
+                </ul>
 
-                    <p class="mb-2"><strong>Імпорт студентів</strong> — масове додавання студентів групи з Excel-файлу. Підтримує <strong>4 сценарії</strong> для кожного рядка:</p>
-                    <ul class="mb-2">
-                        <li>🆕 <strong>Новий студент</strong> — створюється запис у картці + enrollment в обраній групі;</li>
-                        <li>🔀 <strong>Паралельне навчання</strong> — студент уже є в базі, але в іншій групі: створюється ще один enrollment. Основна група <strong>не змінюється</strong>;</li>
-                        <li>🔄 <strong>Реактивація</strong> — студент був відрахований/випущений/заморожений у цій групі: enrollment перевідкривається як активний;</li>
-                        <li>🚫 <strong>Пропуск</strong> — уже активно навчається в цій групі (дублікат).</li>
-                    </ul>
+                <p class="mb-2"><strong>Базові колонки A-K</strong>:</p>
+                <ul class="mb-2">
+                    <li><strong>A</strong> — ID групи;</li>
+                    <li><strong>B</strong> — ПІБ (3 слова);</li>
+                    <li><strong>C</strong> — дата народження;</li>
+                    <li><strong>D</strong> — код ЄДЕБО;</li>
+                    <li><strong>E</strong> — коротка назва ліцензії з каталогу. Записується <strong>до enrollment'а</strong>;</li>
+                    <li><strong>F</strong> — кредити скороченої програми;</li>
+                    <li><strong>G</strong> — телефон (основний[, резервний]);</li>
+                    <li><strong>H</strong> — email;</li>
+                    <li><strong>I</strong> — ІПН;</li>
+                    <li><strong>J</strong> — адреса проживання;</li>
+                    <li><strong>K</strong> — стать.</li>
+                </ul>
 
-                    <p class="mb-2"><strong>Базові колонки A-K</strong> (як раніше):</p>
-                    <ul class="mb-2">
-                        <li><strong>A</strong> — ID групи;</li>
-                        <li><strong>B</strong> — ПІБ (3 слова);</li>
-                        <li><strong>C</strong> — дата народження;</li>
-                        <li><strong>D</strong> — код ЄДЕБО;</li>
-                        <li><strong>E</strong> — коротка назва ліцензії з каталогу. Записується <strong>до enrollment'а</strong> (а не до картки!) — це дозволяє паралельним студентам мати різні ліцензії в різних групах;</li>
-                        <li><strong>F</strong> — кредити скороченої програми;</li>
-                        <li><strong>G</strong> — телефон (основний[, резервний]). Обидва номери автоматично приводяться до формату <code>+380XXXXXXXXX</code>. Якщо після цього резервний збігається з основним (напр. <code>0971234567</code> і <code>+380971234567</code> — це той самий номер) — резервний <strong>не зберігається</strong>, щоб не дублювати той самий номер у двох полях;</li>
-                        <li><strong>H</strong> — email;</li>
-                        <li><strong>I</strong> — ІПН;</li>
-                        <li><strong>J</strong> — адреса проживання;</li>
-                        <li><strong>K</strong> — стать (<code>Ч</code>/<code>Ж</code>/<code>M</code>/<code>F</code>/порожньо → авто за по батькові).</li>
-                    </ul>
+                <p class="mb-2"><strong>НОВІ колонки L-N</strong> (усі опціональні):</p>
+                <ul class="mb-2">
+                    <li><strong>L</strong> — <code>student_id</code>. Якщо вказано — студент шукається <strong>тільки за цим ID</strong>;</li>
+                    <li><strong>M</strong> — <code>is_primary</code>;</li>
+                    <li><strong>N</strong> — <code>update_existing_data</code>.</li>
+                </ul>
 
-                    <p class="mb-2"><strong>НОВІ колонки L-N</strong> (усі опціональні — можна залишити порожніми):</p>
-                    <ul class="mb-2">
-                        <li><strong>L</strong> — <code>student_id</code>. Якщо вказано — студент шукається <strong>тільки за цим ID</strong> (найнадійніший спосіб). Порожньо — пошук за tax_id, потім за ПІБ+датою. <em>Рекомендується для «другого разу поступає» — щоб гарантовано потрапити в правильну картку.</em></li>
-                        <li><strong>M</strong> — <code>is_primary</code> (<code>1</code>/<code>0</code>/порожньо). Якщо <code>1</code> — ця група стане <strong>основною</strong> для студента. Порожньо = автоопределение: для нового студента група стає основною, для існуючого — <strong>не змінюється</strong>.</li>
-                        <li><strong>N</strong> — <code>update_existing_data</code> (<code>1</code>/<code>0</code>/порожньо). За замовчуванням <code>1</code> — оновлює <strong>лише порожні поля</strong> картки (телефон, email, ІПН, ЄДЕБО, адресу, кредити override, стать). <strong>Заповнені не перезаписуються</strong> — щоб не затерти ручні правки. <code>0</code> — не чіпати картку взагалі.</li>
-                    </ul>
-
-                    <p class="mb-2"><strong>Колонка «Ліцензія» (E)</strong> записується до нового enrollment'а студента (для цієї групи), а не до самої картки.</p>
-
-                    <p class="mb-2"><strong>Імпорт предметів</strong> — масове додавання предметів групи. Імпорт документів про освіту — двокроковий: попередній перегляд, потім підтвердження. Імпорт паспортних даних — одноетапний, студент шукається нечітким пошуком за ПІБ.</p>
-
-                    <div class="alert alert-info mb-0 mt-2">
-                        <i class="bi bi-lightbulb me-1"></i>
-                        <strong>Порада:</strong> для повторного імпорту того самого файлу (наприклад, після виправлення помилки) — рядки, які вже успішно імпортовані, потраплять у розділ «Пропущено» з причиною <em>«Вже активно навчається в цій групі»</em>. Це нормально, дублікатів не буде. Дані картки не перезапишуться, якщо не порожні.
-                    </div>
+                <div class="alert alert-info mb-0 mt-2">
+                    <i class="bi bi-lightbulb me-1"></i><strong>Порада:</strong> для повторного імпорту того самого файлу — рядки, які вже успішно імпортовані, потраплять у розділ «Пропущено» з причиною <em>«Вже активно навчається в цій групі»</em>. Це нормально.
                 </div>
             </div>
         </div>
-		
-		<div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-import-parallel">
-                    <i class="bi bi-people me-2"></i>Імпорт і масові операції при паралельному навчанні
-                </button>
-            </h2>
-            <div id="p-import-parallel" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <p class="mb-2">Якщо студент вчиться у 2+ групах, поведінка різних масових операцій відрізняється:</p>
+    </div>
+    {% endif %}
 
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>PDF «Резерв+» (пакетно)</h6>
-                        <p class="mb-1">Дані пишуться <strong>per-student</strong> (одна військова картка на людину, незалежно від кількості груп).</p>
-                        <p class="mb-0 small text-muted"><strong>Що робити:</strong> завантажуйте PDF один раз. Preview покаже одну картку студента. Не потрібно дублювати для кожної групи. Детальніше — блок «Пакетний імпорт PDF «Резерв+»» вище.</p>
-                    </div>
+    {% if has_perm('import_from_excel') or has_perm('import_subjects') or has_perm('import_education_docs') or has_perm('import_grades') or has_perm('import_military_pdf') or has_perm('bulk_photos') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-import-parallel">
+                <i class="bi bi-people me-2"></i>Імпорт і масові операції при паралельному навчанні
+            </button>
+        </h2>
+        <div id="p-import-parallel" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2">Якщо студент вчиться у 2+ групах, поведінка різних масових операцій відрізняється:</p>
 
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-images me-1"></i>Фото студентів (масово)</h6>
-                        <p class="mb-1">Фото — <strong>одне на людину</strong> (<code>students.photo</code>), спільне для всіх груп.</p>
-                        <p class="mb-0 small text-muted"><strong>Що робити:</strong> завантажте один раз — фото автоматично буде видно в обох групах. Не робіть два імпорти (A і B) — другий <strong>перезапише</strong> перший, якщо файли різні. В зіставленні паралельний студент з'явиться для кожної з його груп.</p>
-                    </div>
+                <div class="mb-3">
+                    <h6 class="mb-1"><i class="bi bi-file-earmark-pdf me-1"></i>PDF «Резерв+» (пакетно)</h6>
+                    <p class="mb-1">Дані пишуться <strong>per-student</strong> (одна військова картка на людину, незалежно від кількості груп).</p>
+                    <p class="mb-0 small text-muted"><strong>Що робити:</strong> завантажуйте PDF один раз. Preview покаже одну картку студента. Не потрібно дублювати для кожної групи.</p>
+                </div>
 
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-journal me-1"></i>Предмети (імпорт)</h6>
-                        <p class="mb-1">Предмети — властивість <strong>групи</strong>, не студента.</p>
-                        <p class="mb-0 small text-muted"><strong>Що робити:</strong> імпортуйте окремо для кожної групи (A, потім B). Предмети A не перетинаються з B — різні <code>subject_id</code>.</p>
-                    </div>
+                <div class="mb-3">
+                    <h6 class="mb-1"><i class="bi bi-images me-1"></i>Фото студентів (масово)</h6>
+                    <p class="mb-1">Фото — <strong>одне на людину</strong> (<code>students.photo</code>), спільне для всіх груп.</p>
+                    <p class="mb-0 small text-muted"><strong>Що робити:</strong> завантажте один раз — фото автоматично буде видно в обох групах. Не робіть два імпорти (A і B) — другий <strong>перезапише</strong> перший, якщо файли різні.</p>
+                </div>
 
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-card-checklist me-1"></i>Оцінки (зведена відомість)</h6>
-                        <p class="mb-1">Оцінки пишуться по парі <code>(student_id, subject_id)</code> — у кожної групи свої предмети.</p>
-                        <p class="mb-0 small text-muted"><strong>Що робити:</strong> два окремих імпорти — для A і для B. Паралельний студент з'явиться в обох (це правильно). Якщо в файлі для A у нього немає оцінки — рядок просто пропуститься.</p>
-                    </div>
+                <div class="mb-3">
+                    <h6 class="mb-1"><i class="bi bi-journal me-1"></i>Предмети (імпорт)</h6>
+                    <p class="mb-1">Предмети — властивість <strong>групи</strong>, не студента.</p>
+                    <p class="mb-0 small text-muted"><strong>Що робити:</strong> імпортуйте окремо для кожної групи (A, потім B).</p>
+                </div>
 
-                    <div class="mb-3">
-                        <h6 class="mb-1"><i class="bi bi-file-earmark-text me-1"></i>Документи студентів (імпорт)</h6>
-                        <p class="mb-1">Документ про освіту прив'язується до пари <code>(student_id, group_id)</code>.</p>
-                        <p class="mb-0 small text-muted">
-                            <strong>За замовчуванням:</strong> документ прив'яжеться до <strong>основної групи</strong> студента. Щоб прив'язати до іншої (напр. диплом бакалавра → магістратура) — після імпорту відкрийте картку студента → «Керувати документами» → у потрібного документа виберіть «Для якої групи».
-                        </p>
-                    </div>
+                <div class="mb-3">
+                    <h6 class="mb-1"><i class="bi bi-card-checklist me-1"></i>Оцінки (зведена відомість)</h6>
+                    <p class="mb-1">Оцінки пишуться по парі <code>(student_id, subject_id)</code> — у кожної групи свої предмети.</p>
+                    <p class="mb-0 small text-muted"><strong>Що робити:</strong> два окремих імпорти — для A і для B.</p>
+                </div>
 
-                    <div class="alert alert-light border small mt-3 mb-0">
-                        <i class="bi bi-lightbulb me-1"></i>
-                        <strong>Універсальне правило:</strong> «масові операції з даними, які є властивістю ГРУПИ (предмети, оцінки по предметах, документ про освіту) — робіть окремо для кожної групи». «Масові операції з даними, які є властивістю ЛЮДИНИ (фото, військові дані) — робіть один раз, вони спільні».
-                    </div>
+                <div class="mb-3">
+                    <h6 class="mb-1"><i class="bi bi-file-earmark-text me-1"></i>Документи студентів (імпорт)</h6>
+                    <p class="mb-1">Документ про освіту прив'язується до пари <code>(student_id, group_id)</code>.</p>
+                    <p class="mb-0 small text-muted"><strong>За замовчуванням:</strong> документ прив'яжеться до <strong>основної групи</strong> студента. Щоб прив'язати до іншої — після імпорту відкрийте картку студента → «Керувати документами» → у потрібного документа виберіть «Для якої групи».</p>
+                </div>
+
+                <div class="alert alert-light border small mt-3 mb-0">
+                    <i class="bi bi-lightbulb me-1"></i><strong>Універсальне правило:</strong> «масові операції з даними, які є властивістю ГРУПИ (предмети, оцінки по предметах, документ про освіту) — робіть окремо для кожної групи». «Масові операції з даними, які є властивістю ЛЮДИНИ (фото, військові дані) — робіть один раз, вони спільні».
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-import-grades">
-                    <i class="bi bi-card-checklist me-2"></i>Імпорт оцінок (зведена відомість)
-                </button>
-            </h2>
-            <div id="p-import-grades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Для чого:</strong> перенести оцінки з готової зведеної відомості у систему одним файлом.<br>
-                    <strong>Як користуватись — 4 кроки:</strong> завантаження файлу + вибір групи → вибір аркуша → зіставлення (авто + вручну) → попередній перегляд і підтвердження.<br>
-                    <strong>Паралельні студенти підтримуються:</strong> на кроці зіставлення показуються <strong>усі</strong> студенти групи, включно з тими, хто має цю групу як паралельну.<br>
-                    <strong>Скорочена програма:</strong> предмети, позначені «лише повна» / «лише скорочена», автоматично пропускаються для студентів, кому вони не стосуються.
-                </div>
+    {% if has_perm('import_grades') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-import-grades">
+                <i class="bi bi-card-checklist me-2"></i>Імпорт оцінок (зведена відомість)
+            </button>
+        </h2>
+        <div id="p-import-grades" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Для чого:</strong> перенести оцінки з готової зведеної відомості у систему одним файлом.<br>
+                <strong>Як користуватись — 4 кроки:</strong> завантаження файлу + вибір групи → вибір аркуша → зіставлення (авто + вручну) → попередній перегляд і підтвердження.<br>
+                <strong>Паралельні студенти підтримуються:</strong> на кроці зіставлення показуються <strong>усі</strong> студенти групи, включно з тими, хто має цю групу як паралельну.<br>
+                <strong>Скорочена програма:</strong> предмети, позначені «лише повна» / «лише скорочена», автоматично пропускаються для студентів, кому вони не стосуються.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        {% endif %}
-{% if 'bulk' in (faq_sections or []) %}
-<div class="faq-category-title">Масова генерація</div>
+{% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export">
-                    <i class="bi bi-files me-2"></i>«Масова генерація документів» (окремий пункт навбару)
-                </button>
-            </h2>
-            <div id="p-export" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Масова генерація документів: оберіть групу (та/або рік народження), шаблон — і система згенерує документи для всіх вибраних студентів одразу.<br>
-                    Для студентів із паралельним навчанням генерація йде з даними тієї групи, яку ви обрали у фільтрі.
-                </div>
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: ЕКСПОРТ
+   ══════════════════════════════════════════════════════════════════ #}
+{% if 'export' in (faq_sections or []) %}
+<div class="faq-category-title">Експорт</div>
+
+    {% if has_perm('group_export') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export">
+                <i class="bi bi-files me-2"></i>«Масова генерація документів» (окремий пункт навбару)
+            </button>
+        </h2>
+        <div id="p-export" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Масова генерація документів: оберіть групу (та/або рік народження), шаблон — і система згенерує документи для всіх вибраних студентів одразу.<br>
+                Для студентів із паралельним навчанням генерація йде з даними тієї групи, яку ви обрали у фільтрі.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export-photos">
-                    <i class="bi bi-images me-2"></i>«Фото студентів» (окремий пункт навбару)
-                </button>
-            </h2>
-            <div id="p-export-photos" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Масове вивантаження фото студентів групи одним ZIP-архівом. Оберіть групу — побачите всіх студентів (включно з паралельними) з мініатюрою фото.<br>
-                    <strong>«Інформація для студентських квитків» (.docx):</strong> у той самий ZIP автоматично додається Word-файл з таблицею паспортних даних.
-                </div>
+    {% if has_perm('group_export') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-export-photos">
+                <i class="bi bi-images me-2"></i>«Фото студентів» (окремий пункт навбару)
+            </button>
+        </h2>
+        <div id="p-export-photos" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Масове вивантаження фото студентів групи одним ZIP-архівом. Оберіть групу — побачите всіх студентів (включно з паралельними) з мініатюрою фото.<br>
+                <strong>«Інформація для студентських квитків» (.docx):</strong> у той самий ZIP автоматично додається Word-файл з таблицею паспортних даних.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        {% endif %}
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: ЛІЦЕНЗІЇ
+   ══════════════════════════════════════════════════════════════════ #}
 {% if 'licenses' in (faq_sections or []) %}
 <div class="faq-category-title">Ліцензії</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-licenses">
-                    <i class="bi bi-award me-2"></i>Довідники та система → Ліцензії
-                </button>
-            </h2>
-            <div id="p-licenses" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Що це:</strong> ліцензії закладу (Львівська, Київська, Польська тощо).<br>
-                    <strong>Ключова модель:</strong> ліцензія — властивість <strong>конкретного навчання</strong> (пари «студент + група»). Один студент може паралельно вчитися у двох групах під різними ліцензіями.<br>
-                    <strong>Що це означає на практиці:</strong>
-                    <ul class="mb-2">
-                        <li>Форма «Додати студента» має поле «Ліцензія вступу» — задає ліцензію для першого enrollment'а.</li>
-                        <li>Форма «Редагувати студента» такого поля не має — ліцензія керується в блоці «Навчання (групи)».</li>
-                    </ul>
-                    <strong>Базова ліцензія (зірочка):</strong> ліцензія, для якої ведеться військовий облік (Постанова №812). Може бути лише одна. На дашборді, у списках груп і в Додатку 12 за замовчуванням показуються лише студенти з хоча б одним активним enrollment під базовою ліцензією.<br>
-                    <strong>Видалити:</strong> можна лише якщо ліцензію не використовує жоден активний студент чи enrollment.
-                </div>
+    {% if has_perm('manage_licenses') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-licenses">
+                <i class="bi bi-award me-2"></i>Довідники та система → Ліцензії
+            </button>
+        </h2>
+        <div id="p-licenses" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Що це:</strong> ліцензії закладу (Львівська, Київська, Польська тощо).<br>
+                <strong>Ключова модель:</strong> ліцензія — властивість <strong>конкретного навчання</strong> (пари «студент + група»). Один студент може паралельно вчитися у двох групах під різними ліцензіями.<br>
+                <strong>Що це означає на практиці:</strong>
+                <ul class="mb-2">
+                    <li>Форма «Додати студента» має поле «Ліцензія вступу» — задає ліцензію для першого enrollment'а.</li>
+                    <li>Форма «Редагувати студента» такого поля не має — ліцензія керується в блоці «Навчання (групи)».</li>
+                </ul>
+                <strong>Базова ліцензія (зірочка):</strong> ліцензія, для якої ведеться військовий облік (Постанова №812). Може бути лише одна.<br>
+                <strong>Видалити:</strong> можна лише якщо ліцензію не використовує жоден активний студент чи enrollment.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-license-transfer">
-                    <i class="bi bi-arrow-left-right me-2"></i>Перевести між ліцензіями
-                </button>
-            </h2>
-            <div id="p-license-transfer" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Для чого:</strong> масово змінити ліцензію для групи студентів. Зміна завжди оформлюється наказом.<br>
-                    <strong>Що саме перевести (обов'язковий вибір):</strong>
-                    <ul class="mb-2">
-                        <li><strong>Усі активні навчання</strong> — якщо студент паралельно вчиться у двох групах під різними ліцензіями, ліцензія зміниться в <em>обох</em>.</li>
-                        <li><strong>Лише навчання у вибраних групах</strong> — ліцензія зміниться лише в тих enrollment'ах, що належать обраним групам. Решта збережуть свою ліцензію.</li>
-                    </ul>
-                    <strong>Кроки:</strong> обрати ліцензію призначення → обрати цільову аудиторію → обрати «Що саме перевести» → на кроці перевірки підтвердити з номером/датою наказу.<br>
-                    <strong>Результат:</strong> оновлюється <code>license_id</code> у відповідних enrollment'ах; кеш «основна ліцензія» синхронізується з новим primary enrollment. Створюється наказ.
-                </div>
+    {% if has_perm('manage_license_transfer') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-license-transfer">
+                <i class="bi bi-arrow-left-right me-2"></i>Перевести між ліцензіями
+            </button>
+        </h2>
+        <div id="p-license-transfer" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Для чого:</strong> масово змінити ліцензію для групи студентів. Зміна завжди оформлюється наказом.<br>
+                <strong>Що саме перевести (обов'язковий вибір):</strong>
+                <ul class="mb-2">
+                    <li><strong>Усі активні навчання</strong> — якщо студент паралельно вчиться у двох групах під різними ліцензіями, ліцензія зміниться в <em>обох</em>.</li>
+                    <li><strong>Лише навчання у вибраних групах</strong> — ліцензія зміниться лише в тих enrollment'ах, що належать обраним групам.</li>
+                </ul>
+                <strong>Кроки:</strong> обрати ліцензію призначення → обрати цільову аудиторію → обрати «Що саме перевести» → на кроці перевірки підтвердити з номером/датою наказу.<br>
+                <strong>Результат:</strong> оновлюється <code>license_id</code> у відповідних enrollment'ах; кеш «основна ліцензія» синхронізується з новим primary enrollment. Створюється наказ.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-license-report">
-                    <i class="bi bi-list-check me-2"></i>Звіт по ліцензіях
-                </button>
-            </h2>
-            <div id="p-license-report" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> Довідники та система → Звіт по ліцензіях.<br>
-                    <strong>Що показує:</strong> скільки <strong>навчань</strong> (enrollment'ів) припадає на кожну ліцензію — по групах, по курсах, по ступенях і формах навчання. Рахуються enrollment'и, а не унікальні студенти.<br>
-                    <strong>Паралельний студент</strong> з'явиться <strong>у двох групах</strong>: у своїй львівській групі — з badge «Львівська», у польській — з badge «Польська».<br>
-                    <strong>Вивантаження у Word:</strong> дві кнопки — «Завантажити (Денна)» і «Завантажити (Заочна)». У таблиці ліцензія береться <strong>саме з enrollment'а цієї групи</strong>.
-                </div>
+    {% if has_perm('license_report') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-license-report">
+                <i class="bi bi-list-check me-2"></i>Звіт по ліцензіях
+            </button>
+        </h2>
+        <div id="p-license-report" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Де:</strong> Довідники та система → Звіт по ліцензіях.<br>
+                <strong>Що показує:</strong> скільки <strong>навчань</strong> (enrollment'ів) припадає на кожну ліцензію — по групах, по курсах, по ступенях і формах навчання.<br>
+                <strong>Паралельний студент</strong> з'явиться <strong>у двох групах</strong>: у своїй львівській групі — з badge «Львівська», у польській — з badge «Польська».<br>
+                <strong>Вивантаження у Word:</strong> дві кнопки — «Завантажити (Денна)» і «Завантажити (Заочна)».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        {% endif %}
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: СИСТЕМА ТА ЗВІТНІСТЬ
+   ══════════════════════════════════════════════════════════════════ #}
 {% if 'system' in (faq_sections or []) %}
 <div class="faq-category-title">Система та звітність</div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-templates">
-                    <i class="bi bi-file-earmark-arrow-up me-2"></i>Довідники та система → Шаблони документів
-                </button>
-            </h2>
-            <div id="p-templates" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Завантаження і управління Word-шаблонами: назва для списків вибору, опис, «тільки для адміністратора», приховування зі списків. Там же — повний довідник змінних.
+    {% if has_perm('manage_users') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-users">
+                <i class="bi bi-people-fill me-2"></i>Довідники та система → Користувачі та права
+            </button>
+        </h2>
+        <div id="p-users" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Створення користувачів, зміна паролів, призначення груп (не-адміністратор бачить лише студентів своїх груп) і детальних прав доступу до кожного розділу адміністрування.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('view_logs') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-logs">
+                <i class="bi bi-list-check me-2"></i>Довідники та система → Логування
+            </button>
+        </h2>
+        <div id="p-logs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Хто, коли і що зробив у системі.<br>
+                <strong>Файли логів:</strong> <code>logs/app-YYYY-MM.log</code> — новий файл на кожен місяць.<br>
+                <strong>На сторінці:</strong> виберіть місяць у списку зверху. Кнопка «Завантажити .log» — скачати файл. Якщо за останні 6 місяців траплялись помилки — зверху з'являється згорнутий блок «Останні помилки».
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('analytics') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-analytics">
+                <i class="bi bi-graph-up me-2"></i>Довідники та система → Аналітика
+            </button>
+        </h2>
+        <div id="p-analytics" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Для чого:</strong> загальна картина по системі — студенти, групи, заповненість, якість оцінок, перевірки цілісності.<br>
+                <strong>Доступ:</strong> адміністратори бачать усе. Користувач з правом «Аналітика» бачить статистику лише по своїх групах.<br>
+                <strong>Що показує:</strong> KPI-картки, заповненість, готовність до генерації, розподіл по групах/формах/ступенях, прогноз випуску, найскладніші/найлегші предмети, розподіл ECTS, «група ризику», перевірки цілісності.<br>
+                <strong>Метрики ліцензій/дипломів</strong> рахуються по <strong>парах (студент × активна група)</strong>: студент з 2 групами і одним номером диплома → 50%.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('custom_export') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-custom-export">
+                <i class="bi bi-file-earmark-excel me-2"></i>Довідники та система → Кастомний експорт даних
+            </button>
+        </h2>
+        <div id="p-custom-export" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-3"><strong>Що це:</strong> конструктор звітів — обираєте <em>фільтри</em> (за ким шукати) і <em>колонки</em> (що саме вивести в кожному рядку), натискаєте «Завантажити» — отримуєте готовий файл.</p>
+                <p class="mb-2"><strong>Де:</strong> Довідники та система → «Кастомний експорт даних».</p>
+                <p class="mb-2"><strong>Швидкі пресети:</strong> Студенти старші 25 років, 30+ на бакалавраті, з паспортом громадянина України, з військовим обліком, з відстрочкою, без паспортних даних, без наказу про зарахування.</p>
+                <p class="mb-2"><strong>Режим рядків:</strong> один рядок на студента (основна група) або один рядок на навчання (для паралельного навчання).</p>
+                <p class="mb-2"><strong>Фільтри:</strong> вік, стать, група, ступінь, форма, курс, рік вступу, ліцензія, статус навчання, програма, архівні/заморожені, паспорт, військовий облік, документ про освіту, фото, наказ про зарахування.</p>
+                <p class="mb-2"><strong>Колонки:</strong> ~65 колонок — особисті, група, ліцензія, паспорт, документ про освіту, військовий облік, диплом, періоди навчання.</p>
+                <p class="mb-2"><strong>Формати:</strong> XLSX, CSV, DOCX, JSON.</p>
+                <div class="alert alert-light border small mb-0">
+                    <i class="bi bi-shield-check me-1"></i><strong>Важливо:</strong> експорт <em>не змінює</em> жодних даних — це лише читання.
                 </div>
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-archive">
-                    <i class="bi bi-archive me-2"></i>Навчальний процес → Архів груп
-                </button>
-            </h2>
-            <div id="p-archive" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Випущені групи переносяться в архів: зникають з активних списків, але всі дані зберігаються. Будь-яку групу можна повернути з архіву.<br>
-                    <strong>Щодо паралельних студентів:</strong> архівування групи вручну (кнопкою) не зачіпає їхні enrollments в інших групах. Автоматичний випуск через «Оформити випуск» коректно закриває enrollment лише цієї групи.
-                </div>
+    {% if has_perm('manage_templates') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-templates">
+                <i class="bi bi-file-earmark-arrow-up me-2"></i>Довідники та система → Шаблони документів
+            </button>
+        </h2>
+        <div id="p-templates" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Завантаження і управління Word-шаблонами: назва для списків вибору, опис, «тільки для адміністратора», приховування зі списків. Там же — повний довідник змінних.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-users">
-                    <i class="bi bi-people-fill me-2"></i>Довідники та система → Користувачі та права
-                </button>
-            </h2>
-            <div id="p-users" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Створення користувачів, зміна паролів, призначення груп (не-адміністратор бачить лише студентів своїх груп) і детальних прав доступу до кожного розділу адміністрування.
-                </div>
+{% endif %}
+
+{# ══════════════════════════════════════════════════════════════════
+   СЕКЦІЯ: ВІЙСЬКОВИЙ ОБЛІК
+   ══════════════════════════════════════════════════════════════════ #}
+{% if 'military' in (faq_sections or []) %}
+<div class="faq-category-title">Військовий облік</div>
+
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dashboard">
+                <i class="bi bi-shield-fill-check me-2"></i>Дашборд військового обліку
+            </button>
+        </h2>
+        <div id="p-mil-dashboard" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Де:</strong> Навчальний процес → «Військовий облік (Додаток 5)».<br>
+                <strong>Ліцензії (Постанова №812):</strong> за замовчуванням показуються лише студенти, які мають <strong>хоч один активний enrollment під базовою ліцензією</strong>. Паралельний студент, що має Львівську і Польську, потрапить у звіт.<br>
+                На дашборді: лічильники за категоріями Додатка 5, виключені за віком / відраховані в поточному році / мобілізовані, блок «Потребують уваги».
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-logs">
-                    <i class="bi bi-list-check me-2"></i>Довідники та система → Логування
-                </button>
-            </h2>
-            <div id="p-logs" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Хто, коли і що зробив у системі.<br>
-                    <strong>Файли логів:</strong> <code>logs/app-YYYY-MM.log</code> — новий файл на кожен місяць.<br>
-                    <strong>На сторінці:</strong> виберіть місяць у списку зверху. Кнопка «Завантажити .log» — скачати файл. Якщо за останні 6 місяців траплялись помилки — зверху з'являється згорнутий блок «Останні помилки».
-                </div>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-categories">
+                <i class="bi bi-people me-2"></i>Категорії Додатка 5
+            </button>
+        </h2>
+        <div id="p-mil-categories" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Пріоритет визначення категорії:
+                <ol>
+                    <li><strong>Призовник</strong> — за <code>status_badge</code>;</li>
+                    <li><strong>Жінка</strong> — за статтю;</li>
+                    <li><strong>category_override</strong> у картці;</li>
+                    <li>автоматично за <strong>військовим званням</strong>.</li>
+                </ol>
+                Не входять у 4 групи: «Невійськовозобов'язаний», «Знято з обліку»; окремі позначки графи 18 (виключений за віком, відрахований, мобілізований) — не в основний Додаток 5, але враховуються в Додатку 12.
             </div>
         </div>
+    </div>
+    {% endif %}
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-analytics">
-                    <i class="bi bi-graph-up me-2"></i>Довідники та система → Аналітика
-                </button>
-            </h2>
-            <div id="p-analytics" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Для чого:</strong> загальна картина по системі — студенти, групи, заповненість, якість оцінок, перевірки цілісності.<br>
-                    <strong>Доступ:</strong> адміністратори бачать усе. Користувач з правом «Аналітика» бачить статистику лише по своїх групах.<br>
-                    <strong>Що показує:</strong> KPI-картки, заповненість, готовність до генерації, розподіл по групах/формах/ступенях, прогноз випуску, найскладніші/найлегші предмети, розподіл ECTS, «група ризику», перевірки цілісності.<br>
-                    <strong>Метрики ліцензій/дипломів</strong> рахуються по <strong>парах (студент × активна група)</strong>: студент з 2 групами і одним номером диплома → 50%.
-                </div>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-date">
+                <i class="bi bi-calendar-date me-2"></i>Дата складання звіту
+            </button>
+        </h2>
+        <div id="p-mil-date" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                На списку категорії:
+                <ul>
+                    <li><strong>Щорічний</strong> — станом на 01 січня;</li>
+                    <li><strong>На сьогодні</strong> — поточна дата;</li>
+                    <li><strong>Довільна</strong> — будь-яка дата ДД.ММ.РРРР.</li>
+                </ul>
+                Дата впливає на відбір «хто вже мав бути на навчанні»: є наказ про зарахування → дата наказу ≤ дата складання; немає — умовна дата <strong>1 вересня</strong> року набору групи.
             </div>
         </div>
-		
-		<!-- ═══════ НОВИЙ БЛОК ═══════ -->
-<div class="accordion-item">
-    <h2 class="accordion-header">
-        <button class="accordion-button collapsed flex-wrap" type="button"
-                data-bs-toggle="collapse" data-bs-target="#p-custom-export">
-            <i class="bi bi-file-earmark-excel me-2"></i>
-            Довідники та система → Кастомний експорт даних
-        </button>
-    </h2>
-    <div id="p-custom-export" class="accordion-collapse collapse"
-         data-bs-parent="#faqAccordion">
-        <div class="accordion-body small">
+    </div>
+    {% endif %}
 
-            <p class="mb-3">
-                <strong>Що це:</strong> конструктор звітів — обираєте <em>фільтри</em> (за ким шукати)
-                і <em>колонки</em> (що саме вивести в кожному рядку), натискаєте «Завантажити» —
-                отримуєте готовий файл. Працює для будь-якої комбінації умов, а не лише
-                для заздалегідь заданих звітів.
-            </p>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-export5">
+                <i class="bi bi-file-earmark-excel me-2"></i>Експорт Додатка 5 (.xlsx)
+            </button>
+        </h2>
+        <div id="p-mil-export5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Кнопка «Згенерувати .xlsx» на сторінці категорії. У файл потрапляють ті самі фільтри, що на екрані: дата складання, ліцензія, ТЦК. У колонці ліцензії показуються <strong>усі активні ліцензії</strong> студента (через кому).
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-            <p class="mb-2">
-                <strong>Де:</strong> Довідники та система → «Кастомний експорт даних».
-            </p>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d12">
+                <i class="bi bi-bar-chart me-2"></i>Додаток 12 — відомість оперативного обліку
+            </button>
+        </h2>
+        <div id="p-mil-d12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Агреговані рядки за категоріями. «З 1 січня … зараховано» — лише студенти з наказом про зарахування у році. «Відраховано» — з наказів типу відрахування. Ліцензії: за замовчуванням лише студенти з базовою ліцензією (плюс студенти без ліцензій з бейджем).
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-1-circle-fill me-1" style="color: var(--brass);"></i>
-                Швидкі пресети — 90% типових запитів одним кліком
-            </h6>
-            <p class="mb-2">Угорі сторінки — кнопки готових запитів. Один клік автоматично
-                заповнює всі фільтри й колонки, залишається тільки натиснути «Завантажити»:</p>
-            <ul class="mb-3">
-                <li><strong>Студенти старші 25 років</strong> — усі активні, кому вже виповнилось 26+</li>
-                <li><strong>Студенти 30+ на бакалавраті</strong> — фільтр за віком і ступенем одночасно</li>
-                <li><strong>Студенти з паспортом громадянина України</strong> — усі, у кого додано саме паспорт-книжку (не ID-картку)</li>
-                <li><strong>Студенти з військовим обліком</strong> — ті, у кого є запис у відповідному модулі</li>
-                <li><strong>Студенти з відстрочкою</strong> — ті, у кого є тип відстрочки</li>
-                <li><strong>Студенти без паспортних даних</strong> — кого треба доопрацювати</li>
-                <li><strong>Студенти без наказу про зарахування</strong> — активні, але без відповідного наказу</li>
-            </ul>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d4">
+                <i class="bi bi-file-earmark-ruled me-2"></i>Додаток 4 — зміна облікових даних
+            </button>
+        </h2>
+        <div id="p-mil-d4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Офіційне <strong>повідомлення в ТЦК</strong> про зміну облікових даних (один Excel-файл на одного студента за шаблоном).<br>
+                <strong>Статуси:</strong> «Потребують друку» (не генерували або дані змінились), «Актуальні», «Усі».<br>
+                Після завантаження система зберігає «відбиток» полів. Якщо щось змінилось — студент знову в «Потрібен друк», і видно <strong>що саме</strong> (було → стало).
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-2-circle-fill me-1" style="color: var(--brass);"></i>
-                Режим рядків — «один студент» чи «один enrollment»
-            </h6>
-            <p class="mb-2">Ключове налаштування, що впливає на всю вибірку:</p>
-            <ul class="mb-3">
-                <li>
-                    <strong>Один рядок на студента</strong> (за замовчуванням) — для кожного студента
-                    береться його <em>основна</em> група. Паралельник, що вчиться у двох групах,
-                    з'явиться в результаті один раз — з даними тієї групи, де вона «основна».
-                    Підходить для більшості звітів по людях: телефони, паспорти, військовий облік.
-                </li>
-                <li>
-                    <strong>Один рядок на навчання</strong> — для кожного активного enrollment'а
-                    окремий рядок. Паралельник, що вчиться в КН-21 і МГ-1, з'явиться
-                    <strong>двічі</strong>: один раз з даними групи КН-21 (і її ліцензією, і її
-                    предметами), другий — з даними МГ-1. Підходить для звітів «скільки студентів
-                    навчається у групах під такою-то ліцензією», «скільки паралельників має
-                    дві форми навчання» тощо.
-                </li>
-            </ul>
-            <p class="mb-3">
-                <strong>Чекбокс «включити без enrollment'ів»</strong> — додає до вибірки студентів,
-                які не мають жодного активного навчання (архівні, заморожені, без груп).
-                Без нього вони автоматично відфільтровуються — так само, як на дашборді й
-                у решті звітів.
-            </p>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-tck">
+                <i class="bi bi-building me-2"></i>Довідник ТЦК
+            </button>
+        </h2>
+        <div id="p-mil-tck" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <strong>Адміністратор:</strong> повне керування — додавання, редагування, деактивація, видалення (якщо нікого не прив'язано), підтягування «невідомих» назв.<br>
+                <strong>Користувач лише з військовим обліком:</strong> бачить лише ТЦК, до яких прив'язані студенти; не редагує.
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-3-circle-fill me-1" style="color: var(--brass);"></i>
-                Фільтри — «за ким шукати»
-            </h6>
-            <p class="mb-2">Усі фільтри комбінуються через «ТА» — якщо вказали й вік, і ступінь,
-                і групу, знайдуться лише студенти, що задовольняють <em>усі три</em> одночасно.
-                Будь-який фільтр можна залишити порожнім — тоді він не застосовується.</p>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-orders">
+                <i class="bi bi-journal-text me-2"></i>Накази й військовий облік
+            </button>
+        </h2>
+        <div id="p-mil-orders" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                Єдина модель наказів (<code>orders</code>): зарахування, переведення на курс, відрахування, випуск, переведення між ліцензіями.
+                <ul>
+                    <li>без наказу про <strong>зарахування</strong> — студент у «Потребують уваги»;</li>
+                    <li>дата наказу про зарахування бере участь у відборі «станом на дату» для Додатка 5;</li>
+                    <li>накази видно в реєстрі <code>/admin/orders</code> і в блоці «Накази» на картці студента.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
-            <table class="table table-sm table-bordered small mb-3">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:35%;">Фільтр</th>
-                        <th>Що робить</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>Вік від / до</strong></td>
-                        <td>
-                            Рахується <strong>точний повний вік на сьогодні</strong> (а не різниця
-                            між поточним роком і роком народження). «Вік від 26» означає: уже
-                            виповнилось 26, тобто 26-річні <em>включно</em>. Студенти без дати
-                            народження в результат не потрапляють.
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Стать</strong></td>
-                        <td>Чоловіча / Жіноча. Студенти без визначеної статі не потрапляють
-                            у вибірку, якщо фільтр задано.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Група</strong></td>
-                        <td>Одна конкретна група. У режимі «один рядок на студента» це
-                            <em>основна</em> група; у режимі «один рядок на навчання» —
-                            будь-який enrollment у цій групі.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Ступінь / Форма / Курс</strong></td>
-                        <td>Стандартні атрибути групи — Бакалавр/Магістр, Денна/Заочна, 1–4 курс.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Рік вступу від / до</strong></td>
-                        <td>Діапазон. Можна вказати лише одну межу — тоді друга вважається
-                            «без обмежень».</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Ліцензія</strong></td>
-                        <td>Фільтр за ліцензією <em>конкретного enrollment'а</em>. Паралельник
-                            з двома ліцензіями у режимі «один рядок на навчання» потрапить у
-                            вибірку для тієї ліцензії, яка підходить, і не потрапить для іншої.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Статус навчання</strong></td>
-                        <td>Мультивибір: Активне / Випущено / Відраховано / Заморожено / Без enrollment.
-                            За замовчуванням — лише «Активне».</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Програма</strong></td>
-                        <td>Повна чи скорочена (коли студент має override кредитів, менший за
-                            програму групи — напр. вступив з визнанням частини кредитів
-                            попереднього диплома).</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Архівні / Заморожені</strong></td>
-                        <td>Два перемикачі: «включити архівних» і «включити заморожених».
-                            За замовчуванням <strong>виключені</strong> зі статистики — щоб
-                            цифри збігались з рештою системи.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Паспорт: будь-який / лише з / лише без</strong></td>
-                        <td>
-                            «Лише з паспортом» = є бодай один запис у <code>passport_documents</code>.
-                            «Лише без паспорта» = жодного запису — корисно для пошуку
-                            прогалин у даних.
-                        </td>
-                    </tr>
-                    <tr>
-                        <td><strong>Типи паспортів</strong></td>
-                        <td>Уточнення до попереднього фільтра: обрати конкретні типи —
-                            «Паспорт громадянина України», «ID-картка», «Свідоцтво про народження»
-                            тощо. Мультивибір.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Військовий облік</strong></td>
-                        <td>Є запис у <code>military</code> чи ні.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Документ про освіту</strong></td>
-                        <td>Є запис у <code>education_documents</code> чи ні.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Фото</strong></td>
-                        <td>Завантажене фото чи ні (окремо від паспорта й документів).</td>
-                    </tr>
-                    <tr>
-                        <td><strong>Наказ про зарахування</strong></td>
-                        <td>
-                            Є активний наказ типу <code>enrollment</code> для цього студента
-                            чи ні. «Лише без наказу» — корисний звіт, щоб вчасно знайти студентів,
-                            яких забули оформити.
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-4-circle-fill me-1" style="color: var(--brass);"></i>
-                Колонки — «що вивести в кожному рядку»
-            </h6>
-            <p class="mb-2">Права колонка містить <strong>~65 колонок</strong>, згрупованих за
-                тематикою. Обрати можна будь-яку комбінацію (можна навіть усі одразу —
-                кнопка «Обрати всі»).</p>
-
-            <ul class="mb-3">
-                <li><strong>Особисті дані:</strong> ID, прізвище/ім'я/по батькові (укр. і англ.),
-                    дата народження, <em>вік</em>, стать, ІПН, ЄДЕБО, телефон, резервний телефон,
-                    email, адреса, наявність фото. Поле <code>full_name_UA</code> — уже склеєне
-                    ПІБ одним рядком, зручно для вставки в Excel/Word без окремих колонок.</li>
-                <li><strong>Група та навчання:</strong> назва групи, курс, рік вступу, ступінь,
-                    форма навчання, спеціальність, код спеціальності, кредити програми,
-                    кредити скороченої програми (override), статус навчання, «основна/паралельна».</li>
-                <li><strong>Ліцензія:</strong> коротка та повна назва ліцензії <em>конкретного
-                    enrollment'а</em>. У режимі «один рядок на навчання» паралельник з'явиться
-                    зі своєю ліцензією для кожної групи.</li>
-                <li><strong>Паспорт:</strong> тип, серія, номер, ким видано, дата видачі,
-                    дійсний до, номер запису в ЄДДР. Поле <code>passport_full</code> — усе
-                    одним рядком («ID-картка, 001234567, 1234, ДП «Документ», 15.03.2020»).</li>
-                <li><strong>Документ про освіту:</strong> тип, номер, заклад, країна,
-                    дата завершення.</li>
-                <li><strong>Військовий облік:</strong> 15 полів — статус, категорія обліку, ТЦК,
-                    звання, ВОС (код і опис), номер «Оберіг», відстрочка (тип + до), ВЛК
-                    (постанова + дата), група інвалідності, примітка графи 18, дата формування,
-                    дата уточнення.</li>
-                <li><strong>Диплом:</strong> номер диплома і номер додатка (для конкретної
-                    групи — з таблиці <code>diplomas</code>).</li>
-                <li><strong>Періоди навчання:</strong> список філій та список дат
-                    («01/09/2022–29/09/2026; 01/09/2024–30/06/2025»).</li>
-            </ul>
-
-            <p class="mb-3">
-                <strong>Порядок колонок</strong> у файлі — той самий, що й у списку згрупованих
-                категорій вище (особисті → група → ліцензія → паспорт → …). Якщо потрібен
-                інший порядок — оберіть лише потрібні колонки, а потім за потреби
-                переупорядкуйте їх у самому Excel/Word після експорту (у майбутніх версіях
-                можна буде міняти порядок drag-and-drop).
-            </p>
-
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-5-circle-fill me-1" style="color: var(--brass);"></i>
-                Сортування
-            </h6>
-            <p class="mb-3">
-                Обираєте колонку для сортування (наприклад, «Особисті дані → Прізвище») і
-                порядок — за зростанням або за спаданням. Порожні значення завжди йдуть
-                у кінці, незалежно від напрямку — інакше при «за спаданням» вони б
-                опинились у перших рядках і заважали.
-            </p>
-
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-6-circle-fill me-1" style="color: var(--brass);"></i>
-                Формати файлу
-            </h6>
-            <table class="table table-sm table-bordered small mb-3">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width:15%;">Формат</th>
-                        <th>Для чого підходить</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td><strong>XLSX</strong></td>
-                        <td>Стандартний вибір. Шапка з темним фоном, автоширина колонок
-                            (до 50 символів), шапка «заморожена» — прокрутка не збиває
-                            заголовки. Відкривається в Excel, LibreOffice, Google Sheets.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>CSV</strong></td>
-                        <td>Для вставки в інші системи (1С, бухгалтерія) і для великих
-                            вибірок (>50 000 рядків — XLSX тоді стає повільним). Роздільник — <code>;</code>,
-                            кодування — UTF-8 з BOM — Excel відкриває кирилицю без
-                            «кракозябр».</td>
-                    </tr>
-                    <tr>
-                        <td><strong>DOCX</strong></td>
-                        <td>Коли треба швидко роздрукувати таблицю. Альбомна орієнтація
-                            (бо колонок багато), Times New Roman 8pt у тілі — читабельно,
-                            не «пливе» при друці.</td>
-                    </tr>
-                    <tr>
-                        <td><strong>JSON</strong></td>
-                        <td>Для програмної обробки (напр. вивантажити у сторонній сервіс).
-                            Порожні поля — <code>null</code>, а не <code>""</code>.</td>
-                    </tr>
-                </tbody>
-            </table>
-
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-7-circle-fill me-1" style="color: var(--brass);"></i>
-                Покроковий порядок роботи
-            </h6>
-            <ol class="mb-3">
-                <li>Відкрийте <strong>Довідники та система → Кастомний експорт даних</strong>.</li>
-                <li>Або натисніть пресет (усе заповниться автоматично), або налаштуйте
-                    фільтри вручну.</li>
-                <li>У правій колонці оберіть потрібні колонки. Не забудьте, що
-                    «Прізвище» + «Ім'я» + «По батькові» — це три окремі колонки;
-                    якщо хотіти одну — оберіть «ПІБ (укр.)» (<code>full_name_UA</code>).</li>
-                <li>Оберіть сортування (зазвичай — за прізвищем за зростанням).</li>
-                <li>Оберіть формат файлу.</li>
-                <li>Натисніть <strong>«Порахувати записи»</strong> — побачите кількість рядків
-                    над кнопками. Якщо нуль — можливо, випадково обрали несумісні фільтри
-                    (напр. «Лише без паспорта» + «Типи паспортів = ID-картка» — ці умови
-                    ніколи не виконаються одночасно).</li>
-                <li>Натисніть <strong>«Завантажити»</strong> — файл почне скачуватись.</li>
-            </ol>
-
-            <h6 class="fw-bold mt-3 mb-2">
-                <i class="bi bi-info-circle-fill me-1" style="color: var(--brass);"></i>
-                Корисні приклади
-            </h6>
-
-            <div class="table-responsive mb-3">
-                <table class="table table-sm table-bordered small mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width:45%;">Задача</th>
-                            <th>Що зробити</th>
-                        </tr>
-                    </thead>
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-rights">
+                <i class="bi bi-key me-2"></i>Права доступу
+            </button>
+        </h2>
+        <div id="p-mil-rights" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <table class="table table-sm">
+                    <thead><tr><th>Право</th><th>Що дає</th></tr></thead>
                     <tbody>
                         <tr>
-                            <td>Список студентів 30+ на бакалавраті з телефонами для обдзвону</td>
-                            <td>Пресет «Студенти 30+ на бакалавраті» → змінити колонки на
-                                <code>full_name_UA, phone, group_name</code></td>
+                            <td><code>manage_military_reports</code></td>
+                            <td>Дашборд, списки, експорт Додатків 5/12/4, перегляд довідника ТЦК (лише ТЦК зі студентами)</td>
                         </tr>
                         <tr>
-                            <td>Скільки паралельників навчається під кожною ліцензією</td>
-                            <td>Режим «один рядок на навчання» → колонки
-                                <code>full_name_UA, group_name, license_short_name_ua</code>
-                                → відсортувати за ліцензією</td>
-                        </tr>
-                        <tr>
-                            <td>Хто зі студентів має ID-картку, але вона прострочена</td>
-                            <td>Фільтр «Паспорт: лише з» + «Типи паспортів: ID-картка, ID-картка без носія»
-                                → колонки <code>full_name_UA, group_name, passport_number,
-                                passport_valid_until</code></td>
-                        </tr>
-                        <tr>
-                            <td>Кому треба оформити наказ про зарахування (прогалини)</td>
-                            <td>Пресет «Студенти без наказу про зарахування» → колонки
-                                <code>full_name_UA, group_name, license_short_name_ua</code></td>
-                        </tr>
-                        <tr>
-                            <td>Повний профіль усіх військовозобов'язаних для ТЦК</td>
-                            <td>Фільтр «Військовий облік: лише з» → обрати всі колонки з груп
-                                «Особисті» і «Військовий облік» → DOCX для друку</td>
-                        </tr>
-                        <tr>
-                            <td>Список студентів, яких треба дозаповнити (без паспорта і без фото)</td>
-                            <td>Фільтри «Паспорт: лише без» + «Фото: лише без» → колонки
-                                <code>full_name_UA, group_name, phone, email</code></td>
+                            <td><code>is_admin</code></td>
+                            <td>Усе вище + повне редагування довідника ТЦК</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
-
-            <div class="alert alert-light border small mb-0">
-                <i class="bi bi-shield-check me-1"></i>
-                <strong>Важливо:</strong> експорт <em>не змінює</em> жодних даних —
-                це лише читання. Жоден клік «Завантажити» не може зіпсувати картки
-                студентів чи накази. Помилка у фільтрах призведе лише до неправильної
-                вибірки, яку завжди можна переробити.
-            </div>
-
         </div>
     </div>
-</div>
-<!-- ═══════ /НОВИЙ БЛОК ═══════ -->
+    {% endif %}
 
-        {% endif %}
-{% if 'military' in (faq_sections or []) %}
-        <div class="faq-category-title">Військовий облік</div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dashboard">
-                    <i class="bi bi-shield-fill-check me-2"></i>Дашборд військового обліку
-                </button>
-            </h2>
-            <div id="p-mil-dashboard" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Де:</strong> Навчальний процес → «Військовий облік (Додаток 5)».<br>
-                    <strong>Ліцензії (Постанова №812):</strong> за замовчуванням показуються лише студенти, які мають <strong>хоч один активний enrollment під базовою ліцензією</strong>. Паралельний студент, що має Львівську і Польську, потрапить у звіт.<br>
-                    На дашборді: лічильники за категоріями Додатка 5, виключені за віком / відраховані в поточному році / мобілізовані, блок «Потребують уваги».<br>
-                    <strong>«Відраховані в поточному році»</strong> — це ті, хто за приміткою до Списків (Постанова №812) зберігаються в обліку <strong>до кінця поточного календарного року</strong>; у наступному році вони автоматично зникають зі звіту.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-categories">
-                    <i class="bi bi-people me-2"></i>Категорії Додатка 5
-                </button>
-            </h2>
-            <div id="p-mil-categories" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Пріоритет визначення категорії:
-                    <ol>
-                        <li><strong>Призовник</strong> — за <code>status_badge</code>;</li>
-                        <li><strong>Жінка</strong> — за статтю;</li>
-                        <li><strong>category_override</strong> у картці;</li>
-                        <li>автоматично за <strong>військовим званням</strong>.</li>
-                    </ol>
-                    Не входять у 4 групи: «Невійськовозобов'язаний», «Знято з обліку»; окремі позначки графи 18 (виключений за віком, відрахований, мобілізований) — не в основний Додаток 5, але враховуються в Додатку 12.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-date">
-                    <i class="bi bi-calendar-date me-2"></i>Дата складання звіту
-                </button>
-            </h2>
-            <div id="p-mil-date" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    На списку категорії:
-                    <ul>
-                        <li><strong>Щорічний</strong> — станом на 01 січня;</li>
-                        <li><strong>На сьогодні</strong> — поточна дата;</li>
-                        <li><strong>Довільна</strong> — будь-яка дата ДД.ММ.РРРР.</li>
-                    </ul>
-                    Дата впливає на відбір «хто вже мав бути на навчанні»: є наказ про зарахування → дата наказу ≤ дата складання; немає — умовна дата <strong>1 вересня</strong> року набору групи.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-export5">
-                    <i class="bi bi-file-earmark-excel me-2"></i>Експорт Додатка 5 (.xlsx)
-                </button>
-            </h2>
-            <div id="p-mil-export5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Кнопка «Згенерувати .xlsx» на сторінці категорії. У файл потрапляють ті самі фільтри, що на екрані: дата складання, ліцензія, ТЦК. У колонці ліцензії показуються <strong>усі активні ліцензії</strong> студента (через кому).
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d12">
-                    <i class="bi bi-bar-chart me-2"></i>Додаток 12 — відомість оперативного обліку
-                </button>
-            </h2>
-            <div id="p-mil-d12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Агреговані рядки за категоріями. «З 1 січня … зараховано» — лише студенти з наказом про зарахування у році. «Відраховано» — з наказів типу відрахування. Ліцензії: за замовчуванням лише студенти з базовою ліцензією (плюс студенти без ліцензій з бейджем).
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-d4">
-                    <i class="bi bi-file-earmark-ruled me-2"></i>Додаток 4 — зміна облікових даних
-                </button>
-            </h2>
-            <div id="p-mil-d4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Офіційне <strong>повідомлення в ТЦК</strong> про зміну облікових даних (один Excel-файл на одного студента за шаблоном).<br>
-                    <strong>Статуси:</strong> «Потребують друку» (не генерували або дані змінились), «Актуальні», «Усі».<br>
-                    Після завантаження система зберігає «відбиток» полів. Якщо щось змінилось — студент знову в «Потрібен друк», і видно <strong>що саме</strong> (було → стало).<br>
-                    <strong>Позначка графи 18 (Постанова №812)</strong> — «виключено за віком», «відраховано», «військовослужбовець» — <strong>теж входить у відбиток</strong>: якщо адміністратор змінив цю позначку — студент автоматично з'явиться в «Потребують друку».
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-tck">
-                    <i class="bi bi-building me-2"></i>Довідник ТЦК
-                </button>
-            </h2>
-            <div id="p-mil-tck" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <strong>Адміністратор:</strong> повне керування — додавання, редагування, деактивація, видалення (якщо нікого не прив'язано), підтягування «невідомих» назв.<br>
-                    <strong>Користувач лише з військовим обліком:</strong> бачить лише ТЦК, до яких прив'язані студенти; не редагує.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-orders">
-                    <i class="bi bi-journal-text me-2"></i>Накази й військовий облік
-                </button>
-            </h2>
-            <div id="p-mil-orders" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    Єдина модель наказів (<code>orders</code>): зарахування, переведення на курс, відрахування, випуск, переведення між ліцензіями.
-                    <ul>
-                        <li>без наказу про <strong>зарахування</strong> — студент у «Потребують уваги»;</li>
-                        <li>дата наказу про зарахування бере участь у відборі «станом на дату» для Додатка 5;</li>
-                        <li>накази видно в реєстрі <code>/admin/orders</code> і в блоці «Накази» на картці студента.</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-rights">
-                    <i class="bi bi-key me-2"></i>Права доступу
-                </button>
-            </h2>
-            <div id="p-mil-rights" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body small">
-                    <table class="table table-sm">
-                        <thead><tr><th>Право</th><th>Що дає</th></tr></thead>
-                        <tbody>
-                            <tr>
-                                <td><code>manage_military_reports</code></td>
-                                <td>Дашборд, списки, експорт Додатків 5/12/4, перегляд довідника ТЦК (лише ТЦК зі студентами)</td>
-                            </tr>
-                            <tr>
-                                <td><code>is_admin</code></td>
-                                <td>Усе вище + повне редагування довідника ТЦК</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
 {% endif %}
+
     </div>
 
     {# ─── Відомі обмеження ─── #}
@@ -1654,11 +1378,11 @@
         <div class="card-body small">
             <p class="mb-2">Ці місця <strong>працюють коректно</strong> для паралельного навчання, але мають обмеження, які варто знати:</p>
             <ul class="mb-0">
-                <li><strong>Редагування наявного документа про освіту з загального списку</strong> (без переходу через картку студента) — не показує дропдаун «Для якої групи». Щоб змінити прив'язку — відкрийте документ через картку студента (посилання «Керувати документами»). <em>Створення</em> нового документа з загального списку dropdown має — обмеження стосується лише редагування наявного.</li>
-                <li><strong>Study periods із group_id = NULL</strong> (легасі-записи, створені до впровадження per-group періодів) — показуються в усіх групах студента. Рекомендується прив'язати їх до конкретної групи в картці студента.</li>
-                <li><strong>Архівування групи вручну</strong> (кнопкою «Архівувати») — позначає архівними лише студентів, для яких ця група основна; enrollment'и паралельних студентів залишаються активними. Це очікувана поведінка.</li>
-                <li><strong>Історія змін військових даних</strong> на сторінці військових даних показує лише останні 200 змін. Повна історія — в загальному логуванні (<code>/admin/view_logs</code>).</li>
-                <li><strong>Об'єднання наказів</strong> — не можна скасувати. Решта наказів, крім головного, видаляються назавжди (з усіма позиціями, сканами, посиланнями). Робіть резервну копію БД перед масовим об'єднанням.</li>
+                <li><strong>Редагування наявного документа про освіту з загального списку</strong> — не показує дропдаун «Для якої групи». Щоб змінити прив'язку — відкрийте документ через картку студента.</li>
+                <li><strong>Study periods із group_id = NULL</strong> — показуються в усіх групах студента. Рекомендується прив'язати їх до конкретної групи в картці студента.</li>
+                <li><strong>Архівування групи вручну</strong> — позначає архівними лише студентів, для яких ця група основна.</li>
+                <li><strong>Історія змін військових даних</strong> на сторінці військових даних показує лише останні 200 змін. Повна історія — в <code>/admin/view_logs</code>.</li>
+                <li><strong>Об'єднання наказів</strong> — не можна скасувати. Решта наказів, крім головного, видаляються назавжди.</li>
             </ul>
         </div>
     </div>

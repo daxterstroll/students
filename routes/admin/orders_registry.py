@@ -36,7 +36,7 @@ def _can_manage() -> bool:
     if session.get('is_admin'):
         return True
     perms = set(session.get('permissions') or [])
-    return bool(perms & {'manage_orders', 'manage_students', 'manage_expulsion'})
+    return 'manage_orders' in perms
 
 
 CREATE_ORDER_LINKS = [
@@ -92,7 +92,7 @@ def _extract_group_id_from_payload(order_type, payload):
     return None
 
 @admin_bp.route('/admin/orders')
-@permission_required('manage_students')
+@permission_required('manage_orders')
 def orders_list():
     if not _can_manage():
         flash('Немає доступу до реєстру наказів.', 'error')
@@ -340,7 +340,7 @@ def _enrich_order(conn, order: dict) -> dict:
     return order
     
 @admin_bp.route('/admin/orders/<int:order_id>')
-@permission_required('manage_students')
+@permission_required('manage_orders') 
 def order_detail(order_id):
     if not _can_manage():
         flash('Немає доступу.', 'error')
@@ -385,7 +385,7 @@ def order_detail(order_id):
 
 
 @admin_bp.route('/admin/orders/<int:order_id>/edit', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('manage_orders')
 def order_edit(order_id):
     if not _can_manage():
         flash('Немає доступу.', 'error')
@@ -650,7 +650,7 @@ def order_edit(order_id):
     )
 
 @admin_bp.route('/admin/orders/<int:order_id>/items/<int:item_id>/remove', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('manage_orders') 
 def order_item_remove(order_id, item_id):
     if not _can_manage():
         flash('Немає доступу.', 'error')
@@ -691,7 +691,7 @@ def order_item_remove(order_id, item_id):
     return redirect(url_for('admin.order_edit', order_id=order_id))
 
 @admin_bp.route('/admin/orders/<int:order_id>/delete', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('manage_orders')
 def order_delete(order_id):
     """Видалити наказ разом із пунктами (order_items)."""
     if not _can_manage():
@@ -727,7 +727,7 @@ def order_delete(order_id):
     return redirect(url_for('admin.orders_list'))
 
 @admin_bp.route('/admin/orders/merge', methods=['POST'])
-@permission_required('manage_students')
+@permission_required('manage_orders') 
 def orders_merge():
     if not _can_manage():
         flash('Немає доступу.', 'error')
@@ -803,11 +803,8 @@ def orders_merge():
 
     return redirect(url_for('admin.order_detail', order_id=main_id))
 
-@admin_bp.route(
-    '/admin/orders/<int:order_id>/items/<int:item_id>/move',
-    methods=['POST'],
-)
-@permission_required('manage_students')
+@admin_bp.route('/admin/orders/<int:order_id>/items/<int:item_id>/move', methods=['POST'],)
+@permission_required('manage_orders') 
 def order_item_move(order_id, item_id):
     """Перенести студента (order_item) в інший наказ того ж типу."""
     if not _can_manage():
