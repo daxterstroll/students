@@ -128,7 +128,7 @@ def _user_can_access_student(session_obj, student_groups, primary_group_id):
 # ============================================================
 
 @students_bp.route('/activities_grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students')
 def edit_activities_grades(student_id):
     """Виставлення оцінок студента з практик/курсових/атестацій.
 
@@ -329,7 +329,7 @@ def edit_activities_grades(student_id):
 # ============================================================
 
 @students_bp.route('/grades/<int:student_id>', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students')
 def edit_grades(student_id):
     """Виставлення оцінок студента з предметів.
 

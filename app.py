@@ -1,12 +1,12 @@
-
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="docxcompose")
 
 import argparse
 import json
 import os
+import time
 
-from flask import Flask, render_template, request, abort, session
+from flask import Flask, render_template, request, abort, session, redirect, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from routes.config import SECRET_KEY, PREFERRED_URL_SCHEME
@@ -41,6 +41,9 @@ app = Flask(
 )
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  before_request №1: блокування прямого доступу через /static/
+# ═══════════════════════════════════════════════════════════════════
 @app.before_request
 def block_templates_static_access():
     """Забороняє прямий доступ через /static/ до:
@@ -59,13 +62,104 @@ def block_templates_static_access():
         '/static/uploads/import_sessions/',
         '/static/uploads/office_sessions/',
         '/static/uploads/photo_bulk_sessions/',
-        '/static/uploads/license_reports/', 
+        '/static/uploads/license_reports/',
     )
     for prefix in blocked_prefixes:
         if request.path.startswith(prefix):
             abort(404)
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  before_request №2: TTL-оновлення прав у сесії
+# ═══════════════════════════════════════════════════════════════════
+@app.before_request
+def refresh_session_permissions():
+    """
+    Перечитує права користувача з БД кожні PERMS_TTL секунд.
+
+    Навіщо: адмін редагує права через /admin/users/<id>/edit, вони
+    змінюються в БД, але в сесії користувача залишається стара копія
+    (кеш ставиться при логіні). Через це забране право не діє, поки
+    користувач не вийде і не ввійде заново, а навбар показує старі
+    пункти. TTL робить зміни «живими» без перелогіну.
+
+    Чому TTL, а не на кожен запит: SELECT на кожен запит — це зайве
+    навантаження. 5 секунд — компроміс: адмін змінює права, а через
+    кілька секунд вони вже діють у користувача.
+
+    ВАЖЛИВО: після зміни прав користувач повинен ПЕРЕЗАВАНТАЖИТИ
+    сторінку в браузері — інакше HTML у нього вже відрендерений зі
+    старим навбаром, і нові права він побачить лише при переході
+    на іншу сторінку (або після F5).
+    """
+    from routes.db import get_db  # локальний імпорт — щоб не плодити
+                                   # циклічну залежність app.py ↔ routes.db
+
+    PERMS_TTL = 5
+
+    if not session.get('user_id'):
+        return  # незалогінений — нічого не робимо
+
+    now = time.time()
+    last_check = session.get('perm_check_at', 0)
+    if now - last_check < PERMS_TTL:
+        return  # ще рано — віримо кешу
+
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute(
+                "SELECT role, is_admin, permissions FROM users WHERE id = ?",
+                (session['user_id'],)
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(
+            f"before_request refresh_session_permissions: не вдалося "
+            f"перевірити права (user_id={session.get('user_id')}): {e}",
+            exc_info=True,
+        )
+        return  # не валимо запит через тимчасову помилку БД
+
+    if row is None:
+        # Користувача видалили, поки він був залогінений — розлогінюємо.
+        logger.info(
+            f"before_request: користувач id={session.get('user_id')} "
+            f"зник з БД — примусовий logout"
+        )
+        session.clear()
+        return redirect(url_for('auth.login'))
+
+    try:
+        perms = json.loads(row['permissions'] or '[]')
+        if not isinstance(perms, list):
+            perms = []
+    except (ValueError, TypeError):
+        perms = []
+
+    is_admin = bool(row['is_admin']) or (row['role'] == 'admin')
+
+    # Оновлюємо лише якщо дійсно щось змінилось — щоб не переписувати
+    # cookie на кожен запит.
+    changed = (
+        session.get('is_admin') != is_admin
+        or session.get('role') != row['role']
+        or session.get('permissions') != perms
+    )
+    if changed:
+        session['is_admin'] = is_admin
+        session['role'] = row['role']
+        session['permissions'] = perms
+        session.modified = True
+
+    session['perm_check_at'] = now
+    session.modified = True
+
+
+# ═══════════════════════════════════════════════════════════════════
+#  context_processor для навбара
+# ═══════════════════════════════════════════════════════════════════
 @app.context_processor
 def inject_nav_context():
     """
@@ -87,8 +181,6 @@ def inject_nav_context():
             'perms': [],
         }
 
-    # Бейджі з кількістю нових заявок - та сама логіка, що й була в
-    # inject_pending_counts (тепер об'єднана в один processor).
     try:
         from routes.db import get_db
         conn = get_db()
@@ -126,6 +218,7 @@ def inject_nav_context():
         'perms': list(perms),
     }
 
+
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 app.secret_key = SECRET_KEY
@@ -135,11 +228,6 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
     PREFERRED_URL_SCHEME=PREFERRED_URL_SCHEME,
-    # 90 МБ: /apply дозволяє до 5 файлів × 15 МБ (документ про освіту)
-    # + 5 × 15 МБ (паспорт) + 5 × 15 МБ (військовий облік) + фото + PDF,
-    # але реально завантажують рідко більше 40–50 МБ за раз.
-    # Обмеження 32 МБ різало запити ДО того, як спрацьовував
-    # before_request із перевіркою сумарного розміру в /apply.
     MAX_CONTENT_LENGTH=90 * 1024 * 1024,
 )
 
@@ -167,6 +255,7 @@ app.register_blueprint(public_update_bp)
 app.register_blueprint(exam_sessions_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
+
 @app.template_filter('format_phone')
 def format_phone_filter(value):
     if not value:
@@ -175,7 +264,8 @@ def format_phone_filter(value):
     canonical = normalize_phone_ua(value) or ''
     if len(canonical) == 13 and canonical.startswith('+380'):
         return f"+380 ({canonical[4:6]}) {canonical[6:9]}-{canonical[9:11]}-{canonical[11:13]}"
-    return str(value)  # іноземний / нерозпізнаний — як є
+    return str(value)
+
 
 @app.errorhandler(404)
 def handle_404(e):

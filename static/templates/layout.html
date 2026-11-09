@@ -65,7 +65,7 @@
                    ================================================== #}
                 {% for section in nav_sections %}
                     {% if section.type == 'dropdown' %}
-                        {# Збираємо лише видимі пункти + роздільники #}
+                        {# 1. Фільтруємо пункти за правами, роздільники лишаємо поки що #}
                         {% set visible_items = [] %}
                         {% for item in section['items'] %}
                             {% if item.get('divider') %}
@@ -74,41 +74,74 @@
                                 {% set _ = visible_items.append(item) %}
                             {% endif %}
                         {% endfor %}
-                        {# Показуємо dropdown, лише якщо є хоч один реальний пункт #}
-                        {% set real_items = visible_items | rejectattr('divider', 'defined') | list %}
-                        {% set real_items = visible_items | selectattr('perm', 'defined') | list %}
-                        {% if real_items %}
-                        <li class="nav-item dropdown d-none d-lg-block">
-                            <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
-                                <i class="bi {{ section.icon }}" aria-hidden="true"></i> {{ section.label }}
-                                {# Підсумковий бейдж у самому заголовку dropdown #}
-                                {% set header_badges = [] %}
-                                {% for item in visible_items %}
-                                    {% if item.get('badge_key') and has_perm(item.get('perm')) and nav_badges[item.badge_key] %}
-                                        {% set _ = header_badges.append(nav_badges[item.badge_key]) %}
-                                    {% endif %}
-                                {% endfor %}
-                                {% if header_badges %}
-                                <span class="badge bg-danger ms-1">{{ header_badges | sum }}</span>
+
+                        {# 2. Санитизація роздільників:
+                              - прибрати з початку,
+                              - прибрати в кінці,
+                              - прибрати подряд ідучі (лишити один).
+                           Інакше при обмежених правах користувач бачить <hr>, під
+                           яким нічого немає (напр. тільки «Документи освіти» і «Паспорт»
+                           — тоді обидва роздільники секції стають порожніми). #}
+                        {% set clean_items = [] %}
+                        {% for item in visible_items %}
+                            {% if item.get('divider') %}
+                                {% if clean_items and not clean_items[-1].get('divider') %}
+                                    {% set _ = clean_items.append(item) %}
                                 {% endif %}
-                            </a>
-                            <ul class="dropdown-menu dropdown-menu-dark">
-                                {% for item in visible_items %}
-                                    {% if item.get('divider') %}
-                                    <li><hr class="divider"></li>
-                                    {% elif has_perm(item.perm) %}
-                                    <li>
-                                        <a class="dropdown-item" href="{{ url_for(item.url) }}">
-                                            <i class="bi {{ item.icon }}" aria-hidden="true"></i> {{ item.label }}
-                                            {% if item.get('badge_key') and nav_badges[item.badge_key] %}
-                                            <span class="badge bg-danger ms-1">{{ nav_badges[item.badge_key] }}</span>
-                                            {% endif %}
-                                        </a>
-                                    </li>
+                            {% else %}
+                                {% set _ = clean_items.append(item) %}
+                            {% endif %}
+                        {% endfor %}
+                        {% if clean_items and clean_items[-1].get('divider') %}
+                            {% set _ = clean_items.pop() %}
+                        {% endif %}
+
+                        {# Реальні пункти (без роздільників) — для вирішення «dropdown чи пряма ссилка» #}
+                        {% set real_items = clean_items | selectattr('perm', 'defined') | list %}
+
+                        {% if real_items|length == 1 %}
+                            {# ── Один доступний пункт → рендеримо як пряму ссилку ── #}
+                            {% set only = real_items[0] %}
+                            <li class="nav-item d-none d-lg-block">
+                                <a class="nav-link" href="{{ url_for(only.url) }}">
+                                    <i class="bi {{ only.icon }}" aria-hidden="true"></i> {{ only.label }}
+                                    {% if only.get('badge_key') and nav_badges[only.badge_key] %}
+                                    <span class="badge bg-danger ms-1">{{ nav_badges[only.badge_key] }}</span>
                                     {% endif %}
-                                {% endfor %}
-                            </ul>
-                        </li>
+                                </a>
+                            </li>
+                        {% elif real_items %}
+                            {# ── Звичайний dropdown ── #}
+                            <li class="nav-item dropdown d-none d-lg-block">
+                                <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <i class="bi {{ section.icon }}" aria-hidden="true"></i> {{ section.label }}
+                                    {% set header_badges = [] %}
+                                    {% for item in clean_items %}
+                                        {% if item.get('badge_key') and has_perm(item.get('perm')) and nav_badges[item.badge_key] %}
+                                            {% set _ = header_badges.append(nav_badges[item.badge_key]) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                    {% if header_badges %}
+                                    <span class="badge bg-danger ms-1">{{ header_badges | sum }}</span>
+                                    {% endif %}
+                                </a>
+                                <ul class="dropdown-menu dropdown-menu-dark">
+                                    {% for item in clean_items %}
+                                        {% if item.get('divider') %}
+                                        <li><hr class="divider"></li>
+                                        {% elif has_perm(item.perm) %}
+                                        <li>
+                                            <a class="dropdown-item" href="{{ url_for(item.url) }}">
+                                                <i class="bi {{ item.icon }}" aria-hidden="true"></i> {{ item.label }}
+                                                {% if item.get('badge_key') and nav_badges[item.badge_key] %}
+                                                <span class="badge bg-danger ms-1">{{ nav_badges[item.badge_key] }}</span>
+                                                {% endif %}
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    {% endfor %}
+                                </ul>
+                            </li>
                         {% endif %}
 
                     {% elif section.type == 'link' %}

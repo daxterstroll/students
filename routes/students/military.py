@@ -336,7 +336,7 @@ def add_military(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students')
 def military_data(student_id):
     """GET — форма + історія; POST — збереження вручну."""
     conn = get_db()

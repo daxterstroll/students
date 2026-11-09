@@ -1179,7 +1179,7 @@ def manage_study_periods(student_id):
     )
 
 @students_bp.route('/students/add', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students') 
 def add_student():
     """Форма додавання нового студента."""
     conn = get_db()
@@ -1452,7 +1452,7 @@ def add_student():
 
 
 @students_bp.route('/students/<int:student_id>/photo', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students') 
 def upload_photo(student_id):
     """Завантаження/заміна фото студента (POST)."""
     if request.method == 'GET':
@@ -1517,7 +1517,7 @@ def upload_photo(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/photo/delete', methods=['POST'])
-@login_required('')
+@permission_required('manage_students') 
 def delete_photo(student_id):
     """Видаляє фото студента."""
     conn = get_db()
@@ -1639,7 +1639,7 @@ def freeze_student(student_id):
     return redirect(url_for('students.student_details', student_id=student_id))
 
 @students_bp.route('/students/<int:student_id>/edit', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students')
 def edit_student(student_id):
     """Форма редагування особистих даних студента."""
     conn = get_db()

@@ -109,57 +109,51 @@
                     </div>
                     {% endif %}
 
-                    {% if e.status == 'active' %}
-                    <div class="enrollment-card__actions">
-                        {% if not e.is_primary %}
-                        <form method="POST"
-                              action="{{ url_for('students.enrollment_set_primary', student_id=student.id) }}"
-                              class="d-inline">
-                            <input type="hidden" name="group_id" value="{{ e.group_id }}">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                    title="Позначити цю групу основною (metadata, без наказу)">
-                                <i class="bi bi-star"></i> Зробити основною
-                            </button>
-                        </form>
-                        {% endif %}
-                        <button type="button" class="btn btn-sm btn-outline-info js-change-license"
-                                data-group-id="{{ e.group_id }}"
-                                data-group-name="{{ e.group_name or '' }}">
-                            <i class="bi bi-award"></i> Змінити ліцензію
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-info js-change-edebo"
-                                data-group-id="{{ e.group_id }}"
-                                data-group-name="{{ e.group_name or '' }}"
-                                data-current-edebo="{{ e.edebo_code or '' }}">
-                            <i class="bi bi-upc-scan"></i> Змінити ЄДЕБО
-                        </button>
+					{% if e.status == 'active' and has_perm('manage_students') %}
+					<div class="enrollment-card__actions">
+						{% if not e.is_primary %}
+						<form method="POST"
+							  action="{{ url_for('students.enrollment_set_primary', student_id=student.id) }}"
+							  class="d-inline">
+							<input type="hidden" name="group_id" value="{{ e.group_id }}">
+							<button type="submit" class="btn btn-sm btn-outline-secondary"
+									title="Позначити цю групу основною (metadata, без наказу)">
+								<i class="bi bi-star"></i> Зробити основною
+							</button>
+						</form>
+						{% endif %}
+						<button type="button" class="btn btn-sm btn-outline-info js-change-license"
+								data-group-id="{{ e.group_id }}" data-group-name="{{ e.group_name or '' }}">
+							<i class="bi bi-award"></i> Змінити ліцензію
+						</button>
+						<button type="button" class="btn btn-sm btn-outline-info js-change-edebo"
+								data-group-id="{{ e.group_id }}" data-group-name="{{ e.group_name or '' }}"
+								data-current-edebo="{{ e.edebo_code or '' }}">
+							<i class="bi bi-upc-scan"></i> Змінити ЄДЕБО
+						</button>
 						<button type="button" class="btn btn-sm btn-outline-primary js-transfer-group"
-                                data-group-id="{{ e.group_id }}"
-                                data-group-name="{{ e.group_name or '' }}"
-                                data-study-form="{{ e.study_form or '' }}">
-                            <i class="bi bi-arrow-left-right"></i> Перевести
-                        </button>
+								data-group-id="{{ e.group_id }}" data-group-name="{{ e.group_name or '' }}"
+								data-study-form="{{ e.study_form or '' }}">
+							<i class="bi bi-arrow-left-right"></i> Перевести
+						</button>
 						<button type="button" class="btn btn-sm btn-outline-info js-change-credits"
-                                data-group-id="{{ e.group_id }}"
-                                data-group-name="{{ e.group_name or '' }}"
-                                data-current-credits="{{ e.program_credits_override or '' }}"
-                                data-group-credits="{{ e.program_credits or '' }}">
-                            <i class="bi bi-signpost-split"></i> Скорочена програма
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-success js-end-enrollment"
-                                data-group-id="{{ e.group_id }}"
-                                data-action-type="graduate"
-                                data-group-name="{{ e.group_name or '' }}">
-                            <i class="bi bi-mortarboard"></i> Оформити випуск
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-danger js-end-enrollment"
-                                data-group-id="{{ e.group_id }}"
-                                data-action-type="expel"
-                                data-group-name="{{ e.group_name or '' }}">
-                            <i class="bi bi-person-x"></i> Відрахувати
-                        </button>
-                    </div>
-                    {% endif %}
+								data-group-id="{{ e.group_id }}" data-group-name="{{ e.group_name or '' }}"
+								data-current-credits="{{ e.program_credits_override or '' }}"
+								data-group-credits="{{ e.program_credits or '' }}">
+							<i class="bi bi-signpost-split"></i> Скорочена програма
+						</button>
+						<button type="button" class="btn btn-sm btn-outline-success js-end-enrollment"
+								data-group-id="{{ e.group_id }}" data-action-type="graduate"
+								data-group-name="{{ e.group_name or '' }}">
+							<i class="bi bi-mortarboard"></i> Оформити випуск
+						</button>
+						<button type="button" class="btn btn-sm btn-outline-danger js-end-enrollment"
+								data-group-id="{{ e.group_id }}" data-action-type="expel"
+								data-group-name="{{ e.group_name or '' }}">
+							<i class="bi bi-person-x"></i> Відрахувати
+						</button>
+					</div>
+					{% endif %}
                 </div>
                 {% endfor %}
             {% else %}
@@ -170,21 +164,30 @@
             {% endif %}
         </div>
 
-        <div class="enrollment-footer">
-            <button type="button" class="btn btn-sm btn-primary"
-                    data-bs-toggle="modal" data-bs-target="#addEnrollmentModal">
-                <i class="bi bi-plus-lg me-1"></i> Додати паралельне навчання
-            </button>
-            <span class="text-muted small ms-2">
-                <i class="bi bi-info-circle me-1"></i>
-                Усі зміни навчання оформлюються наказом.
-                {% if session.get('is_admin') %}
-                <span class="text-warning-emphasis">
-                    <i class="bi bi-tools"></i> Адмін може змінити без наказу (виправлення помилки) — галочка в діалозі.
-                </span>
-                {% endif %}
-            </span>
-        </div>
+	
+	{% if has_perm('manage_students') %}
+	<div class="enrollment-footer">
+		{% if has_perm('manage_students') %}
+		<button type="button" class="btn btn-sm btn-primary"
+				data-bs-toggle="modal" data-bs-target="#addEnrollmentModal">
+			<i class="bi bi-plus-lg me-1"></i> Додати паралельне навчання
+		</button>
+		{% endif %}
+		<span class="text-muted small ms-2">
+			{% if has_perm('manage_students') %}
+				<span class="text-warning-emphasis">
+					<i class="bi bi-info-lg"></i> Усі зміни навчання оформлюються наказом.
+				</span>
+				{% if session.get('is_admin') %}
+				<span class="text-warning-emphasis">
+					<br><i class="bi bi-tools"></i> Адмін може змінити без наказу (виправлення помилки) — галочка в діалозі.
+				</span>
+				{% endif %}
+			{% endif %}
+		</span>
+	</div>
+	
+		{% endif %}
     </div>
 </div>
 

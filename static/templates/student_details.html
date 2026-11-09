@@ -195,32 +195,34 @@
     <div class="page-header student-header">
         <div class="d-flex flex-column flex-md-row align-items-center gap-3">
 
-            <div class="flex-shrink-0 photo-frame-wrap">
-                <div class="photo-frame photo-frame--header">
-                    {% if student.photo %}
-                    <img src="{{ url_for('static', filename=student.photo) }}?v={{ range(1,99999) | random }}"
-                         alt="Фото студента" class="photo-frame__img">
-                    {% else %}
-                    <div class="photo-frame__placeholder">
-                        <i class="bi bi-person-fill"></i>
-                    </div>
-                    {% endif %}
-                </div>
+			<div class="flex-shrink-0 photo-frame-wrap">
+				<div class="photo-frame photo-frame--header">
+					{% if student.photo %}
+					<img src="{{ url_for('static', filename=student.photo) }}?v={{ range(1,99999) | random }}"
+						 alt="Фото студента" class="photo-frame__img">
+					{% else %}
+					<div class="photo-frame__placeholder">
+						<i class="bi bi-person-fill"></i>
+					</div>
+					{% endif %}
+				</div>
 
-                <button type="button" class="btn btn-sm btn-outline-primary rounded-circle photo-corner-btn"
-                        data-bs-toggle="modal" data-bs-target="#photoUploadModal"
-                        title="{{ 'Змінити фото' if student.photo else 'Додати фото' }}">
-                    <i class="bi bi-camera"></i>
-                </button>
-                {% if student.photo %}
-                <form method="POST" action="{{ url_for('students.delete_photo', student_id=student.id) }}"
-                      onsubmit="return confirm('Видалити фото студента?');" class="m-0 d-inline">
-                    <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle photo-corner-btn photo-corner-btn--delete" title="Видалити фото">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </form>
-                {% endif %}
-            </div>
+				{% if has_perm('manage_students') %}
+				<button type="button" class="btn btn-sm btn-outline-primary rounded-circle photo-corner-btn"
+						data-bs-toggle="modal" data-bs-target="#photoUploadModal"
+						title="{{ 'Змінити фото' if student.photo else 'Додати фото' }}">
+					<i class="bi bi-camera"></i>
+				</button>
+				{% if student.photo %}
+				<form method="POST" action="{{ url_for('students.delete_photo', student_id=student.id) }}"
+					  onsubmit="return confirm('Видалити фото студента?');" class="m-0 d-inline">
+					<button type="submit" class="btn btn-sm btn-outline-danger rounded-circle photo-corner-btn photo-corner-btn--delete" title="Видалити фото">
+						<i class="bi bi-trash"></i>
+					</button>
+				</form>
+				{% endif %}
+				{% endif %}
+			</div>
 
 		<div class="flex-grow-1 text-center text-md-start">
                 <h2 class="mb-1">
@@ -268,36 +270,38 @@
     </div>
 
     {# ── Плашка «заморожений» ── #}
-    {% if student.status == 'frozen' %}
-    <div class="alert alert-warning d-flex align-items-start gap-3 mb-3">
-        <i class="bi bi-snow fs-4 flex-shrink-0"></i>
-        <div class="flex-grow-1">
-            <div class="fw-semibold mb-1">Студент заморожений</div>
-            <div class="small">
-                {% if student.frozen_previous_group_name %}
-                    Був(ла) у групі <strong>{{ student.frozen_previous_group_name }}</strong>.
-                {% endif %}
-                {% if student.frozen_reason %}
-                    <br>Причина: {{ student.frozen_reason }}
-                {% endif %}
-                {% if student.frozen_at %}
-                    <br><span class="text-muted">Заморожено: {{ student.frozen_at }}{% if student.frozen_by %} — {{ student.frozen_by }}{% endif %}</span>
-                {% endif %}
-                {% if student.frozen_document_file %}
-                    <br><a href="{{ url_for('static', filename=student.frozen_document_file) }}"
-                           target="_blank" class="small">
-                        <i class="bi bi-paperclip"></i> Документ-підстава
-                    </a>
-                {% endif %}
-            </div>
-            <div class="mt-2">
-                <a href="{{ url_for('admin.frozen_students') }}" class="btn btn-sm btn-outline-warning">
-                    <i class="bi bi-arrow-right-circle me-1"></i> Керувати заморозкою (на сторінці «Заморожені»)
-                </a>
-            </div>
-        </div>
-    </div>
-    {% endif %}
+	{% if student.status == 'frozen' %}
+	<div class="alert alert-warning d-flex align-items-start gap-3 mb-3">
+		<i class="bi bi-snow fs-4 flex-shrink-0"></i>
+		<div class="flex-grow-1">
+			<div class="fw-semibold mb-1">Студент заморожений</div>
+			<div class="small">
+				{% if student.frozen_previous_group_name %}
+					Був(ла) у групі <strong>{{ student.frozen_previous_group_name }}</strong>.
+				{% endif %}
+				{% if student.frozen_reason %}
+					<br>Причина: {{ student.frozen_reason }}
+				{% endif %}
+				{% if student.frozen_at %}
+					<br><span class="text-muted">Заморожено: {{ student.frozen_at }}{% if student.frozen_by %} — {{ student.frozen_by }}{% endif %}</span>
+				{% endif %}
+				{% if student.frozen_document_file %}
+					<br><a href="{{ url_for('static', filename=student.frozen_document_file) }}"
+						   target="_blank" class="small">
+						<i class="bi bi-paperclip"></i> Документ-підстава
+					</a>
+				{% endif %}
+			</div>
+			{% if has_perm('manage_frozen_students') %}
+			<div class="mt-2">
+				<a href="{{ url_for('admin.frozen_students') }}" class="btn btn-sm btn-outline-warning">
+					<i class="bi bi-arrow-right-circle me-1"></i> Керувати заморозкою (на сторінці «Заморожені»)
+				</a>
+			</div>
+			{% endif %}
+		</div>
+	</div>
+	{% endif %}
 
     {# ── Плашка «в архіві» ── #}
     {% if student.status == 'archived' %}
@@ -336,11 +340,11 @@
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-2"></i>До списку
         </a>
-        {% if groups_data and student.status == 'active' %}
-        <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
-            <i class="bi bi-snow me-2"></i>Заморозити студента
-        </button>
-        {% endif %}
+		{% if groups_data and student.status == 'active' and has_perm('manage_students') %}
+		<button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
+			<i class="bi bi-snow me-2"></i>Заморозити студента
+		</button>
+{% endif %}
     </div>
 
     <div class="row g-4">
@@ -349,20 +353,22 @@
             <div class="card h-100 shadow-sm border-0" style="border-radius: 16px; overflow: hidden;">
                 <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center flex-wrap gap-2 pt-4 pb-3">
                     <h4 class="mb-0"><i class="bi bi-info-circle-fill me-2" style="color: var(--brass);"></i>Основна інформація</h4>
-                    <div class="d-flex gap-2 flex-wrap">
-                        <a href="{{ url_for('students.generate_update_link', student_id=student.id) }}"
-                           class="btn btn-sm btn-outline-secondary" title="Створити посилання для студента">
-                            <i class="bi bi-link-45deg"></i> Посилання для оновлення
-                        </a>
-                        <button type="button" class="btn btn-sm btn-outline-secondary"
-                                data-bs-toggle="modal" data-bs-target="#changeNameModal">
-                            <i class="bi bi-person-vcard"></i> Змінити ПІБ
-                        </button>
-                        <a href="{{ url_for('students.edit_student', student_id=student.id) }}"
-                           class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-pencil"></i> Редагувати
-                        </a>
-                    </div>
+					<div class="d-flex gap-2 flex-wrap">
+						{% if has_perm('manage_students') %}
+						<a href="{{ url_for('students.generate_update_link', student_id=student.id) }}"
+						   class="btn btn-sm btn-outline-secondary" title="Створити посилання для студента">
+							<i class="bi bi-link-45deg"></i> Посилання для оновлення
+						</a>
+						<button type="button" class="btn btn-sm btn-outline-secondary"
+								data-bs-toggle="modal" data-bs-target="#changeNameModal">
+							<i class="bi bi-person-vcard"></i> Змінити ПІБ
+						</button>
+						<a href="{{ url_for('students.edit_student', student_id=student.id) }}"
+						   class="btn btn-sm btn-outline-primary">
+							<i class="bi bi-pencil"></i> Редагувати
+						</a>
+						{% endif %}
+					</div>
                 </div>
                 <div class="card-body pt-0">
                     <div class="row g-3">
@@ -469,11 +475,13 @@
                     </h2>
                     <div id="passportCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3">
-                                <a href="{{ url_for('admin.manage_passport_documents', student_id=student.id) }}" class="btn btn-sm btn-primary">
-                                    <i class="bi bi-pencil me-1"></i>Керувати паспортними даними
-                                </a>
-                            </div>
+							{% if has_perm('manage_passport_documents') %}
+							<div class="d-flex justify-content-end mb-3">
+								<a href="{{ url_for('admin.manage_passport_documents', student_id=student.id) }}" class="btn btn-sm btn-primary">
+									<i class="bi bi-pencil me-1"></i>Керувати паспортними даними
+								</a>
+							</div>
+							{% endif %}
 
                             {% if groups_data %}
                                 {% if groups_data|length > 1 %}
@@ -609,17 +617,19 @@
                     </h2>
                     <div id="militaryCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3 flex-wrap gap-2">
-                                {% if military %}
-                                    <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-primary">
-                                        <i class="bi bi-pencil me-1"></i>Редагувати військові дані
-                                    </a>
-                                {% else %}
-                                    <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-success">
-                                        <i class="bi bi-plus-circle me-1"></i>Додати військові дані
-                                    </a>
-                                {% endif %}
-                            </div>
+							<div class="d-flex justify-content-end mb-3 flex-wrap gap-2">
+								{% if has_perm('manage_students') %}
+									{% if military %}
+										<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-primary">
+											<i class="bi bi-pencil me-1"></i>Редагувати військові дані
+										</a>
+									{% else %}
+										<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-success">
+											<i class="bi bi-plus-circle me-1"></i>Додати військові дані
+										</a>
+									{% endif %}
+								{% endif %}
+							</div>
 
                             {% if military %}
                                 {% if military.status_badge or military.registration_category or military.valid_until or military.formed_at %}
@@ -984,14 +994,16 @@
                 </div>
                 {% endfor %}
             </div>
-            {% else %}
-            <p class="text-muted text-center py-4 mb-0">
-                Наказів немає
-                <span class="d-block small mt-2">
-                    <a href="{{ url_for('admin.enrollment_order') }}">Оформити наказ про зарахування</a>
-                </span>
-            </p>
-            {% endif %}
+			{% else %}
+			<p class="text-muted text-center py-4 mb-0">
+				Наказів немає
+				{% if has_perm('create_enrollment_order') %}
+				<span class="d-block small mt-2">
+					<a href="{{ url_for('admin.enrollment_order') }}">Оформити наказ про зарахування</a>
+				</span>
+				{% endif %}
+			</p>
+			{% endif %}
 
             {% if enrollment_corrections %}
             <div class="mt-3 pt-3 border-top">
@@ -1206,12 +1218,14 @@
                     </h2>
                     <div id="educationDocsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3">
-                                <a href="{{ url_for('admin.manage_education_documents', student_id=student.id) }}"
-                                   class="btn btn-sm btn-primary">
-                                    <i class="bi bi-pencil me-1"></i>Керувати документами
-                                </a>
-                            </div>
+							{% if has_perm('manage_education_documents') %}
+							<div class="d-flex justify-content-end mb-3">
+								<a href="{{ url_for('admin.manage_education_documents', student_id=student.id) }}"
+								   class="btn btn-sm btn-primary">
+									<i class="bi bi-pencil me-1"></i>Керувати документами
+								</a>
+							</div>
+							{% endif %}
 
                             {% if groups_data %}
                                 {% if groups_data|length > 1 %}
@@ -1393,12 +1407,14 @@
                     </h2>
                     <div id="studyPeriodsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-                            <div class="d-flex justify-content-end mb-3">
-                                <a href="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
-                                   class="btn btn-sm btn-primary">
-                                    <i class="bi bi-pencil me-1"></i>Керувати періодами
-                                </a>
-                            </div>
+							{% if has_perm('study_periods') %}
+							<div class="d-flex justify-content-end mb-3">
+								<a href="{{ url_for('students.manage_study_periods', student_id=student.id) }}"
+								   class="btn btn-sm btn-primary">
+									<i class="bi bi-pencil me-1"></i>Керувати періодами
+								</a>
+							</div>
+							{% endif %}
 
                             {% if groups_data %}
                                 {% if groups_data|length > 1 %}
