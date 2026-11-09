@@ -3,32 +3,302 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
   <title>{{ sheet.discipline_name }} — відомість</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@6.0.0-alpha.1/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0e1b2c;
+      --ink-2: #16283f;
+      --paper: #f4efe3;
+      --paper-2: #fffdf8;
+      --brass: #c8a24a;
+      --brass-lt: #e9cf8f;
+      --brass-dark: #a5822f;
+      --stamp: #a23b2e;
+      --success: #3f8a5b;
+      --muted: #8a8071;
+      --line: rgba(31,42,58,.13);
+      --shadow: 0 24px 60px -20px rgba(14,27,44,.28), 0 6px 18px rgba(14,27,44,.06);
+      --radius: 18px;
+    }
+
+    html { color-scheme: light; }
+
+    body {
+      background:
+        radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.15), transparent 60%),
+        radial-gradient(900px 500px at 110% 110%, rgba(14,27,44,.08), transparent 55%),
+        linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
+      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--ink-2);
+      min-height: 100vh;
+      color-scheme: light;
+    }
+
+    /* ============ Шапка ============ */
+    .header-glass {
+      background: linear-gradient(135deg, rgba(14,27,44,.96) 0%, rgba(22,40,63,.96) 100%);
+      backdrop-filter: blur(10px);
+      color: #f4efe3;
+      border-radius: var(--radius);
+      border-bottom: 4px solid var(--brass);
+      box-shadow: var(--shadow);
+      padding: 1.5rem 1.6rem;
+      margin-bottom: 1.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+    .header-glass::after {
+      content: "";
+      position: absolute;
+      top: -50%; right: -10%;
+      width: 340px; height: 340px;
+      background: radial-gradient(circle, rgba(200,162,74,.25) 0%, transparent 65%);
+      pointer-events: none;
+      animation: glowPulse 6s ease-in-out infinite alternate;
+    }
+    @keyframes glowPulse {
+      from { transform: scale(.9); opacity: .55; }
+      to   { transform: scale(1.15); opacity: 1; }
+    }
+    .header-glass h1 {
+      color: #f4efe3;
+      font-weight: 800;
+      letter-spacing: -.01em;
+      position: relative;
+      z-index: 1;
+    }
+    .header-glass .meta-line {
+      color: rgba(244,239,227,.75);
+      font-size: .9rem;
+      position: relative;
+      z-index: 1;
+    }
+    .header-glass .meta-line i { color: var(--brass-lt); }
+
+    /* ============ Поля ввода ============ */
+    input.form-control,
+    select.form-select,
+    textarea.form-control {
+      background-color: #ffffff !important;
+      color: #0e1b2c !important;
+      color-scheme: light;
+      -webkit-text-fill-color: #0e1b2c;
+      caret-color: #0e1b2c;
+    }
+    input.form-control::placeholder,
+    textarea.form-control::placeholder {
+      color: #8a8071 !important;
+      opacity: 1;
+    }
+    input.form-control:focus,
+    select.form-select:focus,
+    textarea.form-control:focus {
+      background-color: #ffffff !important;
+      color: #0e1b2c !important;
+      -webkit-text-fill-color: #0e1b2c;
+    }
+
+    /* ============ Поля оцінок ============ */
+    .grade-input {
+      text-align: center;
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 10px;
+      border: 1.5px solid var(--line);
+      transition: border-color .18s ease, box-shadow .18s ease, transform .12s ease;
+      background-color: #ffffff !important;
+      color: #0e1b2c !important;
+      color-scheme: light;
+      -webkit-text-fill-color: #0e1b2c;
+      caret-color: #0e1b2c;
+    }
+    .grade-input:focus {
+      border-color: var(--brass);
+      box-shadow: 0 0 0 4px rgba(200,162,74,.22);
+      animation: pulseRing .55s ease;
+      transform: scale(1.02);
+      background-color: #ffffff !important;
+      color: #0e1b2c !important;
+      -webkit-text-fill-color: #0e1b2c;
+    }
+    @keyframes pulseRing {
+      0%   { box-shadow: 0 0 0 0 rgba(200,162,74,.45); }
+      70%  { box-shadow: 0 0 0 8px rgba(200,162,74,0); }
+      100% { box-shadow: 0 0 0 4px rgba(200,162,74,.22); }
+    }
+    .grade-input:read-only {
+      background: linear-gradient(135deg, #f7f3ea, #efe7d5) !important;
+      color: #8a8071 !important;
+      -webkit-text-fill-color: #8a8071;
+      cursor: not-allowed;
+      border-style: dashed;
+    }
+
+    /* ============ Строки таблицы (десктоп) ============ */
+    .student-table thead th {
+      background: var(--ink);
+      color: var(--brass-lt);
+      font-size: .74rem;
+      font-weight: 800;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      border-color: rgba(255,255,255,.08);
+      vertical-align: middle;
+      padding: .7rem .5rem;
+    }
+    .student-table tbody tr {
+      transition: background .2s ease;
+    }
+    .student-table tbody tr:nth-child(odd) { background: rgba(200,162,74,.05); }
+    .student-table tbody tr:hover {
+      background: rgba(200,162,74,.12);
+      box-shadow: inset 0 0 0 1px rgba(200,162,74,.35);
+    }
+    .student-table tbody td { vertical-align: middle; }
+
+    /* ============ Мобильные карточки ============ */
+    @keyframes cardEnter {
+      from { opacity: 0; transform: translateY(14px) scale(.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    .student-card-mobile {
+      background: #ffffff;
+      color: #0e1b2c;
+      border: 1px solid #e9e0cc;
+      border-left: 4px solid var(--brass);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+      margin-bottom: .85rem;
+      box-shadow: 0 6px 18px -12px rgba(14,27,44,.28);
+      animation: cardEnter .45s cubic-bezier(.22,1,.36,1) both;
+    }
+    .student-card-mobile:nth-child(1) { animation-delay: .02s; }
+    .student-card-mobile:nth-child(2) { animation-delay: .06s; }
+    .student-card-mobile:nth-child(3) { animation-delay: .10s; }
+    .student-card-mobile:nth-child(4) { animation-delay: .14s; }
+    .student-card-mobile:nth-child(5) { animation-delay: .18s; }
+
+    /* ============ Sticky-панель — скрыта по умолчанию ============ */
+    .mobile-save-bar { display: none; }
+
+    @media (max-width: 768px) {
+      body { padding-bottom: 82px; }
+      .mobile-save-bar {
+        display: block;
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        padding: .7rem .9rem;
+        background: rgba(255,253,248,.94);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 -6px 20px -8px rgba(14,27,44,.25);
+        border-top: 1px solid var(--line);
+        z-index: 1030;
+        animation: slideUp .35s cubic-bezier(.22,1,.36,1) both;
+      }
+      @keyframes slideUp {
+        from { transform: translateY(100%); }
+        to   { transform: translateY(0); }
+      }
+    }
+
+    /* ============ Плавная подсветка нац/ECTS ============ */
+    .national-label, .ects-label, .national-cell, .ects-cell {
+      transition: color .3s ease, background-color .3s ease;
+      border-radius: 6px;
+      padding: 1px 4px;
+    }
+    .national-cell.flash, .ects-cell.flash,
+    .national-label.flash, .ects-label.flash {
+      animation: flashValue .45s ease;
+    }
+    @keyframes flashValue {
+      0%   { background-color: rgba(200,162,74,.35); }
+      100% { background-color: transparent; }
+    }
+
+    /* ============ Кнопка сохранения ============ */
+    .btn-save {
+      background: linear-gradient(135deg, var(--brass-lt), var(--brass) 60%, var(--brass-dark));
+      color: #241a06;
+      font-weight: 800;
+      border: none;
+      border-radius: 10px;
+      padding: .42rem 1rem;
+      font-size: .85rem;
+      transition: transform .15s ease, box-shadow .2s ease;
+      -webkit-text-fill-color: #241a06;
+    }
+    .btn-save:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px -10px rgba(200,162,74,.7);
+      color: #241a06;
+      -webkit-text-fill-color: #241a06;
+    }
+    .btn-save:active { transform: translateY(0) scale(.98); }
+
+    /* На мобилке кнопка остаётся крупной — там важна площадь нажатия */
+    @media (max-width: 768px) {
+      .mobile-save-bar .btn-save {
+        padding: .7rem 1.4rem;
+        font-size: 1rem;
+        border-radius: 12px;
+      }
+    }
+
+    /* ============ Явное управление видимостью ============ */
+    .desktop-wrap { display: block; }
+    .mobile-wrap  { display: none; }
+
+    @media (max-width: 768px) {
+      .desktop-wrap { display: none !important; }
+      .mobile-wrap  { display: block; }
+      .header-glass { padding: 1.1rem 1.2rem; }
+      .header-glass h1 { font-size: 1.15rem; }
+      .header-glass .meta-line { font-size: .82rem; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
 </head>
-<body class="bg-light">
-<div class="container py-4" style="max-width:960px">
-  <div class="card shadow-sm mb-3">
-    <div class="card-body">
-      <h1 class="h4 mb-1">{{ sheet.discipline_name }}</h1>
-      <div class="text-muted small">
-        {{ sheet.group_name }} · курс {{ sheet.course }} · {{ sheet.study_form }} ·
-        {{ sheet.academic_year }} · семестр {{ sheet.semester }}
-        {% if sheet.license_name %} · ліцензія {{ sheet.license_name }}{% endif %}
-      </div>
-      <div class="small mt-1">
-        {{ sheet.control_form }}
-        {% if sheet.hours_credits %} · {{ sheet.hours_credits }}{% endif %}
-        {% if sheet.exam_date %} · {{ sheet.exam_date }}{% endif %}
-        {% if sheet.teacher_name %} · {{ sheet.teacher_name }}{% endif %}
-      </div>
+<body>
+<div class="container py-3 py-md-4" style="max-width: 1200px;">
+
+  <div class="header-glass">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+      <h1 class="h4 mb-0">{{ sheet.discipline_name }}</h1>
       {% if readonly %}
-      <div class="alert alert-warning py-2 mt-3 mb-0 small">
-        Відомість затверджено або заблоковано — лише перегляд.
-      </div>
+      <span class="badge text-bg-warning">Лише перегляд</span>
       {% endif %}
     </div>
+    <div class="meta-line mb-1">
+      <i class="bi bi-people-fill"></i>
+      {{ sheet.group_name }} · курс {{ sheet.course }} · {{ sheet.study_form }}
+    </div>
+    <div class="meta-line mb-1">
+      <i class="bi bi-calendar3"></i>
+      {{ sheet.academic_year }} · семестр {{ sheet.semester }}
+      {% if sheet.license_name %} · ліцензія {{ sheet.license_name }}{% endif %}
+    </div>
+    <div class="meta-line">
+      <i class="bi bi-journal-check"></i>
+      {{ sheet.control_form }}
+      {% if sheet.hours_credits %} · {{ sheet.hours_credits }}{% endif %}
+      {% if sheet.exam_date %} · {{ sheet.exam_date }}{% endif %}
+      {% if sheet.teacher_name %} · {{ sheet.teacher_name }}{% endif %}
+    </div>
   </div>
+
+  {% if readonly %}
+  <div class="alert alert-warning py-2 small d-flex align-items-center gap-2">
+    <i class="bi bi-lock-fill"></i>
+    <span>Відомість затверджено або заблоковано — оцінки не редагуються.</span>
+  </div>
+  {% endif %}
 
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -39,10 +309,12 @@
   {% endwith %}
 
   <form method="post">
-    <div class="card shadow-sm">
+
+    <!-- ================= ДЕСКТОП ================= -->
+    <div class="card shadow-sm desktop-wrap" style="border-radius: 14px; overflow: hidden;">
       <div class="table-responsive">
-        <table class="table table-sm table-hover mb-0 align-middle">
-          <thead class="table-light">
+        <table class="table table-sm mb-0 align-middle student-table">
+          <thead>
             <tr>
               <th rowspan="2">#</th>
               <th rowspan="2">Студент</th>
@@ -75,13 +347,13 @@
               </td>
               {% endif %}
               {% if not readonly %}
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
                          name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
                          name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
                          name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm"
+              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
                          name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
                          title="Або введіть підсумок напряму, або 3 компоненти (сума)"></td>
               {% else %}
@@ -90,8 +362,8 @@
               <td>{{ st.points_exam if st.points_exam is not none else '—' }}</td>
               <td>{{ st.points if st.points is not none else '—' }}</td>
               {% endif %}
-              <td class="small">{{ st.national_grade or '—' }}</td>
-              <td>{{ st.ects or '—' }}</td>
+              <td class="small national-cell">{{ st.national_grade or '—' }}</td>
+              <td class="ects-cell">{{ st.ects or '—' }}</td>
               <td class="small">{{ sheet.teacher_name or '—' }}</td>
             </tr>
             {% endfor %}
@@ -99,62 +371,238 @@
         </table>
       </div>
       {% if not readonly %}
-      <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <span class="small text-muted">Національна шкала та ECTS порахуються після збереження</span>
-        <button type="submit" class="btn btn-primary">Зберегти оцінки</button>
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3"
+           style="border-top: 1px solid var(--line);">
+        <span class="small text-muted">
+          <i class="bi bi-info-circle me-1"></i>
+          Нац. шкала та ECTS оновлюються автоматично при введенні балів.
+          Після «Зберегти» дані зафіксуються у відомості.
+        </span>
+        <button type="submit" class="btn btn-save">
+          <i class="bi bi-save me-1"></i>Зберегти оцінки
+        </button>
       </div>
       {% endif %}
     </div>
-  
+
+    <!-- ================= МОБІЛКА ================= -->
+    <div class="mobile-wrap">
+      {% for st in students %}
+      <div class="student-card-mobile">
+
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div class="fw-bold" style="font-size: 1rem;">
+            <span class="text-muted me-1">#{{ st.position }}</span>
+            {{ st.full_name }}
+          </div>
+        </div>
+
+        {% if sheet.entity_kind in ('attestation', 'coursework') %}
+        <div class="mb-2">
+          <label class="small text-muted fw-bold text-uppercase" style="font-size:.7rem; letter-spacing:.06em;">Тема роботи</label>
+          {% if not readonly %}
+          <input type="text" class="form-control form-control-sm"
+                 name="work_topic_{{ st.student_id }}" value="{{ st.work_topic or '' }}">
+          {% else %}<span class="small">{{ st.work_topic or '—' }}</span>{% endif %}
+        </div>
+        {% endif %}
+
+        {% if not readonly %}
+        <div class="row g-2 mb-2">
+          <div class="col-6">
+            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Міжсесійний</label>
+            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                   name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}">
+          </div>
+          <div class="col-6">
+            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Поточні</label>
+            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                   name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}">
+          </div>
+          <div class="col-6">
+            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Іспит / Залік</label>
+            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                   name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}">
+          </div>
+          <div class="col-6">
+            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Підсумкова</label>
+            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                   name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
+                   title="Або введіть підсумок напряму, або 3 компоненти (сума)">
+          </div>
+        </div>
+        {% else %}
+        <div class="mb-2">
+          <span class="small text-muted">Міжсесійний / Поточні / Іспит:</span>
+          <span class="small">
+            {{ st.points_mid if st.points_mid is not none else '—' }} /
+            {{ st.points_current if st.points_current is not none else '—' }} /
+            {{ st.points_exam if st.points_exam is not none else '—' }}
+          </span>
+        </div>
+        <div class="mb-2">
+          <span class="small text-muted">Підсумкова:</span>
+          <span class="fw-bold">{{ st.points if st.points is not none else '—' }}</span>
+        </div>
+        {% endif %}
+
+        <div class="d-flex justify-content-between align-items-center pt-2 mt-1 border-top" style="border-color: var(--line) !important;">
+          <span class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Нац. / ECTS</span>
+          <span class="small">
+            <span class="national-label fw-semibold">{{ st.national_grade or '—' }}</span>
+            · <span class="ects-label fw-semibold">{{ st.ects or '—' }}</span>
+          </span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if not readonly %}
+    <div class="mobile-save-bar">
+      <button type="submit" class="btn btn-save w-100">
+        <i class="bi bi-save me-1"></i>Зберегти оцінки
+      </button>
+    </div>
+    {% endif %}
+  </form>
+</div>
+
 <script>
 (function () {
+  const CONTROL_FORM = {{ sheet.control_form | tojson }};
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function pointsToNationalEcts(points, controlForm) {
+    if (points === null || points === undefined || points === '') return { nat: '', ects: '' };
+    let p = parseInt(points, 10);
+    if (isNaN(p)) return { nat: '', ects: '' };
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+
+    let ects, examNat;
+    if (p >= 90)      { ects = 'A'; examNat = 'Відмінно / Excellent'; }
+    else if (p >= 82) { ects = 'B'; examNat = 'Добре / Good'; }
+    else if (p >= 74) { ects = 'C'; examNat = 'Добре / Good'; }
+    else if (p >= 64) { ects = 'D'; examNat = 'Задовільно / Satisfactory'; }
+    else if (p >= 60) { ects = 'E'; examNat = 'Задовільно / Satisfactory'; }
+    else if (p >= 35) { ects = 'FX'; examNat = 'Незадовільно / Fail'; }
+    else              { ects = 'F';  examNat = 'Незадовільно / Fail'; }
+
+    if (controlForm === 'Залік') {
+      return {
+        nat:  p >= 60 ? 'Зараховано' : 'Незараховано',
+        ects: (p >= 60 || ects === 'FX' || ects === 'F') ? ects : 'F',
+      };
+    }
+    return { nat: examNat, ects: ects };
+  }
+
+  function parseNum(v) {
+    v = (v || '').toString().trim();
+    if (v === '') return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) ? null : n;
+  }
+
+  function flash(el) {
+    if (!el || reducedMotion) return;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+
   function bindRow(row) {
-    var mid = row.querySelector('input[name^="points_mid_"]');
-    var cur = row.querySelector('input[name^="points_current_"]');
-    var exam = row.querySelector('input[name^="points_exam_"]');
-    var total = row.querySelector('input[name^="points_"]');
-    if (!total) return;
-    // points_ must not match points_mid etc — already name^="points_" matches all!
-    total = row.querySelector('input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])');
+    const mid  = row.querySelector('input[name^="points_mid_"]');
+    const cur  = row.querySelector('input[name^="points_current_"]');
+    const exam = row.querySelector('input[name^="points_exam_"]');
+    const total = row.querySelector(
+      'input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])'
+    );
     if (!total || !mid || !cur || !exam) return;
 
-    function parse(v) {
-      v = (v || '').toString().trim();
-      if (v === '') return null;
-      var n = parseInt(v, 10);
-      return isNaN(n) ? null : n;
+    const totalTd = total.closest('td');
+    let natEl = null, ectsEl = null;
+    if (totalTd) {
+      natEl = totalTd.nextElementSibling;
+      ectsEl = natEl ? natEl.nextElementSibling : null;
     }
+    if (!natEl) {
+      const card = total.closest('.student-card-mobile');
+      if (card) {
+        natEl = card.querySelector('.national-label');
+        ectsEl = card.querySelector('.ects-label');
+      }
+    }
+
+    function setText(el, value) {
+      if (!el) return;
+      const newVal = (value === null || value === undefined || value === '') ? '—' : value;
+      if (el.textContent.trim() !== newVal) {
+        el.textContent = newVal;
+        flash(el);
+      }
+    }
+
     function recalc() {
-      var a = parse(mid.value), b = parse(cur.value), c = parse(exam.value);
-      if (a === null && b === null && c === null) {
+      const a = parseNum(mid.value);
+      const b = parseNum(cur.value);
+      const c = parseNum(exam.value);
+      const anyFilled = (a !== null || b !== null || c !== null);
+
+      if (!anyFilled) {
         total.readOnly = false;
         total.classList.remove('bg-light');
         return;
       }
-      var sum = (a || 0) + (b || 0) + (c || 0);
+
+      let sum = (a || 0) + (b || 0) + (c || 0);
       if (sum > 100) sum = 100;
+
       total.value = sum;
       total.readOnly = true;
       total.classList.add('bg-light');
+
+      const { nat, ects } = pointsToNationalEcts(sum, CONTROL_FORM);
+      setText(natEl, nat);
+      setText(ectsEl, ects);
     }
+
     mid.addEventListener('input', recalc);
     cur.addEventListener('input', recalc);
     exam.addEventListener('input', recalc);
+
     total.addEventListener('input', function () {
-      // ручне введення підсумку — очищаємо компоненти
-      if (!total.readOnly) {
-        mid.value = '';
-        cur.value = '';
-        exam.value = '';
+      if (total.readOnly) return;
+      mid.value = '';
+      cur.value = '';
+      exam.value = '';
+
+      const manual = parseNum(total.value);
+      if (manual === null) {
+        setText(natEl, '—');
+        setText(ectsEl, '—');
+        return;
       }
+      const { nat, ects } = pointsToNationalEcts(manual, CONTROL_FORM);
+      setText(natEl, nat);
+      setText(ectsEl, ects);
     });
+
     recalc();
   }
-  document.querySelectorAll('table tbody tr').forEach(bindRow);
+
+  document.querySelectorAll('tr, .student-card-mobile').forEach(function (row) {
+    if (row.querySelector('input[name^="points_mid_"]')) bindRow(row);
+  });
+
+  function syncDisabledByVisibility() {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    document.querySelectorAll('.desktop-wrap input').forEach(el => { el.disabled = isMobile; });
+    document.querySelectorAll('.mobile-wrap input').forEach(el => { el.disabled = !isMobile; });
+  }
+  syncDisabledByVisibility();
+  window.addEventListener('resize', syncDisabledByVisibility);
 })();
 </script>
-
-</form>
-</div>
 </body>
 </html>

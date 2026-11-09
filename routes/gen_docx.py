@@ -321,9 +321,11 @@ def get_attestation_data(student_id, group_id):
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type, a.position, IFNULL(ag.grade, '') AS grade, IFNULL(ag.name, '') AS student_name
+            SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type,
+                   a.position, IFNULL(ag.grade, '') AS grade, IFNULL(ag.name, '') AS student_name
             FROM attestations a
-            LEFT JOIN activity_grades ag ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
+            LEFT JOIN activity_grades ag
+                   ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
             WHERE a.group_id = ?
         """
         params = [student_id, group_id]
@@ -333,13 +335,43 @@ def get_attestation_data(student_id, group_id):
         results = conn.execute(query, params).fetchall()
         attestations = [dict(r) for r in results]
         valid_attestations = []
+
+        # Імпорт тут, а не зверху модуля — щоб уникнути циклічної залежності
+        # (documents.py імпортує admin/__init__ тощо).
+        from routes.admin.documents import translate_to_en
+
         for attestation in attestations:
-            if all(key in attestation for key in ['id', 'code', 'name', 'credits', 'type', 'position', 'grade', 'student_name']):
+            if all(key in attestation for key in ('id', 'code', 'name', 'credits', 'type',
+                                                   'position', 'grade', 'student_name')):
                 apply_track_overrides(attestation, is_reduced_program)
                 attestation.pop('reduced_credits', None)
                 attestation.pop('reduced_type', None)
                 attestation = {k: clean_text(v) for k, v in attestation.items()}
                 attestation['grade'] = format_grade(attestation['grade'], attestation['type']) if attestation['grade'] else ''
+
+                # ── Складання комбінованого рядка «Назва атестації «Тема» / Назва атестації (EN) «Тема (EN)»» ──
+                name_ua = (attestation.get('name') or '').strip()
+                topic_ua = (attestation.get('student_name') or '').strip()
+
+                if name_ua and topic_ua:
+                    name_en = translate_to_en(name_ua) or ''
+                    topic_en = translate_to_en(topic_ua) or ''
+
+                    ua_part = f'{name_ua} «{topic_ua}»'
+                    if name_en and topic_en:
+                        en_part = f'{name_en} «{topic_en}»'
+                        attestation['display_name'] = f'{ua_part} / {en_part}'
+                    elif name_en:
+                        attestation['display_name'] = f'{ua_part} / {name_en}'
+                    else:
+                        # Переклад недоступний (напр. ліміт DeepL) — лишаємо лише укр. частину
+                        attestation['display_name'] = ua_part
+                elif topic_ua:
+                    # Назва атестації порожня — виводимо лише тему
+                    attestation['display_name'] = topic_ua
+                else:
+                    attestation['display_name'] = name_ua
+
                 valid_attestations.append(attestation)
             else:
                 global_logger.warning(f"Неполные данные аттестации пропущены: {attestation}")

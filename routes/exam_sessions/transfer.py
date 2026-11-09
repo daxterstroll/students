@@ -108,7 +108,8 @@ def transfer_sheet(sheet_id):
             flash('Оберіть елемент навчального плану', 'error')
         else:
             students = conn.execute(
-                "SELECT student_id, points, national_grade, ects FROM session_sheet_students WHERE sheet_id=?",
+                "SELECT student_id, points, national_grade, ects, work_topic "
+                "FROM session_sheet_students WHERE sheet_id=?",
                 (sheet_id,),
             ).fetchall()
             written = 0
@@ -136,23 +137,30 @@ def transfer_sheet(sheet_id):
                         conn.execute(
                             "INSERT INTO grades (student_id, subject_id, grade) VALUES (?, ?, ?)",
                             (st['student_id'], target_id, grade_value),
-                        )
+                                        )
                 else:
-                    # activity_grades: grade INTEGER
+                    # activity_grades: grade INTEGER, name TEXT (тема роботи)
                     pts = st['points']
+                    work_topic = st['work_topic']
+
                     existing = conn.execute(
                         "SELECT id FROM activity_grades WHERE student_id=? AND entity_id=? AND entity_type=?",
                         (st['student_id'], target_id, kind),
                     ).fetchone()
+
                     if existing:
                         conn.execute(
-                            "UPDATE activity_grades SET grade=? WHERE id=?",
-                            (pts, existing['id']),
+                            "UPDATE activity_grades "
+                            "SET grade=?, name=COALESCE(NULLIF(?, ''), name) "
+                            "WHERE id=?",
+                            (pts, work_topic, existing['id']),
                         )
                     else:
                         conn.execute(
-                            "INSERT INTO activity_grades (student_id, entity_id, entity_type, grade) VALUES (?, ?, ?, ?)",
-                            (st['student_id'], target_id, kind, pts),
+                            "INSERT INTO activity_grades "
+                            "(student_id, entity_id, entity_type, grade, name) "
+                            "VALUES (?, ?, ?, ?, ?)",
+                            (st['student_id'], target_id, kind, pts, work_topic),
                         )
                 written += 1
 

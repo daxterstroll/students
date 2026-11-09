@@ -105,55 +105,6 @@
             {% if sheet.status != 'locked' %}
             <button type="submit" class="btn btn-sm btn-outline-primary">Зберегти метадані</button>
             {% endif %}
-          
-<script>
-(function () {
-  function bindRow(row) {
-    var mid = row.querySelector('input[name^="points_mid_"]');
-    var cur = row.querySelector('input[name^="points_current_"]');
-    var exam = row.querySelector('input[name^="points_exam_"]');
-    var total = row.querySelector('input[name^="points_"]');
-    if (!total) return;
-    // points_ must not match points_mid etc — already name^="points_" matches all!
-    total = row.querySelector('input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])');
-    if (!total || !mid || !cur || !exam) return;
-
-    function parse(v) {
-      v = (v || '').toString().trim();
-      if (v === '') return null;
-      var n = parseInt(v, 10);
-      return isNaN(n) ? null : n;
-    }
-    function recalc() {
-      var a = parse(mid.value), b = parse(cur.value), c = parse(exam.value);
-      if (a === null && b === null && c === null) {
-        total.readOnly = false;
-        total.classList.remove('bg-light');
-        return;
-      }
-      var sum = (a || 0) + (b || 0) + (c || 0);
-      if (sum > 100) sum = 100;
-      total.value = sum;
-      total.readOnly = true;
-      total.classList.add('bg-light');
-    }
-    mid.addEventListener('input', recalc);
-    cur.addEventListener('input', recalc);
-    exam.addEventListener('input', recalc);
-    total.addEventListener('input', function () {
-      // ручне введення підсумку — очищаємо компоненти
-      if (!total.readOnly) {
-        mid.value = '';
-        cur.value = '';
-        exam.value = '';
-      }
-    });
-    recalc();
-  }
-  document.querySelectorAll('table tbody tr').forEach(bindRow);
-})();
-</script>
-
 </form>
         </div>
       </div>
@@ -373,4 +324,115 @@
     </div>
   </form>
 </div>
+
+<script>
+(function () {
+  // ── Якщо відомість заблокована — полів вводу немає, перераховувати нічого.
+  //    Скрипт все одно запуститься, але bindRow просто не знайде <input>.
+  const CONTROL_FORM = {{ sheet.control_form | tojson }};  // "Залік" / "Екзамен"
+
+  function pointsToNationalEcts(points, controlForm) {
+    if (points === null || points === undefined || points === '') return { nat: '', ects: '' };
+    let p = parseInt(points, 10);
+    if (isNaN(p)) return { nat: '', ects: '' };
+    if (p < 0) p = 0;
+    if (p > 100) p = 100;
+
+    let ects, examNat;
+    if (p >= 90)      { ects = 'A'; examNat = 'Відмінно / Excellent'; }
+    else if (p >= 82) { ects = 'B'; examNat = 'Добре / Good'; }
+    else if (p >= 74) { ects = 'C'; examNat = 'Добре / Good'; }
+    else if (p >= 64) { ects = 'D'; examNat = 'Задовільно / Satisfactory'; }
+    else if (p >= 60) { ects = 'E'; examNat = 'Задовільно / Satisfactory'; }
+    else if (p >= 35) { ects = 'FX'; examNat = 'Незадовільно / Fail'; }
+    else              { ects = 'F';  examNat = 'Незадовільно / Fail'; }
+
+    if (controlForm === 'Залік') {
+      return {
+        nat:  p >= 60 ? 'Зараховано' : 'Незараховано',
+        ects: (p >= 60 || ects === 'FX' || ects === 'F') ? ects : 'F',
+      };
+    }
+    return { nat: examNat, ects: ects };
+  }
+
+  function parseNum(v) {
+    v = (v || '').toString().trim();
+    if (v === '') return null;
+    const n = parseInt(v, 10);
+    return isNaN(n) ? null : n;
+  }
+
+  function bindRow(row) {
+    const mid  = row.querySelector('input[name^="points_mid_"]');
+    const cur  = row.querySelector('input[name^="points_current_"]');
+    const exam = row.querySelector('input[name^="points_exam_"]');
+    const total = row.querySelector(
+      'input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])'
+    );
+    if (!total || !mid || !cur || !exam) return;
+
+    const totalTd = total.closest('td');
+    const natTd  = totalTd ? totalTd.nextElementSibling : null;
+    const ectsTd = natTd ? natTd.nextElementSibling : null;
+
+    function setReadonlyText(td, value) {
+      if (!td) return;
+      const text = (value === null || value === undefined || value === '') ? '—' : value;
+      td.textContent = text;
+    }
+
+    function recalc() {
+      const a = parseNum(mid.value);
+      const b = parseNum(cur.value);
+      const c = parseNum(exam.value);
+
+      const anyFilled = (a !== null || b !== null || c !== null);
+
+      if (!anyFilled) {
+        total.readOnly = false;
+        total.classList.remove('bg-light');
+        return;
+      }
+
+      let sum = (a || 0) + (b || 0) + (c || 0);
+      if (sum > 100) sum = 100;
+
+      total.value = sum;
+      total.readOnly = true;
+      total.classList.add('bg-light');
+
+      const { nat, ects } = pointsToNationalEcts(sum, CONTROL_FORM);
+      setReadonlyText(natTd, nat);
+      setReadonlyText(ectsTd, ects);
+    }
+
+    mid.addEventListener('input', recalc);
+    cur.addEventListener('input', recalc);
+    exam.addEventListener('input', recalc);
+
+    total.addEventListener('input', function () {
+      if (total.readOnly) return;
+      mid.value = '';
+      cur.value = '';
+      exam.value = '';
+
+      const manual = parseNum(total.value);
+      if (manual === null) {
+        setReadonlyText(natTd, '—');
+        setReadonlyText(ectsTd, '—');
+        return;
+      }
+      const { nat, ects } = pointsToNationalEcts(manual, CONTROL_FORM);
+      setReadonlyText(natTd, nat);
+      setReadonlyText(ectsTd, ects);
+    });
+
+    recalc();
+  }
+
+  document.querySelectorAll('table tbody tr').forEach(bindRow);
+})();
+</script>
+
 {% endblock %}
