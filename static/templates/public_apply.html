@@ -835,6 +835,23 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
             }
         });
     })();
+	
+	document.getElementById('applyForm').addEventListener('submit', function () {
+		const btn = this.querySelector('button[type="submit"]');
+		if (btn) {
+			btn.disabled = true;
+			btn.dataset.original = btn.innerHTML;
+			btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Надсилаємо…';
+		}
+		// Якщо раптом сервер поверне HTML форми (валідаційна помилка) —
+		// кнопка має ожити, інакше студент не зможе виправити й надіслати ще раз.
+		setTimeout(() => {
+			if (btn && btn.disabled) {
+				btn.disabled = false;
+				if (btn.dataset.original) btn.innerHTML = btn.dataset.original;
+			}
+		}, 15000);
+	});
 </script>
 </body>
 </html>

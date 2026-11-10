@@ -9,7 +9,9 @@ import re
 import tempfile
 from datetime import datetime, date
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import (
+    Blueprint, render_template, request, jsonify, redirect, url_for,
+)
 from routes.db import get_db
 from routes.utils import generate_english_name, save_multiple_attachments, logger, title_case_ukrainian
 from routes.photo import process_and_save_pending_photo, load_and_validate_image
@@ -29,13 +31,19 @@ MIN_APPLICANT_AGE_YEARS = 14
 MAX_APPLICANT_AGE_YEARS = 100
 PHONE_RE = re.compile(r'^(?:\+?380|0)\d{9}$')
 
+# Вікно захисту від подвійного надсилання (секунд). Див. деталі нижче
+# перед INSERT INTO pending_students.
+DEDUP_WINDOW_SECONDS = 30
+
 PENDING_PDFS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_pdfs')
 PENDING_STUDENTS_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'pending_students')
+
 
 @public_apply_bp.context_processor
 def _inject_passport_types():
     """Додає passport_types/... у ВСІ render_template цього блюпринта."""
     return passport_template_context()
+
 
 def _validate_birth_date(ua_date_str):
     try:
@@ -268,9 +276,13 @@ def _limit_request_size():
 
 @public_apply_bp.route('/apply', methods=['GET', 'POST'])
 def apply():
+    # ── GET: показати форму або сторінку подяки (PRG) ──
     if request.method == 'GET':
+        if request.args.get('ok') == '1':
+            return render_template('public_apply_thanks.html')
         return render_template('public_apply.html', **_birth_date_bounds())
 
+    # ── POST: AJAX-парсинг PDF ──
     if request.form.get('action') == 'parse_pdf':
         try:
             return _parse_pdf_ajax()
@@ -279,9 +291,9 @@ def apply():
             traceback.print_exc()
             return jsonify({'ok': False, 'error': f'Критична серверна помилка: {e}'}), 500
 
-    # ── Звичайна обробка форми ──
+    # ── POST: honeypot — тихо показуємо "дякуємо", не зберігаємо ──
     if (request.form.get('website') or '').strip():
-        return render_template('public_apply_thanks.html')
+        return redirect(url_for('public_apply.apply', ok='1'))
 
     def f(name):
         return (request.form.get(name) or '').strip() or None
@@ -346,7 +358,7 @@ def apply():
     is_foreign_document = 0
     reduced_program_claim = 0
     military_being_registered = 0
-    
+
     # Нові поля «Резерв+» — читаємо з форми (можуть бути порожні,
     # якщо абітурієнт їх не заповнював і не завантажував PDF).
     military_status_badge = f('military_status_badge')
@@ -385,16 +397,16 @@ def apply():
     if not f('passport_number'):
         passport_document_type = None
         passport_series_val = None
-        passport_number_val = None          # ← додано
+        passport_number_val = None
         passport_issued_by_val = None
-        passport_issue_date = None          # ← перейменовано з _val
+        passport_issue_date = None
         passport_valid_until = None
         passport_unique_number_val = None
     else:
         passport_series_val = f('passport_series')
-        passport_number_val = f('passport_number')   # ← додано
+        passport_number_val = f('passport_number')
         passport_issued_by_val = f('passport_issued_by')
-        passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))  # ← перейменовано
+        passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
         passport_valid_until = (
             _iso_to_ua_date(f('passport_valid_until'))
             if passport_document_type in PASSPORT_TYPES_ID_STYLE else None
@@ -405,9 +417,7 @@ def apply():
 
     # Усі поля збираємо в ОДИН словник, а колонки й placeholder'и
     # генеруються з нього автоматично - кількість ? завжди дорівнює
-    # кількості колонок. Раніше ці дві речі тримались вручну в двох
-    # різних місцях і розійшлися на одне поле після додавання
-    # military_*-полів (63 ? проти 64 колонок).
+    # кількості колонок.
     pending_fields = {
         'submitted_ip':                      request.remote_addr,
 
@@ -485,6 +495,31 @@ def apply():
 
     columns = list(pending_fields.keys())
     placeholders = ', '.join('?' for _ in columns)
+
+    # Захист від подвійного надсилання (подвійний клік / тап на мобільному /
+    # ретрай браузера). Вікно 30 секунд: за цей час студент не встигне
+    # свідомо заповнити анкету вдруге з тими самими даними.
+    _recent = conn.execute(
+        """
+        SELECT id FROM pending_students
+        WHERE submitted_ip = ?
+          AND COALESCE(phone, '') = ?
+          AND status = 'new'
+          AND created_at >= datetime('now', 'localtime', ?)
+        ORDER BY id DESC LIMIT 1
+        """,
+        (request.remote_addr, phone or '', f'-{DEDUP_WINDOW_SECONDS} seconds'),
+    ).fetchone()
+
+    if _recent:
+        conn.close()
+        logger.info(
+            f"[apply] duplicate suppressed: ip={request.remote_addr}, "
+            f"phone={phone!r}, existing_id={_recent['id']}"
+        )
+        # тихо показуємо "дякуємо" — це і є те, що студент хотів побачити
+        return redirect(url_for('public_apply.apply', ok='1'))
+
     cur = conn.execute(
         f"INSERT INTO pending_students ({', '.join(columns)}) "
         f"VALUES ({placeholders})",
@@ -544,4 +579,4 @@ def apply():
     conn.commit()
     conn.close()
 
-    return render_template('public_apply_thanks.html')
+    return redirect(url_for('public_apply.apply', ok='1'))
