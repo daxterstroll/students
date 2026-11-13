@@ -584,6 +584,18 @@
                 animation: none !important; transition: none !important;
             }
         }
+    .kind-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .6rem;
+        border-radius: 999px;
+        background: rgba(200,162,74,.9);
+        color: #0e1b2c;
+        font-weight: 700;
+        font-size: .82rem;
+        vertical-align: middle;
+    }
     </style>
 </head>
 <body>
@@ -620,10 +632,27 @@
     {% endif %}
 
     {# ── Шапка відомості ── #}
+    {% set kind_ua = {
+        'subject':      'Предмет',
+        'practice':     'Практика',
+        'coursework':   'Курсова робота',
+        'attestation':  'Атестація'
+    } %}
+    {% set kind_icon = {
+        'subject':      'bi-book',
+        'practice':     'bi-briefcase',
+        'coursework':   'bi-journal-text',
+        'attestation':  'bi-clipboard-check'
+    } %}
+
     <div class="header-glass">
         <h1>{{ sheet.discipline_name }}</h1>
         <div class="meta">
-            {{ sheet.group_name }}
+            <span class="kind-badge">
+                <i class="bi {{ kind_icon.get(sheet.entity_kind, 'bi-file-earmark') }}"></i>
+                {{ kind_ua.get(sheet.entity_kind, sheet.entity_kind) }}
+            </span>
+            · {{ sheet.group_name }}
             · {{ sheet.control_form }}
             {% if sheet.license_name %} · {{ sheet.license_name }}{% endif %}
         </div>

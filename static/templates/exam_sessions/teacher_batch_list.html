@@ -61,6 +61,20 @@
         .sheet-status--approved, .sheet-status--locked { background: #3f7556; color: #fff; }
 
         .btn-open-sheet { padding: .5rem 1.25rem; border-radius: 8px; font-weight: 700; }
+		.kind-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            padding: .1rem .5rem;
+            border-radius: 999px;
+            background: #c8a24a;
+            color: #0e1b2c;
+            font-size: .7rem;
+            font-weight: 800;
+            letter-spacing: .02em;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -95,11 +109,30 @@
         <div class="progress-bar-fill" style="width: {{ stats.percent }}%;"></div>
     </div>
 
+    {% set kind_ua = {
+        'subject':      'Предмет',
+        'practice':     'Практика',
+        'coursework':   'Курсова робота',
+        'attestation':  'Атестація'
+    } %}
+    {% set kind_icon = {
+        'subject':      'bi-book',
+        'practice':     'bi-briefcase',
+        'coursework':   'bi-journal-text',
+        'attestation':  'bi-clipboard-check'
+    } %}
+
     {% for sh in sheets %}
     {% set is_done = sh.status in ('submitted', 'approved', 'locked') %}
     <div class="sheet-card {% if is_done %}sheet-card--done{% endif %}">
         <div class="sheet-card__body">
-            <div class="sheet-title">{{ sh.discipline_name }}</div>
+            <div class="sheet-title">
+                <span class="kind-badge">
+                    <i class="bi {{ kind_icon.get(sh.entity_kind, 'bi-file-earmark') }}"></i>
+                    {{ kind_ua.get(sh.entity_kind, sh.entity_kind) }}
+                </span>
+                {{ sh.discipline_name }}
+            </div>
             <div class="sheet-meta">
                 {{ sh.group_name }} · {{ sh.control_form }}
                 {% if sh.license_name %} · {{ sh.license_name }}{% endif %}

@@ -27,6 +27,18 @@
             .header-glass { padding: 1rem; }
             .header-glass h1 { font-size: 1.1rem; }
         }
+	   .kind-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            padding: .15rem .55rem;
+            border-radius: 999px;
+            background: #c8a24a;
+            color: #0e1b2c;
+            font-size: .72rem;
+            font-weight: 800;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
@@ -58,10 +70,27 @@
         </div>
     </div>
 
+    {% set kind_ua = {
+        'subject':      'Предмет',
+        'practice':     'Практика',
+        'coursework':   'Курсова робота',
+        'attestation':  'Атестація'
+    } %}
+    {% set kind_icon = {
+        'subject':      'bi-book',
+        'practice':     'bi-briefcase',
+        'coursework':   'bi-journal-text',
+        'attestation':  'bi-clipboard-check'
+    } %}
+
     <div class="header-glass">
         <h1 class="mb-2">{{ sheet.discipline_name }}</h1>
         <div class="small opacity-75">
-            {{ sheet.group_name }} · {{ sheet.control_form }}
+            <span class="kind-badge">
+                <i class="bi {{ kind_icon.get(sheet.entity_kind, 'bi-file-earmark') }}"></i>
+                {{ kind_ua.get(sheet.entity_kind, sheet.entity_kind) }}
+            </span>
+            · {{ sheet.group_name }} · {{ sheet.control_form }}
             {% if sheet.license_name %} · {{ sheet.license_name }}{% endif %}
         </div>
         <div class="small opacity-75 mt-1">

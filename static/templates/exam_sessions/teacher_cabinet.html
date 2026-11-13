@@ -398,6 +398,24 @@
                 transition: none !important;
             }
         }
+		.kind-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            padding: .15rem .55rem;
+            border-radius: 999px;
+            background: var(--brass);
+            color: var(--ink);
+            font-size: .72rem;
+            font-weight: 800;
+            letter-spacing: .02em;
+            vertical-align: middle;
+            white-space: nowrap;
+        }
+        html[data-theme="dark"] .kind-badge {
+            background: rgba(200,162,74,.9);
+            color: #0e1b2c;
+        }
     </style>
 </head>
 <body>
@@ -444,13 +462,32 @@
         Мої відомості
     </h2>
 
+    {% set kind_ua = {
+        'subject':      'Предмет',
+        'practice':     'Практика',
+        'coursework':   'Курсова робота',
+        'attestation':  'Атестація'
+    } %}
+    {% set kind_icon = {
+        'subject':      'bi-book',
+        'practice':     'bi-briefcase',
+        'coursework':   'bi-journal-text',
+        'attestation':  'bi-clipboard-check'
+    } %}
+
     {% for sh in sheets %}
     {% set is_done = sh.status in ('submitted', 'approved', 'locked') %}
     <a href="{{ url_for('exam_sessions.teacher_sheet',
                         teacher_token=teacher_token, sheet_id=sh.id) }}"
        class="sheet-card sheet-card--{{ sh.status }}">
         <div class="sheet-body">
-            <div class="sheet-title">{{ sh.discipline_name }}</div>
+            <div class="sheet-title">
+                <span class="kind-badge">
+                    <i class="bi {{ kind_icon.get(sh.entity_kind, 'bi-file-earmark') }}"></i>
+                    {{ kind_ua.get(sh.entity_kind, sh.entity_kind) }}
+                </span>
+                {{ sh.discipline_name }}
+            </div>
             <div class="sheet-meta">
                 {{ sh.group_name }} · {{ sh.control_form }}
                 {% if sh.license_name %} · {{ sh.license_name }}{% endif %}
