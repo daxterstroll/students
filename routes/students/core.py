@@ -160,67 +160,57 @@ def _compute_military_completeness(military_row):
 
 
 FAQ_SECTION_PERMISSIONS = {
+    # ═══ СЕКЦІЯ 1: СТУДЕНТИ (nav: 'students') ═══
     'students': [
         'manage_students',
         'manage_pending_students',
         'manage_update_requests',
-        'manage_passport_documents',
-        'manage_education_documents',
-        'study_periods',
+        'manage_frozen_students',
+        'archive',
+        'group_export',
+        'import_from_excel',
+        'bulk_photos',
     ],
-    'education': [
+    # ═══ СЕКЦІЯ 2: НАВЧАННЯ (nav: 'academic') ═══
+    'academic': [
         'manage_groups',
+        'manage_courses',
+        'manage_subjects',
+        'manage_activities',
+        'study_periods',
+        'manage_exam_sessions',
+        'transfer_exam_grades',
+        'view_exam_session_history',
+        'import_subjects',
+        'import_grades',
+    ],
+    # ═══ СЕКЦІЯ 3: ДОКУМЕНТИ ТА НАКАЗИ (nav: 'documents') ═══
+    'documents': [
+        'manage_education_documents',
+        'manage_passport_documents',
+        'manage_diplomas',
+        'manage_military_reports',
+        'manage_orders',
+        'create_enrollment_order',
+        'manage_expulsion',
+        'import_education_docs',
+        'import_passport_documents',
+        'import_military_pdf',
+    ],
+    # ═══ СЕКЦІЯ 4: СИСТЕМА (nav: 'system') ═══
+    'system': [
         'manage_specialties',
         'manage_degree_levels',
         'manage_educational_programs',
         'manage_qualification_names',
-        'manage_accreditations',
-        'manage_subjects',
-        'manage_activities',
-        'manage_diplomas',
-    ],
-    'courses': [
-        'manage_courses',
-        'manage_course_transfer',
-        'manage_graduation',
-        'manage_expulsion',
-        'manage_frozen_students',
-        'archive',
-    ],
-    'orders': [
-        'manage_orders',
-        'create_enrollment_order',
-    ],
-    'exam_sessions': [
-        'manage_exam_sessions',
-        'transfer_exam_grades',
-    ],
-    'import': [
-        'import_from_excel',
-        'import_passport_documents',
-        'import_education_docs',
-        'import_subjects',
-        'import_grades',
-        'import_military_pdf',
-        'bulk_photos',
-    ],
-    'export': [
-        'group_export',
-    ],
-    'licenses': [
         'manage_licenses',
-        'manage_license_transfer',
-        'license_report',
-    ],
-    'system': [
+        'manage_accreditations',
         'manage_users',
-        'view_logs',
+        'manage_templates',
+        'license_report',
         'analytics',
         'custom_export',
-        'manage_templates',
-    ],
-    'military': [
-        'manage_military_reports',
+        'view_logs',
     ],
 }
 
