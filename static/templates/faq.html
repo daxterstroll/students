@@ -592,6 +592,41 @@
     </div>
     {% endif %}
 
+    {% if has_perm('manage_exam_sessions') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-teachers">
+                <i class="bi bi-person-badge me-2"></i>Картотека викладачів
+            </button>
+        </h2>
+        <div id="p-teachers" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> «Сесії та відомості» → кнопка «Картотека викладачів» у шапці.</p>
+                <p class="mb-2"><strong>Навіщо:</strong> центральний реєстр викладачів. Кожен отримує <strong>постійне посилання-кабінет</strong> — надсилаєте один раз, і викладач бачить усі свої відомості (ті, що є зараз, і ті, що з'являться пізніше).</p>
+                <p class="mb-2"><strong>Що можна:</strong> додавати, редагувати (ПІБ, коротке ім'я, email, телефон, кафедра, прив'язка до користувача), активувати/деактивувати, <strong>скидати токен</strong> (старе посилання перестає діяти).</p>
+                <p class="mb-0"><strong>Прив'язка до користувача:</strong> якщо у викладача є обліковий запис у системі — оберіть його, щоб статистика групувалась разом. Якщо ні — викладач усе одно заповнює відомості за посиланням.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_exam_sessions') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-teacher-stats">
+                <i class="bi bi-graph-up-arrow me-2"></i>Статистика по викладачах
+            </button>
+        </h2>
+        <div id="p-teacher-stats" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Навчання → «Статистика по викладачах».</p>
+                <p class="mb-2"><strong>Що показує:</strong> зведена таблиця по всіх викладачах із картотеки — скільки всього відомостей, скільки заповнено, скільки в процесі, скільки очікує.</p>
+                <p class="mb-0"><strong>Для чого:</strong> швидко побачити, хто з викладачів не встигає заповнювати відомості. Клік по викладачу — детальний список усіх його відомостей.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     {% if has_perm('transfer_exam_grades') %}
     <div class="accordion-item">
         <h2 class="accordion-header">
@@ -770,6 +805,32 @@
         </div>
     </div>
     {% endif %}
+	
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-issues">
+                <i class="bi bi-exclamation-triangle me-2"></i>Проблемні записи (військовий облік)
+            </button>
+        </h2>
+        <div id="p-mil-issues" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Дашборд військового обліку → блок «Потребують уваги» → «Переглянути проблемних».</p>
+                <p class="mb-2"><strong>Що показує:</strong> студенти з неповними військовими даними, які заважають генерації Додатка 5:
+                    <ul class="ps-3 mt-1 mb-0">
+                        <li><strong>Без запису військового обліку</strong> — треба створити;</li>
+                        <li><strong>Без статі</strong> — не визначити категорію;</li>
+                        <li><strong>Не визначено категорію</strong> — звання не розпізнано;</li>
+                        <li><strong>Без ТЦК</strong> — порожнє поле;</li>
+                        <li><strong>Без ВОС</strong> — порожній код ВОС;</li>
+                        <li><strong>Без наказу про зарахування</strong> — студент активний, але без наказу.</li>
+                    </ul>
+                </p>
+                <p class="mb-0"><strong>Фільтри:</strong> чекбокси по типах проблем (усі ввімкнені за замовчуванням), пошук по ПІБ, фільтр по групі.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     {% if has_perm('manage_military_reports') %}
     <div class="accordion-item">
@@ -805,6 +866,49 @@
                 <strong>Додаток 5 (.xlsx):</strong> кнопка «Згенерувати .xlsx» на сторінці категорії. У файл потрапляють ті самі фільтри, що на екрані.<br>
                 <strong>Додаток 12:</strong> агреговані рядки за категоріями.<br>
                 <strong>Додаток 4:</strong> офіційне <strong>повідомлення в ТЦК</strong> про зміну облікових даних (один Excel-файл на одного студента). Статуси: «Потребують друку», «Актуальні», «Усі». Після завантаження система зберігає «відбиток» полів. Якщо щось змінилось — студент знову в «Потрібен друк», і видно <strong>що саме</strong> (було → стало).
+            </div>
+        </div>
+    </div>
+    {% endif %}
+	
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dodatok12">
+                <i class="bi bi-bar-chart-fill me-2"></i>Додаток 12 — відомість оперативного обліку
+            </button>
+        </h2>
+        <div id="p-mil-dodatok12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Дашборд військового обліку → блок «Додатково» → «Додаток 12».</p>
+                <p class="mb-2"><strong>Що показує:</strong> зведена відомість по категоріях (офіцери, рядові, жінки, призовники) + окремі рядки для вибулих (за віком, відраховані, мобілізовані).</p>
+                <p class="mb-2"><strong>Перемикач дати:</strong> «щорічна» (на 1 січня поточного року), «на сьогодні», «довільна дата».</p>
+                <p class="mb-2"><strong>Перемикач ліцензії:</strong> за замовчуванням — лише студенти базової ліцензії. Увімкніть «Показати всі ліцензії», щоб бачити всіх.</p>
+                <p class="mb-0"><strong>Завантажити .xlsx:</strong> кнопка зверху → згенерується .xlsx за формою Додатка 12.</p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_military_reports') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dodatok4">
+                <i class="bi bi-file-earmark-ruled me-2"></i>Додаток 4 — повідомлення про зміну облікових даних
+            </button>
+        </h2>
+        <div id="p-mil-dodatok4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Дашборд військового обліку → блок «Додатково» → «Додаток 4».</p>
+                <p class="mb-2"><strong>Для чого:</strong> офіційне <strong>повідомлення в ТЦК</strong> про зміну облікових даних (ПІБ, ТЦК, ВОС, адреса, реєстр «Оберіг» тощо). Один Excel-файл на студента.</p>
+                <p class="mb-2"><strong>Список автоматично розділений:</strong>
+                    <ul class="ps-3 mt-1 mb-0">
+                        <li><strong>Потребують друку</strong> — нові або ті, в яких дані змінилися після останньої генерації;</li>
+                        <li><strong>Актуальні</strong> — вже згенеровані, без змін;</li>
+                        <li><strong>Усі</strong> — повний список.</li>
+                    </ul>
+                </p>
+                <p class="mb-0"><strong>Як це працює:</strong> після завантаження файлу система запам'ятовує «відбиток» полів. Якщо потім щось зміниться (напр. ТЦК, звання, адреса, зміна/підстава) — студент знову потрапляє в «Потребують друку», і буде видно <strong>що саме</strong> (було → стало).</p>
             </div>
         </div>
     </div>
@@ -1019,6 +1123,33 @@
                 </ul>
                 <strong>Базова ліцензія (зірочка):</strong> ліцензія, для якої ведеться військовий облік (Постанова №812). Може бути лише одна.<br>
                 <strong>Видалити:</strong> можна лише якщо ліцензію не використовує жоден активний студент чи enrollment.
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if has_perm('manage_license_transfer') %}
+    <div class="accordion-item">
+        <h2 class="accordion-header">
+            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-license-transfer">
+                <i class="bi bi-arrow-left-right me-2"></i>Переведення між ліцензіями
+            </button>
+        </h2>
+        <div id="p-license-transfer" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div class="accordion-body small">
+                <p class="mb-2"><strong>Де:</strong> Система → Ліцензії → кнопка «Перевести між ліцензіями».</p>
+                <p class="mb-2"><strong>Для чого:</strong> коли студент переходить на іншу ліцензію (напр. зі Львівської на Польську) — це оформлюється <strong>наказом</strong>.</p>
+                <p class="mb-2"><strong>Як користуватись — 3 кроки:</strong>
+                    <ol class="ps-3 mt-1 mb-0">
+                        <li>Оберіть ліцензію призначення.</li>
+                        <li>Оберіть <strong>групи</strong> цілком та/або <strong>окремих студентів</strong>.</li>
+                        <li>Оберіть <strong>що саме перевести</strong>: усі активні навчання чи лише навчання у вибраних групах.</li>
+                    </ol>
+                </p>
+                <div class="alert alert-light border small mb-0 mt-2">
+                    <i class="bi bi-info-circle me-1"></i>
+                    <strong>Важливо:</strong> після цього кроку відкривається сторінка перевірки, де ви бачите список студентів і поточну → нову ліцензію. Там же — номер/дата наказу і скан. Наказ створюється один раз на всю операцію.
+                </div>
             </div>
         </div>
     </div>
