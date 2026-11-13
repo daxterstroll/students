@@ -113,7 +113,7 @@ COLUMN_GROUPS = [
         ('group_id', 'ID групи'),
         ('group_name', 'Назва групи'),
         ('course', 'Курс'),
-        ('start_year', 'Рік вступу'),
+        ('start_year', 'Рік вступу (з групи)'),
         ('degree_level', 'Ступінь'),
         ('study_form', 'Форма навчання'),
         ('specialty', 'Спеціальність'),
@@ -399,6 +399,7 @@ def _build_record(student, enrollment, ref, today):
         'is_primary': _yes_no(e.get('is_primary')),
 
         # Ліцензія
+        'license_id': lic_id or '',
         'license_short_name_ua': license_row.get('short_name_ua') or '',
         'license_name_ua': license_row.get('name_ua') or '',
 
@@ -555,12 +556,12 @@ def _matches(record, filters):
         return False
 
     if filters['license_id']:
-        # Перевіряємо через ліцензію enrollment'а — група може мати лише коротку назву,
-        # тому йдемо за прямим ID через record (не зберігаємо окремо, але
-        # перевіримо по наявності в ref — спрощено: ID не потрапляє в record, але
-        # license_short_name_ua вже перевірено на сервері при побудові; тут
-        # пропускаємо, бо фільтр по license_id краще реалізувати через ref).
-        pass
+        # Перевіряємо за ID ліцензії конкретного enrollment'а (або
+        # students.license_id для legacy-записів без enrollment'а).
+        # record['license_id'] заповнюється в _build_record() з
+        # e.license_id (пріоритет) або s.license_id (fallback).
+        if record.get('license_id') != filters['license_id']:
+            return False
 
     if filters['start_year_from'] is not None:
         try:

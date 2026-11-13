@@ -109,6 +109,8 @@
                                id="modeStudent" {% if mode != 'enrollment' %}checked{% endif %}>
                         <label class="form-check-label" for="modeStudent">
                             <strong>Один рядок на студента</strong> — береться основна група
+                            <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                               title="Використовується student_enrollments.is_primary = 1. Якщо основної немає — перший активний enrollment."></i>
                         </label>
                     </div>
                     <div class="form-check">
@@ -116,15 +118,18 @@
                                id="modeEnrollment" {% if mode == 'enrollment' %}checked{% endif %}>
                         <label class="form-check-label" for="modeEnrollment">
                             <strong>Один рядок на навчання</strong> — усі enrollment'и
-                            (для паралельного навчання студент з'явиться кілька разів)
+                            <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                               title="Паралельний студент з'явиться кілька разів — для кожної групи зі своїм набором даних (група, ліцензія, курс, диплом)."></i>
                         </label>
                     </div>
                     <div class="form-check mt-2">
                         <input class="form-check-input" type="checkbox" name="include_no_enrollment" value="1"
                                id="includeNoEnrollment"
                                {% if form.get('include_no_enrollment') == '1' %}checked{% endif %}>
-                        <label class="form-check-label small text-muted" for="includeNoEnrollment">
+                        <label class="form-check-label small text-muted d-flex align-items-center gap-1" for="includeNoEnrollment">
                             Включити студентів без enrollment'ів (архівні, заморожені, без груп)
+                            <i class="bi bi-info-circle" style="font-size:.8em; cursor:help;"
+                               title="Студенти, яких немає в student_enrollments (легасі-записи, видалені enrollments, архівні). Будуть показані з порожніми полями групи/ліцензії."></i>
                         </label>
                     </div>
                 </div>
@@ -161,7 +166,11 @@
                     <h6><i class="bi bi-mortarboard me-1"></i>Група та навчання</h6>
                     <div class="row g-2">
                         <div class="col-12">
-                            <label class="form-label small">Група</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Група
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Група конкретного enrollment'а. У режимі «Один рядок на навчання» — це може бути будь-яка з активних груп студента."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="group_id">
                                 <option value="">Усі групи</option>
                                 {% for g in choices.groups %}
@@ -172,7 +181,11 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Ступінь</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Ступінь
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Ступінь береться з групи (поле «Ступінь» на сторінці «Групи»). Наприклад, «Бакалавр», «Магістр»."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="degree_level">
                                 <option value="">Усі</option>
                                 {% for d in choices.degree_levels %}
@@ -181,7 +194,11 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Форма навчання</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Форма навчання
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Форма навчання береться з групи: «Денна», «Заочна», «Дистанційна»."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="study_form">
                                 <option value="">Усі</option>
                                 {% for f in choices.study_forms %}
@@ -190,7 +207,11 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Курс</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Курс
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Поточний курс групи (1-6). Зберігається в groups.course і оновлюється наказом «Перевести на наступний курс»."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="course">
                                 <option value="">Усі</option>
                                 {% for c in choices.courses %}
@@ -199,17 +220,29 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Рік вступу (від)</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Рік вступу (від)
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Рік вступу БЕРЕТЬСЯ З ГРУПИ (groups.start_year), а НЕ з наказу про зарахування. Якщо студент паралельно вчиться в 2 групах — це рік вступу тієї групи, яка потрапляє в рядок."></i>
+                            </label>
                             <input type="number" class="form-control form-control-sm" name="start_year_from"
                                    value="{{ form.get('start_year_from', '') }}" min="2000" max="2100" placeholder="від">
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Рік вступу (до)</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Рік вступу (до)
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Те саме, що «Рік вступу (від)» — верхня межа включно."></i>
+                            </label>
                             <input type="number" class="form-control form-control-sm" name="start_year_to"
                                    value="{{ form.get('start_year_to', '') }}" min="2000" max="2100" placeholder="до">
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Ліцензія</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Ліцензія
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Ліцензія конкретного enrollment'а (student_enrollments.license_id). Якщо у студента паралельне навчання під різними ліцензіями — він з'явиться в обох фільтрах. Для legacy-записів без enrollment'а — fallback на students.license_id."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="license_id">
                                 <option value="">Усі</option>
                                 {% for l in choices.licenses %}
@@ -220,7 +253,11 @@
                             </select>
                         </div>
                         <div class="col-12">
-                            <label class="form-label small">Статус навчання (можна кілька)</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Статус навчання (можна кілька)
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Статус enrollment'а: «Активне» — навчається; «Випущено»/«Відраховано»/«Заморожено» — завершене навчання; «Без enrollment» — студент без жодного запису про навчання."></i>
+                            </label>
                             <div class="d-flex flex-wrap gap-2">
                                 {% for s, label in [
                                     ('active', 'Активне'),
@@ -240,7 +277,11 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label small">Програма</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Програма
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="«Скорочена» — студент вступив з визнанням частини кредитів попереднього диплома (student_enrollments.program_credits_override менше за groups.program_credits). «Повна» — решта."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="is_reduced">
                                 <option value="">Будь-яка</option>
                                 <option value="yes" {% if form.get('is_reduced') == 'yes' %}selected{% endif %}>Лише скорочена</option>
@@ -319,8 +360,13 @@
                             </select>
                         </div>
                         <div class="col-6">
-                            <label class="form-label small">Наказ про зарахування</label>
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Наказ про зарахування
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Чи є активний наказ типу «enrollment» (orders.order_type = 'enrollment', status = 'active') на пару «студент × група»."></i>
+                            </label>
                             <select class="form-select form-select-sm" name="has_enrollment_order">
+                                ...
                                 <option value="">Будь-який</option>
                                 <option value="yes" {% if form.get('has_enrollment_order') == 'yes' %}selected{% endif %}>Лише з наказом</option>
                                 <option value="no" {% if form.get('has_enrollment_order') == 'no' %}selected{% endif %}>Лише без наказу</option>
