@@ -1,0 +1,131 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Створити пакет відомостей{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 900px;">
+
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До сесії
+        </a>
+    </div>
+
+    {{ ui.page_header('bi-file-earmark-plus', 'Створити пакет для викладача',
+        es.name) }}
+
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i>
+        Оберіть відомості, які викладач має заповнити, — система згенерує
+        одну спільну ссылку. Викладач бачитиме список усіх відомостей і зможе
+        заповнювати їх по черзі.
+    </div>
+
+    <form method="POST">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Викладач</strong></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold">Ім'я викладача (як показувати)</label>
+                        <input type="text" name="teacher_name" class="form-control form-control-sm"
+                               placeholder="напр. проф. Сушинський О.Є." required>
+                        <div class="form-text">Відображатиметься на сторінці пакета у викладача.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Прив'язка до користувача (опц.)</label>
+                        <select name="teacher_id" class="form-select form-select-sm">
+                            <option value="">— без прив'язки —</option>
+                            {% for t in teachers %}
+                            <option value="{{ t.id }}">{{ t.username }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Для статистики «по викладачу» — щоб зібрати всі відомості цієї людини разом.</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold">Строк дії посилання (днів)</label>
+                        <input type="number" name="token_days" class="form-control form-control-sm"
+                               value="21" min="1" max="365">
+                    </div>
+                    <div class="col-md-8">
+                        <label class="form-label small fw-semibold">Примітка (опц.)</label>
+                        <input type="text" name="notes" class="form-control form-control-sm"
+                               placeholder="напр. сесія 1 семестру, до 25.01">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Відомості в пакеті</strong>
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">Обрати всі</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">Зняти всі</button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if sheets %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:40px;"></th>
+                                <th>Дисципліна</th>
+                                <th>Група</th>
+                                <th>Ліцензія</th>
+                                <th class="text-center">Студентів</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for sh in sheets %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" class="form-check-input js-batch-sheet"
+                                           name="sheet_ids" value="{{ sh.id }}" checked>
+                                </td>
+                                <td>{{ sh.discipline_name }}</td>
+                                <td class="small">{{ sh.group_name or '—' }}</td>
+                                <td class="small">{{ sh.license_name or '—' }}</td>
+                                <td class="text-center">{{ sh.students_count }}</td>
+                                <td>
+                                    <span class="badge
+                                        {% if sh.status in ('approved', 'locked') %}bg-success
+                                        {% elif sh.status in ('submitted',) %}bg-primary
+                                        {% elif sh.status in ('sent',) %}bg-info
+                                        {% else %}bg-secondary{% endif %}">
+                                        {{ sh.status }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    У сесії ще немає відомостей — спочатку створіть хоча б одну.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-circle me-1"></i>Створити пакет
+            </button>
+            <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}"
+               class="btn btn-outline-secondary">Скасувати</a>
+        </div>
+    </form>
+
+</div>
+
+<script>
+function toggleAll(state) {
+    document.querySelectorAll('.js-batch-sheet').forEach(cb => { cb.checked = state; });
+}
+</script>
+{% endblock %}

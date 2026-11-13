@@ -1,608 +1,264 @@
-<!DOCTYPE html>
-<html lang="uk">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <title>{{ sheet.discipline_name }} — відомість</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@6.0.0-alpha.1/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
-  <style>
-    :root {
-      --ink: #0e1b2c;
-      --ink-2: #16283f;
-      --paper: #f4efe3;
-      --paper-2: #fffdf8;
-      --brass: #c8a24a;
-      --brass-lt: #e9cf8f;
-      --brass-dark: #a5822f;
-      --stamp: #a23b2e;
-      --success: #3f8a5b;
-      --muted: #8a8071;
-      --line: rgba(31,42,58,.13);
-      --shadow: 0 24px 60px -20px rgba(14,27,44,.28), 0 6px 18px rgba(14,27,44,.06);
-      --radius: 18px;
-    }
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}{{ 'Редагувати викладача' if teacher else 'Новий викладач' }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 900px;">
 
-    html { color-scheme: light; }
-
-    body {
-      background:
-        radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.15), transparent 60%),
-        radial-gradient(900px 500px at 110% 110%, rgba(14,27,44,.08), transparent 55%),
-        linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
-      font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color: var(--ink-2);
-      min-height: 100vh;
-      color-scheme: light;
-    }
-
-    /* ============ Шапка ============ */
-    .header-glass {
-      background: linear-gradient(135deg, rgba(14,27,44,.96) 0%, rgba(22,40,63,.96) 100%);
-      backdrop-filter: blur(10px);
-      color: #f4efe3;
-      border-radius: var(--radius);
-      border-bottom: 4px solid var(--brass);
-      box-shadow: var(--shadow);
-      padding: 1.5rem 1.6rem;
-      margin-bottom: 1.25rem;
-      position: relative;
-      overflow: hidden;
-    }
-    .header-glass::after {
-      content: "";
-      position: absolute;
-      top: -50%; right: -10%;
-      width: 340px; height: 340px;
-      background: radial-gradient(circle, rgba(200,162,74,.25) 0%, transparent 65%);
-      pointer-events: none;
-      animation: glowPulse 6s ease-in-out infinite alternate;
-    }
-    @keyframes glowPulse {
-      from { transform: scale(.9); opacity: .55; }
-      to   { transform: scale(1.15); opacity: 1; }
-    }
-    .header-glass h1 {
-      color: #f4efe3;
-      font-weight: 800;
-      letter-spacing: -.01em;
-      position: relative;
-      z-index: 1;
-    }
-    .header-glass .meta-line {
-      color: rgba(244,239,227,.75);
-      font-size: .9rem;
-      position: relative;
-      z-index: 1;
-    }
-    .header-glass .meta-line i { color: var(--brass-lt); }
-
-    /* ============ Поля ввода ============ */
-    input.form-control,
-    select.form-select,
-    textarea.form-control {
-      background-color: #ffffff !important;
-      color: #0e1b2c !important;
-      color-scheme: light;
-      -webkit-text-fill-color: #0e1b2c;
-      caret-color: #0e1b2c;
-    }
-    input.form-control::placeholder,
-    textarea.form-control::placeholder {
-      color: #8a8071 !important;
-      opacity: 1;
-    }
-    input.form-control:focus,
-    select.form-select:focus,
-    textarea.form-control:focus {
-      background-color: #ffffff !important;
-      color: #0e1b2c !important;
-      -webkit-text-fill-color: #0e1b2c;
-    }
-
-    /* ============ Поля оцінок ============ */
-    .grade-input {
-      text-align: center;
-      font-weight: 700;
-      font-size: 1rem;
-      border-radius: 10px;
-      border: 1.5px solid var(--line);
-      transition: border-color .18s ease, box-shadow .18s ease, transform .12s ease;
-      background-color: #ffffff !important;
-      color: #0e1b2c !important;
-      color-scheme: light;
-      -webkit-text-fill-color: #0e1b2c;
-      caret-color: #0e1b2c;
-    }
-    .grade-input:focus {
-      border-color: var(--brass);
-      box-shadow: 0 0 0 4px rgba(200,162,74,.22);
-      animation: pulseRing .55s ease;
-      transform: scale(1.02);
-      background-color: #ffffff !important;
-      color: #0e1b2c !important;
-      -webkit-text-fill-color: #0e1b2c;
-    }
-    @keyframes pulseRing {
-      0%   { box-shadow: 0 0 0 0 rgba(200,162,74,.45); }
-      70%  { box-shadow: 0 0 0 8px rgba(200,162,74,0); }
-      100% { box-shadow: 0 0 0 4px rgba(200,162,74,.22); }
-    }
-    .grade-input:read-only {
-      background: linear-gradient(135deg, #f7f3ea, #efe7d5) !important;
-      color: #8a8071 !important;
-      -webkit-text-fill-color: #8a8071;
-      cursor: not-allowed;
-      border-style: dashed;
-    }
-
-    /* ============ Строки таблицы (десктоп) ============ */
-    .student-table thead th {
-      background: var(--ink);
-      color: var(--brass-lt);
-      font-size: .74rem;
-      font-weight: 800;
-      letter-spacing: .06em;
-      text-transform: uppercase;
-      border-color: rgba(255,255,255,.08);
-      vertical-align: middle;
-      padding: .7rem .5rem;
-    }
-    .student-table tbody tr {
-      transition: background .2s ease;
-    }
-    .student-table tbody tr:nth-child(odd) { background: rgba(200,162,74,.05); }
-    .student-table tbody tr:hover {
-      background: rgba(200,162,74,.12);
-      box-shadow: inset 0 0 0 1px rgba(200,162,74,.35);
-    }
-    .student-table tbody td { vertical-align: middle; }
-
-    /* ============ Мобильные карточки ============ */
-    @keyframes cardEnter {
-      from { opacity: 0; transform: translateY(14px) scale(.98); }
-      to   { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    .student-card-mobile {
-      background: #ffffff;
-      color: #0e1b2c;
-      border: 1px solid #e9e0cc;
-      border-left: 4px solid var(--brass);
-      border-radius: 14px;
-      padding: 1rem 1.1rem;
-      margin-bottom: .85rem;
-      box-shadow: 0 6px 18px -12px rgba(14,27,44,.28);
-      animation: cardEnter .45s cubic-bezier(.22,1,.36,1) both;
-    }
-    .student-card-mobile:nth-child(1) { animation-delay: .02s; }
-    .student-card-mobile:nth-child(2) { animation-delay: .06s; }
-    .student-card-mobile:nth-child(3) { animation-delay: .10s; }
-    .student-card-mobile:nth-child(4) { animation-delay: .14s; }
-    .student-card-mobile:nth-child(5) { animation-delay: .18s; }
-
-    /* ============ Sticky-панель — скрыта по умолчанию ============ */
-    .mobile-save-bar { display: none; }
-
-    @media (max-width: 768px) {
-      body { padding-bottom: 82px; }
-      .mobile-save-bar {
-        display: block;
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        padding: .7rem .9rem;
-        background: rgba(255,253,248,.94);
-        backdrop-filter: blur(8px);
-        box-shadow: 0 -6px 20px -8px rgba(14,27,44,.25);
-        border-top: 1px solid var(--line);
-        z-index: 1030;
-        animation: slideUp .35s cubic-bezier(.22,1,.36,1) both;
-      }
-      @keyframes slideUp {
-        from { transform: translateY(100%); }
-        to   { transform: translateY(0); }
-      }
-    }
-
-    /* ============ Плавная подсветка нац/ECTS ============ */
-    .national-label, .ects-label, .national-cell, .ects-cell {
-      transition: color .3s ease, background-color .3s ease;
-      border-radius: 6px;
-      padding: 1px 4px;
-    }
-    .national-cell.flash, .ects-cell.flash,
-    .national-label.flash, .ects-label.flash {
-      animation: flashValue .45s ease;
-    }
-    @keyframes flashValue {
-      0%   { background-color: rgba(200,162,74,.35); }
-      100% { background-color: transparent; }
-    }
-
-    /* ============ Кнопка сохранения ============ */
-    .btn-save {
-      background: linear-gradient(135deg, var(--brass-lt), var(--brass) 60%, var(--brass-dark));
-      color: #241a06;
-      font-weight: 800;
-      border: none;
-      border-radius: 10px;
-      padding: .42rem 1rem;
-      font-size: .85rem;
-      transition: transform .15s ease, box-shadow .2s ease;
-      -webkit-text-fill-color: #241a06;
-    }
-    .btn-save:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px -10px rgba(200,162,74,.7);
-      color: #241a06;
-      -webkit-text-fill-color: #241a06;
-    }
-    .btn-save:active { transform: translateY(0) scale(.98); }
-
-    /* На мобилке кнопка остаётся крупной — там важна площадь нажатия */
-    @media (max-width: 768px) {
-      .mobile-save-bar .btn-save {
-        padding: .7rem 1.4rem;
-        font-size: 1rem;
-        border-radius: 12px;
-      }
-    }
-
-    /* ============ Явное управление видимостью ============ */
-    .desktop-wrap { display: block; }
-    .mobile-wrap  { display: none; }
-
-    @media (max-width: 768px) {
-      .desktop-wrap { display: none !important; }
-      .mobile-wrap  { display: block; }
-      .header-glass { padding: 1.1rem 1.2rem; }
-      .header-glass h1 { font-size: 1.15rem; }
-      .header-glass .meta-line { font-size: .82rem; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation: none !important; transition: none !important; }
-    }
-  </style>
-</head>
-<body>
-<div class="container py-3 py-md-4" style="max-width: 1200px;">
-
-  <div class="header-glass">
-    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-      <h1 class="h4 mb-0">{{ sheet.discipline_name }}</h1>
-      {% if readonly %}
-      <span class="badge text-bg-warning">Лише перегляд</span>
-      {% endif %}
-    </div>
-    <div class="meta-line mb-1">
-      <i class="bi bi-people-fill"></i>
-      {{ sheet.group_name }} · курс {{ sheet.course }} · {{ sheet.study_form }}
-    </div>
-    <div class="meta-line mb-1">
-      <i class="bi bi-calendar3"></i>
-      {{ sheet.academic_year }} · семестр {{ sheet.semester }}
-      {% if sheet.license_name %} · ліцензія {{ sheet.license_name }}{% endif %}
-    </div>
-    <div class="meta-line">
-      <i class="bi bi-journal-check"></i>
-      {{ sheet.control_form }}
-      {% if sheet.hours_credits %} · {{ sheet.hours_credits }}{% endif %}
-      {% if sheet.exam_date %} · {{ sheet.exam_date }}{% endif %}
-      {% if sheet.teacher_name %} · {{ sheet.teacher_name }}{% endif %}
-    </div>
-  </div>
-
-  {% if readonly %}
-  <div class="alert alert-warning py-2 small d-flex align-items-center gap-2">
-    <i class="bi bi-lock-fill"></i>
-    <span>Відомість затверджено або заблоковано — оцінки не редагуються.</span>
-  </div>
-  {% endif %}
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for cat, msg in messages %}
-      <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' }} py-2">{{ msg }}</div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
-
-  <form method="post">
-
-    <!-- ================= ДЕСКТОП ================= -->
-    <div class="card shadow-sm desktop-wrap" style="border-radius: 14px; overflow: hidden;">
-      <div class="table-responsive">
-        <table class="table table-sm mb-0 align-middle student-table">
-          <thead>
-            <tr>
-              <th rowspan="2">#</th>
-              <th rowspan="2">Студент</th>
-              {% if sheet.entity_kind in ('attestation', 'coursework') %}
-              <th rowspan="2">Тема роботи</th>
-              {% endif %}
-              <th colspan="6" class="text-center">Оцінка</th>
-              <th rowspan="2">Підпис</th>
-            </tr>
-            <tr>
-              <th class="small">Міжсесійний контроль</th>
-              <th class="small">Поточні бали</th>
-              <th class="small">Іспит / Залік</th>
-              <th class="small">Підсумкова</th>
-              <th class="small">Нац.</th>
-              <th class="small">ECTS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for st in students %}
-            <tr>
-              <td class="text-muted">{{ st.position }}</td>
-              <td>{{ st.full_name }}</td>
-              {% if sheet.entity_kind in ('attestation', 'coursework') %}
-              <td>
-                {% if not readonly %}
-                <input type="text" class="form-control form-control-sm"
-                       name="work_topic_{{ st.student_id }}" value="{{ st.work_topic or '' }}">
-                {% else %}<span class="small">{{ st.work_topic or '—' }}</span>{% endif %}
-              </td>
-              {% endif %}
-              {% if not readonly %}
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                         name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                         name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                         name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
-              <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                         name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
-                         title="Або введіть підсумок напряму, або 3 компоненти (сума)"></td>
-              {% else %}
-              <td>{{ st.points_mid if st.points_mid is not none else '—' }}</td>
-              <td>{{ st.points_current if st.points_current is not none else '—' }}</td>
-              <td>{{ st.points_exam if st.points_exam is not none else '—' }}</td>
-              <td>{{ st.points if st.points is not none else '—' }}</td>
-              {% endif %}
-              <td class="small national-cell">{{ st.national_grade or '—' }}</td>
-              <td class="ects-cell">{{ st.ects or '—' }}</td>
-              <td class="small">{{ sheet.teacher_name or '—' }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if not readonly %}
-      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 px-3 py-3"
-           style="border-top: 1px solid var(--line);">
-        <span class="small text-muted">
-          <i class="bi bi-info-circle me-1"></i>
-          Нац. шкала та ECTS оновлюються автоматично при введенні балів.
-          Після «Зберегти» дані зафіксуються у відомості.
-        </span>
-        <button type="submit" class="btn btn-save">
-          <i class="bi bi-save me-1"></i>Зберегти оцінки
-        </button>
-      </div>
-      {% endif %}
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.teachers_list') }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До картотеки
+        </a>
     </div>
 
-    <!-- ================= МОБІЛКА ================= -->
-    <div class="mobile-wrap">
-      {% for st in students %}
-      <div class="student-card-mobile">
+    {{ ui.page_header(
+        'bi-person-badge',
+        'Редагувати викладача' if teacher else 'Новий викладач',
+        teacher.full_name if teacher else 'Додати до картотеки'
+    ) }}
 
-        <div class="d-flex justify-content-between align-items-start mb-2">
-          <div class="fw-bold" style="font-size: 1rem;">
-            <span class="text-muted me-1">#{{ st.position }}</span>
-            {{ st.full_name }}
-          </div>
+    {% if teacher %}
+    {# ── Постійна ссылка ── #}
+    <div class="card mb-3 border-success">
+        <div class="card-header bg-success-subtle">
+            <strong><i class="bi bi-link-45deg me-1"></i>Постійна ссылка викладача</strong>
         </div>
+        <div class="card-body">
+            {% set teacher_url = request.url_root.rstrip('/') | replace('students.eu.local', 'join.e-u.edu.ua') %}
+            {% set cabinet_url = 'https://join.e-u.edu.ua/session-grade/teacher/' ~ teacher.token %}
+            <p class="small text-muted mb-2">
+                Надішліть цю ссылку викладачу <strong>один раз</strong>. За нею він бачить
+                усі свої відомості, які з'являтимуться автоматично, коли кафедра
+                їх створює.
+            </p>
+            <div class="input-group mb-2">
+                <input type="text" class="form-control font-monospace small"
+                       id="teacherLink" value="{{ cabinet_url }}" readonly onclick="this.select()">
+                <button type="button" class="btn btn-primary" onclick="copyLink()">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати
+                </button>
+                <a href="{{ cabinet_url }}" target="_blank"
+                   class="btn btn-outline-success"
+                   title="Відкрити як викладач (подивитись з його боку)">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                </a>
+            </div>
+            <div class="small text-muted">
+                <i class="bi bi-clock me-1"></i>
+                Створено: {{ teacher.token_created_at }}
+            </div>
 
-        {% if sheet.entity_kind in ('attestation', 'coursework') %}
-        <div class="mb-2">
-          <label class="small text-muted fw-bold text-uppercase" style="font-size:.7rem; letter-spacing:.06em;">Тема роботи</label>
-          {% if not readonly %}
-          <input type="text" class="form-control form-control-sm"
-                 name="work_topic_{{ st.student_id }}" value="{{ st.work_topic or '' }}">
-          {% else %}<span class="small">{{ st.work_topic or '—' }}</span>{% endif %}
+            <form method="POST" class="mt-3"
+                  onsubmit="return confirm('Стара ссылка перестане працювати. Ви впевнені?');">
+                <input type="hidden" name="action" value="reset_token">
+                <button type="submit" class="btn btn-sm btn-outline-warning">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Скинути посилання (стара перестане працювати)
+                </button>
+            </form>
         </div>
-        {% endif %}
-
-        {% if not readonly %}
-        <div class="row g-2 mb-2">
-          <div class="col-6">
-            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Міжсесійний</label>
-            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                   name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}">
-          </div>
-          <div class="col-6">
-            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Поточні</label>
-            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                   name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}">
-          </div>
-          <div class="col-6">
-            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Іспит / Залік</label>
-            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                   name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}">
-          </div>
-          <div class="col-6">
-            <label class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Підсумкова</label>
-            <input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
-                   name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
-                   title="Або введіть підсумок напряму, або 3 компоненти (сума)">
-          </div>
-        </div>
-        {% else %}
-        <div class="mb-2">
-          <span class="small text-muted">Міжсесійний / Поточні / Іспит:</span>
-          <span class="small">
-            {{ st.points_mid if st.points_mid is not none else '—' }} /
-            {{ st.points_current if st.points_current is not none else '—' }} /
-            {{ st.points_exam if st.points_exam is not none else '—' }}
-          </span>
-        </div>
-        <div class="mb-2">
-          <span class="small text-muted">Підсумкова:</span>
-          <span class="fw-bold">{{ st.points if st.points is not none else '—' }}</span>
-        </div>
-        {% endif %}
-
-        <div class="d-flex justify-content-between align-items-center pt-2 mt-1 border-top" style="border-color: var(--line) !important;">
-          <span class="small text-muted fw-bold text-uppercase" style="font-size:.68rem;">Нац. / ECTS</span>
-          <span class="small">
-            <span class="national-label fw-semibold">{{ st.national_grade or '—' }}</span>
-            · <span class="ects-label fw-semibold">{{ st.ects or '—' }}</span>
-          </span>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-
-    {% if not readonly %}
-    <div class="mobile-save-bar">
-      <button type="submit" class="btn btn-save w-100">
-        <i class="bi bi-save me-1"></i>Зберегти оцінки
-      </button>
     </div>
     {% endif %}
-  </form>
+
+    {# ── Форма викладача ── #}
+    <form method="POST">
+        <input type="hidden" name="action" value="save">
+        <div class="card mb-3">
+            <div class="card-header"><strong>Дані викладача</strong></div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">
+                            ПІБ (повне) <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" name="full_name" class="form-control"
+                               value="{{ teacher.full_name if teacher else '' }}"
+                               placeholder="напр. Сушинський Олег Євгенович" required>
+                        <div class="form-text">Для внутрішнього відображення у картотеці.</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">
+                            Скорочене ім'я
+                        </label>
+                        <input type="text" name="short_name" class="form-control"
+                               value="{{ teacher.short_name if teacher else '' }}"
+                               placeholder="напр. проф. Сушинський О.Є.">
+                        <div class="form-text">Підставлятиметься у відомості (шапка документа).</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">Email</label>
+                        <input type="email" name="email" class="form-control"
+                               value="{{ teacher.email if teacher else '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">Телефон</label>
+                        <input type="text" name="phone" class="form-control"
+                               value="{{ teacher.phone if teacher else '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">Кафедра</label>
+                        <input type="text" name="department" class="form-control"
+                               value="{{ teacher.department if teacher else '' }}"
+                               placeholder="напр. Кафедра інформаційних систем">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold">Пов'язаний користувач</label>
+                        <select name="user_id" class="form-select">
+                            <option value="">— без прив'язки —</option>
+                            {% for u in users %}
+                            <option value="{{ u.id }}"
+                                    {% if teacher and teacher.user_id == u.id %}selected{% endif %}>
+                                {{ u.username }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Якщо у викладача є обліковий запис у системі — оберіть його.
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold">Примітки</label>
+                        <textarea name="notes" class="form-control" rows="2"
+                                  placeholder="напр. сумісник, лише парні семестри">{{ teacher.notes if teacher else '' }}</textarea>
+                    </div>
+                    {% if teacher %}
+                    <div class="col-12">
+                        <div class="form-check form-switch">
+                            <input type="checkbox" name="is_active" value="1"
+                                   class="form-check-input"
+                                   id="isActive"
+                                   {% if teacher.is_active %}checked{% endif %}>
+                            <label class="form-check-label" for="isActive">
+                                Активний (з'являється в списку при створенні відомості)
+                            </label>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-footer d-flex justify-content-between flex-wrap gap-2">
+                <a href="{{ url_for('exam_sessions.teachers_list') }}"
+                   class="btn btn-outline-secondary">Скасувати</a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-check-lg me-1"></i>
+                    {{ 'Зберегти зміни' if teacher else 'Створити викладача' }}
+                </button>
+            </div>
+        </div>
+    </form>
+
+    {% if teacher and stats %}
+    {# ── Статистика викладача ── #}
+    <div class="card mb-3">
+        <div class="card-header">
+            <strong><i class="bi bi-journal-text me-1"></i>Відомості викладача</strong>
+            <span class="badge bg-primary ms-2">{{ stats.total }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if stats.sheets %}
+            <div class="row g-0 mb-3 p-3 border-bottom">
+                <div class="col-6 col-md-3 text-center">
+                    <div class="fs-4 fw-bold text-success">{{ stats.submitted }}</div>
+                    <div class="small text-muted">Заповнено</div>
+                </div>
+                <div class="col-6 col-md-3 text-center">
+                    <div class="fs-4 fw-bold text-warning">{{ stats.in_progress }}</div>
+                    <div class="small text-muted">В процесі</div>
+                </div>
+                <div class="col-6 col-md-3 text-center">
+                    <div class="fs-4 fw-bold text-danger">{{ stats.pending }}</div>
+                    <div class="small text-muted">Очікує</div>
+                </div>
+                <div class="col-6 col-md-3 text-center">
+                    <div class="fs-4 fw-bold">{{ stats.percent }}%</div>
+                    <div class="small text-muted">Прогрес</div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Дисципліна</th>
+                            <th>Група</th>
+                            <th>Семестр</th>
+                            <th class="text-center">Студентів</th>
+                            <th class="text-center">Оцінено</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in stats.sheets %}
+                        <tr>
+                            <td>{{ s.discipline_name }}</td>
+                            <td class="small">{{ s.group_name }}</td>
+                            <td class="small">{{ s.academic_year }} / {{ s.semester }}</td>
+                            <td class="text-center">{{ s.students_count }}</td>
+                            <td class="text-center">
+                                <span class="{% if s.graded_count == s.students_count %}text-success fw-bold{% elif s.graded_count > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
+                                    {{ s.graded_count }} / {{ s.students_count }}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge
+                                    {% if s.status in ('approved', 'locked') %}bg-success
+                                    {% elif s.status == 'submitted' %}bg-success
+                                    {% elif s.status == 'in_progress' %}bg-warning text-dark
+                                    {% elif s.status == 'sent' %}bg-info
+                                    {% else %}bg-secondary{% endif %}">
+                                    {% if s.status == 'draft' %}Чернетка
+                                    {% elif s.status == 'sent' %}Надіслано
+                                    {% elif s.status == 'in_progress' %}В процесі
+                                    {% elif s.status == 'submitted' %}Заповнено
+                                    {% elif s.status == 'approved' %}Затверджено
+                                    {% elif s.status == 'locked' %}Заблоковано
+                                    {% else %}{{ s.status }}{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <i class="bi bi-inbox fs-4 d-block mb-2 opacity-50"></i>
+                У цього викладача ще немає відомостей. Вони з'являться тут
+                автоматично, коли кафедра створить їх із вибором цього викладача.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Видалення ── #}
+    <div class="card border-danger">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <strong>Видалити викладача</strong>
+                <div class="small text-muted">Видалення можливе лише якщо у викладача немає відомостей і прив'язки до користувача.</div>
+            </div>
+            <form method="POST"
+                  onsubmit="return confirm('Видалити викладача «{{ teacher.full_name }}»?');">
+                <input type="hidden" name="action" value="delete">
+                <button type="submit" class="btn btn-outline-danger">
+                    <i class="bi bi-trash me-1"></i> Видалити
+                </button>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
 </div>
 
 <script>
-(function () {
-  const CONTROL_FORM = {{ sheet.control_form | tojson }};
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  function pointsToNationalEcts(points, controlForm) {
-    if (points === null || points === undefined || points === '') return { nat: '', ects: '' };
-    let p = parseInt(points, 10);
-    if (isNaN(p)) return { nat: '', ects: '' };
-    if (p < 0) p = 0;
-    if (p > 100) p = 100;
-
-    let ects, examNat;
-    if (p >= 90)      { ects = 'A'; examNat = 'Відмінно / Excellent'; }
-    else if (p >= 82) { ects = 'B'; examNat = 'Добре / Good'; }
-    else if (p >= 74) { ects = 'C'; examNat = 'Добре / Good'; }
-    else if (p >= 64) { ects = 'D'; examNat = 'Задовільно / Satisfactory'; }
-    else if (p >= 60) { ects = 'E'; examNat = 'Задовільно / Satisfactory'; }
-    else if (p >= 35) { ects = 'FX'; examNat = 'Незадовільно / Fail'; }
-    else              { ects = 'F';  examNat = 'Незадовільно / Fail'; }
-
-    if (controlForm === 'Залік') {
-      return {
-        nat:  p >= 60 ? 'Зараховано' : 'Незараховано',
-        ects: (p >= 60 || ects === 'FX' || ects === 'F') ? ects : 'F',
-      };
-    }
-    return { nat: examNat, ects: ects };
-  }
-
-  function parseNum(v) {
-    v = (v || '').toString().trim();
-    if (v === '') return null;
-    const n = parseInt(v, 10);
-    return isNaN(n) ? null : n;
-  }
-
-  function flash(el) {
-    if (!el || reducedMotion) return;
-    el.classList.remove('flash');
-    void el.offsetWidth;
-    el.classList.add('flash');
-  }
-
-  function bindRow(row) {
-    const mid  = row.querySelector('input[name^="points_mid_"]');
-    const cur  = row.querySelector('input[name^="points_current_"]');
-    const exam = row.querySelector('input[name^="points_exam_"]');
-    const total = row.querySelector(
-      'input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])'
-    );
-    if (!total || !mid || !cur || !exam) return;
-
-    const totalTd = total.closest('td');
-    let natEl = null, ectsEl = null;
-    if (totalTd) {
-      natEl = totalTd.nextElementSibling;
-      ectsEl = natEl ? natEl.nextElementSibling : null;
-    }
-    if (!natEl) {
-      const card = total.closest('.student-card-mobile');
-      if (card) {
-        natEl = card.querySelector('.national-label');
-        ectsEl = card.querySelector('.ects-label');
-      }
-    }
-
-    function setText(el, value) {
-      if (!el) return;
-      const newVal = (value === null || value === undefined || value === '') ? '—' : value;
-      if (el.textContent.trim() !== newVal) {
-        el.textContent = newVal;
-        flash(el);
-      }
-    }
-
-    function recalc() {
-      const a = parseNum(mid.value);
-      const b = parseNum(cur.value);
-      const c = parseNum(exam.value);
-      const anyFilled = (a !== null || b !== null || c !== null);
-
-      if (!anyFilled) {
-        total.readOnly = false;
-        total.classList.remove('bg-light');
-        return;
-      }
-
-      let sum = (a || 0) + (b || 0) + (c || 0);
-      if (sum > 100) sum = 100;
-
-      total.value = sum;
-      total.readOnly = true;
-      total.classList.add('bg-light');
-
-      const { nat, ects } = pointsToNationalEcts(sum, CONTROL_FORM);
-      setText(natEl, nat);
-      setText(ectsEl, ects);
-    }
-
-    mid.addEventListener('input', recalc);
-    cur.addEventListener('input', recalc);
-    exam.addEventListener('input', recalc);
-
-    total.addEventListener('input', function () {
-      if (total.readOnly) return;
-      mid.value = '';
-      cur.value = '';
-      exam.value = '';
-
-      const manual = parseNum(total.value);
-      if (manual === null) {
-        setText(natEl, '—');
-        setText(ectsEl, '—');
-        return;
-      }
-      const { nat, ects } = pointsToNationalEcts(manual, CONTROL_FORM);
-      setText(natEl, nat);
-      setText(ectsEl, ects);
+function copyLink() {
+    const el = document.getElementById('teacherLink');
+    el.select();
+    navigator.clipboard.writeText(el.value).then(() => {
+        const btn = event.target.closest('button');
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Скопійовано';
+        setTimeout(() => { btn.innerHTML = old; }, 1500);
     });
-
-    recalc();
-  }
-
-  document.querySelectorAll('tr, .student-card-mobile').forEach(function (row) {
-    if (row.querySelector('input[name^="points_mid_"]')) bindRow(row);
-  });
-
-  function syncDisabledByVisibility() {
-    const isMobile = window.matchMedia('(max-width: 768px)').matches;
-    document.querySelectorAll('.desktop-wrap input').forEach(el => { el.disabled = isMobile; });
-    document.querySelectorAll('.mobile-wrap input').forEach(el => { el.disabled = !isMobile; });
-  }
-  syncDisabledByVisibility();
-  window.addEventListener('resize', syncDisabledByVisibility);
-})();
+}
 </script>
-</body>
-</html>
+{% endblock %}

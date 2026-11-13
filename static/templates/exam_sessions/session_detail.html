@@ -33,6 +33,10 @@
   <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
     ← До списку
   </a>
+  <a href="{{ url_for('exam_sessions.create_batch', session_id=es.id) }}"
+   class="btn btn-sm btn-success">
+    <i class="bi bi-file-earmark-plus me-1"></i> Пакет для викладача
+	</a>
   {% if has_perm('view_exam_session_history') %}
   <a href="{{ url_for('exam_sessions.session_history', session_id=es.id) }}"
      class="btn btn-sm btn-outline-info">

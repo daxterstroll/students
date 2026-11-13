@@ -1,5 +1,5 @@
 """
-Таблиці сесійних відомостей + user_knowledge_areas.
+Таблиці сесійних відомостей + user_knowledge_areas + картотека викладачів.
 Викликати ensure_exam_session_tables(conn) при старті маршрутів / у init_db.
 """
 from __future__ import annotations
@@ -14,6 +14,28 @@ def ensure_exam_session_tables(conn) -> None:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     """)
+
+    # ─── Картотека викладачів ─────────────────────────────────
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS teachers (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name       TEXT NOT NULL,
+            short_name      TEXT,
+            email           TEXT,
+            phone           TEXT,
+            department      TEXT,
+            user_id         INTEGER,
+            token           TEXT UNIQUE NOT NULL,
+            token_created_at TEXT DEFAULT (datetime('now','localtime')),
+            is_active       INTEGER NOT NULL DEFAULT 1,
+            notes           TEXT,
+            created_by      TEXT,
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teachers_token ON teachers(token)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_teachers_active ON teachers(is_active)")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS exam_sessions (
@@ -39,25 +61,22 @@ def ensure_exam_session_tables(conn) -> None:
         CREATE TABLE IF NOT EXISTS session_sheets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             session_id INTEGER NOT NULL,
-            -- Вільна назва: предмета в базі ще може не бути
             discipline_name TEXT NOT NULL,
             work_topic TEXT,
-            -- Мітка для майбутнього переносу
             entity_kind TEXT NOT NULL DEFAULT 'subject'
                 CHECK (entity_kind IN ('subject', 'practice', 'coursework', 'attestation')),
             control_form TEXT NOT NULL DEFAULT 'Залік'
                 CHECK (control_form IN ('Залік', 'Екзамен')),
             hours_credits TEXT,
             teacher_name TEXT,
+            teacher_ref_id INTEGER,
             exam_date TEXT,
             statement_number TEXT,
-            -- NULL = студенти групи без license_id; інакше лише ця ліцензія
             license_id INTEGER,
             status TEXT NOT NULL DEFAULT 'draft'
-                CHECK (status IN ('draft', 'sent', 'submitted', 'approved', 'locked')),
+                CHECK (status IN ('draft', 'sent', 'in_progress', 'submitted', 'approved', 'locked')),
             token TEXT UNIQUE,
             token_expires_at TEXT,
-            -- Після переносу
             linked_entity_type TEXT
                 CHECK (linked_entity_type IS NULL OR linked_entity_type IN
                        ('subject', 'practice', 'coursework', 'attestation')),
@@ -70,22 +89,19 @@ def ensure_exam_session_tables(conn) -> None:
             approved_at TEXT,
             approved_by TEXT,
             FOREIGN KEY (session_id) REFERENCES exam_sessions(id) ON DELETE CASCADE,
-            FOREIGN KEY (license_id) REFERENCES institution_licenses(id)
+            FOREIGN KEY (license_id) REFERENCES institution_licenses(id),
+            FOREIGN KEY (teacher_ref_id) REFERENCES teachers(id) ON DELETE SET NULL
         )
     """)
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_session_sheets_session ON session_sheets(session_id)"
-    )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_session_sheets_token ON session_sheets(token)"
-    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_sheets_session ON session_sheets(session_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_sheets_token ON session_sheets(token)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session_sheets_teacher ON session_sheets(teacher_ref_id)")
 
     conn.execute("""
         CREATE TABLE IF NOT EXISTS session_sheet_students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             sheet_id INTEGER NOT NULL,
             student_id INTEGER NOT NULL,
-            -- Snapshot на момент формування відомості
             full_name TEXT NOT NULL,
             edebo_code TEXT,
             work_topic TEXT,
@@ -105,7 +121,7 @@ def ensure_exam_session_tables(conn) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sheet_students_sheet ON session_sheet_students(sheet_id)"
     )
-    
+
     conn.execute("""
         CREATE TABLE IF NOT EXISTS exam_session_history (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -131,8 +147,13 @@ def ensure_exam_session_tables(conn) -> None:
         "ON exam_session_history(entity_type, entity_id, id DESC)"
     )
 
+    # ─── Страховка для старих БД ───────────────────────────────
     try:
         conn.execute("ALTER TABLE session_sheets ADD COLUMN work_topic TEXT")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE session_sheets ADD COLUMN teacher_ref_id INTEGER REFERENCES teachers(id)")
     except Exception:
         pass
     try:
@@ -144,6 +165,7 @@ def ensure_exam_session_tables(conn) -> None:
             conn.execute(f"ALTER TABLE session_sheet_students ADD COLUMN {col} INTEGER")
         except Exception:
             pass
+
     try:
         conn.commit()
     except Exception:

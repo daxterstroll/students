@@ -1,0 +1,88 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Статистика по викладачах{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.sessions_list') }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До сесій
+        </a>
+    </div>
+
+    {{ ui.page_header('bi-graph-up', 'Статистика по викладачах',
+        'Хто з викладачів скільки відомостей отримав і скільки заповнив') }}
+
+    <div class="card">
+        <div class="card-body p-0">
+            {% if stats %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Викладач</th>
+                            <th class="text-center">Пакетів</th>
+                            <th class="text-center">Усього відомостей</th>
+                            <th class="text-center">Заповнено</th>
+                            <th class="text-center">Не заповнено</th>
+                            <th style="width: 200px;">Прогрес</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in stats %}
+                        <tr>
+                            <td class="fw-semibold">{{ s.teacher_name }}</td>
+                            <td class="text-center">{{ s.batches_count }}</td>
+                            <td class="text-center">{{ s.total }}</td>
+                            <td class="text-center text-success fw-bold">{{ s.submitted }}</td>
+                            <td class="text-center {% if s.not_submitted %}text-danger fw-bold{% endif %}">
+                                {{ s.not_submitted }}
+                            </td>
+                            <td>
+                                <div class="progress" style="height: 20px;">
+                                    <div class="progress-bar
+                                        {% if s.percent >= 80 %}bg-success
+                                        {% elif s.percent >= 50 %}bg-warning
+                                        {% else %}bg-danger{% endif %}"
+                                        style="width: {{ s.percent }}%;">
+                                        {{ s.percent }}%
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-end">
+                                {% if s.teacher_id %}
+                                <a href="{{ url_for('exam_sessions.teacher_stats_detail',
+                                                    teacher_id=s.teacher_id) }}"
+                                   class="btn btn-sm btn-outline-primary">
+                                    Детально
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-5 text-center text-muted">
+                <i class="bi bi-inbox fs-1 d-block mb-3 opacity-50"></i>
+                <h5 class="mb-2">Пакетів відомостей ще немає</h5>
+                <p class="mb-3 small">
+                    Щоб створити пакет для викладача — відкрийте потрібну <strong>сесію</strong>
+                    (Навчання → Сесії та відомості → конкретна сесія) і натисніть
+                    <strong>«Створити пакет для викладача»</strong>.
+                </p>
+                <a href="{{ url_for('exam_sessions.sessions_list') }}"
+                   class="btn btn-primary btn-sm">
+                    <i class="bi bi-arrow-right me-1"></i>До списку сесій
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+</div>
+{% endblock %}

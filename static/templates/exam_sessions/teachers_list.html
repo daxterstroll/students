@@ -1,0 +1,139 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Картотека викладачів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between flex-wrap gap-2">
+        <a href="{{ url_for('exam_sessions.sessions_list') }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До сесій
+        </a>
+        <a href="{{ url_for('exam_sessions.teacher_new') }}"
+           class="btn btn-sm btn-primary">
+            <i class="bi bi-person-plus me-1"></i> Додати викладача
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-people-fill',
+        'Картотека викладачів',
+        'У кожного — своя постійна ссылка, яку можна надіслати один раз'
+    ) }}
+
+    <div class="alert alert-info small">
+        <i class="bi bi-info-circle me-1"></i>
+        Картотека — це джерело істини. Коли створюєте відомість, обираєте
+        викладача зі списку — і відомість автоматично з'являється в його кабінеті.
+        Посилання <strong>не змінюється</strong> — викладач бачить усі свої відомості
+        за одною адресою.
+    </div>
+
+    {% if not teachers %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-people fs-1 d-block mb-3 text-muted opacity-50"></i>
+            <h5>Викладачів ще немає</h5>
+            <p class="text-muted small mb-3">
+                Створіть першого викладача, щоб мати змогу прив'язувати до нього відомості.
+            </p>
+            <a href="{{ url_for('exam_sessions.teacher_new') }}"
+               class="btn btn-primary">
+                <i class="bi bi-person-plus me-1"></i> Додати першого
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Викладач</th>
+                            <th>Кафедра</th>
+                            <th class="text-center">Усього</th>
+                            <th class="text-center">Заповнено</th>
+                            <th class="text-center">В процесі</th>
+                            <th class="text-center">Очікує</th>
+                            <th style="width:170px;">Прогрес</th>
+                            <th style="width:130px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for t in teachers %}
+                        <tr class="{% if not t.is_active %}text-muted{% endif %}">
+                            <td>
+                                <div class="fw-semibold">{{ t.full_name }}</div>
+                                {% if t.short_name and t.short_name != t.full_name %}
+                                <div class="small text-muted">{{ t.short_name }}</div>
+                                {% endif %}
+                                {% if t.linked_username %}
+                                <div class="small">
+                                    <span class="badge bg-info-subtle text-info-emphasis">
+                                        <i class="bi bi-person-badge me-1"></i>{{ t.linked_username }}
+                                    </span>
+                                </div>
+                                {% endif %}
+                                {% if not t.is_active %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis mt-1">неактивний</span>
+                                {% endif %}
+                            </td>
+                            <td class="small">{{ t.department or '—' }}</td>
+                            <td class="text-center">{{ t.sheets_total }}</td>
+                            <td class="text-center text-success fw-bold">{{ t.sheets_submitted }}</td>
+                            <td class="text-center">
+                                {% if t.sheets_total - t.sheets_submitted - t.sheets_pending > 0 %}
+                                <span class="text-warning fw-bold">
+                                    {{ t.sheets_total - t.sheets_submitted - t.sheets_pending }}
+                                </span>
+                                {% else %}
+                                <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center {% if t.sheets_pending %}text-danger fw-bold{% endif %}">
+                                {{ t.sheets_pending }}
+                            </td>
+                            <td>
+                                {% if t.sheets_total %}
+                                <div class="progress" style="height: 18px;">
+                                    <div class="progress-bar
+                                        {% if t.percent >= 80 %}bg-success
+                                        {% elif t.percent >= 50 %}bg-warning
+                                        {% else %}bg-danger{% endif %}"
+                                        style="width: {{ t.percent }}%;">
+                                        {{ t.percent }}%
+                                    </div>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    <a href="{{ url_for('exam_sessions.teacher_edit', teacher_id=t.id) }}"
+                                       class="btn btn-sm btn-outline-primary" title="Редагувати">
+                                        <i class="bi bi-pencil"></i>
+                                    </a>
+                                    {% if t.is_active %}
+                                    <a href="{{ url_for('exam_sessions.teacher_cabinet', teacher_token=t.token) }}"
+                                       target="_blank"
+                                       class="btn btn-sm btn-outline-success"
+                                       title="Відкрити кабінет викладача (як бачить він)">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

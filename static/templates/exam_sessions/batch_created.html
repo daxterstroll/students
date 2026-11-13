@@ -1,0 +1,53 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Пакет створено{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 720px;">
+
+    {{ ui.page_header('bi-check-circle-fill', 'Пакет створено',
+        'Викладач: ' ~ teacher_name ~ ' · ' ~ sheet_count ~ ' відомостей') }}
+
+    <div class="alert alert-success">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        Скопіюйте посилання та надішліть викладачу. Воно дає доступ
+        до всіх {{ sheet_count }} відомостей одразу.
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <label class="form-label small fw-semibold">Посилання для викладача</label>
+            <div class="input-group">
+                <input type="text" class="form-control font-monospace" id="batchLink"
+                       value="{{ batch_link }}" readonly onclick="this.select()">
+                <button type="button" class="btn btn-primary" onclick="copyLink()">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}"
+           class="btn btn-outline-primary">
+            <i class="bi bi-graph-up me-1"></i>Статистика по викладачах
+        </a>
+        <a href="{{ url_for('exam_sessions.sessions_list') }}"
+           class="btn btn-outline-secondary">До сесій</a>
+    </div>
+
+</div>
+
+<script>
+function copyLink() {
+    const el = document.getElementById('batchLink');
+    el.select();
+    navigator.clipboard.writeText(el.value).then(() => {
+        const btn = event.target.closest('button');
+        const old = btn.innerHTML;
+        btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Скопійовано';
+        setTimeout(() => { btn.innerHTML = old; }, 1500);
+    });
+}
+</script>
+{% endblock %}

@@ -1,5 +1,5 @@
 """
-Бізнес-логіка сесій: шкала оцінок, snapshot студентів, перевірка скоупу.
+Бізнес-логіка сесій: шкала оцінок, snapshot студентів, картотека викладачів.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from routes.user_scope import get_allowed_group_ids
 from routes.exam_sessions.schema import ensure_exam_session_tables
 
 
-# ── Стандартна шкала (ЄКТС / національна) ──────────────────────────
+# ── Шкала оцінок ───────────────────────────────────────────────────
 
 def parse_points(raw):
     if raw is None:
@@ -33,12 +33,6 @@ def parse_points(raw):
 
 
 def compute_final_points(mid, current, exam, explicit_total=None):
-    """
-    Два режими:
-      1) Є хоч одне з mid/current/exam → підсумок = їх сума (макс. 100)
-      2) Інакше → береться explicit_total (пряме введення «Підсумкова»)
-    Порожні компоненти в сумі рахуються як 0 лише якщо є хоч одне заповнене.
-    """
     parts = [parse_points(x) for x in (mid, current, exam)]
     present = [p for p in parts if p is not None]
     if present:
@@ -47,11 +41,6 @@ def compute_final_points(mid, current, exam, explicit_total=None):
 
 
 def points_to_national_ects(points: Optional[int], control_form: str = 'Залік'):
-    """
-    Повертає (national_grade, ects) за балами 0..100.
-    Для заліку: >=60 → Зараховано / відповідний ECTS; <60 → Незараховано / F.
-    Для екзамену: повна шкала Відмінно…Незадовільно.
-    """
     if points is None or points == '':
         return None, None
     try:
@@ -87,7 +76,6 @@ def points_to_national_ects(points: Optional[int], control_form: str = 'Залі
 
 
 def grade_stats(rows):
-    """Підсумки A..F + не з'явився для Excel."""
     buckets = {k: 0 for k in ('A', 'B', 'C', 'D', 'E', 'FX', 'F', 'absent')}
     for r in rows:
         pts = r.get('points') if isinstance(r, dict) else r['points'] if 'points' in r.keys() else None
@@ -102,6 +90,58 @@ def grade_stats(rows):
     return buckets
 
 
+# ── Перевірка статусу відомості ────────────────────────────────────
+
+def recompute_sheet_status(conn, sheet_id):
+    """
+    Перераховує статус відомості за реальною заповненістю.
+
+    Статуси, які встановлюються тут:
+      - 'draft'       — оцінок немає, токен не виданий
+      - 'sent'        — токен видано, оцінок ще немає
+      - 'in_progress' — частина оцінок є, але не всі
+      - 'submitted'   — усі студенти заповнені
+
+    Не чіпає 'approved' / 'locked' (ставляться вручну).
+    Повертає новий статус (або поточний, якщо не змінювався).
+    """
+    row = conn.execute("""
+        SELECT
+            COUNT(*) AS total,
+            SUM(CASE WHEN points IS NOT NULL THEN 1 ELSE 0 END) AS filled
+        FROM session_sheet_students
+        WHERE sheet_id = ?
+    """, (sheet_id,)).fetchone()
+
+    total = (row['total'] if row else 0) or 0
+    filled = (row['filled'] if row else 0) or 0
+
+    cur = conn.execute(
+        "SELECT status, token FROM session_sheets WHERE id = ?", (sheet_id,)
+    ).fetchone()
+    if not cur:
+        return None
+
+    if cur['status'] in ('approved', 'locked'):
+        return cur['status']
+
+    if total == 0:
+        new_status = 'draft'
+    elif filled == 0:
+        new_status = 'sent' if cur['token'] else 'draft'
+    elif filled < total:
+        new_status = 'in_progress'
+    else:
+        new_status = 'submitted'
+
+    if new_status != cur['status']:
+        conn.execute(
+            "UPDATE session_sheets SET status = ? WHERE id = ?",
+            (new_status, sheet_id),
+        )
+    return new_status
+
+
 # ── Скоуп ──────────────────────────────────────────────────────────
 
 def user_can_access_group(conn, session_obj, group_id: int) -> bool:
@@ -114,7 +154,6 @@ def user_can_access_group(conn, session_obj, group_id: int) -> bool:
 
 
 def allowed_groups_for_user(conn, session_obj):
-    """Список груп (id, name, …) доступних користувачу."""
     ensure_exam_session_tables(conn)
     if session_obj.get('is_admin') or session_obj.get('role') == 'admin':
         rows = conn.execute("""
@@ -139,24 +178,12 @@ def allowed_groups_for_user(conn, session_obj):
     return [dict(r) for r in rows]
 
 
-# ── Студенти відомості за ліцензією ────────────────────────────────
+# ── Студенти відомості ─────────────────────────────────────────────
 
 def students_for_sheet(conn, group_id: int, license_id) -> list:
-    """
-    Активні студенти групи для відомості.
-
-    Виключаються:
-      - archived студенти (s.archived = 1)
-      - заморожені (активний запис у frozen_students, resolved_at IS NULL)
-      - enrollment не active
-
-    license_id is not None → лише enrollment з цією ліцензією.
-    license_id is None → enrollment без license_id або legacy students.group_id.
-    """
     ensure_exam_session_tables(conn)
     conn.row_factory = sqlite3.Row
 
-    # Як у analytics / students list: активна «заморозка»
     not_frozen = """
         AND NOT EXISTS (
             SELECT 1 FROM frozen_students fz
@@ -181,8 +208,6 @@ def students_for_sheet(conn, group_id: int, license_id) -> list:
         """, (group_id, license_id)).fetchall()
         return [dict(r) for r in rows]
 
-    # Без ліцензії: active enrollment з license_id IS NULL
-    # + студенти з primary group_id без жодного enrollment (legacy)
     rows = conn.execute(f"""
         SELECT s.id AS student_id,
                TRIM(s.last_name_UA || ' ' || s.first_name_UA || ' ' || COALESCE(s.middle_name_UA, '')) AS full_name,
@@ -221,7 +246,6 @@ def students_for_sheet(conn, group_id: int, license_id) -> list:
 
 
 def licenses_present_in_group(conn, group_id: int) -> list:
-    """Ліцензії, які реально є серед активних enrollment групи (+ опція NULL)."""
     rows = conn.execute("""
         SELECT DISTINCT e.license_id AS id,
                COALESCE(l.short_name_ua, l.name_ua, '—') AS name
@@ -234,7 +258,6 @@ def licenses_present_in_group(conn, group_id: int) -> list:
 
 
 def populate_sheet_students(conn, sheet_id: int, group_id: int, license_id) -> int:
-    """Перезаписує snapshot студентів відомості. Повертає кількість."""
     conn.execute("DELETE FROM session_sheet_students WHERE sheet_id = ?", (sheet_id,))
     students = students_for_sheet(conn, group_id, license_id)
     for i, st in enumerate(students, start=1):
@@ -243,6 +266,8 @@ def populate_sheet_students(conn, sheet_id: int, group_id: int, license_id) -> i
                 (sheet_id, student_id, full_name, edebo_code, position)
             VALUES (?, ?, ?, ?, ?)
         """, (sheet_id, st['student_id'], st['full_name'], st.get('edebo_code'), i))
+    # Після перезапису — перераховуємо статус
+    recompute_sheet_status(conn, sheet_id)
     return len(students)
 
 
@@ -273,3 +298,56 @@ def sheet_token_valid(row) -> bool:
         except ValueError:
             pass
     return True
+
+
+# ═══════════════════════════════════════════════════════════════════
+# Картотека викладачів
+# ═══════════════════════════════════════════════════════════════════
+
+def generate_teacher_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def teacher_stats(conn, teacher_id: int):
+    """Статистика по викладачу (для сторінки деталей)."""
+    rows = conn.execute("""
+        SELECT ss.id, ss.status, ss.token,
+               ss.discipline_name, ss.control_form,
+               es.academic_year, es.semester,
+               g.name AS group_name,
+               (SELECT COUNT(*) FROM session_sheet_students x
+                WHERE x.sheet_id = ss.id) AS students_count,
+               (SELECT COUNT(*) FROM session_sheet_students x
+                WHERE x.sheet_id = ss.id AND x.points IS NOT NULL) AS graded_count
+        FROM session_sheets ss
+        JOIN exam_sessions es ON es.id = ss.session_id
+        JOIN groups g ON g.id = es.group_id
+        WHERE ss.teacher_ref_id = ?
+        ORDER BY
+            CASE ss.status
+                WHEN 'draft' THEN 0
+                WHEN 'sent' THEN 1
+                WHEN 'in_progress' THEN 2
+                WHEN 'submitted' THEN 3
+                WHEN 'approved' THEN 4
+                WHEN 'locked' THEN 5
+                ELSE 6
+            END,
+            es.academic_year DESC, es.semester DESC,
+            ss.discipline_name
+    """, (teacher_id,)).fetchall()
+
+    rows = [dict(r) for r in rows]
+    total = len(rows)
+    submitted = sum(1 for r in rows if r['status'] in ('submitted', 'approved', 'locked'))
+    in_progress = sum(1 for r in rows if r['status'] == 'in_progress')
+    pending = total - submitted - in_progress
+
+    return {
+        'total': total,
+        'submitted': submitted,
+        'in_progress': in_progress,
+        'pending': pending,
+        'percent': round(submitted / total * 100) if total else 0,
+        'sheets': rows,
+    }

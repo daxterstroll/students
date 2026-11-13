@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Мої відомості — {{ teacher.full_name }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Lora:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #0e1b2c;
+            --ink-2: #16283f;
+            --paper: #f4efe3;
+            --paper-2: #fffdf8;
+            --muted: #8a8071;
+            --brass: #c8a24a;
+            --brass-lt: #e9cf8f;
+            --brass-dark: #a5822f;
+            --success: #3f8a5b;
+            --danger: #a23b2e;
+            --warning: #a5822f;
+            --line: rgba(31,42,58,.13);
+            --shadow: 0 12px 32px -12px rgba(14,27,44,.18);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 0;
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--ink);
+            background:
+                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.14), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.08), transparent 55%),
+                linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
+            min-height: 100vh;
+        }
+        .hero {
+            background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 60%, #1d3450 100%);
+            color: #fff; padding: 2.5rem 1.5rem 5rem; text-align: center;
+            position: relative; overflow: hidden;
+        }
+        .hero-badge {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 68px; height: 68px; border-radius: 50%;
+            background: linear-gradient(145deg, var(--brass-lt), var(--brass-dark));
+            font-size: 1.9rem; margin-bottom: 1rem;
+            box-shadow: 0 8px 22px rgba(200,162,74,.45);
+        }
+        .hero h1 {
+            font-family: 'Lora', serif; font-size: 1.7rem; margin: 0 0 .35rem;
+            color: var(--brass-lt); letter-spacing: -.01em;
+        }
+        .hero p { margin: 0; opacity: .75; font-size: .95rem; }
+
+        .wrap { max-width: 1000px; margin: -3.5rem auto 3rem; padding: 0 1rem; position: relative; }
+
+        .stats-bar {
+            display: flex; gap: 1rem; flex-wrap: wrap;
+            background: #fff; border-radius: 16px; padding: 1.25rem;
+            box-shadow: var(--shadow); margin-bottom: 1.5rem;
+            border: 1px solid rgba(255,255,255,.6);
+        }
+        .stat-item { text-align: center; flex: 1; min-width: 110px; }
+        .stat-value { font-size: 2rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
+        .stat-label { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .25rem; }
+        .stat-item--ok .stat-value { color: var(--success); }
+        .stat-item--pending .stat-value { color: var(--danger); }
+        .stat-item--work .stat-value { color: var(--warning); }
+
+        .progress-wrap { height: 16px; background: #e9e0cc; border-radius: 10px; overflow: hidden; margin-bottom: 2rem; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--success), #6fbf8b); transition: width .4s ease; }
+
+        .section-title {
+            font-family: 'Lora', serif; font-weight: 700; font-size: 1.15rem;
+            color: var(--ink); margin: 0 0 1rem; padding-bottom: .5rem;
+            border-bottom: 2px solid rgba(200,162,74,.3);
+        }
+
+        .sheet-card {
+            background: #fff; border-radius: 14px; padding: 1.15rem 1.25rem;
+            margin-bottom: .75rem; display: flex; align-items: center; gap: 1rem;
+            border-left: 4px solid var(--brass);
+            box-shadow: 0 4px 14px -6px rgba(14,27,44,.14);
+            transition: transform .15s ease, box-shadow .15s ease;
+            text-decoration: none; color: inherit;
+        }
+        .sheet-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 22px -8px rgba(14,27,44,.22);
+        }
+        .sheet-card--submitted { border-left-color: var(--success); }
+        .sheet-card--in_progress { border-left-color: var(--warning); }
+        .sheet-card--draft { border-left-color: var(--danger); }
+        .sheet-card--sent { border-left-color: #4a6ea8; }
+        .sheet-card--approved, .sheet-card--locked { border-left-color: #6c757d; opacity: .85; }
+
+        .sheet-body { flex: 1; min-width: 0; }
+        .sheet-title { font-weight: 700; font-size: 1rem; color: var(--ink); margin-bottom: .2rem; }
+        .sheet-meta { font-size: .82rem; color: var(--muted); }
+        .sheet-progress { font-size: .82rem; margin-top: .35rem; }
+        .sheet-progress .badge { font-weight: 700; }
+
+        .sheet-status {
+            padding: .3rem .8rem; border-radius: 20px; font-size: .75rem;
+            font-weight: 700; white-space: nowrap; flex-shrink: 0;
+        }
+        .sheet-status--draft { background: #fdf3d9; color: #8a6a1a; }
+        .sheet-status--sent { background: #d9e8ff; color: #2f5f87; }
+        .sheet-status--in_progress { background: #fce8c3; color: #8a6a1a; }
+        .sheet-status--submitted { background: #d4f0dd; color: #2d6644; }
+        .sheet-status--approved, .sheet-status--locked { background: #e9ecef; color: #495057; }
+
+        .btn-open {
+            padding: .55rem 1.15rem; border-radius: 10px; font-weight: 700;
+            font-size: .85rem; text-decoration: none;
+            border: 1.5px solid var(--brass);
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            color: var(--ink); white-space: nowrap;
+            transition: transform .15s ease, box-shadow .2s ease;
+        }
+        .btn-open:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px -6px rgba(200,162,74,.5);
+            color: var(--ink);
+        }
+        .btn-open--view {
+            background: transparent;
+            border-color: var(--line);
+            color: var(--muted);
+        }
+
+        .empty {
+            text-align: center; padding: 4rem 1.5rem;
+            background: #fff; border-radius: 16px; box-shadow: var(--shadow);
+        }
+        .empty i { font-size: 3rem; color: var(--muted); opacity: .4; }
+        .empty h4 { font-family: 'Lora', serif; margin: 1rem 0 .5rem; }
+        .empty p { color: var(--muted); margin: 0; font-size: .92rem; }
+
+        @media (max-width: 640px) {
+            .hero { padding: 1.75rem 1rem 4.5rem; }
+            .hero h1 { font-size: 1.3rem; }
+            .hero p { font-size: .85rem; }
+            .stats-bar { padding: 1rem; gap: .75rem; }
+            .stat-value { font-size: 1.5rem; }
+            .sheet-card { padding: .9rem 1rem; gap: .75rem; flex-wrap: wrap; }
+            .sheet-status { font-size: .7rem; }
+            .btn-open { font-size: .78rem; padding: .45rem .9rem; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation: none !important; transition: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="hero">
+    <div class="hero-badge">📋</div>
+    <h1>Відомості для заповнення</h1>
+    <p>{{ teacher.full_name }}{% if teacher.department %} · {{ teacher.department }}{% endif %}</p>
+</div>
+
+<div class="wrap">
+
+    {% if stats.total %}
+    <div class="stats-bar">
+        <div class="stat-item">
+            <div class="stat-value">{{ stats.total }}</div>
+            <div class="stat-label">Усього</div>
+        </div>
+        <div class="stat-item stat-item--ok">
+            <div class="stat-value">{{ stats.submitted }}</div>
+            <div class="stat-label">Заповнено</div>
+        </div>
+        <div class="stat-item stat-item--work">
+            <div class="stat-value">{{ stats.total - stats.submitted - stats.needs_work + (stats.needs_work - (stats.total - stats.submitted)) * 0 }}</div>
+            <div class="stat-label">В процесі</div>
+        </div>
+        <div class="stat-item stat-item--pending">
+            <div class="stat-value">{{ stats.needs_work }}</div>
+            <div class="stat-label">Потребують уваги</div>
+        </div>
+        <div class="stat-item">
+            <div class="stat-value">{{ stats.percent }}%</div>
+            <div class="stat-label">Прогрес</div>
+        </div>
+    </div>
+    <div class="progress-wrap">
+        <div class="progress-fill" style="width: {{ stats.percent }}%;"></div>
+    </div>
+    {% endif %}
+
+    {% if sheets %}
+    <h2 class="section-title">
+        <i class="bi bi-journal-text me-2" style="color: var(--brass);"></i>
+        Мої відомості
+    </h2>
+
+    {% for sh in sheets %}
+    {% set is_done = sh.status in ('submitted', 'approved', 'locked') %}
+    {% set is_progress = sh.status == 'in_progress' %}
+    <a href="{{ url_for('exam_sessions.teacher_sheet',
+                        teacher_token=teacher_token, sheet_id=sh.id) }}"
+       class="sheet-card sheet-card--{{ sh.status }}">
+        <div class="sheet-body">
+            <div class="sheet-title">{{ sh.discipline_name }}</div>
+            <div class="sheet-meta">
+                {{ sh.group_name }} · {{ sh.control_form }}
+                {% if sh.license_name %} · {{ sh.license_name }}{% endif %}
+                {% if sh.academic_year %} · {{ sh.academic_year }}{% endif %}
+                {% if sh.semester %} / {{ sh.semester }} сем.{% endif %}
+            </div>
+            <div class="sheet-progress">
+                <span class="badge {% if sh.graded_count == sh.students_count and sh.students_count > 0 %}bg-success{% elif sh.graded_count > 0 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                    <i class="bi bi-people me-1"></i>{{ sh.graded_count }} / {{ sh.students_count }} оцінено
+                </span>
+            </div>
+        </div>
+        <div class="sheet-status sheet-status--{{ sh.status }}">
+            {% if sh.status == 'draft' %}Чернетка
+            {% elif sh.status == 'sent' %}Не розпочато
+            {% elif sh.status == 'in_progress' %}В процесі
+            {% elif sh.status == 'submitted' %}Заповнено
+            {% elif sh.status == 'approved' %}Затверджено
+            {% elif sh.status == 'locked' %}Заблоковано
+            {% else %}{{ sh.status }}{% endif %}
+        </div>
+        <span class="btn-open {% if is_done %}btn-open--view{% endif %}">
+            {% if is_done %}<i class="bi bi-eye me-1"></i>Переглянути
+            {% else %}<i class="bi bi-pencil-square me-1"></i>Заповнити{% endif %}
+        </span>
+    </a>
+    {% endfor %}
+
+    {% else %}
+    <div class="empty">
+        <i class="bi bi-inbox"></i>
+        <h4>Відомостей поки немає</h4>
+        <p>Коли кафедра створить для вас відомість, вона з'явиться тут автоматично.<br>
+           Оновіть цю сторінку, щоб побачити зміни.</p>
+    </div>
+    {% endif %}
+
+    <div style="text-align: center; margin-top: 3rem; font-size: .82rem; color: var(--muted);">
+        <i class="bi bi-shield-lock me-1"></i>
+        Персональне посилання — не передавайте третім особам.
+    </div>
+
+</div>
+
+</body>
+</html>

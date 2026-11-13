@@ -1,0 +1,85 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Викладач: {{ teacher.username }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До статистики
+        </a>
+    </div>
+
+    {{ ui.page_header('bi-person-badge', teacher.username,
+        'Усі відомості, отримані викладачем: ' ~ stats.total ~ ', заповнено ' ~ stats.submitted) }}
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold">{{ stats.total }}</div>
+                <div class="text-muted small">Усього</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-success"><div class="card-body">
+                <div class="fs-3 fw-bold text-success">{{ stats.submitted }}</div>
+                <div class="text-muted small">Заповнено</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center border-danger"><div class="card-body">
+                <div class="fs-3 fw-bold text-danger">{{ stats.not_submitted }}</div>
+                <div class="text-muted small">Не заповнено</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center"><div class="card-body">
+                <div class="fs-3 fw-bold">{{ stats.percent }}%</div>
+                <div class="text-muted small">Прогрес</div>
+            </div></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header"><strong>Список відомостей</strong></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Дисципліна</th>
+                            <th>Група</th>
+                            <th>Семестр</th>
+                            <th>Дата видачі</th>
+                            <th>Дата здачі</th>
+                            <th>Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in stats.sheets %}
+                        <tr>
+                            <td>{{ s.discipline_name }}</td>
+                            <td>{{ s.group_name }}</td>
+                            <td class="small">{{ s.academic_year }} / {{ s.semester }}</td>
+                            <td class="small">{{ s.created_at[:10] if s.created_at else '—' }}</td>
+                            <td class="small">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+                            <td>
+                                <span class="badge
+                                    {% if s.status in ('submitted', 'approved', 'locked') %}bg-success
+                                    {% elif s.status in ('draft', 'sent') %}bg-warning text-dark
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ s.status }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

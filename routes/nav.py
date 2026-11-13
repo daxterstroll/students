@@ -75,6 +75,8 @@ NAV_SECTIONS = [
             {'divider': True},
             {'perm': 'manage_exam_sessions',     'url': 'exam_sessions.sessions_list',
              'icon': 'bi-clipboard2-check',      'label': 'Сесії та відомості'},
+             {'perm': 'manage_exam_sessions', 'url': 'exam_sessions.teacher_stats_dashboard',
+             'icon': 'bi-graph-up-arrow', 'label': 'Статистика по викладачах'},
             {'perm': 'transfer_exam_grades',     'url': 'exam_sessions.transfer_queue',
              'icon': 'bi-arrow-left-right',      'label': 'Перенос оцінок із сесій'},
              {'perm': 'view_exam_session_history', 'url': 'exam_sessions.history_index',
