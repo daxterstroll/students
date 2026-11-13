@@ -1,10 +1,5 @@
-"""
-Публічна форма викладача.
+# routes/exam_sessions/public.py
 
-  /session-grade/teacher/<teacher_token>              — кабінет (список відомостей)
-  /session-grade/teacher/<teacher_token>/sheet/<id>   — форма однієї відомості
-  /session-grade/<sheet_token>                        — стара одноразова ссылка (залишаємо для сумісності)
-"""
 from __future__ import annotations
 
 import sqlite3
@@ -100,11 +95,18 @@ def teacher_cabinet(teacher_token):
             ss.discipline_name, ss.license_id
     """, (teacher['id'],)).fetchall()
 
+    # Розширена статистика з окремими категоріями статусів.
+    # Раніше в шаблоні була спроба вивести `stats.needs_work - stats.draft - stats.sent`,
+    # але `draft` і `sent` не передавались → виводився 0.
     stats = {
         'total': len(sheets),
-        'needs_work': sum(1 for s in sheets if s['status'] in ('draft', 'sent', 'in_progress')),
+        'draft': sum(1 for s in sheets if s['status'] == 'draft'),
+        'sent': sum(1 for s in sheets if s['status'] == 'sent'),
+        'in_progress': sum(1 for s in sheets if s['status'] == 'in_progress'),
         'submitted': sum(1 for s in sheets if s['status'] in ('submitted', 'approved', 'locked')),
     }
+    stats['not_started'] = stats['draft'] + stats['sent']
+    stats['needs_work'] = stats['draft'] + stats['sent'] + stats['in_progress']
     stats['percent'] = round(stats['submitted'] / stats['total'] * 100) if stats['total'] else 0
 
     conn.close()
@@ -154,7 +156,6 @@ def teacher_sheet(teacher_token, sheet_id):
 
     if request.method == 'POST' and not readonly:
         _save_teacher_grades(conn, sheet_id, sheet['control_form'], request.form)
-
         new_status = recompute_sheet_status(conn, sheet_id)
 
         from routes.exam_sessions.history import log_history
@@ -169,7 +170,6 @@ def teacher_sheet(teacher_token, sheet_id):
 
         conn.commit()
 
-        # Переходимо на наступну незаповнену відомість того ж викладача
         next_sheet = conn.execute("""
             SELECT id FROM session_sheets
             WHERE teacher_ref_id = ?
@@ -206,7 +206,6 @@ def teacher_sheet(teacher_token, sheet_id):
         ORDER BY position, full_name
     """, (sheet_id,)).fetchall()]
 
-    # Навигация: prev/next среди всех листов викладача
     all_ids = [
         r['id'] for r in conn.execute("""
             SELECT id FROM session_sheets
@@ -243,12 +242,17 @@ def teacher_sheet(teacher_token, sheet_id):
         prev_sheet_id=prev_id,
         next_sheet_id=next_id,
         position={'current': idx + 1, 'total': len(all_ids)},
+        token=None,   # стара одноразова ссылка не використовується
     )
 
 
 # ═══════════════════════════════════════════════════════════════════
 # Стара одноразова ссылка /session-grade/<token> (залишаємо для сумісності)
 # ═══════════════════════════════════════════════════════════════════
+# ВАЖЛИВО: раніше ця функція рендерила `teacher_form.html`, який насправді
+# є АДМІНСЬКИМ шаблоном (потребує teacher, users, stats) — тому сторінка
+# ламалася з помилкою рендерингу. Тепер рендеримо `teacher_sheet.html` і
+# передаємо teacher_token=None — шаблон адаптується (без навігації).
 
 @exam_sessions_bp.route('/session-grade/<token>', methods=['GET', 'POST'])
 def teacher_grade_form(token):
@@ -301,7 +305,18 @@ def teacher_grade_form(token):
         ORDER BY position, full_name
     """, (sheet['id'],)).fetchall()]
     conn.close()
+
+    # Рендеримо той самий teacher_sheet.html, але без навігації кабінету
+    # (teacher_token=None, prev/next=None) — це "стара" публічна форма.
     return render_template(
-        'exam_sessions/teacher_form.html',
-        sheet=sheet, students=students, readonly=readonly, token=token,
+        'exam_sessions/teacher_sheet.html',
+        sheet=sheet,
+        students=students,
+        readonly=readonly,
+        teacher=None,
+        teacher_token=None,
+        prev_sheet_id=None,
+        next_sheet_id=None,
+        position=None,
+        token=token,
     )

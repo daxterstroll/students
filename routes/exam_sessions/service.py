@@ -1,6 +1,5 @@
-"""
-Бізнес-логіка сесій: шкала оцінок, snapshot студентів, картотека викладачів.
-"""
+# routes/exam_sessions/service.py
+
 from __future__ import annotations
 
 from datetime import datetime, timedelta
@@ -266,7 +265,6 @@ def populate_sheet_students(conn, sheet_id: int, group_id: int, license_id) -> i
                 (sheet_id, student_id, full_name, edebo_code, position)
             VALUES (?, ?, ?, ?, ?)
         """, (sheet_id, st['student_id'], st['full_name'], st.get('edebo_code'), i))
-    # Після перезапису — перераховуємо статус
     recompute_sheet_status(conn, sheet_id)
     return len(students)
 

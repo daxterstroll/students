@@ -37,7 +37,7 @@
             <td class="small">{{ r.academic_year }} / сем. {{ r.semester }}</td>
             <td class="small">{{ kind_ua.get(r.entity_kind, r.entity_kind) }}</td>
             <td>{{ r.license_name or '—' }}</td>
-            <td>{{ r.students_count }}</td>
+            <td class="text-center">{{ r.students_count }}</td>
             <td class="small">
               {% if r.linked_entity_id %}
                 {{ kind_ua.get(r.linked_entity_type, r.linked_entity_type) }} #{{ r.linked_entity_id }}

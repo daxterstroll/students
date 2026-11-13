@@ -39,11 +39,30 @@
       </div>
     </div>
 
-    <div class="row g-2">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Викладач</label>
-        <input type="text" name="teacher_name" class="form-control" placeholder="проф. Сушинський О.Є.">
+    <div class="mb-3">
+      <label class="form-label">Викладач *</label>
+      <div class="input-group">
+        <select name="teacher_ref_id" class="form-select" required>
+          <option value="">— оберіть викладача —</option>
+          {% for t in teachers %}
+            <option value="{{ t.id }}" {% if request.form.get('teacher_ref_id')|int == t.id %}selected{% endif %}>
+              {{ t.short_name or t.full_name }}{% if t.department %} — {{ t.department }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank"
+           class="btn btn-outline-secondary" title="Додати нового викладача в картотеку">
+          <i class="bi bi-person-plus"></i>
+        </a>
       </div>
+      <div class="form-text">
+        <i class="bi bi-info-circle me-1"></i>
+        Список з картотеки. Відомість автоматично з'явиться в кабінеті викладача за його постійним посиланням.
+        Якщо викладача немає в списку — додайте його через <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank">картотеку</a>.
+      </div>
+    </div>
+
+    <div class="row g-2">
       <div class="col-md-3 mb-3">
         <label class="form-label">Дата проведення</label>
         <input type="date" name="exam_date" class="form-control">
@@ -52,17 +71,16 @@
         <label class="form-label">№ відомості</label>
         <input type="text" name="statement_number" class="form-control" placeholder="26">
       </div>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Ліцензія</label>
-      <select name="license_id" class="form-select">
-        <option value="">— без ліцензії / не вказано —</option>
-        {% for l in licenses %}
-        <option value="{{ l.id }}">{{ l.name }}</option>
-        {% endfor %}
-      </select>
-      <div class="form-text">Студенти з різними ліцензіями — окремі відомості.</div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Ліцензія</label>
+        <select name="license_id" class="form-select">
+          <option value="">— без ліцензії / не вказано —</option>
+          {% for l in licenses %}
+          <option value="{{ l.id }}">{{ l.name }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Студенти з різними ліцензіями — окремі відомості.</div>
+      </div>
     </div>
 
     <button type="submit" class="btn btn-primary">Створити і сформувати список студентів</button>

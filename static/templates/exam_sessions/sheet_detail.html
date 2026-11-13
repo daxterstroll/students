@@ -6,6 +6,7 @@
 {% set status_ua = {
   'draft': 'Чернетка',
   'sent': 'Надіслано викладачу',
+  'in_progress': 'В процесі',
   'submitted': 'Оцінки здано',
   'approved': 'Затверджено',
   'locked': 'Заблоковано'
@@ -13,6 +14,7 @@
 {% set status_badge = {
   'draft': 'secondary',
   'sent': 'info',
+  'in_progress': 'warning',
   'submitted': 'primary',
   'approved': 'success',
   'locked': 'dark'
@@ -23,6 +25,10 @@
   'coursework': 'Курсова',
   'attestation': 'Атестація'
 } %}
+
+{% set total_students = students|length %}
+{% set graded_students = students|selectattr('points', 'ne', None)|list|length %}
+{% set progress_pct = (graded_students / total_students * 100)|round(0)|int if total_students > 0 else 0 %}
 
 <div class="container py-4">
   {{ ui.page_header('bi-file-earmark-text', sheet.discipline_name,
@@ -37,7 +43,6 @@
   </a>
   {% endif %}
   <div class="ms-auto d-flex flex-wrap gap-2">
-    {# ── Якщо прив'язана: "Відв'язати" + "Примусово видалити" ── #}
     {% if sheet.linked_entity_id %}
       {% if has_perm('manage_exam_sessions') %}
       <form method="post" class="d-inline"
@@ -67,6 +72,30 @@
     {% endif %}
   </div>
 </div>
+
+{# ─── Плашка прогресу заповнення ─── #}
+{% if total_students > 0 %}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="d-flex align-items-center gap-3 flex-wrap">
+      <span class="fw-semibold small">
+        <i class="bi bi-people me-1"></i>Заповнено: <strong>{{ graded_students }}</strong> з <strong>{{ total_students }}</strong>
+      </span>
+      <div class="progress flex-grow-1" style="height: 12px; min-width: 200px;">
+        <div class="progress-bar {% if progress_pct == 100 %}bg-success{% elif progress_pct > 0 %}bg-warning{% else %}bg-secondary{% endif %}"
+             role="progressbar" style="width: {{ progress_pct }}%;"
+             aria-valuenow="{{ progress_pct }}" aria-valuemin="0" aria-valuemax="100">
+          {{ progress_pct }}%
+        </div>
+      </div>
+      <span class="badge text-bg-{{ status_badge.get(sheet.status, 'secondary') }}">
+        {{ status_ua.get(sheet.status, sheet.status) }}
+      </span>
+    </div>
+  </div>
+</div>
+{% endif %}
+
   <div class="row g-3 mb-3">
     {# ========== Ліва колонка: метадані ========== #}
     <div class="col-lg-5">
@@ -111,9 +140,27 @@
 
             <div class="mb-3">
               <label class="form-label small mb-1">Викладач</label>
-              <input class="form-control form-control-sm" name="teacher_name"
-                     value="{{ sheet.teacher_name or '' }}"
-                     {% if sheet.status == 'locked' %}readonly{% endif %}>
+              <div class="input-group input-group-sm">
+                <select name="teacher_ref_id" class="form-select form-select-sm"
+                        {% if sheet.status == 'locked' %}disabled{% endif %}>
+                  <option value="">— оберіть викладача —</option>
+                  {% for t in teachers %}
+                    <option value="{{ t.id }}" {% if sheet.teacher_ref_id == t.id %}selected{% endif %}>
+                      {{ t.short_name or t.full_name }}
+                    </option>
+                  {% endfor %}
+                </select>
+                <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank"
+                   class="btn btn-outline-secondary" title="Додати нового викладача">
+                  <i class="bi bi-person-plus"></i>
+                </a>
+              </div>
+              {% if sheet.teacher_name and not sheet.teacher_ref_id %}
+              <div class="form-text text-warning">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                У відомості збережено старе ім'я «{{ sheet.teacher_name }}» — оберіть викладача зі списку, щоб прив'язати до картотеки.
+              </div>
+              {% endif %}
             </div>
 
             <div class="row g-2 mb-3">
@@ -161,7 +208,7 @@
                 Список уже сформовано з групи та ліцензії. «Оновити» — лише якщо з’явились нові студенти
                 (поки викладач ще не здав оцінки).
               </div>
-              {% if sheet.status in ('draft', 'sent') %}
+              {% if sheet.status in ('draft', 'sent', 'in_progress') %}
               <form method="post">
                 <input type="hidden" name="action" value="refresh_students">
                 <button type="submit" class="btn btn-sm btn-outline-secondary">Оновити список студентів</button>
@@ -210,7 +257,7 @@
                 Оцінки фінальні для цієї відомості. Викладач більше не зможе їх змінити.
                 Далі — (окремим правом) перенос у навчальний план.
               </div>
-              {% if sheet.status in ('submitted', 'sent') %}
+              {% if sheet.status in ('submitted', 'sent', 'in_progress') %}
               <form method="post" onsubmit="return confirm('Затвердити відомість? Викладач більше не зможе змінювати оцінки.')">
                 <input type="hidden" name="action" value="approve">
                 <button type="submit" class="btn btn-sm btn-success">Затвердити відомість</button>
@@ -234,7 +281,11 @@
                    href="{{ url_for('exam_sessions.sheet_word', sheet_id=sheet.id) }}">
                   <i class="bi bi-file-earmark-word"></i> Word (відомість)
                 </a>
-</div>
+                <a class="btn btn-sm btn-success"
+                   href="{{ url_for('exam_sessions.sheet_excel', sheet_id=sheet.id) }}">
+                  <i class="bi bi-file-earmark-excel"></i> Excel (відомість)
+                </a>
+              </div>
             </div>
 
             <div class="border-bottom pb-3">
@@ -363,9 +414,7 @@
 
 <script>
 (function () {
-  // ── Якщо відомість заблокована — полів вводу немає, перераховувати нічого.
-  //    Скрипт все одно запуститься, але bindRow просто не знайде <input>.
-  const CONTROL_FORM = {{ sheet.control_form | tojson }};  // "Залік" / "Екзамен"
+  const CONTROL_FORM = {{ sheet.control_form | tojson }};
 
   function pointsToNationalEcts(points, controlForm) {
     if (points === null || points === undefined || points === '') return { nat: '', ects: '' };

@@ -7,6 +7,7 @@
 {% set sheet_status_ua = {
   'draft': 'Чернетка',
   'sent': 'Надіслано викладачу',
+  'in_progress': 'В процесі',
   'submitted': 'Оцінки здано',
   'approved': 'Затверджено',
   'locked': 'Заблоковано'
@@ -14,6 +15,7 @@
 {% set sheet_badge = {
   'draft': 'secondary',
   'sent': 'info',
+  'in_progress': 'warning',
   'submitted': 'primary',
   'approved': 'success',
   'locked': 'dark'
@@ -33,10 +35,9 @@
   <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
     ← До списку
   </a>
-  <a href="{{ url_for('exam_sessions.create_batch', session_id=es.id) }}"
-   class="btn btn-sm btn-success">
-    <i class="bi bi-file-earmark-plus me-1"></i> Пакет для викладача
-	</a>
+  <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
+    <i class="bi bi-person-badge me-1"></i> Картотека викладачів
+  </a>
   {% if has_perm('view_exam_session_history') %}
   <a href="{{ url_for('exam_sessions.session_history', session_id=es.id) }}"
      class="btn btn-sm btn-outline-info">
@@ -108,15 +109,14 @@
   <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
     <h2 class="h5 mb-0">Відомості</h2>
     <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-sm btn-success"
+         href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=es.id) }}">
+        <i class="bi bi-file-earmark-excel"></i> Загальна відомість (Excel)
+      </a>
       <a class="btn btn-sm btn-outline-primary"
-<a class="btn btn-sm btn-success"
-   href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=es.id) }}">
-    <i class="bi bi-file-earmark-excel"></i> Загальна відомість (Excel)
-</a>
-<a class="btn btn-sm btn-outline-primary"
-   href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
-    <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
-</a>
+         href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
+        <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
+      </a>
       <a class="btn btn-sm btn-primary" href="{{ url_for('exam_sessions.sheet_new', session_id=es.id) }}">
         <i class="bi bi-plus-lg"></i> Додати відомість
       </a>
@@ -132,9 +132,10 @@
             <th>Дисципліна</th>
             <th>Тип</th>
             <th>Контроль</th>
+            <th>Викладач</th>
             <th>Ліцензія</th>
             <th>Студ.</th>
-            <th>Оцінено</th>
+            <th>Заповнено</th>
             <th>Статус</th>
             <th></th>
           </tr>
@@ -145,29 +146,49 @@
             <td>{{ s.discipline_name }}</td>
             <td class="small">{{ kind_ua.get(s.entity_kind, s.entity_kind) }}</td>
             <td>{{ s.control_form }}</td>
+            <td class="small">
+              {% if s.teacher_short or s.teacher_full %}
+                {{ s.teacher_short or s.teacher_full }}
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
             <td>{{ s.license_name or '—' }}</td>
-            <td>{{ s.students_count }}</td>
-            <td>{{ s.graded_count }}</td>
+            <td class="text-center">{{ s.students_count }}</td>
+            <td class="text-center">
+              {% if s.students_count > 0 %}
+                {% set pct = (s.graded_count / s.students_count * 100)|round(0)|int %}
+                <div class="d-flex align-items-center gap-1">
+                  <div class="progress flex-grow-1" style="height: 8px; min-width: 50px;">
+                    <div class="progress-bar {% if pct == 100 %}bg-success{% elif pct > 0 %}bg-warning{% else %}bg-secondary{% endif %}"
+                         style="width: {{ pct }}%;"></div>
+                  </div>
+                  <small class="text-muted" style="white-space: nowrap;">{{ s.graded_count }}/{{ s.students_count }}</small>
+                </div>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
             <td>
               <span class="badge text-bg-{{ sheet_badge.get(s.status, 'secondary') }}">
                 {{ sheet_status_ua.get(s.status, s.status) }}
               </span>
             </td>
-			<td class="text-end">
-			  <a class="btn btn-sm btn-outline-primary"
-				 href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
-			  {% if has_perm('delete_exam_sessions') and not s.linked_entity_id %}
-			  <form method="post" class="d-inline"
-					action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"
-					onsubmit="return confirm('Видалити відомість «{{ s.discipline_name }}»?');">
-				<input type="hidden" name="action" value="delete_sheet">
-				<button type="submit" class="btn btn-sm btn-outline-danger"
-						title="Видалити відомість">
-				  <i class="bi bi-trash"></i>
-				</button>
-			  </form>
-			  {% endif %}
-			</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-primary"
+                 href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
+              {% if has_perm('delete_exam_sessions') and not s.linked_entity_id %}
+              <form method="post" class="d-inline"
+                    action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"
+                    onsubmit="return confirm('Видалити відомість «{{ s.discipline_name }}»?');">
+                <input type="hidden" name="action" value="delete_sheet">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        title="Видалити відомість">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>
@@ -177,6 +198,8 @@
   {% else %}
   <div class="alert alert-light border mb-0">
     Відомостей ще немає. Створіть окрему відомість на кожну дисципліну та ліцензію.
+    Викладача обирайте з <a href="{{ url_for('exam_sessions.teachers_list') }}">картотеки викладачів</a> —
+    відомість автоматично з'явиться в його кабінеті.
   </div>
   {% endif %}
 </div>

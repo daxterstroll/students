@@ -1,0 +1,1095 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4efe3">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0f151c">
+    <title>{{ sheet.discipline_name }} — відомість</title>
+
+    <script>
+    (function(){
+        try {
+            var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+            if (!mq) return;
+            function apply(){
+                if (mq.matches) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            }
+            apply();
+            if (mq.addEventListener) mq.addEventListener('change', apply);
+            else if (mq.addListener) mq.addListener(apply);
+        } catch (e) {}
+    })();
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Lora:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --ink: #0e1b2c;
+            --ink-2: #16283f;
+            --brass: #c8a24a;
+            --brass-lt: #f0d896;
+            --brass-dark: #a5822f;
+        }
+
+        :root {
+            --paper: #f4efe3;
+            --paper-2: #fffdf8;
+            --card-bg: #ffffff;
+            --surface: #ffffff;
+            --text: #0e1b2c;
+            --muted: #5a5044;
+            --muted-soft: #8a8071;
+            --line: rgba(31,42,58,.13);
+            --line-strong: rgba(31,42,58,.22);
+            --shadow: 0 12px 32px -12px rgba(14,27,44,.18);
+            --hero-text: #f4efe3;
+
+            --success: #3f8a5b;
+            --success-bg: #d4f0dd;
+            --success-text: #2d6644;
+            --danger: #a23b2e;
+            --danger-bg: #fbe4e1;
+            --danger-text: #7a2b21;
+            --warning-bg: #fdf3d9;
+            --warning-text: #7a5510;
+
+            /* Таблиця */
+            --table-head-bg: #0e1b2c;
+            --table-head-text: #f0d896;
+            --table-row-alt: #faf6ec;
+            --table-row-hover: rgba(200,162,74,.09);
+            --total-col-bg: rgba(200,162,74,.10);
+            --result-bg-pass: #e6f5ec;
+            --result-bg-fail: #fbe4e1;
+            --result-bg-empty: transparent;
+            --input-bg: #ffffff;
+            --input-readonly-bg: #f2ecdc;
+            --input-readonly-text: #8a6a1a;
+
+            --page-gradient:
+                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.14), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.08), transparent 55%),
+                linear-gradient(180deg, #f4efe3 0%, #efe7d5 100%);
+
+            color-scheme: light dark;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --paper: #0f151c;
+                --paper-2: #1a222b;
+                --card-bg: #1a222b;
+                --surface: #1e2936;
+                --text: #e7e2d6;
+                --muted: #9aa3ad;
+                --muted-soft: #6c757d;
+                --line: rgba(231,226,214,.14);
+                --line-strong: rgba(231,226,214,.22);
+                --shadow: 0 12px 32px -12px rgba(0,0,0,.55);
+
+                --success: #a8d4ad;
+                --success-bg: rgba(79,122,82,.28);
+                --success-text: #bfe3c2;
+                --danger: #f0b3ab;
+                --danger-bg: rgba(162,59,46,.25);
+                --danger-text: #f0b3ab;
+                --warning-bg: rgba(200,162,74,.22);
+                --warning-text: #f0d896;
+
+                --table-head-bg: #060b10;
+                --table-head-text: #f0d896;
+                --table-row-alt: rgba(231,226,214,.025);
+                --table-row-hover: rgba(200,162,74,.10);
+                --total-col-bg: rgba(200,162,74,.12);
+                --result-bg-pass: rgba(79,122,82,.22);
+                --result-bg-fail: rgba(162,59,46,.22);
+                --result-bg-empty: transparent;
+                --input-bg: #1e2936;
+                --input-readonly-bg: rgba(200,162,74,.14);
+                --input-readonly-text: #f0d896;
+
+                --page-gradient:
+                    radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
+                    radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.35), transparent 55%),
+                    linear-gradient(180deg, #0f151c 0%, #0a0f14 100%);
+            }
+        }
+
+        :root[data-theme="dark"] {
+            --paper: #0f151c;
+            --paper-2: #1a222b;
+            --card-bg: #1a222b;
+            --surface: #1e2936;
+            --text: #e7e2d6;
+            --muted: #9aa3ad;
+            --muted-soft: #6c757d;
+            --line: rgba(231,226,214,.14);
+            --line-strong: rgba(231,226,214,.22);
+            --shadow: 0 12px 32px -12px rgba(0,0,0,.55);
+
+            --success: #a8d4ad;
+            --success-bg: rgba(79,122,82,.28);
+            --success-text: #bfe3c2;
+            --danger: #f0b3ab;
+            --danger-bg: rgba(162,59,46,.25);
+            --danger-text: #f0b3ab;
+            --warning-bg: rgba(200,162,74,.22);
+            --warning-text: #f0d896;
+
+            --table-head-bg: #060b10;
+            --table-head-text: #f0d896;
+            --table-row-alt: rgba(231,226,214,.025);
+            --table-row-hover: rgba(200,162,74,.10);
+            --total-col-bg: rgba(200,162,74,.12);
+            --result-bg-pass: rgba(79,122,82,.22);
+            --result-bg-fail: rgba(162,59,46,.22);
+            --result-bg-empty: transparent;
+            --input-bg: #1e2936;
+            --input-readonly-bg: rgba(200,162,74,.14);
+            --input-readonly-text: #f0d896;
+
+            --page-gradient:
+                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.35), transparent 55%),
+                linear-gradient(180deg, #0f151c 0%, #0a0f14 100%);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; padding: 0;
+            font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            color: var(--text);
+            background: var(--page-gradient);
+            background-attachment: fixed;
+            min-height: 100vh;
+            -webkit-text-size-adjust: 100%;
+            transition: background-color .2s ease, color .2s ease;
+        }
+        .wrap { max-width: 1180px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
+
+        /* ─── НАВІГАЦІЯ ─── */
+        .batch-nav {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
+            padding: .75rem 1rem; background: var(--card-bg); border-radius: 10px;
+            border: 1px solid var(--line);
+            box-shadow: 0 2px 8px rgba(0,0,0,.06);
+        }
+        .batch-nav .btn {
+            display: inline-flex; align-items: center; gap: .35rem;
+            padding: .5rem .9rem; border-radius: 8px; font-weight: 600;
+            font-size: .85rem; text-decoration: none;
+            border: 1px solid var(--line);
+            background: var(--paper-2); color: var(--text); cursor: pointer;
+            min-height: 40px;
+        }
+        .batch-nav .btn:hover {
+            background: rgba(200,162,74,.12); border-color: var(--brass);
+        }
+        .batch-nav .btn--disabled { opacity: .4; pointer-events: none; }
+        .batch-nav .position-info { font-size: .85rem; color: var(--muted); font-weight: 600; }
+        .batch-nav .nav-buttons { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+        /* ─── ШАПКА ─── */
+        .header-glass {
+            background: linear-gradient(135deg, var(--ink), var(--ink-2) 60%, #1d3450);
+            color: var(--hero-text);
+            border-radius: 16px;
+            border-bottom: 4px solid var(--brass);
+            padding: 1.5rem; margin-bottom: 1rem;
+        }
+        .header-glass h1 {
+            color: var(--brass-lt); font-family: 'Lora', serif;
+            font-size: 1.35rem; margin: 0 0 .5rem; font-weight: 700;
+        }
+        .header-glass .meta { font-size: .88rem; opacity: .9; line-height: 1.5; }
+        .header-glass .meta + .meta { margin-top: .2rem; }
+
+        .progress-pill {
+            display: inline-flex; align-items: center; gap: .4rem;
+            padding: .35rem .8rem; border-radius: 999px;
+            background: rgba(255,255,255,.15); color: var(--hero-text);
+            font-size: .82rem; font-weight: 700; margin-top: .7rem;
+        }
+
+        /* ─── ALERTS ─── */
+        .alert {
+            padding: .8rem 1rem; border-radius: 10px; font-size: .88rem;
+            margin-bottom: 1rem; display: flex; align-items: flex-start;
+            gap: .5rem; line-height: 1.5;
+        }
+        .alert--warning { background: var(--warning-bg); color: var(--warning-text); border: 1px solid rgba(200,162,74,.5); }
+        .alert--success { background: var(--success-bg); color: var(--success-text); border: 1px solid rgba(63,138,91,.4); }
+        .alert--error   { background: var(--danger-bg);  color: var(--danger-text);  border: 1px solid rgba(162,59,46,.4); }
+
+        /* ─── КАРТКА ─── */
+        .card {
+            background: var(--card-bg); border-radius: 14px;
+            box-shadow: var(--shadow); overflow: hidden;
+            border: 1px solid var(--line);
+        }
+
+        /* ═══════════════════════════════════════════════════
+           ТАБЛИЦЯ (десктоп) — 7-8 колонок, один рядок шапки
+           ═══════════════════════════════════════════════════ */
+        .grades-desktop {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        table.grades {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: .875rem;
+        }
+
+        /* ─── Заголовок ─── */
+        table.grades thead th {
+            background: var(--table-head-bg);
+            color: var(--table-head-text);
+            padding: .85rem .6rem;
+            font-size: .72rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            text-align: center;
+            border: none;
+            vertical-align: middle;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        table.grades thead th.left { text-align: left; }
+
+        /* ─── Комірки ─── */
+        table.grades tbody td {
+            padding: .55rem .6rem;
+            border-bottom: 1px solid var(--line);
+            vertical-align: middle;
+            color: var(--text);
+            background: transparent;
+        }
+        table.grades tbody tr:nth-child(even) td {
+            background: var(--table-row-alt);
+        }
+        table.grades tbody tr:hover td {
+            background: var(--table-row-hover);
+        }
+        table.grades tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        /* ─── Колонка № ─── */
+        .col-num {
+            width: 2.75rem;
+            text-align: center;
+            color: var(--muted);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 600;
+            font-size: .82rem;
+        }
+
+        /* ─── Колонка ПІБ: ім'я + ЄДЕБО під ним ─── */
+        table.grades thead th.cell-name-head,
+        table.grades tbody td.cell-name {
+            text-align: left;
+            min-width: 12rem;
+        }
+        .name-main {
+            font-weight: 600;
+            color: var(--text);
+            line-height: 1.35;
+        }
+        .name-sub {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: .7rem;
+            color: var(--muted);
+            margin-top: .15rem;
+            letter-spacing: .02em;
+        }
+
+        /* ─── Тема роботи ─── */
+        td.cell-topic { min-width: 11rem; }
+
+        /* ─── Вхідні поля (бали) ─── */
+        .col-grade { width: 5.5rem; }
+
+        .grade-input, .topic-input {
+            width: 100%;
+            padding: .45rem .5rem;
+            font-family: inherit;
+            font-size: .92rem;
+            border: 1.5px solid var(--line);
+            border-radius: 7px;
+            background: var(--input-bg);
+            color: var(--text);
+            text-align: center;
+            font-weight: 600;
+            transition: border-color .15s ease, box-shadow .15s ease;
+        }
+        .grade-input:focus, .topic-input:focus {
+            outline: none; border-color: var(--brass);
+            box-shadow: 0 0 0 3px rgba(200,162,74,.22);
+        }
+        .topic-input { text-align: left; font-weight: 500; }
+
+        /* ─── Колонка «Підсумок» — виділена ─── */
+        td.cell-total {
+            background: var(--total-col-bg) !important;
+            border-left: 1px solid var(--line-strong);
+        }
+        tr:hover td.cell-total { background: var(--total-col-bg) !important; }
+        .grade-input.total-input {
+            font-weight: 800;
+            color: var(--computed-text, var(--input-readonly-text));
+        }
+
+        /* readonly (коли суму пораховано автоматично) */
+        .grade-input:read-only {
+            background: var(--input-readonly-bg);
+            color: var(--input-readonly-text);
+            cursor: not-allowed;
+            border-color: var(--line);
+        }
+
+        /* ─── Колонка «Результат»: нац. + ECTS ─── */
+        .col-result { width: 9rem; }
+        td.cell-result {
+            text-align: center;
+            font-size: .82rem;
+            font-weight: 600;
+            line-height: 1.35;
+            padding: .35rem .55rem !important;
+            border-left: 1px solid var(--line-strong);
+        }
+        td.cell-result.pass { background: var(--result-bg-pass) !important; color: var(--success-text); }
+        td.cell-result.fail { background: var(--result-bg-fail) !important; color: var(--danger-text); }
+        tr:hover td.cell-result.pass { background: var(--result-bg-pass) !important; }
+        tr:hover td.cell-result.fail { background: var(--result-bg-fail) !important; }
+        td.cell-result.empty { color: var(--muted-soft); font-style: italic; font-weight: 400; }
+
+        .result-ects {
+            display: inline-block;
+            padding: .1rem .45rem;
+            border-radius: 5px;
+            background: var(--brass);
+            color: var(--ink);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 800;
+            font-size: .78rem;
+            margin-left: .35rem;
+            vertical-align: middle;
+        }
+        .result-ects.fail {
+            background: var(--danger);
+            color: #fff;
+        }
+
+        /* ─── Футер ─── */
+        .footer-bar {
+            display: flex; justify-content: space-between; align-items: center;
+            flex-wrap: wrap; gap: .75rem;
+            padding: 1rem 1.25rem;
+            background: var(--paper-2); border-top: 1px solid var(--line);
+        }
+        .footer-bar .hint { font-size: .82rem; color: var(--muted); line-height: 1.4; }
+        .btn-submit {
+            display: inline-flex; align-items: center; gap: .5rem;
+            padding: .75rem 1.5rem; border: none; border-radius: 10px;
+            font-family: inherit; font-size: .95rem; font-weight: 800;
+            color: var(--ink); cursor: pointer;
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            box-shadow: 0 6px 16px -6px rgba(200,162,74,.5);
+            transition: transform .15s ease, box-shadow .2s ease;
+            min-height: 44px;
+        }
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px -8px rgba(200,162,74,.65);
+        }
+        .btn-submit:active { transform: translateY(0); }
+
+        /* ═══════════════════════════════════════════════════
+           МОБІЛЬНА ВЕРСІЯ — картки
+           ═══════════════════════════════════════════════════ */
+        .grades-mobile { display: none; }
+
+        .grade-card {
+            background: var(--card-bg); border: 1px solid var(--line);
+            border-radius: 12px; padding: .9rem;
+            margin-bottom: .65rem; box-shadow: 0 2px 6px rgba(0,0,0,.05);
+        }
+        .grade-card:last-child { margin-bottom: 0; }
+
+        .grade-card__header {
+            display: flex; align-items: flex-start; gap: .5rem;
+            margin-bottom: .75rem; padding-bottom: .65rem;
+            border-bottom: 1px dashed var(--line-strong);
+        }
+        .grade-card__num {
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 700; color: var(--muted);
+            font-size: .82rem; flex-shrink: 0; padding-top: .15rem;
+        }
+        .grade-card__name {
+            font-weight: 700; color: var(--text);
+            font-size: .95rem; line-height: 1.35;
+        }
+        .grade-card__ects-code {
+            display: block;
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-size: .72rem; color: var(--muted);
+            margin-top: .2rem; font-weight: 500;
+        }
+
+        .grade-card__topic-label {
+            font-size: .78rem; font-weight: 600; color: var(--muted);
+            margin-bottom: .35rem; display: block;
+        }
+        .grade-card__topic-input {
+            width: 100%; padding: .55rem .65rem; font-family: inherit;
+            font-size: .9rem; border: 1.5px solid var(--line);
+            border-radius: 7px; background: var(--input-bg); color: var(--text);
+            margin-bottom: .75rem;
+        }
+        .grade-card__topic-input:focus {
+            outline: none; border-color: var(--brass);
+            box-shadow: 0 0 0 3px rgba(200,162,74,.22);
+        }
+
+        .grade-card__row {
+            display: grid; grid-template-columns: 1fr 92px;
+            align-items: center; gap: .5rem; margin-bottom: .55rem;
+        }
+        .grade-card__row:last-of-type { margin-bottom: 0; }
+        .grade-card__label {
+            font-size: .82rem; font-weight: 600; color: var(--muted);
+        }
+        .grade-card__readonly {
+            font-size: .92rem; font-weight: 600; color: var(--text); text-align: right;
+        }
+        .grade-card__input {
+            width: 100%; padding: .55rem .55rem; font-family: inherit;
+            font-size: 1rem; border: 1.5px solid var(--line);
+            border-radius: 7px; background: var(--input-bg); color: var(--text);
+            text-align: center; font-weight: 700;
+        }
+        .grade-card__input:focus {
+            outline: none; border-color: var(--brass);
+            box-shadow: 0 0 0 3px rgba(200,162,74,.22);
+        }
+        .grade-card__input:read-only {
+            background: var(--input-readonly-bg);
+            color: var(--input-readonly-text);
+        }
+        .grade-card__input::-webkit-outer-spin-button,
+        .grade-card__input::-webkit-inner-spin-button {
+            -webkit-appearance: none; margin: 0;
+        }
+        .grade-card__input[type=number] { -moz-appearance: textfield; }
+
+        /* Компактний результат у картці */
+        .grade-card__result {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: .75rem;
+            margin-top: .75rem;
+            padding: .7rem .85rem;
+            border-radius: 10px;
+            font-size: .88rem;
+            font-weight: 600;
+        }
+        .grade-card__result.pass { background: var(--result-bg-pass); color: var(--success-text); }
+        .grade-card__result.fail { background: var(--result-bg-fail); color: var(--danger-text); }
+        .grade-card__result.empty {
+            background: var(--table-row-alt);
+            color: var(--muted-soft);
+            font-style: italic;
+        }
+        .grade-card__result-label {
+            font-size: .72rem;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            font-weight: 800;
+            opacity: .8;
+        }
+        .grade-card__result-value { text-align: right; }
+        .grade-card__result-value .ects {
+            display: inline-block;
+            padding: .1rem .45rem;
+            border-radius: 5px;
+            background: var(--brass);
+            color: var(--ink);
+            font-family: 'JetBrains Mono', ui-monospace, monospace;
+            font-weight: 800;
+            font-size: .78rem;
+            margin-left: .35rem;
+            font-style: normal;
+        }
+        .grade-card__result.fail .ects { background: var(--danger); color: #fff; }
+
+        /* ─── Адаптивність ─── */
+        @media (max-width: 1024px) {
+            .col-result { width: 8rem; }
+            td.cell-result { font-size: .78rem; }
+        }
+
+        @media (max-width: 768px) {
+            .wrap { padding: .65rem .65rem 5rem; }
+            .batch-nav { padding: .6rem .75rem; gap: .5rem; }
+            .batch-nav .btn { padding: .45rem .75rem; font-size: .8rem; }
+            .batch-nav .position-info {
+                font-size: .78rem; width: 100%; order: 3; text-align: center;
+            }
+            .batch-nav .nav-buttons { width: 100%; }
+            .batch-nav .nav-buttons .btn { flex: 1; justify-content: center; }
+
+            .header-glass { padding: 1rem; border-radius: 12px; }
+            .header-glass h1 { font-size: 1.05rem; line-height: 1.3; }
+            .header-glass .meta { font-size: .78rem; }
+            .progress-pill { font-size: .78rem; padding: .3rem .65rem; margin-top: .55rem; }
+
+            .grades-desktop { display: none; }
+            .grades-mobile { display: block; padding: .75rem; }
+
+            .footer-bar {
+                padding: .85rem .75rem; flex-direction: column;
+                align-items: stretch; gap: .55rem;
+            }
+            .footer-bar .hint { font-size: .78rem; text-align: center; }
+            .btn-submit {
+                position: fixed; bottom: 0; left: 0; right: 0;
+                border-radius: 0; padding: 1rem; font-size: 1rem;
+                z-index: 10; width: 100%; justify-content: center;
+                box-shadow: 0 -4px 16px rgba(0,0,0,.2);
+            }
+            .footer-bar .hint {
+                background: var(--paper-2); padding: .65rem .75rem;
+                border-radius: 10px; margin-bottom: .65rem; border: 1px solid var(--line);
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation: none !important; transition: none !important;
+            }
+        }
+    </style>
+</head>
+<body>
+<div class="wrap">
+
+    {# ── Навігація ── #}
+    {% if teacher_token %}
+    <div class="batch-nav">
+        <a href="{{ url_for('exam_sessions.teacher_cabinet', teacher_token=teacher_token) }}" class="btn">
+            <i class="bi bi-arrow-left"></i> До списку
+        </a>
+        <div class="position-info">
+            Відомість <strong>{{ position.current }}</strong> з {{ position.total }}
+        </div>
+        <div class="nav-buttons">
+            {% if prev_sheet_id %}
+            <a href="{{ url_for('exam_sessions.teacher_sheet',
+                                teacher_token=teacher_token, sheet_id=prev_sheet_id) }}" class="btn">
+                <i class="bi bi-chevron-left"></i> Попередня
+            </a>
+            {% else %}
+            <span class="btn btn--disabled"><i class="bi bi-chevron-left"></i> Попередня</span>
+            {% endif %}
+            {% if next_sheet_id %}
+            <a href="{{ url_for('exam_sessions.teacher_sheet',
+                                teacher_token=teacher_token, sheet_id=next_sheet_id) }}" class="btn">
+                Наступна <i class="bi bi-chevron-right"></i>
+            </a>
+            {% else %}
+            <span class="btn btn--disabled">Наступна <i class="bi bi-chevron-right"></i></span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Шапка відомості ── #}
+    <div class="header-glass">
+        <h1>{{ sheet.discipline_name }}</h1>
+        <div class="meta">
+            {{ sheet.group_name }}
+            · {{ sheet.control_form }}
+            {% if sheet.license_name %} · {{ sheet.license_name }}{% endif %}
+        </div>
+        <div class="meta">
+            {% if sheet.academic_year %}{{ sheet.academic_year }}{% endif %}
+            {% if sheet.semester %} · семестр {{ sheet.semester }}{% endif %}
+            {% if sheet.exam_date %} · {{ sheet.exam_date }}{% endif %}
+            {% if sheet.teacher_name %} · {{ sheet.teacher_name }}{% endif %}
+        </div>
+        <div class="progress-pill">
+            <i class="bi bi-people"></i>
+            Заповнено:
+            {% set _graded = students|selectattr('points', 'ne', None)|list|length %}
+            {{ _graded }} з {{ students|length }}
+        </div>
+    </div>
+
+    {% if readonly %}
+    <div class="alert alert--warning">
+        <i class="bi bi-lock-fill" style="font-size: 1.1rem;"></i>
+        <div>
+            <strong>Відомість затверджено — оцінки не редагуються.</strong><br>
+            Якщо потрібні зміни — зверніться до відповідального за сесію.
+        </div>
+    </div>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for cat, msg in messages %}
+            <div class="alert alert--{{ 'success' if cat == 'success' else 'error' }}">
+                <i class="bi bi-info-circle" style="font-size: 1.1rem;"></i>
+                <div>{{ msg }}</div>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <form method="POST">
+        <div class="card">
+
+            {# ══════════════ ДЕСКТОП: ТАБЛИЦЯ ══════════════ #}
+            <div class="grades-desktop">
+                <table class="grades">
+                    <thead>
+                        <tr>
+                            <th class="col-num">№</th>
+                            <th class="left cell-name-head">ПІБ</th>
+                            {% if sheet.entity_kind in ('attestation', 'coursework') %}
+                            <th class="left">Тема роботи</th>
+                            {% endif %}
+                            <th class="col-grade">Міжсес.</th>
+                            <th class="col-grade">Поточні</th>
+                            <th class="col-grade">Іспит</th>
+                            <th class="col-grade">Підсумок</th>
+                            <th class="col-result">Результат</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for st in students %}
+                        <tr>
+                            <td class="col-num">{{ st.position }}</td>
+                            <td class="cell-name">
+                                <div class="name-main">{{ st.full_name }}</div>
+                                {% if st.edebo_code %}
+                                <div class="name-sub">{{ st.edebo_code }}</div>
+                                {% endif %}
+                            </td>
+
+                            {% if sheet.entity_kind in ('attestation', 'coursework') %}
+                            <td class="cell-topic">
+                                {% if not readonly %}
+                                <input type="text" class="topic-input"
+                                       name="work_topic_{{ st.student_id }}"
+                                       value="{{ st.work_topic or '' }}"
+                                       placeholder="Тема роботи">
+                                {% else %}
+                                {{ st.work_topic or '—' }}
+                                {% endif %}
+                            </td>
+                            {% endif %}
+
+                            {% if not readonly %}
+                            <td class="col-grade">
+                                <input type="number" min="0" max="100" class="grade-input grade-mid"
+                                       name="points_mid_{{ st.student_id }}"
+                                       value="{{ st.points_mid if st.points_mid is not none else '' }}"
+                                       inputmode="numeric" placeholder="—">
+                            </td>
+                            <td class="col-grade">
+                                <input type="number" min="0" max="100" class="grade-input grade-current"
+                                       name="points_current_{{ st.student_id }}"
+                                       value="{{ st.points_current if st.points_current is not none else '' }}"
+                                       inputmode="numeric" placeholder="—">
+                            </td>
+                            <td class="col-grade">
+                                <input type="number" min="0" max="100" class="grade-input grade-exam"
+                                       name="points_exam_{{ st.student_id }}"
+                                       value="{{ st.points_exam if st.points_exam is not none else '' }}"
+                                       inputmode="numeric" placeholder="—">
+                            </td>
+                            <td class="col-grade cell-total">
+                                <input type="number" min="0" max="100" class="grade-input grade-total total-input"
+                                       name="points_{{ st.student_id }}"
+                                       value="{{ st.points if st.points is not none else '' }}"
+                                       inputmode="numeric" placeholder="—">
+                            </td>
+
+                            {# ── Результат: Нац. + ECTS разом ── #}
+                            {% set _nat = st.national_grade or '' %}
+                            {% set _ects = st.ects or '' %}
+                            {% if _nat and ('Незараховано' in _nat or 'Незадовільно' in _nat or _ects in ('FX', 'F')) %}
+                                {% set _result_class = 'fail' %}
+                            {% elif _nat %}
+                                {% set _result_class = 'pass' %}
+                            {% else %}
+                                {% set _result_class = 'empty' %}
+                            {% endif %}
+                            <td class="cell-result {{ _result_class }} result-cell">
+                                {% if _nat %}
+                                    {{ _nat }}{% if _ects %}<span class="result-ects {{ 'fail' if _result_class == 'fail' else '' }}">{{ _ects }}</span>{% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+
+                            {% else %}
+                            {# ── Read-only (затверджено) ── #}
+                            <td class="col-grade" style="text-align:center;">
+                                {{ st.points_mid if st.points_mid is not none else '—' }}
+                            </td>
+                            <td class="col-grade" style="text-align:center;">
+                                {{ st.points_current if st.points_current is not none else '—' }}
+                            </td>
+                            <td class="col-grade" style="text-align:center;">
+                                {{ st.points_exam if st.points_exam is not none else '—' }}
+                            </td>
+                            <td class="col-grade cell-total" style="text-align:center; font-weight: 800;">
+                                {{ st.points if st.points is not none else '—' }}
+                            </td>
+
+                            {% set _nat = st.national_grade or '' %}
+                            {% set _ects = st.ects or '' %}
+                            {% if _nat and ('Незараховано' in _nat or 'Незадовільно' in _nat or _ects in ('FX', 'F')) %}
+                                {% set _result_class = 'fail' %}
+                            {% elif _nat %}
+                                {% set _result_class = 'pass' %}
+                            {% else %}
+                                {% set _result_class = 'empty' %}
+                            {% endif %}
+                            <td class="cell-result {{ _result_class }} result-cell">
+                                {% if _nat %}
+                                    {{ _nat }}{% if _ects %}<span class="result-ects {{ 'fail' if _result_class == 'fail' else '' }}">{{ _ects }}</span>{% endif %}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            {% endif %}
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" style="text-align:center; padding: 2rem; color: var(--muted);">
+                                <i class="bi bi-inbox" style="font-size: 1.6rem; display: block; margin-bottom: .5rem; opacity: .55;"></i>
+                                Список студентів порожній
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# ══════════════ МОБІЛЬНИЙ: КАРТКИ ══════════════ #}
+            <div class="grades-mobile">
+                {% for st in students %}
+                <div class="grade-card">
+                    <div class="grade-card__header">
+                        <span class="grade-card__num">{{ st.position }}.</span>
+                        <div class="grade-card__name">
+                            {{ st.full_name }}
+                            {% if st.edebo_code %}
+                            <span class="grade-card__ects-code">{{ st.edebo_code }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if sheet.entity_kind in ('attestation', 'coursework') %}
+                    {% if not readonly %}
+                    <label class="grade-card__topic-label">Тема роботи</label>
+                    <input type="text" class="grade-card__topic-input"
+                           name="work_topic_{{ st.student_id }}"
+                           value="{{ st.work_topic or '' }}"
+                           placeholder="Введіть тему">
+                    {% else %}
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Тема роботи</span>
+                        <span class="grade-card__readonly" style="text-align: left;">{{ st.work_topic or '—' }}</span>
+                    </div>
+                    {% endif %}
+                    {% endif %}
+
+                    {% if not readonly %}
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Міжсесійний</label>
+                        <input type="number" min="0" max="100" class="grade-card__input grade-mid-mobile"
+                               name="points_mid_{{ st.student_id }}"
+                               value="{{ st.points_mid if st.points_mid is not none else '' }}"
+                               inputmode="numeric" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Поточні</label>
+                        <input type="number" min="0" max="100" class="grade-card__input grade-current-mobile"
+                               name="points_current_{{ st.student_id }}"
+                               value="{{ st.points_current if st.points_current is not none else '' }}"
+                               inputmode="numeric" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Іспит / Залік</label>
+                        <input type="number" min="0" max="100" class="grade-card__input grade-exam-mobile"
+                               name="points_exam_{{ st.student_id }}"
+                               value="{{ st.points_exam if st.points_exam is not none else '' }}"
+                               inputmode="numeric" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label"><strong>Підсумок</strong></label>
+                        <input type="number" min="0" max="100" class="grade-card__input grade-total-mobile"
+                               name="points_{{ st.student_id }}"
+                               value="{{ st.points if st.points is not none else '' }}"
+                               inputmode="numeric" placeholder="—">
+                    </div>
+
+                    {% set _nat = st.national_grade or '' %}
+                    {% set _ects = st.ects or '' %}
+                    {% if _nat and ('Незараховано' in _nat or 'Незадовільно' in _nat or _ects in ('FX', 'F')) %}
+                        {% set _result_class = 'fail' %}
+                    {% elif _nat %}
+                        {% set _result_class = 'pass' %}
+                    {% else %}
+                        {% set _result_class = 'empty' %}
+                    {% endif %}
+                    <div class="grade-card__result {{ _result_class }} result-cell">
+                        <span class="grade-card__result-label">Результат</span>
+                        <span class="grade-card__result-value">
+                            {% if _nat %}
+                                {{ _nat }}{% if _ects %}<span class="ects">{{ _ects }}</span>{% endif %}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    {% else %}
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Міжсесійний</span>
+                        <span class="grade-card__readonly">{{ st.points_mid if st.points_mid is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Поточні</span>
+                        <span class="grade-card__readonly">{{ st.points_current if st.points_current is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Іспит</span>
+                        <span class="grade-card__readonly">{{ st.points_exam if st.points_exam is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label"><strong>Підсумок</strong></span>
+                        <span class="grade-card__readonly"><strong>{{ st.points if st.points is not none else '—' }}</strong></span>
+                    </div>
+
+                    {% set _nat = st.national_grade or '' %}
+                    {% set _ects = st.ects or '' %}
+                    {% if _nat and ('Незараховано' in _nat or 'Незадовільно' in _nat or _ects in ('FX', 'F')) %}
+                        {% set _result_class = 'fail' %}
+                    {% elif _nat %}
+                        {% set _result_class = 'pass' %}
+                    {% else %}
+                        {% set _result_class = 'empty' %}
+                    {% endif %}
+                    <div class="grade-card__result {{ _result_class }}">
+                        <span class="grade-card__result-label">Результат</span>
+                        <span class="grade-card__result-value">
+                            {% if _nat %}
+                                {{ _nat }}{% if _ects %}<span class="ects">{{ _ects }}</span>{% endif %}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div style="text-align:center; padding: 2rem 1rem; color: var(--muted);">
+                    <i class="bi bi-inbox" style="font-size: 1.6rem; display: block; margin-bottom: .5rem; opacity: .55;"></i>
+                    Список студентів порожній
+                </div>
+                {% endfor %}
+            </div>
+
+            {% if not readonly %}
+            <div class="footer-bar">
+                <div class="hint">
+                    <i class="bi bi-info-circle me-1"></i>
+                    Результат (нац. шкала + ECTS) оновлюється автоматично при введенні балів.
+                </div>
+                <button type="submit" class="btn-submit">
+                    <i class="bi bi-save"></i> Зберегти оцінки
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </form>
+
+</div>
+
+{% if not readonly %}
+<script>
+(function () {
+    const CONTROL_FORM = {{ sheet.control_form | tojson }};
+
+    function pointsToResult(points, controlForm) {
+        if (points === null || points === undefined || points === '') {
+            return { isFail: false, isEmpty: true, text: '—', ects: '' };
+        }
+        let p = parseInt(points, 10);
+        if (isNaN(p)) return { isFail: false, isEmpty: true, text: '—', ects: '' };
+        if (p < 0) p = 0;
+        if (p > 100) p = 100;
+
+        let ects, nat, isFail = false;
+        if (p >= 90)      { ects = 'A'; nat = 'Відмінно / Excellent'; }
+        else if (p >= 82) { ects = 'B'; nat = 'Добре / Good'; }
+        else if (p >= 74) { ects = 'C'; nat = 'Добре / Good'; }
+        else if (p >= 64) { ects = 'D'; nat = 'Задовільно / Satisfactory'; }
+        else if (p >= 60) { ects = 'E'; nat = 'Задовільно / Satisfactory'; }
+        else if (p >= 35) { ects = 'FX'; nat = 'Незадовільно / Fail'; isFail = true; }
+        else              { ects = 'F';  nat = 'Незадовільно / Fail'; isFail = true; }
+
+        if (controlForm === 'Залік') {
+            if (p >= 60) nat = 'Зараховано';
+            else { nat = 'Незараховано'; isFail = true; }
+        }
+        return { isFail, isEmpty: false, text: nat, ects };
+    }
+
+    function parseNum(v) {
+        v = (v || '').toString().trim();
+        if (v === '') return null;
+        const n = parseInt(v, 10);
+        return isNaN(n) ? null : n;
+    }
+
+    /* ── Оновлення комірки «Результат» (десктоп) ── */
+    function updateResultCell(cell, result) {
+        if (!cell) return;
+        // прибираємо старі класи статусу
+        cell.classList.remove('pass', 'fail', 'empty');
+        if (result.isEmpty) {
+            cell.classList.add('empty');
+            cell.textContent = '—';
+            return;
+        }
+        cell.classList.add(result.isFail ? 'fail' : 'pass');
+        cell.innerHTML = result.text +
+            (result.ects ? '<span class="result-ects ' +
+                (result.isFail ? 'fail' : '') + '">' + result.ects + '</span>' : '');
+    }
+
+    /* ── Оновлення блоку «Результат» (мобільна картка) ── */
+    function updateResultCard(card, result) {
+        if (!card) return;
+        card.classList.remove('pass', 'fail', 'empty');
+        const valueEl = card.querySelector('.grade-card__result-value');
+        if (!valueEl) return;
+
+        if (result.isEmpty) {
+            card.classList.add('empty');
+            valueEl.textContent = '—';
+            return;
+        }
+        card.classList.add(result.isFail ? 'fail' : 'pass');
+        valueEl.innerHTML = result.text +
+            (result.ects ? '<span class="ects">' + result.ects + '</span>' : '');
+    }
+
+    /* ── Десктоп: біндимо кожен рядок ── */
+    function bindDesktopRow(row) {
+        const mid = row.querySelector('.grade-mid');
+        const cur = row.querySelector('.grade-current');
+        const exam = row.querySelector('.grade-exam');
+        const total = row.querySelector('.grade-total');
+        if (!total || !mid || !cur || !exam) return;
+        const resultCell = row.querySelector('.cell-result');
+
+        function recalc() {
+            const a = parseNum(mid.value), b = parseNum(cur.value), c = parseNum(exam.value);
+            const anyFilled = (a !== null || b !== null || c !== null);
+
+            if (!anyFilled) {
+                total.readOnly = false;
+                // Результат залишаємо як є — його оновить подія 'input' на total
+                return;
+            }
+
+            let sum = (a || 0) + (b || 0) + (c || 0);
+            if (sum > 100) sum = 100;
+            total.value = sum;
+            total.readOnly = true;
+
+            const result = pointsToResult(sum, CONTROL_FORM);
+            updateResultCell(resultCell, result);
+        }
+
+        mid.addEventListener('input', recalc);
+        cur.addEventListener('input', recalc);
+        exam.addEventListener('input', recalc);
+
+        total.addEventListener('input', function () {
+            if (total.readOnly) return;
+            mid.value = '';
+            cur.value = '';
+            exam.value = '';
+            const manual = parseNum(total.value);
+            updateResultCell(resultCell, pointsToResult(manual, CONTROL_FORM));
+        });
+    }
+
+    /* ── Мобільна картка ── */
+    function bindMobileCard(card) {
+        const mid = card.querySelector('.grade-mid-mobile');
+        const cur = card.querySelector('.grade-current-mobile');
+        const exam = card.querySelector('.grade-exam-mobile');
+        const total = card.querySelector('.grade-total-mobile');
+        if (!total || !mid || !cur || !exam) return;
+        const resultBlock = card.querySelector('.grade-card__result');
+
+        function recalc() {
+            const a = parseNum(mid.value), b = parseNum(cur.value), c = parseNum(exam.value);
+            const anyFilled = (a !== null || b !== null || c !== null);
+            if (!anyFilled) { total.readOnly = false; return; }
+
+            let sum = (a || 0) + (b || 0) + (c || 0);
+            if (sum > 100) sum = 100;
+            total.value = sum;
+            total.readOnly = true;
+
+            updateResultCard(resultBlock, pointsToResult(sum, CONTROL_FORM));
+        }
+
+        mid.addEventListener('input', recalc);
+        cur.addEventListener('input', recalc);
+        exam.addEventListener('input', recalc);
+
+        total.addEventListener('input', function () {
+            if (total.readOnly) return;
+            mid.value = '';
+            cur.value = '';
+            exam.value = '';
+            const manual = parseNum(total.value);
+            updateResultCard(resultBlock, pointsToResult(manual, CONTROL_FORM));
+        });
+    }
+
+    document.querySelectorAll('table.grades tbody tr').forEach(bindDesktopRow);
+    document.querySelectorAll('.grade-card').forEach(bindMobileCard);
+})();
+</script>
+{% endif %}
+
+</body>
+</html>

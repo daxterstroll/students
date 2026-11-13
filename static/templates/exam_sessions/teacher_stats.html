@@ -23,9 +23,11 @@
                     <thead class="table-light">
                         <tr>
                             <th>Викладач</th>
+                            <th>Кафедра</th>
                             <th class="text-center">Пакетів</th>
                             <th class="text-center">Усього відомостей</th>
                             <th class="text-center">Заповнено</th>
+                            <th class="text-center">В процесі</th>
                             <th class="text-center">Не заповнено</th>
                             <th style="width: 200px;">Прогрес</th>
                             <th></th>
@@ -34,12 +36,14 @@
                     <tbody>
                         {% for s in stats %}
                         <tr>
-                            <td class="fw-semibold">{{ s.teacher_name }}</td>
-                            <td class="text-center">{{ s.batches_count }}</td>
+                            <td class="fw-semibold">{{ s.full_name }}</td>
+                            <td class="small text-muted">{{ s.department or '—' }}</td>
+                            <td class="text-center">{{ s.total }}</td>
                             <td class="text-center">{{ s.total }}</td>
                             <td class="text-center text-success fw-bold">{{ s.submitted }}</td>
-                            <td class="text-center {% if s.not_submitted %}text-danger fw-bold{% endif %}">
-                                {{ s.not_submitted }}
+                            <td class="text-center text-warning fw-bold">{{ s.in_progress or 0 }}</td>
+                            <td class="text-center {% if s.pending %}text-danger fw-bold{% endif %}">
+                                {{ s.pending }}
                             </td>
                             <td>
                                 <div class="progress" style="height: 20px;">

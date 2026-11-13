@@ -83,15 +83,7 @@
                             <td class="small">{{ t.department or '—' }}</td>
                             <td class="text-center">{{ t.sheets_total }}</td>
                             <td class="text-center text-success fw-bold">{{ t.sheets_submitted }}</td>
-                            <td class="text-center">
-                                {% if t.sheets_total - t.sheets_submitted - t.sheets_pending > 0 %}
-                                <span class="text-warning fw-bold">
-                                    {{ t.sheets_total - t.sheets_submitted - t.sheets_pending }}
-                                </span>
-                                {% else %}
-                                <span class="text-muted">0</span>
-                                {% endif %}
-                            </td>
+                            <td class="text-center text-warning fw-bold">{{ t.sheets_in_progress or 0 }}</td>
                             <td class="text-center {% if t.sheets_pending %}text-danger fw-bold{% endif %}">
                                 {{ t.sheets_pending }}
                             </td>

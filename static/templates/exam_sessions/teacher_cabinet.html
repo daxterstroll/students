@@ -4,42 +4,185 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
+    <meta name="color-scheme" content="light dark">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f4efe3">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)"  content="#0f151c">
     <title>Мої відомості — {{ teacher.full_name }}</title>
+
+    <script>
+    (function(){
+        try {
+            var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+            if (!mq) return;
+            function apply(){
+                if (mq.matches) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                }
+            }
+            apply();
+            if (mq.addEventListener) mq.addEventListener('change', apply);
+            else if (mq.addListener) mq.addListener(apply);
+        } catch (e) {}
+    })();
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Lora:wght@600;700&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
+        /* ─── Бренд (не змінюється між темами) ─── */
         :root {
             --ink: #0e1b2c;
             --ink-2: #16283f;
+            --brass: #c8a24a;
+            --brass-lt: #f0d896;
+            --brass-dark: #a5822f;
+        }
+
+        /* ─── СВІТЛА ТЕМА (за замовчуванням) ─── */
+        :root {
             --paper: #f4efe3;
             --paper-2: #fffdf8;
-            --muted: #8a8071;
-            --brass: #c8a24a;
-            --brass-lt: #e9cf8f;
-            --brass-dark: #a5822f;
-            --success: #3f8a5b;
-            --danger: #a23b2e;
-            --warning: #a5822f;
+            --card-bg: #ffffff;
+            --surface: #ffffff;
+            --text: #0e1b2c;
+            --muted: #5a5044;
+            --muted-soft: #8a8071;
             --line: rgba(31,42,58,.13);
             --shadow: 0 12px 32px -12px rgba(14,27,44,.18);
+            --hero-text: #f4efe3;
+
+            --success: #3f8a5b;
+            --danger: #a23b2e;
+            --warning: #c48a1a;
+
+            --status-draft-bg: #fbe4e1;
+            --status-draft-text: #7a2b21;
+            --status-in-progress-bg: #fdf0d2;
+            --status-in-progress-text: #7a5510;
+            --status-submitted-bg: #d4f0dd;
+            --status-submitted-text: #2d6644;
+            --status-approved-bg: #e9ecef;
+            --status-approved-text: #495057;
+
+            --progress-track: #e9e0cc;
+            --badge-success-bg: #d4f0dd;
+            --badge-success-text: #2d6644;
+            --badge-warning-bg: #fdf0d2;
+            --badge-warning-text: #7a5510;
+            --badge-secondary-bg: #e9ecef;
+            --badge-secondary-text: #495057;
+
+            --page-gradient:
+                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.14), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.08), transparent 55%),
+                linear-gradient(180deg, #f4efe3 0%, #efe7d5 100%);
+
+            color-scheme: light dark;
         }
+
+        /* ─── ТЕМНА ТЕМА — тригер 1: системна тема ─── */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --paper: #0f151c;
+                --paper-2: #1a222b;
+                --card-bg: #1a222b;
+                --surface: #1e2936;
+                --text: #e7e2d6;
+                --muted: #9aa3ad;
+                --muted-soft: #6c757d;
+                --line: rgba(231,226,214,.14);
+                --shadow: 0 12px 32px -12px rgba(0,0,0,.55);
+
+                --success: #a8d4ad;
+                --danger: #f0b3ab;
+                --warning: #f0d896;
+
+                --status-draft-bg: rgba(162,59,46,.28);
+                --status-draft-text: #f0b3ab;
+                --status-in-progress-bg: rgba(200,162,74,.22);
+                --status-in-progress-text: #f0d896;
+                --status-submitted-bg: rgba(79,122,82,.28);
+                --status-submitted-text: #bfe3c2;
+                --status-approved-bg: rgba(231,226,214,.1);
+                --status-approved-text: #e7e2d6;
+
+                --progress-track: rgba(231,226,214,.1);
+                --badge-success-bg: rgba(79,122,82,.35);
+                --badge-success-text: #bfe3c2;
+                --badge-warning-bg: rgba(200,162,74,.28);
+                --badge-warning-text: #f0d896;
+                --badge-secondary-bg: rgba(231,226,214,.15);
+                --badge-secondary-text: #9aa3ad;
+
+                --page-gradient:
+                    radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
+                    radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.35), transparent 55%),
+                    linear-gradient(180deg, #0f151c 0%, #0a0f14 100%);
+            }
+        }
+
+        /* ─── ТЕМНА ТЕМА — тригер 2: явний data-theme (ставиться JS) ─── */
+        :root[data-theme="dark"] {
+            --paper: #0f151c;
+            --paper-2: #1a222b;
+            --card-bg: #1a222b;
+            --surface: #1e2936;
+            --text: #e7e2d6;
+            --muted: #9aa3ad;
+            --muted-soft: #6c757d;
+            --line: rgba(231,226,214,.14);
+            --shadow: 0 12px 32px -12px rgba(0,0,0,.55);
+
+            --success: #a8d4ad;
+            --danger: #f0b3ab;
+            --warning: #f0d896;
+
+            --status-draft-bg: rgba(162,59,46,.28);
+            --status-draft-text: #f0b3ab;
+            --status-in-progress-bg: rgba(200,162,74,.22);
+            --status-in-progress-text: #f0d896;
+            --status-submitted-bg: rgba(79,122,82,.28);
+            --status-submitted-text: #bfe3c2;
+            --status-approved-bg: rgba(231,226,214,.1);
+            --status-approved-text: #e7e2d6;
+
+            --progress-track: rgba(231,226,214,.1);
+            --badge-success-bg: rgba(79,122,82,.35);
+            --badge-success-text: #bfe3c2;
+            --badge-warning-bg: rgba(200,162,74,.28);
+            --badge-warning-text: #f0d896;
+            --badge-secondary-bg: rgba(231,226,214,.15);
+            --badge-secondary-text: #9aa3ad;
+
+            --page-gradient:
+                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
+                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.35), transparent 55%),
+                linear-gradient(180deg, #0f151c 0%, #0a0f14 100%);
+        }
+
         * { box-sizing: border-box; }
         body {
             margin: 0; padding: 0;
             font-family: 'Manrope', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            color: var(--ink);
-            background:
-                radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.14), transparent 60%),
-                radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.08), transparent 55%),
-                linear-gradient(180deg, var(--paper) 0%, #efe7d5 100%);
+            color: var(--text);
+            background: var(--page-gradient);
+            background-attachment: fixed;
             min-height: 100vh;
+            -webkit-text-size-adjust: 100%;
+            transition: background-color .2s ease, color .2s ease;
         }
+
         .hero {
             background: linear-gradient(135deg, var(--ink) 0%, var(--ink-2) 60%, #1d3450 100%);
-            color: #fff; padding: 2.5rem 1.5rem 5rem; text-align: center;
-            position: relative; overflow: hidden;
+            color: var(--hero-text);
+            padding: 2.5rem 1.5rem 5rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
         }
         .hero-badge {
             display: inline-flex; align-items: center; justify-content: center;
@@ -47,74 +190,130 @@
             background: linear-gradient(145deg, var(--brass-lt), var(--brass-dark));
             font-size: 1.9rem; margin-bottom: 1rem;
             box-shadow: 0 8px 22px rgba(200,162,74,.45);
+            color: var(--ink);
         }
         .hero h1 {
             font-family: 'Lora', serif; font-size: 1.7rem; margin: 0 0 .35rem;
-            color: var(--brass-lt); letter-spacing: -.01em;
+            color: var(--brass-lt); letter-spacing: -.01em; font-weight: 700;
         }
-        .hero p { margin: 0; opacity: .75; font-size: .95rem; }
+        .hero p { margin: 0; opacity: .9; font-size: .95rem; color: var(--hero-text); }
 
-        .wrap { max-width: 1000px; margin: -3.5rem auto 3rem; padding: 0 1rem; position: relative; }
+        .wrap {
+            max-width: 1000px;
+            margin: -3.5rem auto 3rem;
+            padding: 0 1rem;
+            position: relative;
+        }
 
         .stats-bar {
-            display: flex; gap: 1rem; flex-wrap: wrap;
-            background: #fff; border-radius: 16px; padding: 1.25rem;
-            box-shadow: var(--shadow); margin-bottom: 1.5rem;
-            border: 1px solid rgba(255,255,255,.6);
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 1rem;
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 1.25rem;
+            box-shadow: var(--shadow);
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--line);
         }
-        .stat-item { text-align: center; flex: 1; min-width: 110px; }
-        .stat-value { font-size: 2rem; font-weight: 800; color: var(--ink); line-height: 1.1; }
-        .stat-label { font-size: .78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .25rem; }
+        .stat-item { text-align: center; min-width: 0; padding: .25rem; }
+        .stat-value {
+            font-size: 2rem; font-weight: 800; color: var(--text);
+            line-height: 1.1; font-variant-numeric: tabular-nums;
+        }
+        .stat-label {
+            font-size: .78rem; color: var(--muted);
+            text-transform: uppercase; letter-spacing: .04em;
+            margin-top: .35rem; font-weight: 700;
+        }
         .stat-item--ok .stat-value { color: var(--success); }
-        .stat-item--pending .stat-value { color: var(--danger); }
         .stat-item--work .stat-value { color: var(--warning); }
+        .stat-item--pending .stat-value { color: var(--danger); }
 
-        .progress-wrap { height: 16px; background: #e9e0cc; border-radius: 10px; overflow: hidden; margin-bottom: 2rem; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, var(--success), #6fbf8b); transition: width .4s ease; }
+        .progress-wrap {
+            height: 16px; background: var(--progress-track);
+            border-radius: 10px; overflow: hidden; margin-bottom: 2rem;
+        }
+        .progress-fill {
+            height: 100%; background: linear-gradient(90deg, var(--success), #6fbf8b);
+            transition: width .4s ease;
+        }
 
         .section-title {
             font-family: 'Lora', serif; font-weight: 700; font-size: 1.15rem;
-            color: var(--ink); margin: 0 0 1rem; padding-bottom: .5rem;
-            border-bottom: 2px solid rgba(200,162,74,.3);
+            color: var(--text); margin: 0 0 1rem; padding-bottom: .5rem;
+            border-bottom: 2px solid rgba(200,162,74,.4);
         }
 
         .sheet-card {
-            background: #fff; border-radius: 14px; padding: 1.15rem 1.25rem;
-            margin-bottom: .75rem; display: flex; align-items: center; gap: 1rem;
+            background: var(--card-bg);
+            border-radius: 14px;
+            padding: 1.15rem 1.25rem;
+            margin-bottom: .75rem;
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            align-items: center;
+            gap: 1rem;
             border-left: 4px solid var(--brass);
-            box-shadow: 0 4px 14px -6px rgba(14,27,44,.14);
-            transition: transform .15s ease, box-shadow .15s ease;
-            text-decoration: none; color: inherit;
+            border-top: 1px solid var(--line);
+            border-right: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+            box-shadow: 0 4px 14px -6px rgba(0,0,0,.12);
+            transition: transform .15s ease, box-shadow .15s ease, background-color .2s ease;
+            text-decoration: none;
+            color: inherit;
         }
         .sheet-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 22px -8px rgba(14,27,44,.22);
+            box-shadow: 0 8px 22px -8px rgba(0,0,0,.22);
         }
-        .sheet-card--submitted { border-left-color: var(--success); }
-        .sheet-card--in_progress { border-left-color: var(--warning); }
-        .sheet-card--draft { border-left-color: var(--danger); }
-        .sheet-card--sent { border-left-color: #4a6ea8; }
-        .sheet-card--approved, .sheet-card--locked { border-left-color: #6c757d; opacity: .85; }
+        .sheet-card--submitted    { border-left-color: var(--success); }
+        .sheet-card--in_progress  { border-left-color: var(--warning); }
+        .sheet-card--draft,
+        .sheet-card--sent         { border-left-color: var(--danger); }
+        .sheet-card--approved,
+        .sheet-card--locked       { border-left-color: var(--muted-soft); opacity: .85; }
 
-        .sheet-body { flex: 1; min-width: 0; }
-        .sheet-title { font-weight: 700; font-size: 1rem; color: var(--ink); margin-bottom: .2rem; }
-        .sheet-meta { font-size: .82rem; color: var(--muted); }
-        .sheet-progress { font-size: .82rem; margin-top: .35rem; }
-        .sheet-progress .badge { font-weight: 700; }
+        .sheet-body { min-width: 0; }
+        .sheet-title {
+            font-weight: 700; font-size: 1rem; color: var(--text);
+            margin-bottom: .2rem; overflow-wrap: break-word;
+        }
+        .sheet-meta { font-size: .82rem; color: var(--muted); line-height: 1.4; }
+        .sheet-progress { font-size: .82rem; margin-top: .4rem; }
+        .sheet-progress .badge {
+            font-weight: 700; padding: .25rem .6rem;
+            border-radius: 999px; font-size: .75rem;
+            display: inline-flex; align-items: center;
+        }
+        .sheet-progress .badge.bg-success {
+            background: var(--badge-success-bg) !important;
+            color: var(--badge-success-text) !important;
+        }
+        .sheet-progress .badge.bg-warning {
+            background: var(--badge-warning-bg) !important;
+            color: var(--badge-warning-text) !important;
+        }
+        .sheet-progress .badge.bg-secondary {
+            background: var(--badge-secondary-bg) !important;
+            color: var(--badge-secondary-text) !important;
+        }
 
         .sheet-status {
-            padding: .3rem .8rem; border-radius: 20px; font-size: .75rem;
+            padding: .35rem .85rem; border-radius: 999px; font-size: .75rem;
             font-weight: 700; white-space: nowrap; flex-shrink: 0;
         }
-        .sheet-status--draft { background: #fdf3d9; color: #8a6a1a; }
-        .sheet-status--sent { background: #d9e8ff; color: #2f5f87; }
-        .sheet-status--in_progress { background: #fce8c3; color: #8a6a1a; }
-        .sheet-status--submitted { background: #d4f0dd; color: #2d6644; }
-        .sheet-status--approved, .sheet-status--locked { background: #e9ecef; color: #495057; }
+        .sheet-status--draft       { background: var(--status-draft-bg); color: var(--status-draft-text); }
+        .sheet-status--sent        { background: var(--status-draft-bg); color: var(--status-draft-text); }
+        .sheet-status--in_progress { background: var(--status-in-progress-bg); color: var(--status-in-progress-text); }
+        .sheet-status--submitted   { background: var(--status-submitted-bg); color: var(--status-submitted-text); }
+        .sheet-status--approved,
+        .sheet-status--locked      { background: var(--status-approved-bg); color: var(--status-approved-text); }
 
         .btn-open {
-            padding: .55rem 1.15rem; border-radius: 10px; font-weight: 700;
-            font-size: .85rem; text-decoration: none;
+            display: inline-flex; align-items: center; gap: .35rem;
+            padding: .55rem 1.15rem; border-radius: 10px;
+            font-weight: 700; font-size: .85rem; text-decoration: none;
             border: 1.5px solid var(--brass);
             background: linear-gradient(160deg, var(--brass-lt), var(--brass));
             color: var(--ink); white-space: nowrap;
@@ -126,39 +325,85 @@
             color: var(--ink);
         }
         .btn-open--view {
-            background: transparent;
-            border-color: var(--line);
-            color: var(--muted);
+            background: transparent; border-color: var(--line); color: var(--muted);
         }
 
         .empty {
             text-align: center; padding: 4rem 1.5rem;
-            background: #fff; border-radius: 16px; box-shadow: var(--shadow);
+            background: var(--card-bg); border-radius: 16px;
+            box-shadow: var(--shadow); border: 1px solid var(--line);
         }
-        .empty i { font-size: 3rem; color: var(--muted); opacity: .4; }
-        .empty h4 { font-family: 'Lora', serif; margin: 1rem 0 .5rem; }
+        .empty i { font-size: 3rem; color: var(--muted-soft); opacity: .55; }
+        .empty h4 { font-family: 'Lora', serif; margin: 1rem 0 .5rem; color: var(--text); }
         .empty p { color: var(--muted); margin: 0; font-size: .92rem; }
+
+        .footer-note {
+            text-align: center; margin-top: 3rem; font-size: .82rem;
+            color: var(--muted); padding: 0 .5rem;
+        }
 
         @media (max-width: 640px) {
             .hero { padding: 1.75rem 1rem 4.5rem; }
-            .hero h1 { font-size: 1.3rem; }
+            .hero-badge { width: 52px; height: 52px; font-size: 1.5rem; }
+            .hero h1 { font-size: 1.25rem; }
             .hero p { font-size: .85rem; }
-            .stats-bar { padding: 1rem; gap: .75rem; }
+            .wrap { margin-top: -3rem; padding: 0 .65rem; }
+
+            .stats-bar {
+                grid-template-columns: 1fr 1fr;
+                gap: .65rem;
+                padding: .9rem .75rem;
+            }
+            .stat-item--total { display: none; }
+            .stat-item--progress { grid-column: 1 / -1; }
             .stat-value { font-size: 1.5rem; }
-            .sheet-card { padding: .9rem 1rem; gap: .75rem; flex-wrap: wrap; }
-            .sheet-status { font-size: .7rem; }
-            .btn-open { font-size: .78rem; padding: .45rem .9rem; }
+            .stat-label { font-size: .7rem; margin-top: .25rem; }
+
+            .progress-wrap { height: 12px; margin-bottom: 1.25rem; }
+
+            .sheet-card {
+                grid-template-columns: 1fr auto;
+                grid-template-rows: auto auto;
+                gap: .65rem;
+                padding: .9rem 1rem;
+            }
+            .sheet-body { grid-column: 1 / -1; }
+            .sheet-status {
+                grid-row: 2; grid-column: 1;
+                justify-self: start;
+                font-size: .7rem; padding: .3rem .65rem;
+            }
+            .btn-open {
+                grid-row: 2; grid-column: 2; justify-self: end;
+                font-size: .78rem; padding: .5rem .9rem; min-height: 40px;
+            }
+            .sheet-title { font-size: .95rem; }
+            .sheet-meta { font-size: .78rem; }
+            .sheet-progress { font-size: .78rem; }
+            .sheet-progress .badge { font-size: .7rem; }
+
+            .section-title { font-size: 1rem; margin-bottom: .75rem; }
+            .footer-note { margin-top: 2rem; font-size: .75rem; }
+        }
+
+        @media (max-width: 380px) {
+            .stats-bar { grid-template-columns: 1fr; }
+            .stat-item--progress { grid-column: 1 / -1; }
+            .stat-value { font-size: 1.3rem; }
         }
 
         @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after { animation: none !important; transition: none !important; }
+            *, *::before, *::after {
+                animation: none !important;
+                transition: none !important;
+            }
         }
     </style>
 </head>
 <body>
 
 <div class="hero">
-    <div class="hero-badge">📋</div>
+    <div class="hero-badge"><i class="bi bi-clipboard-check-fill"></i></div>
     <h1>Відомості для заповнення</h1>
     <p>{{ teacher.full_name }}{% if teacher.department %} · {{ teacher.department }}{% endif %}</p>
 </div>
@@ -167,7 +412,7 @@
 
     {% if stats.total %}
     <div class="stats-bar">
-        <div class="stat-item">
+        <div class="stat-item stat-item--total">
             <div class="stat-value">{{ stats.total }}</div>
             <div class="stat-label">Усього</div>
         </div>
@@ -176,14 +421,14 @@
             <div class="stat-label">Заповнено</div>
         </div>
         <div class="stat-item stat-item--work">
-            <div class="stat-value">{{ stats.total - stats.submitted - stats.needs_work + (stats.needs_work - (stats.total - stats.submitted)) * 0 }}</div>
+            <div class="stat-value">{{ stats.in_progress }}</div>
             <div class="stat-label">В процесі</div>
         </div>
         <div class="stat-item stat-item--pending">
             <div class="stat-value">{{ stats.needs_work }}</div>
             <div class="stat-label">Потребують уваги</div>
         </div>
-        <div class="stat-item">
+        <div class="stat-item stat-item--progress">
             <div class="stat-value">{{ stats.percent }}%</div>
             <div class="stat-label">Прогрес</div>
         </div>
@@ -201,7 +446,6 @@
 
     {% for sh in sheets %}
     {% set is_done = sh.status in ('submitted', 'approved', 'locked') %}
-    {% set is_progress = sh.status == 'in_progress' %}
     <a href="{{ url_for('exam_sessions.teacher_sheet',
                         teacher_token=teacher_token, sheet_id=sh.id) }}"
        class="sheet-card sheet-card--{{ sh.status }}">
@@ -214,7 +458,7 @@
                 {% if sh.semester %} / {{ sh.semester }} сем.{% endif %}
             </div>
             <div class="sheet-progress">
-                <span class="badge {% if sh.graded_count == sh.students_count and sh.students_count > 0 %}bg-success{% elif sh.graded_count > 0 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                <span class="badge {% if sh.graded_count == sh.students_count and sh.students_count > 0 %}bg-success{% elif sh.graded_count > 0 %}bg-warning{% else %}bg-secondary{% endif %}">
                     <i class="bi bi-people me-1"></i>{{ sh.graded_count }} / {{ sh.students_count }} оцінено
                 </span>
             </div>
@@ -244,7 +488,7 @@
     </div>
     {% endif %}
 
-    <div style="text-align: center; margin-top: 3rem; font-size: .82rem; color: var(--muted);">
+    <div class="footer-note">
         <i class="bi bi-shield-lock me-1"></i>
         Персональне посилання — не передавайте третім особам.
     </div>
