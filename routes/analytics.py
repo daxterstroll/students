@@ -34,6 +34,22 @@ student_list()) - щоб цифри тут і там завжди узгоджу
   - перевірка «дублікати номерів» вважає ПОМИЛКОЮ будь-яке повторення
     номера в системі, навіть якщо це один і той самий студент у двох
     групах (у кожної групи має бути свій окремий номер).
+
+ФІКС (архівні групи):
+  Якщо студент паралельно навчався у групі, яку вже випущено
+  (groups.archived = 1), його оцінки/активності з цієї групи раніше
+  потрапляли в:
+    - розподіл оцінок за шкалою ECTS (all_letters);
+    - рейтинг предметів за середнім балом (subject_ranking);
+    - «групу ризику» (at_risk_students);
+    - право на диплом з відзнакою (honor_eligible);
+    - заповненість оцінок/активностей по групах;
+    - показник «номер диплома призначено» (diploma_num_pct) —
+      бо активний enrollment у архівній групі потрапляв у total_group_pairs.
+  Тепер усі ці джерела фільтруються за `COALESCE(g.archived,0)=0`
+  (окрім випадку, коли явно увімкнено «Враховувати архівні групи»).
+  Це узгоджує аналітику з тим, як уже працюють список студентів,
+  реєстр наказів і звіт по ліцензіях.
 """
 from flask import Blueprint, render_template, session, request
 from routes.db import get_db
@@ -132,23 +148,9 @@ def dashboard():
     # заповненість, оцінки тощо) - так само, як архівні студенти/групи
     # виключаються за замовчуванням. Показуються лише коли галочку
     # "Враховувати заморожених студентів" увімкнено.
-    # Виключаємо студента зі статистики, лише якщо ВІН ЗАМОРОЖЕНИЙ ПОВНІСТЮ:
-    #   1. є активний frozen_students запис
-    #   2. І немає жодного активного student_enrollments (тобто він ніде не вчиться).
-    # Для паралельника, замороженого з однієї групи, але активного в іншій -
-    # він лишається в статистиці (він реально навчається).
     if include_frozen:
         frozen_exclude_cond = ""
     else:
-        # Будь-який студент з активною (resolved_at IS NULL) заморозкою
-        # виключається зі статистики. Це та сама логіка, що вже
-        # використовується на сторінці «Студенти» (student_list) і в
-        # «Звіті по ліцензіях» (license_report) — тому лічильники
-        # скрізь узгоджені. Раніше тут був додатковий «розумний»
-        # виняток для паралельних студентів (заморожений в одній
-        # групі, але з активним enrollment в іншій — не виключався),
-        # через що такий студент потрапляв одночасно і в «Активних»,
-        # і в «Заморожених».
         frozen_exclude_cond = """
             AND NOT EXISTS (
                 SELECT 1 FROM frozen_students fz
@@ -157,6 +159,8 @@ def dashboard():
         """
     student_archived_cond = ("" if include_archived else "AND COALESCE(s.archived,0)=0") + " " + frozen_exclude_cond
     group_archived_cond = "" if include_archived else "AND COALESCE(g.archived,0)=0"
+    # Для підзапитів, де таблиця groups має псевдонім g2
+    group_archived_cond_g2 = "" if include_archived else "AND COALESCE(g2.archived,0)=0"
 
     if not is_admin and user_group_ids:
         placeholders = ','.join('?' for _ in user_group_ids)
@@ -198,9 +202,6 @@ def dashboard():
     """, group_where_params).fetchall()]
     groups_by_id = {g['id']: g for g in groups_full}
 
-    # Кількість студентів у групі - через student_enrollments (паралельне навчання):
-    # студент, який навчається у двох групах, рахується ОДИН РАЗ у кожній,
-    # а не тільки у своїй primary.
     students_per_group = conn.execute(f"""
         SELECT g.id, g.name, g.start_year, g.study_form, COALESCE(g.archived,0) AS archived,
                COUNT(DISTINCT s.id) FILTER (WHERE 1=1 {student_archived_cond}) AS cnt
@@ -232,10 +233,14 @@ def dashboard():
     """, scope_params).fetchall()
 
     # ================= Прогноз випуску по роках =================
+    # Архівні групи вже випустилися — прогноз по них не має сенсу,
+    # тому пропускаємо їх завжди (навіть при include_archived=1).
     graduation_forecast = {}
     for row in students_per_group:
         g = groups_by_id.get(row['id'])
         if not g or not row['cnt']:
+            continue
+        if g.get('archived'):
             continue
         end_year = _compute_end_year(g['start_year'], g['degree_level'], g['program_credits'])
         if end_year:
@@ -251,6 +256,8 @@ def dashboard():
     student_ids = [s['id'] for s in students_raw]
 
     # Список студентів для випадаючого списку "Якість оцінок конкретного студента"
+    # у all_groups показуємо лише НЕархівні групи (за замовчуванням), щоб
+    # у списку не висіли старі випущені групи, в яких студент уже не вчиться.
     student_options = conn.execute(f"""
         SELECT s.id,
                s.last_name_UA || ' ' || s.first_name_UA || ' ' || COALESCE(s.middle_name_UA,'') AS full_name,
@@ -258,7 +265,8 @@ def dashboard():
                (SELECT GROUP_CONCAT(g2.name, ' | ')
                 FROM student_enrollments e2
                 JOIN groups g2 ON g2.id = e2.group_id
-                WHERE e2.student_id = s.id AND e2.status = 'active') AS all_groups
+                WHERE e2.student_id = s.id AND e2.status = 'active'
+                {group_archived_cond_g2}) AS all_groups
         FROM students s JOIN groups g ON g.id = s.group_id
         WHERE 1=1 {student_archived_cond} {scope_clause}
         ORDER BY g.name, s.last_name_UA
@@ -272,7 +280,7 @@ def dashboard():
 
     # Паспортні дані - найновіший запис кожного студента (як і в
     # students.py, student_list() - ORDER BY id DESC, перший що
-    # трапиться на студента лишається найновішим завдяки setdefault).
+    # трапляється на студента лишається найновішим завдяки setdefault).
     passport_by_student = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
@@ -281,6 +289,17 @@ def dashboard():
         """, student_ids):
             passport_by_student.setdefault(row['student_id'], dict(row))
 
+    # ── Оцінки: фільтруємо за архівністю ГРУПИ (фікс бага) ──
+    # Якщо студент паралельно вчився у двох групах і одна з них уже
+    # випущена (archived=1), оцінки з неї НЕ повинні потрапляти в:
+    #   - розподіл за ECTS,
+    #   - рейтинг предметів,
+    #   - «групу ризику»,
+    #   - право на диплом з відзнакою,
+    #   - заповненість по групах,
+    #   - показник «номер диплома призначено».
+    # Тому JOIN groups g і фільтр group_archived_cond застосовується
+    # одразу тут (єдине джерело для всіх метрик нижче).
     grades_by_student = {}
     all_grade_rows = []
     if student_ids:
@@ -289,38 +308,46 @@ def dashboard():
             SELECT gr.student_id, gr.grade, sub.id AS subject_id, sub.type AS subject_type,
                    sub.name AS subject_name, sub.code AS subject_code, sub.credits AS subject_credits,
                    sub.group_id AS group_id
-            FROM grades gr JOIN subjects sub ON sub.id = gr.subject_id
+            FROM grades gr
+            JOIN subjects sub ON sub.id = gr.subject_id
+            JOIN groups   g   ON g.id = sub.group_id
             WHERE gr.student_id IN ({placeholders})
+            {group_archived_cond}
         """, student_ids):
             row = dict(row)
             grades_by_student.setdefault(row['student_id'], []).append(row)
             all_grade_rows.append(row)
 
+    # ── Активності (практика / курсова / атестація): той самий фільтр ──
     activities_by_student = {}
     attestation_by_student = {}
     activity_rows_by_student = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
-        # activity_grades.name НЕ є назвою практики/курсової/атестації - це
-        # окреме поле для теми кваліфікаційної роботи (лише для атестації).
-        # Реальна назва зберігається в самій сутності (practices/courseworks/
-        # attestations) і приєднується через entity_id - тому окремий JOIN
-        # для кожного типу, як і в students.py.
         queries = {
             'practice': f"""
                 SELECT ag.student_id, 'practice' AS entity_type, ag.grade, p.code, p.name, p.group_id
-                FROM activity_grades ag JOIN practices p ON p.id = ag.entity_id
+                FROM activity_grades ag
+                JOIN practices p ON p.id = ag.entity_id
+                JOIN groups    g ON g.id = p.group_id
                 WHERE ag.entity_type='practice' AND ag.student_id IN ({placeholders})
+                {group_archived_cond}
             """,
             'coursework': f"""
                 SELECT ag.student_id, 'coursework' AS entity_type, ag.grade, c.code, c.name, c.group_id
-                FROM activity_grades ag JOIN courseworks c ON c.id = ag.entity_id
+                FROM activity_grades ag
+                JOIN courseworks c ON c.id = ag.entity_id
+                JOIN groups      g ON g.id = c.group_id
                 WHERE ag.entity_type='coursework' AND ag.student_id IN ({placeholders})
+                {group_archived_cond}
             """,
             'attestation': f"""
                 SELECT ag.student_id, 'attestation' AS entity_type, ag.grade, a.code, a.name, a.group_id, ag.name AS thesis_title
-                FROM activity_grades ag JOIN attestations a ON a.id = ag.entity_id
+                FROM activity_grades ag
+                JOIN attestations a ON a.id = ag.entity_id
+                JOIN groups       g ON g.id = a.group_id
                 WHERE ag.entity_type='attestation' AND ag.student_id IN ({placeholders})
+                {group_archived_cond}
             """,
         }
         for sql in queries.values():
@@ -395,12 +422,25 @@ def dashboard():
     at_risk_students = []  # один запис на студента: {'student','group','count','worst_letter','details'}
 
     per_group_stats = {}  # group_id -> {'personal': [...], 'grades': [...], ...}
+    # ── Активні enrollment'и: фільтруємо за архівністю ГРУПИ (фікс багу) ──
+    # Якщо enrollment активний, але його група вже в архіві (типова
+    # ситуація після випуску, коли студент паралельно вчиться в іншій
+    # групі) — не включаємо цю групу в розрахунок, бо інакше:
+    #   1. subjects_total_by_group для неї дасть >0, а grades_by_student
+    #      для неї вже порожній (ми відфільтрували) → 0% заповненості,
+    #      що штучно занижує середнє по студенту;
+    #   2. total_group_pairs включатиме архівну групу → показник
+    #      «номер диплома призначено» рахуватиметься по ній, хоча
+    #      диплом туди вже не потрібен.
     active_enrollment_group_ids = {}
     if student_ids:
         placeholders = ','.join('?' for _ in student_ids)
         for row in conn.execute(f"""
-            SELECT student_id, group_id FROM student_enrollments
-            WHERE status = 'active' AND student_id IN ({placeholders})
+            SELECT e.student_id, e.group_id
+            FROM student_enrollments e
+            JOIN groups g ON g.id = e.group_id
+            WHERE e.status = 'active' AND e.student_id IN ({placeholders})
+            {group_archived_cond}
         """, student_ids):
             active_enrollment_group_ids.setdefault(row['student_id'], []).append(row['group_id'])
 
@@ -470,8 +510,6 @@ def dashboard():
         # ── Дипломи: рахуємо по кожній активній групі окремо ──
         # У кожної пари (студент, група) має бути СВІЙ номер. Студент із
         # двома групами і одним номером → 1 із 2 пар заповнена (50%).
-        # Якщо в групи немає активного enrollment'а (legacy group_id) —
-        # теж вважаємо пару, щоб студент без enrollment'ів не випав.
         dip_by_group = {}
         for d in diplomas_by_student.get(st['id'], []):
             dip_by_group[d.get('group_id')] = d
@@ -647,9 +685,6 @@ def dashboard():
     # ── Дублікати номерів диплома/додатка ──
     # У КОЖНОЇ пари (студент, група) має бути СВІЙ УНІКАЛЬНИЙ номер.
     # Тому будь-яке повторення номера в системі — помилка: COUNT(*) > 1.
-    # (Раніше тут було DISTINCT student_id — це припускало, що
-    # один студент може мати один номер для двох груп, але за новою
-    # моделлю такий сценарій неможливий: у кожної групи свій диплом.)
     duplicate_diploma_numbers, duplicate_appendix_numbers = [], []
     if is_admin:
         for row in conn.execute("""
@@ -666,10 +701,6 @@ def dashboard():
             duplicate_appendix_numbers.append({'number': row['appendix_number'], 'count': row['cnt']})
 
     # ================= Заморожені студенти (активні, не вирішено) =================
-    # Той самий принцип, що й на сторінці "Архів груп": ступінь -> колишня
-    # група -> список студентів (замість голого числа), і той самий
-    # порядок ступенів (за degree_levels.id), щоб бакалаври й магістри
-    # не змішувались і йшли в узгодженому по системі порядку.
     frozen_students_count = 0
     frozen_by_degree = {}
     if is_admin:
@@ -732,16 +763,11 @@ def dashboard():
         """).fetchall()
 
     # ================= Підсумок наказів руху студентів за поточний навчальний рік =================
-    # Модель наказів тепер єдина (orders/order_items), старі
-    # course_transfer_orders/expulsion_orders видалені init_db.py -
-    # тому всі цифри рахуються з єдиної таблиці через order_type.
     orders_summary = None
     if is_admin:
         current_year = datetime.now().year
         academic_year_start = current_year if datetime.now().month >= 9 else current_year - 1
         academic_year_start_date = f"{academic_year_start}-09-01"
-        # Дати в orders.order_date зберігаються у форматі ДД.ММ.РРРР - тому
-        # порівнюємо через substr для року/місяця, а не напряму з ISO.
         transfer_orders_count = conn.execute("""
             SELECT COUNT(*) FROM orders
             WHERE order_type = 'course_transfer' AND status = 'active'
@@ -807,19 +833,16 @@ def dashboard():
         attestation_ok = all(l == 'A' for l in attestation_letters) if attestation_letters else True
         is_honor_eligible = bool(all_letters_for_honor) and a_share >= 0.75 and no_fail and attestation_ok
 
-        # Список конкретних НЕзаповнених предметів (не лише кількість)
         taken_subject_ids = {g['subject_id'] for g in s_grades}
         missing_subjects = [f"{s['code']} {s['name']}" for s in subjects_by_group.get(gid, [])
                              if s['id'] not in taken_subject_ids]
 
-        # Порівняння із середнім по групі
         numeric_grades = [int(g['grade']) for g in s_grades if str(g['grade']).isdigit()]
         student_avg = round(sum(numeric_grades) / len(numeric_grades), 1) if numeric_grades else None
         group_numeric_grades = [int(r['grade']) for r in all_grade_rows
                                  if r['group_id'] == gid and str(r['grade']).isdigit()]
         group_avg = round(sum(group_numeric_grades) / len(group_numeric_grades), 1) if group_numeric_grades else None
 
-        # Зароблені кредити (тільки предмети зі позитивною оцінкою) vs кредити програми групи
         earned_credits = sum(g['subject_credits'] or 0 for g in s_grades if _is_passing(g['grade']))
         required_credits = groups_by_id.get(gid, {}).get('program_credits')
 
