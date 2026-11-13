@@ -4,11 +4,18 @@ routes/init_db.py
 Одноразовий скрипт для створення БД students.db "з нуля" та
 ідемпотентного доведення вже існуючої бази до актуальної схеми.
 
+ЦЕЙ ФАЙЛ — ЄДИНА точка створення БД. Інші модулі (routes/exam_sessions/schema.py,
+routes/user_scope.py, routes/enrollments_service.py, routes/orders_service.py)
+мають CREATE TABLE IF NOT EXISTS для безпечного використання на вже
+існуючих БД або при підключенні до БД, створеної цією версією init_db.py,
+але всі таблиці створюються саме тут.
+
 Замінює собою:
   - routes/init_db.py (початкове створення)
   - migrate_military_reports.py     (v1: gender, category_override, tck_offices, log)
   - migrate_military_reports_v2.py  (поля «Резерв+», military_history)
   - migrate_military_reports_v3.py  (Постанова №812: note_18, dismissed_at, is_base)
+  - migrate_teachers.py             (картотека викладачів + сесійні відомості)
   - єдина модель наказів: orders / order_items
     (expulsion_* і course_transfer_* більше не створюються; лише orders / order_items)
 
@@ -236,6 +243,9 @@ CREATE TABLE IF NOT EXISTS "military" (
     "data_update_date"  TEXT,
     "note_18"       TEXT,
     "mobilized_date"    TEXT,
+    "dodatok4_sent_at"      TEXT,
+    "dodatok4_fingerprint"  TEXT,
+    "dodatok4_snapshot"     TEXT,
     PRIMARY KEY("id" AUTOINCREMENT),
     FOREIGN KEY("student_id") REFERENCES "students"("id")
 );
@@ -446,6 +456,24 @@ CREATE TABLE IF NOT EXISTS "user_groups" (
     FOREIGN KEY("group_id") REFERENCES "groups"("id") ON DELETE CASCADE,
     FOREIGN KEY("user_id") REFERENCES "users"("id") ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS "user_specialties" (
+    user_id INTEGER NOT NULL,
+    specialty_code TEXT NOT NULL,
+    PRIMARY KEY (user_id, specialty_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS "user_degree_levels" (
+    user_id INTEGER NOT NULL,
+    degree_level TEXT NOT NULL,
+    PRIMARY KEY (user_id, degree_level),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS "user_knowledge_areas" (
+    user_id INTEGER NOT NULL,
+    knowledge_field_code TEXT NOT NULL,
+    PRIMARY KEY (user_id, knowledge_field_code),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
 -- ─── Заявки ───
 CREATE TABLE IF NOT EXISTS "update_requests" (
@@ -562,6 +590,7 @@ CREATE TABLE IF NOT EXISTS "frozen_students" (
     FOREIGN KEY (student_id) REFERENCES students(id),
     FOREIGN KEY (previous_group_id) REFERENCES groups(id)
 );
+
 -- ─── Військовий облік: довідники й журнали ───
 CREATE TABLE IF NOT EXISTS "tck_offices" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -593,8 +622,8 @@ CREATE TABLE IF NOT EXISTS "student_name_history" (
     FOREIGN KEY("order_id") REFERENCES "orders"("id")
 );
 CREATE INDEX IF NOT EXISTS "idx_student_name_history_student"
-    ON "student_name_history" ("student_id", "id");    
-    
+    ON "student_name_history" ("student_id", "id");
+
 CREATE TABLE IF NOT EXISTS "military_history" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL,
@@ -609,7 +638,125 @@ CREATE TABLE IF NOT EXISTS "military_history" (
 );
 CREATE INDEX IF NOT EXISTS idx_military_history_student
     ON military_history (student_id, id);
-    
+
+-- ═══════════════════════════════════════════════════════════════════════
+-- СЕСІЙНІ ВІДОМОСТІ (раніше створювались у routes/exam_sessions/schema.py
+-- + migrate_teachers.py; тепер — централізовано тут, при першому запуску)
+-- ═══════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS "teachers" (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name       TEXT NOT NULL,
+    short_name      TEXT,
+    email           TEXT,
+    phone           TEXT,
+    department      TEXT,
+    user_id         INTEGER,
+    token           TEXT UNIQUE NOT NULL,
+    token_created_at TEXT DEFAULT (datetime('now','localtime')),
+    is_active       INTEGER NOT NULL DEFAULT 1,
+    notes           TEXT,
+    created_by      TEXT,
+    created_at      TEXT DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS "idx_teachers_token" ON "teachers" ("token");
+CREATE INDEX IF NOT EXISTS "idx_teachers_active" ON "teachers" ("is_active");
+
+CREATE TABLE IF NOT EXISTS "exam_sessions" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER NOT NULL,
+    academic_year TEXT NOT NULL,
+    semester INTEGER NOT NULL CHECK (semester IN (1, 2, 3)),
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'open', 'closed')),
+    notes TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    updated_at TEXT,
+    FOREIGN KEY (group_id) REFERENCES groups(id)
+);
+CREATE INDEX IF NOT EXISTS "idx_exam_sessions_group" ON "exam_sessions" ("group_id");
+
+CREATE TABLE IF NOT EXISTS "session_sheets" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL,
+    discipline_name TEXT NOT NULL,
+    work_topic TEXT,
+    entity_kind TEXT NOT NULL DEFAULT 'subject'
+        CHECK (entity_kind IN ('subject', 'practice', 'coursework', 'attestation')),
+    control_form TEXT NOT NULL DEFAULT 'Залік'
+        CHECK (control_form IN ('Залік', 'Екзамен')),
+    hours_credits TEXT,
+    teacher_name TEXT,
+    teacher_ref_id INTEGER,
+    exam_date TEXT,
+    statement_number TEXT,
+    license_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'sent', 'in_progress', 'submitted', 'approved', 'locked')),
+    token TEXT UNIQUE,
+    token_expires_at TEXT,
+    linked_entity_type TEXT
+        CHECK (linked_entity_type IS NULL OR linked_entity_type IN
+               ('subject', 'practice', 'coursework', 'attestation')),
+    linked_entity_id INTEGER,
+    linked_at TEXT,
+    linked_by TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now', 'localtime')),
+    submitted_at TEXT,
+    approved_at TEXT,
+    approved_by TEXT,
+    FOREIGN KEY (session_id) REFERENCES exam_sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY (license_id) REFERENCES institution_licenses(id),
+    FOREIGN KEY (teacher_ref_id) REFERENCES teachers(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS "idx_session_sheets_session" ON "session_sheets" ("session_id");
+CREATE INDEX IF NOT EXISTS "idx_session_sheets_token" ON "session_sheets" ("token");
+CREATE INDEX IF NOT EXISTS "idx_session_sheets_teacher" ON "session_sheets" ("teacher_ref_id");
+
+CREATE TABLE IF NOT EXISTS "session_sheet_students" (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sheet_id INTEGER NOT NULL,
+    student_id INTEGER NOT NULL,
+    full_name TEXT NOT NULL,
+    edebo_code TEXT,
+    work_topic TEXT,
+    position INTEGER NOT NULL DEFAULT 0,
+    points_mid INTEGER,
+    points_current INTEGER,
+    points_exam INTEGER,
+    points INTEGER,
+    national_grade TEXT,
+    ects TEXT,
+    teacher_sign TEXT,
+    UNIQUE (sheet_id, student_id),
+    FOREIGN KEY (sheet_id) REFERENCES session_sheets(id) ON DELETE CASCADE,
+    FOREIGN KEY (student_id) REFERENCES students(id)
+);
+CREATE INDEX IF NOT EXISTS "idx_sheet_students_sheet" ON "session_sheet_students" ("sheet_id");
+
+CREATE TABLE IF NOT EXISTS "exam_session_history" (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type     TEXT NOT NULL,
+    entity_id       INTEGER NOT NULL,
+    session_id      INTEGER,
+    sheet_id        INTEGER,
+    action          TEXT NOT NULL,
+    field_name      TEXT,
+    old_value       TEXT,
+    new_value       TEXT,
+    details         TEXT,
+    changed_at      TEXT DEFAULT (datetime('now','localtime')),
+    changed_by      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "idx_exam_sess_hist_session"
+    ON "exam_session_history" ("session_id", "id" DESC);
+CREATE INDEX IF NOT EXISTS "idx_exam_sess_hist_entity"
+    ON "exam_session_history" ("entity_type", "entity_id", "id" DESC);
+
+-- ─── Єдина модель наказів ───
 CREATE TABLE IF NOT EXISTS "orders" (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     order_type   TEXT NOT NULL,
@@ -653,11 +800,9 @@ CREATE TABLE IF NOT EXISTS "order_items" (
 CREATE INDEX IF NOT EXISTS "idx_order_items_entity"
     ON "order_items" ("entity_type", "entity_id");
 CREATE INDEX IF NOT EXISTS "idx_order_items_order"
-    ON "order_items" ("order_id");    
+    ON "order_items" ("order_id");
 
 """)
-
-
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -677,11 +822,14 @@ def _add_column_if_missing(table, column, coltype):
 
 
 # Legacy-таблиці відрахування більше не використовуються (модель orders).
+# Також прибираємо legacy-таблиці сесійних пакетів (v1: session_sheet_batches).
 for _t in (
     'expulsion_order_students', 'expulsion_orders',
     'course_transfer_order_groups', 'course_transfer_orders',
     # переведення між ліцензіями тепер пише в orders/order_items
     'license_transfer_order_students', 'license_transfer_orders',
+    # старі пакети відомостей (v1) — замінені на картотеку викладачів
+    'session_sheet_batches', 'session_sheet_batch_items',
 ):
     row = cur.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_t,)
@@ -693,25 +841,6 @@ for _t in (
 
 print("── Міграція схеми ──")
 
-# ── user_specialties / user_degree_levels ──
-# Створюються на льоту з routes/user_scope.py, але фіксуємо в схемі.
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS user_specialties (
-        user_id INTEGER NOT NULL,
-        specialty_code TEXT NOT NULL,
-        PRIMARY KEY (user_id, specialty_code),
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-""")
-cur.execute("""
-    CREATE TABLE IF NOT EXISTS user_degree_levels (
-        user_id INTEGER NOT NULL,
-        degree_level TEXT NOT NULL,
-        PRIMARY KEY (user_id, degree_level),
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    )
-""")
-
 # students
 _add_column_if_missing('students', 'gender', "TEXT CHECK(gender IN ('M', 'F'))")
 _add_column_if_missing('students', 'address_of_residence', 'TEXT')
@@ -721,10 +850,8 @@ _add_column_if_missing('students', 'dismissed_at', 'TEXT')
 _add_column_if_missing('student_study_periods', 'group_id', 'INTEGER REFERENCES groups(id)')
 cur.execute("CREATE INDEX IF NOT EXISTS idx_study_periods_group ON student_study_periods(group_id)")
 
-# student_enrollments — ЄДЕБО на рівні навчання
+# student_enrollments — ЄДЕБО та кредити на рівні навчання
 _add_column_if_missing('student_enrollments', 'edebo_code', 'TEXT')
-
-# student_enrollments — кредити скороченої програми на рівні навчання
 _add_column_if_missing('student_enrollments', 'program_credits_override', 'INTEGER')
 
 # Одноразова міграція: students.program_credits_override → primary enrollment
@@ -753,8 +880,6 @@ _add_column_if_missing('student_enrollments', 'correction_by', 'TEXT')
 _add_column_if_missing('student_enrollments', 'correction_at', 'TEXT')
 
 # Одноразовий backfill: старий edebo_code з students → у primary enrollment.
-# Робимо ЛИШЕ якщо в enrollment ще порожньо, і тільки для primary
-# (щоб у паралельного студента не «затекло» одне значення у всі групи).
 cur.execute("""
     UPDATE student_enrollments
     SET edebo_code = (
@@ -774,8 +899,7 @@ if cur.rowcount:
     print(f"➕ student_enrollments.edebo_code: перенесено з students для {cur.rowcount} primary-записів")
 
 # Одноразове заповнення: старі періоди (без group_id) прив'язуємо до
-# ОСНОВНОЇ групи студента на момент міграції — далі студент зможе
-# змінити це вручну в картці студента.
+# ОСНОВНОЇ групи студента на момент міграції.
 cur.execute("""
     UPDATE student_study_periods
     SET group_id = (SELECT s.group_id FROM students s WHERE s.id = student_study_periods.student_id)
@@ -789,13 +913,12 @@ cur.execute("""
 if cur.rowcount:
     print(f"➕ study_periods: прив'язано до групи {cur.rowcount} записів")
 
-# diplomas — ключ тепер (student_id, group_id), а не просто student_id
+# diplomas — ключ тепер (student_id, group_id)
 _add_column_if_missing('diplomas', 'group_id', 'INTEGER')
-
-# education_documents — документ про освіту для конкретної групи
-# (напр. для бакалаврату — шкільний атестат, для магістратури — диплом бакалавра)
 _add_column_if_missing('education_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
 cur.execute("CREATE INDEX IF NOT EXISTS idx_education_documents_group ON education_documents(group_id)")
+_add_column_if_missing('passport_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
+cur.execute("CREATE INDEX IF NOT EXISTS idx_passport_documents_group ON passport_documents(group_id)")
 
 # Backfill: старі документи про освіту → до ОСНОВНОЇ групи студента
 cur.execute("""
@@ -807,11 +930,6 @@ cur.execute("""
 if cur.rowcount:
     print(f"➕ education_documents: прив'язано до групи {cur.rowcount} записів")
 
-# passport_documents — прив'язка паспорта до конкретного enrollment'а
-_add_column_if_missing('passport_documents', 'group_id', 'INTEGER REFERENCES groups(id)')
-cur.execute("CREATE INDEX IF NOT EXISTS idx_passport_documents_group ON passport_documents(group_id)")
-
-# Backfill: старі паспорти → до ОСНОВНОЇ групи студента
 cur.execute("""
     UPDATE passport_documents
     SET group_id = (SELECT s.group_id FROM students s WHERE s.id = passport_documents.student_id)
@@ -846,41 +964,36 @@ for _col, _type in [
     ('data_update_date', 'TEXT'),
     ('note_18', 'TEXT'),
     ('mobilized_date', 'TEXT'),
+    ('dodatok4_sent_at', 'TEXT'),
+    ('dodatok4_fingerprint', 'TEXT'),
+    ('dodatok4_snapshot', 'TEXT'),
 ]:
     _add_column_if_missing('military', _col, _type)
-    
+
 # pending_students — нові поля «Резерв+» (Постанова №916/№812).
-# Раніше публічна анкета /apply збирала лише 8 legacy-полів
-# (military_registration_number_drpvr тощо), а решта 20+ полів
-# військового обліку при ручному заповненні губилась. Тепер
-# pending_students може зберігати ВЕСЬ набір полів military, і при
-# підтвердженні заявки вони переносяться в military 1-в-1.
-_add_column_if_missing('pending_students', 'military_status_badge', 'TEXT')
-_add_column_if_missing('pending_students', 'military_valid_until', 'TEXT')
-_add_column_if_missing('pending_students', 'military_registration_category', 'TEXT')
-_add_column_if_missing('pending_students', 'military_removal_basis', 'TEXT')
-_add_column_if_missing('pending_students', 'military_tck_name', 'TEXT')
-_add_column_if_missing('pending_students', 'military_registry_number', 'TEXT')
-_add_column_if_missing('pending_students', 'military_vos_code', 'TEXT')
-_add_column_if_missing('pending_students', 'military_vos_description', 'TEXT')
-_add_column_if_missing('pending_students', 'military_deferral_type', 'TEXT')
-_add_column_if_missing('pending_students', 'military_deferral_until', 'TEXT')
-_add_column_if_missing('pending_students', 'military_police_reason', 'TEXT')
-_add_column_if_missing('pending_students', 'military_police_date', 'TEXT')
-_add_column_if_missing('pending_students', 'military_vlk_decision', 'TEXT')
-_add_column_if_missing('pending_students', 'military_vlk_date', 'TEXT')
-_add_column_if_missing('pending_students', 'military_disability_group', 'TEXT')
-_add_column_if_missing('pending_students', 'military_disability_valid_until', 'TEXT')
-_add_column_if_missing('pending_students', 'military_disability_reason', 'TEXT')
-_add_column_if_missing('pending_students', 'military_formed_at', 'TEXT')
-_add_column_if_missing('pending_students', 'military_data_verified_on_time', 'INTEGER DEFAULT 0')
-_add_column_if_missing('pending_students', 'military_data_update_date', 'TEXT')
-# Додаток 4 (military_reports): відбиток і дата генерації.
-# Код створює їх на льоту через _ensure_dodatok4_columns(),
-# але для консистентності схеми — теж тут.
-_add_column_if_missing('military', 'dodatok4_sent_at',      'TEXT')
-_add_column_if_missing('military', 'dodatok4_fingerprint',  'TEXT')
-_add_column_if_missing('military', 'dodatok4_snapshot',     'TEXT')
+for _col, _type in [
+    ('military_status_badge', 'TEXT'),
+    ('military_valid_until', 'TEXT'),
+    ('military_registration_category', 'TEXT'),
+    ('military_removal_basis', 'TEXT'),
+    ('military_tck_name', 'TEXT'),
+    ('military_registry_number', 'TEXT'),
+    ('military_vos_code', 'TEXT'),
+    ('military_vos_description', 'TEXT'),
+    ('military_deferral_type', 'TEXT'),
+    ('military_deferral_until', 'TEXT'),
+    ('military_police_reason', 'TEXT'),
+    ('military_police_date', 'TEXT'),
+    ('military_vlk_decision', 'TEXT'),
+    ('military_vlk_date', 'TEXT'),
+    ('military_disability_group', 'TEXT'),
+    ('military_disability_valid_until', 'TEXT'),
+    ('military_disability_reason', 'TEXT'),
+    ('military_formed_at', 'TEXT'),
+    ('military_data_verified_on_time', 'INTEGER DEFAULT 0'),
+    ('military_data_update_date', 'TEXT'),
+]:
+    _add_column_if_missing('pending_students', _col, _type)
 
 # institution_licenses
 _add_column_if_missing('institution_licenses', 'is_base', 'INTEGER NOT NULL DEFAULT 0')
@@ -888,13 +1001,114 @@ _add_column_if_missing('institution_licenses', 'is_base', 'INTEGER NOT NULL DEFA
 # degree_levels
 _add_column_if_missing('degree_levels', 'name_suffix', 'TEXT')
 
-# Історичні колонки (для сумісності з попередніми версіями)
+# Історичні колонки
 _add_column_if_missing('update_requests', 'applied_fields', 'TEXT')
 _add_column_if_missing('specialties', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('specialties', 'isced_f_en', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_ua', 'TEXT')
 _add_column_if_missing('groups', 'isced_f_en', 'TEXT')
 
+# ── user_specialties / user_degree_levels / user_knowledge_areas ──
+# (у секції 1 уже створюються; тут для сумісності зі старими БД)
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_specialties (
+        user_id INTEGER NOT NULL,
+        specialty_code TEXT NOT NULL,
+        PRIMARY KEY (user_id, specialty_code),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+""")
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS user_degree_levels (
+        user_id INTEGER NOT NULL,
+        degree_level TEXT NOT NULL,
+        PRIMARY KEY (user_id, degree_level),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+""")
+
+# ── Сесійні відомості: додаємо нові колонки, якщо БД стара ──
+# (у секції 1 уже створюються з усіма колонками; тут — для сумісності)
+_add_column_if_missing('session_sheets', 'work_topic', 'TEXT')
+_add_column_if_missing('session_sheets', 'teacher_ref_id', 'INTEGER REFERENCES teachers(id)')
+_add_column_if_missing('session_sheet_students', 'work_topic', 'TEXT')
+_add_column_if_missing('session_sheet_students', 'points_mid', 'INTEGER')
+_add_column_if_missing('session_sheet_students', 'points_current', 'INTEGER')
+_add_column_if_missing('session_sheet_students', 'points_exam', 'INTEGER')
+
+# Пересборка session_sheets, якщо CHECK не містить 'in_progress'
+_sql_row = cur.execute(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='session_sheets'"
+).fetchone()
+if _sql_row and "'in_progress'" not in (_sql_row[0] or ''):
+    print("🔁 session_sheets: додаю статус in_progress — перезбираю таблицю")
+    cur.execute('DROP TABLE IF EXISTS "session_sheets_new"')
+    conn.commit()
+    cur.execute("PRAGMA foreign_keys = OFF")
+    try:
+        cur.executescript("""
+            CREATE TABLE "session_sheets_new" (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                discipline_name TEXT NOT NULL,
+                work_topic TEXT,
+                entity_kind TEXT NOT NULL DEFAULT 'subject'
+                    CHECK (entity_kind IN ('subject','practice','coursework','attestation')),
+                control_form TEXT NOT NULL DEFAULT 'Залік'
+                    CHECK (control_form IN ('Залік','Екзамен')),
+                hours_credits TEXT,
+                teacher_name TEXT,
+                teacher_ref_id INTEGER REFERENCES teachers(id),
+                exam_date TEXT,
+                statement_number TEXT,
+                license_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft','sent','in_progress','submitted','approved','locked')),
+                token TEXT UNIQUE,
+                token_expires_at TEXT,
+                linked_entity_type TEXT
+                    CHECK (linked_entity_type IS NULL OR linked_entity_type IN
+                           ('subject','practice','coursework','attestation')),
+                linked_entity_id INTEGER,
+                linked_at TEXT,
+                linked_by TEXT,
+                created_by TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime')),
+                submitted_at TEXT,
+                approved_at TEXT,
+                approved_by TEXT,
+                FOREIGN KEY (session_id) REFERENCES exam_sessions(id) ON DELETE CASCADE,
+                FOREIGN KEY (license_id) REFERENCES institution_licenses(id)
+            );
+            INSERT INTO session_sheets_new
+                (id, session_id, discipline_name, work_topic, entity_kind,
+                 control_form, hours_credits, teacher_name, teacher_ref_id,
+                 exam_date, statement_number, license_id, status,
+                 token, token_expires_at,
+                 linked_entity_type, linked_entity_id, linked_at, linked_by,
+                 created_by, created_at, submitted_at, approved_at, approved_by)
+            SELECT
+                id, session_id, discipline_name, work_topic, entity_kind,
+                control_form, hours_credits, teacher_name, teacher_ref_id,
+                exam_date, statement_number, license_id, status,
+                token, token_expires_at,
+                linked_entity_type, linked_entity_id, linked_at, linked_by,
+                created_by, created_at, submitted_at, approved_at, approved_by
+            FROM session_sheets;
+            DROP TABLE session_sheets;
+            ALTER TABLE session_sheets_new RENAME TO session_sheets;
+            CREATE INDEX IF NOT EXISTS idx_session_sheets_session ON session_sheets(session_id);
+            CREATE INDEX IF NOT EXISTS idx_session_sheets_token ON session_sheets(token);
+            CREATE INDEX IF NOT EXISTS idx_session_sheets_teacher ON session_sheets(teacher_ref_id);
+        """)
+        conn.commit()
+        print(f"   ✅ session_sheets перезбудовано")
+    finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        cur.execute("PRAGMA foreign_keys = ON")
 
 # ── groups.study_form: додати 'Дистанційна' до CHECK ──
 _groups_sql_row = cur.execute(
@@ -903,7 +1117,6 @@ _groups_sql_row = cur.execute(
 if _groups_sql_row and "'Дистанційна'" not in (_groups_sql_row[0] or ''):
     print("🔁 groups: розширюю CHECK для study_form (перезбір таблиці)")
 
-    # На випадок, якщо попередній запуск упав на середині — прибрати недобудовану таблицю.
     cur.execute('DROP TABLE IF EXISTS "groups_new"')
 
     # 1. Гарантуємо, що всі NOT NULL-колонки існують і що в них немає NULL.
@@ -956,10 +1169,7 @@ if _groups_sql_row and "'Дистанційна'" not in (_groups_sql_row[0] or 
     for _col, _coltype in _other_cols:
         _add_column_if_missing('groups', _col, _coltype)
 
-    # 3. Явний порядок колонок для INSERT ... SELECT (не SELECT *!).
-    #    Якщо використати зірочку, при різному порядку колонок у старій
-    #    таблиці (через ALTER ADD COLUMN) дані тихо потраплять не в ті
-    #    колонки нової таблиці.
+    # 3. Явний порядок колонок для INSERT ... SELECT.
     _all_cols_ordered = [
         'id', 'name', 'start_year', 'study_form', 'program_credits',
         'degree_level', 'degree_level_en', 'knowledge_area', 'knowledge_area_en',
@@ -978,7 +1188,7 @@ if _groups_sql_row and "'Дистанційна'" not in (_groups_sql_row[0] or 
     _existing = {row[1] for row in cur.execute('PRAGMA table_info("groups")')}
     _cols_csv = ', '.join(f'"{c}"' for c in _all_cols_ordered if c in _existing)
 
-    # 4. Пересборка. PRAGMA foreign_keys = OFF — обов'язково ПОЗА транзакцією.
+    # 4. Пересборка.
     conn.commit()
     cur.execute("PRAGMA foreign_keys = OFF")
     try:
@@ -1036,15 +1246,6 @@ if _groups_sql_row and "'Дистанційна'" not in (_groups_sql_row[0] or 
         cur.execute("PRAGMA foreign_keys = ON")
 
 # ── student_enrollments: видалити дублікати пар (student_id, group_id) ──
-# Якщо БД створювалась старою версією CREATE TABLE — UNIQUE-констрейнту
-# не було, і в таблиці могли накопичитись дублікати. Один такий
-# дублікат ламає картку студента (groups_data містить ту саму групу
-# двічі → шаблон рендерить 2 таби + повторює оцінки/документи/періоди).
-#
-# Залишаємо одну запис на пару, з пріоритетом:
-#   1) status='active'
-#   2) is_primary=1
-#   3) найбільший id (найсвіжіша)
 _dup_count = cur.execute("""
     SELECT COUNT(*) FROM (
         SELECT student_id, group_id
@@ -1055,14 +1256,9 @@ _dup_count = cur.execute("""
 """).fetchone()[0]
 
 # ── diplomas: прибрати legacy UNIQUE(student_id) ──
-# Раніше був "student_id INTEGER NOT NULL UNIQUE" (один диплом на студента),
-# але з впровадженням паралельного навчання ключ став (student_id, group_id).
-# SQLite не вміє DROP CONSTRAINT — перезбираємо таблицю.
 _has_legacy_unique = False
 try:
     for _idx in cur.execute('PRAGMA index_list("diplomas")').fetchall():
-        # PRAGMA index_list → (seq, name, unique, origin, partial)
-        # origin='u' означає "auto-index від UNIQUE-констрейнту в CREATE TABLE"
         if len(_idx) >= 4 and _idx[2] == 1 and _idx[3] == 'u':
             _idx_cols = [c[2] for c in cur.execute(f'PRAGMA index_info("{_idx[1]}")').fetchall()]
             if _idx_cols == ['student_id']:
@@ -1104,8 +1300,6 @@ if _has_legacy_unique:
             pass
         cur.execute("PRAGMA foreign_keys = ON")
 
-# Після перезбору — UNIQUE-індекс на пару (student_id, group_id).
-# Partial (WHERE group_id IS NOT NULL), щоб legacy-записи без групи не блокувалися.
 cur.execute("""
     CREATE UNIQUE INDEX IF NOT EXISTS idx_diplomas_student_group_unique
     ON diplomas(student_id, group_id)
@@ -1139,9 +1333,6 @@ if _dup_count:
     """)
     print(f"   видалено зайвих записів: {_dup_count}")
 
-# Після чистки — UNIQUE INDEX, який унеможливить нові дублікати.
-# Синтаксис partial — не заважає старим SQLite, які ігнорують
-# ON CONFLICT без явного рівня; тут достатньо звичайного UNIQUE.
 try:
     cur.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_enrollments_unique_student_group
@@ -1150,6 +1341,52 @@ try:
 except sqlite3.IntegrityError as e:
     print(f"⚠️ Не вдалося створити UNIQUE INDEX на student_enrollments: {e}")
 
+# UNIQUE-індекс на паспорти: (студент, група, тип, серія, номер).
+_dup_passports = cur.execute("""
+    SELECT COUNT(*) FROM (
+        SELECT student_id, COALESCE(group_id, -1) AS grp, document_type,
+               COALESCE(series, '') AS ser, number
+        FROM passport_documents
+        GROUP BY student_id, COALESCE(group_id, -1), document_type,
+                 COALESCE(series, ''), number
+        HAVING COUNT(*) > 1
+    )
+""").fetchone()[0]
+
+if _dup_passports:
+    print(f"⚠️ passport_documents: знайдено {_dup_passports} дублікатів — чистка перед створенням UNIQUE INDEX")
+    cur.execute("""
+        DELETE FROM passport_documents
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM passport_documents
+            GROUP BY student_id, COALESCE(group_id, -1),
+                     document_type, COALESCE(series, ''), number
+        )
+    """)
+    print(f"   видалено записів: {cur.rowcount}")
+
+try:
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_passport_unique_per_group
+        ON passport_documents (
+            student_id,
+            COALESCE(group_id, -1),
+            document_type,
+            COALESCE(series, ''),
+            number
+        )
+    """)
+    print("✅ idx_passport_unique_per_group створено")
+except sqlite3.IntegrityError as e:
+    print(f"⚠️ Не вдалося створити UNIQUE INDEX на passport_documents: {e}")
+
+_orphan = cur.execute(
+    "SELECT COUNT(*) FROM diplomas WHERE group_id IS NULL"
+).fetchone()[0]
+if _orphan:
+    print(f"⚠️ diplomas: {_orphan} записів без group_id "
+          f"(студенти без групи) — вони не будуть показані в manage_diplomas "
+          f"і не використовуватимуться при генерації документів")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1473,11 +1710,8 @@ def detect_gender_from_middle_name(middle_name):
     if m.endswith(('івна', 'ївна', 'овна', 'евна', 'євна', 'ична')):
         return 'F'
     return 'M'
-    
+
 # ── 4.5. diplomas: перенос ключа з (student_id) на (student_id, group_id) ──
-# Для існуючих записів, де group_id порожнє, заповнюємо його основною
-# групою студента (це відповідає старій поведінці: «один номер на
-# студента» → «номер для primary-групи»).
 cur.execute("""
     UPDATE diplomas
     SET group_id = (
@@ -1492,66 +1726,11 @@ cur.execute("""
 if cur.rowcount:
     print(f"➕ diplomas: підтягнуто group_id для {cur.rowcount} записів")
 
-# Тепер, коли всі існуючі записи мають group_id, можна створити
-# UNIQUE INDEX. Він не заважатиме legacy-записам без group_id
-# (напр. студент без групи) — partial index WHERE group_id IS NOT NULL.
 cur.execute("""
     CREATE UNIQUE INDEX IF NOT EXISTS idx_diplomas_student_group_unique
     ON diplomas(student_id, group_id)
     WHERE group_id IS NOT NULL
 """)
-
-# UNIQUE-індекс на паспорти: (студент, група, тип, серія, номер).
-# Перед створенням — підчищаємо залишкові дублікати (idempotentno:
-# на чистій БД видаляти нічого, на вже почищеній — теж).
-_dup_passports = cur.execute("""
-    SELECT COUNT(*) FROM (
-        SELECT student_id, COALESCE(group_id, -1) AS grp, document_type,
-               COALESCE(series, '') AS ser, number
-        FROM passport_documents
-        GROUP BY student_id, COALESCE(group_id, -1), document_type,
-                 COALESCE(series, ''), number
-        HAVING COUNT(*) > 1
-    )
-""").fetchone()[0]
-
-if _dup_passports:
-    print(f"⚠️ passport_documents: знайдено {_dup_passports} дублікатів — чистка перед створенням UNIQUE INDEX")
-    cur.execute("""
-        DELETE FROM passport_documents
-        WHERE id NOT IN (
-            SELECT MIN(id) FROM passport_documents
-            GROUP BY student_id, COALESCE(group_id, -1),
-                     document_type, COALESCE(series, ''), number
-        )
-    """)
-    print(f"   видалено записів: {cur.rowcount}")
-
-try:
-    cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_passport_unique_per_group
-        ON passport_documents (
-            student_id,
-            COALESCE(group_id, -1),
-            document_type,
-            COALESCE(series, ''),
-            number
-        )
-    """)
-    print("✅ idx_passport_unique_per_group створено")
-except sqlite3.IntegrityError as e:
-    print(f"⚠️ Не вдалося створити UNIQUE INDEX на passport_documents: {e}")
-
-# Перевірка: скільки записів залишилось без group_id (зазвичай це
-# студенти без групи — архівні, заморожені, без enrollment'ів).
-_orphan = cur.execute(
-    "SELECT COUNT(*) FROM diplomas WHERE group_id IS NULL"
-).fetchone()[0]
-if _orphan:
-    print(f"⚠️ diplomas: {_orphan} записів без group_id "
-          f"(студенти без групи) — вони не будуть показані в manage_diplomas "
-          f"і не використовуватимуться при генерації документів")
-
 
 rows = cur.execute(
     "SELECT id, middle_name_UA FROM students WHERE gender IS NULL"
@@ -1586,6 +1765,7 @@ print('  sqlite3 students.db ".schema degree_levels"                (має бу
 print('  sqlite3 students.db "SELECT name_ua, name_suffix FROM degree_levels"')
 print('  sqlite3 students.db "SELECT COUNT(*) FROM specialties"     (має бути ~90)')
 print('  sqlite3 students.db "SELECT COUNT(*) FROM tck_offices"     (має бути 66-67)')
+print('  sqlite3 students.db "SELECT name FROM sqlite_master WHERE type=\'table\'"  (має бути ~40 таблиць, включно з teachers/exam_sessions)')
 print()
 print("⚠️  Якщо користувач 'admin' щойно створений — стандартний пароль")
 print("    'admin123'. Змініть його одразу після першого входу через")
