@@ -1,0 +1,426 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевірка імпорту паспортів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+
+<style>
+    .passport-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .75rem;
+        margin-bottom: 1.25rem;
+    }
+    .passport-stats__item {
+        background: var(--paper-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .55rem 1rem;
+        font-size: .9rem;
+    }
+    .passport-stats__value { font-weight: 800; margin-left: .3rem; }
+
+    .passport-row {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        background: var(--paper-2);
+        overflow: hidden;
+    }
+    .passport-row--error {
+        background: var(--stamp-soft);
+        border-color: var(--stamp-semi);
+    }
+    .passport-row--skip {
+        background: var(--paper);
+        border-color: var(--line);
+        opacity: .85;
+    }
+    .passport-row__header {
+        padding: .85rem 1.1rem;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+    .passport-row__title { font-weight: 700; font-size: 1rem; }
+    .passport-row__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .22rem .65rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+    .passport-row__badge--new    { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
+    .passport-row__badge--skip   { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+    .passport-row__badge--error  { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    .passport-row__badge--choice { background: rgba(200,162,74,.18); color: #8a6a1a; border-color: var(--brass-semi); }
+    html[data-theme="dark"] .passport-row__badge--new    { background: rgba(79,122,82,.25); color: #bfe3c2; }
+    html[data-theme="dark"] .passport-row__badge--choice { color: var(--brass-lt); }
+
+    .passport-row__body {
+        padding: 1rem 1.1rem;
+    }
+
+    .passport-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: .5rem .9rem;
+        margin-bottom: .9rem;
+    }
+    .passport-info-item__label {
+        font-size: .72rem;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--muted);
+        font-weight: 700;
+        margin-bottom: .1rem;
+    }
+    .passport-info-item__value {
+        font-size: .9rem;
+        color: var(--ink-text);
+        word-break: break-word;
+    }
+    .passport-info-item__value.mono {
+        font-family: 'JetBrains Mono', monospace;
+    }
+
+    .target-group-block {
+        margin-top: .9rem;
+        padding: .75rem .9rem;
+        background: rgba(200,162,74,.10);
+        border: 1px dashed var(--brass-semi);
+        border-radius: 8px;
+        font-size: .88rem;
+    }
+    .target-group-block--warning {
+        background: rgba(200,162,74,.14);
+        border-style: solid;
+    }
+    .target-group-block__hint {
+        color: #8a6a1a;
+        font-weight: 700;
+        margin-bottom: .45rem;
+    }
+    html[data-theme="dark"] .target-group-block__hint { color: var(--brass-lt); }
+    .target-group-block__opts {
+        display: flex;
+        flex-direction: column;
+        gap: .25rem;
+    }
+    .target-group-block__opt {
+        display: flex;
+        align-items: center;
+        gap: .45rem;
+        cursor: pointer;
+    }
+
+    .passport-warning {
+        margin-top: .7rem;
+        padding: .55rem .8rem;
+        background: var(--brass-soft);
+        border: 1px solid var(--brass-semi);
+        border-radius: 8px;
+        font-size: .85rem;
+        color: #8a6a1a;
+    }
+    .passport-warning .bi { margin-right: .35rem; }
+    html[data-theme="dark"] .passport-warning { color: var(--brass-lt); }
+
+    .passport-error {
+        color: var(--stamp);
+        font-size: .9rem;
+    }
+
+    .apply-checkbox-wrap {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        font-size: .9rem;
+        font-weight: 600;
+        color: var(--ink-text);
+    }
+</style>
+
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('admin.import_passport_documents') }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Завантажити інший файл
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-person-vcard',
+        'Перевірка імпорту паспортів',
+        'Файл: ' ~ filename
+    ) }}
+
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        <strong>Нічого ще не записано в базу.</strong>
+        Позначте галочками, що додавати. Рядки з паралельним навчанням (у студента &gt;1 активних груп)
+        потребують <strong>обов'язкового вибору групи</strong> — без нього рядок буде пропущено.
+    </div>
+
+    <div class="passport-stats">
+        <div class="passport-stats__item">
+            <i class="bi bi-plus-circle-fill" style="color: #3f7556;"></i>
+            Нових записів:<span class="passport-stats__value">{{ stats.new }}</span>
+        </div>
+        <div class="passport-stats__item">
+            <i class="bi bi-exclamation-triangle-fill" style="color: #8a6a1a;"></i>
+            Потребують вибору групи:<span class="passport-stats__value">{{ stats.needs_choice }}</span>
+        </div>
+        <div class="passport-stats__item">
+            <i class="bi bi-skip-forward-fill" style="color: var(--muted);"></i>
+            Буде пропущено (дублікати):<span class="passport-stats__value">{{ stats.skip }}</span>
+        </div>
+        <div class="passport-stats__item">
+            <i class="bi bi-x-circle-fill" style="color: var(--stamp);"></i>
+            Помилок:<span class="passport-stats__value">{{ stats.errors }}</span>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">
+            <i class="bi bi-check-square me-1"></i> Обрати все
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">
+            <i class="bi bi-square me-1"></i> Зняти все
+        </button>
+    </div>
+
+    <form method="POST"
+          action="{{ url_for('admin.import_passport_commit', token=token) }}"
+          id="passportForm">
+
+        {% for item in preview %}
+        {% set row = item.row %}
+        {% set status = item.status %}
+
+        {# ═══ Помилка ═══ #}
+        {% if status == 'error' %}
+        <div class="passport-row passport-row--error">
+            <div class="passport-row__header">
+                <div>
+                    <span class="passport-row__title">Рядок {{ row }}:</span>
+                    {{ item.fio_excel or '—' }}
+                </div>
+                <span class="passport-row__badge passport-row__badge--error">
+                    <i class="bi bi-x-circle"></i> Пропущено
+                </span>
+            </div>
+            <div class="passport-row__body passport-error">
+                {{ item.error }}
+            </div>
+        </div>
+
+        {# ═══ Пропуск (дублікат) ═══ #}
+        {% elif status == 'skip' %}
+        <div class="passport-row passport-row--skip">
+            <div class="passport-row__header">
+                <div>
+                    <span class="passport-row__title">Рядок {{ row }}:</span>
+                    {{ item.fio_excel or '—' }}
+                    {% if item.student_id %}
+                    <span class="text-muted small">→ {{ item.student_name }} (ID {{ item.student_id }})</span>
+                    {% endif %}
+                </div>
+                <span class="passport-row__badge passport-row__badge--skip">
+                    <i class="bi bi-skip-forward"></i> Буде пропущено
+                </span>
+            </div>
+            <div class="passport-row__body">
+                <div class="passport-error" style="color: var(--muted);">
+                    <i class="bi bi-info-circle me-1"></i>{{ item.warning }}
+                </div>
+            </div>
+        </div>
+
+        {# ═══ Новий запис ═══ #}
+        {% else %}
+        <div class="passport-row">
+            <div class="passport-row__header">
+                <div>
+                    <span class="passport-row__title">Рядок {{ row }}:</span>
+                    {{ item.fio_excel or '—' }}
+                    {% if item.student_name and item.student_name != item.fio_excel %}
+                    <span class="text-muted small">→ {{ item.student_name }} (ID {{ item.student_id }})</span>
+                    {% elif item.student_id %}
+                    <span class="text-muted small">(ID {{ item.student_id }})</span>
+                    {% endif %}
+                </div>
+                <div class="d-flex flex-wrap gap-1">
+                    {% if item.needs_choice %}
+                    <span class="passport-row__badge passport-row__badge--choice">
+                        <i class="bi bi-exclamation-triangle"></i> Оберіть групу
+                    </span>
+                    {% endif %}
+                    <span class="passport-row__badge passport-row__badge--new">
+                        <i class="bi bi-plus-circle"></i> Новий запис
+                    </span>
+                </div>
+            </div>
+            <div class="passport-row__body">
+
+                <div class="passport-info-grid">
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Тип документа</div>
+                        <div class="passport-info-item__value">{{ item.document_type }}</div>
+                    </div>
+                    {% if item.series %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Серія</div>
+                        <div class="passport-info-item__value mono">{{ item.series }}</div>
+                    </div>
+                    {% endif %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Номер</div>
+                        <div class="passport-info-item__value mono">{{ item.number }}</div>
+                    </div>
+                    {% if item.issued_by %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Ким видано</div>
+                        <div class="passport-info-item__value">{{ item.issued_by }}</div>
+                    </div>
+                    {% endif %}
+                    {% if item.issue_date %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Дата видачі</div>
+                        <div class="passport-info-item__value mono">{{ item.issue_date }}</div>
+                    </div>
+                    {% endif %}
+                    {% if item.valid_until %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Дійсний до</div>
+                        <div class="passport-info-item__value mono">{{ item.valid_until }}</div>
+                    </div>
+                    {% endif %}
+                    {% if item.unique_number %}
+                    <div class="passport-info-item">
+                        <div class="passport-info-item__label">Запис у ЄДДР</div>
+                        <div class="passport-info-item__value mono">{{ item.unique_number }}</div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {# ── Вибір групи (якщо паралельне навчання) ── #}
+                {% if item.needs_choice %}
+                <div class="target-group-block target-group-block--warning">
+                    <div class="target-group-block__hint">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                        У студента {{ item.groups_available|length }} активних груп —
+                        оберіть, до якої прив'язати паспорт:
+                    </div>
+                    <div class="target-group-block__opts">
+                        {% for g in item.groups_available %}
+                        <label class="target-group-block__opt">
+                            <input type="radio"
+                                   name="target_group_{{ row }}"
+                                   value="{{ g.group_id }}">
+                            {{ g.group_name }}
+                            {% if g.is_primary %}
+                            <span class="badge bg-primary-subtle text-primary-emphasis ms-1">основна</span>
+                            {% endif %}
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% elif item.target_group_id %}
+                <div class="target-group-block">
+                    <i class="bi bi-arrow-return-right me-1"></i>
+                    Буде прив'язано до групи
+                    {% for g in item.groups_available %}
+                    {% if g.group_id == item.target_group_id %}
+                    <strong>{{ g.group_name }}</strong>
+                    {% if g.is_primary %}<span class="badge bg-primary-subtle text-primary-emphasis ms-1">основна</span>{% endif %}
+                    {% endif %}
+                    {% endfor %}
+                    {% if item.target_reason == 'legacy_primary' %}
+                    <span class="text-muted small">(основна група за карткою)</span>
+                    {% endif %}
+                </div>
+                {% else %}
+                <div class="target-group-block" style="background: var(--stamp-soft); border-color: var(--stamp-semi);">
+                    <i class="bi bi-exclamation-triangle-fill me-1" style="color: var(--stamp);"></i>
+                    <span style="color: var(--stamp);">
+                        У студента немає активної групи — паспорт буде збережено без прив'язки до групи.
+                    </span>
+                </div>
+                {% endif %}
+
+                {# ── Попередження ── #}
+                {% if item.warning %}
+                <div class="passport-warning">
+                    <i class="bi bi-info-circle-fill"></i>{{ item.warning }}
+                </div>
+                {% endif %}
+
+                {# ── Чекбокс "додати" ── #}
+                <div class="mt-3">
+                    <label class="apply-checkbox-wrap">
+                        <input type="checkbox" class="form-check-input js-apply"
+                               name="apply_{{ row }}" value="1" checked>
+                        Додати цей паспорт у базу
+                    </label>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endfor %}
+
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-4 pt-3 border-top">
+            <button type="submit" class="btn btn-primary btn-lg">
+                <i class="bi bi-check-circle me-2"></i>Застосувати вибране
+            </button>
+            <a href="{{ url_for('admin.import_passport_documents') }}"
+               class="btn btn-outline-secondary btn-lg">
+                Скасувати
+            </a>
+            <span class="text-muted small ms-auto">
+                <i class="bi bi-shield-check me-1"></i>
+                Нічого не буде змінено, поки ви не натиснете «Застосувати вибране».
+            </span>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    window.toggleAll = function (state) {
+        document.querySelectorAll('.js-apply').forEach(cb => { cb.checked = state; });
+    };
+
+    document.getElementById('passportForm').addEventListener('submit', function (e) {
+        // Перевірка needs_choice
+        const missing = [];
+        document.querySelectorAll('.target-group-block--warning').forEach(block => {
+            const rowEl = block.closest('.passport-row');
+            const cb = rowEl.querySelector('.js-apply');
+            if (!cb || !cb.checked) return;
+            const radios = block.querySelectorAll('input[type=radio]');
+            if (![...radios].some(r => r.checked)) {
+                const rowNum = rowEl.querySelector('.passport-row__title')?.textContent.trim() || '?';
+                missing.push(rowNum);
+            }
+        });
+
+        if (missing.length) {
+            e.preventDefault();
+            alert('Не обрано групу для рядків:\n\n' + missing.join('\n'));
+            return false;
+        }
+
+        return confirm('Застосувати вибрані паспорти в базу?');
+    });
+});
+</script>
+
+{% endblock %}

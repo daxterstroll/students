@@ -28,8 +28,10 @@ import requests
 from routes.config import DEEPL_API_KEY
 from routes.passport_types import (
     PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
-    normalize_passport_type, passport_template_context,
+    normalize_passport_type, normalize_passport_number,
+    passport_template_context,
 )
+from routes.enrollments_service import ensure_enrollments_table
 
 def _excel_date_to_ua(value):
     """Excel повертає datetime для клітинок з форматом дати.
@@ -745,7 +747,8 @@ def manage_passport_documents():
                         issued_by=?, issue_date=?, valid_until=?, unique_number=?
                     WHERE id=?
                 """, (
-                    student_id, doc_group_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    student_id, doc_group_id, document_type, request.form.get('series') or None,
+                    normalize_passport_number(request.form.get('number'), document_type),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
                     doc_id,
@@ -790,7 +793,8 @@ def manage_passport_documents():
                         student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, doc_group_id, document_type, request.form.get('series') or None, request.form.get('number'),
+                    student_id, doc_group_id, document_type, request.form.get('series') or None,
+                    normalize_passport_number(request.form.get('number'), document_type),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
                 ))
@@ -832,145 +836,539 @@ def manage_passport_documents():
 
 PASSPORT_REPORTS_DIR = os.path.join(os.getcwd(), 'static', 'uploads', 'import_reports')
 
+# Каталог для сесій імпорту паспортів (між кроками)
+PASSPORT_IMPORT_SESSIONS_DIR = os.path.join(
+    os.getcwd(), 'static', 'uploads', 'import_sessions', 'passports'
+)
+PASSPORT_IMPORT_TTL = 6 * 3600  # 6 годин
+
+
+def _cleanup_passport_import_sessions():
+    if not os.path.isdir(PASSPORT_IMPORT_SESSIONS_DIR):
+        return
+    now = time.time()
+    for name in os.listdir(PASSPORT_IMPORT_SESSIONS_DIR):
+        path = os.path.join(PASSPORT_IMPORT_SESSIONS_DIR, name)
+        try:
+            if os.path.isfile(path) and now - os.path.getmtime(path) > PASSPORT_IMPORT_TTL:
+                os.remove(path)
+        except OSError:
+            pass
+
+
+def _passport_state_path(token):
+    token = re.sub(r'[^0-9a-f]', '', token or '')
+    return os.path.join(PASSPORT_IMPORT_SESSIONS_DIR, f'{token}.json')
+
+
+def _save_passport_state(token, state):
+    os.makedirs(PASSPORT_IMPORT_SESSIONS_DIR, exist_ok=True)
+    with open(_passport_state_path(token), 'w', encoding='utf-8') as f:
+        json.dump(state, f, ensure_ascii=False, default=str)
+
+
+def _load_passport_state(token):
+    token = re.sub(r'[^0-9a-f]', '', token or '')
+    if not token:
+        return None
+    path = _passport_state_path(token)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _determine_target_enrollment_for_passport(conn, student_id, group_from_excel):
+    """
+    Визначає цільову групу для паспорта.
+
+    Пріоритет:
+      1. Якщо в колонці I явно вказано group_id — перевіряємо, що це
+         активна група студента (primary або enrollment). Якщо ні —
+         повертаємо reason='excel_group_invalid' (помилка рядка).
+      2. Інакше — активні enrollments студента:
+         - 0 → fallback на students.group_id (legacy)
+         - 1 → цей enrollment
+         - >1 → needs_choice=True, у превью треба обрати вручну
+    """
+    if group_from_excel:
+        ok = conn.execute("""
+            SELECT 1 FROM groups g WHERE g.id = ? AND COALESCE(g.archived, 0) = 0
+              AND (
+                  ? = (SELECT group_id FROM students WHERE id = ?)
+                  OR EXISTS (
+                      SELECT 1 FROM student_enrollments e
+                      WHERE e.student_id = ? AND e.group_id = ?
+                        AND e.status = 'active'
+                  )
+              )
+        """, (group_from_excel, group_from_excel, student_id,
+              student_id, group_from_excel)).fetchone()
+        if not ok:
+            return {
+                'target_group_id': None,
+                'groups_available': [],
+                'needs_choice': False,
+                'reason': 'excel_group_invalid',
+            }
+        return {
+            'target_group_id': int(group_from_excel),
+            'groups_available': [],
+            'needs_choice': False,
+            'reason': 'excel_column',
+        }
+
+    rows = conn.execute("""
+        SELECT e.group_id, e.is_primary, g.name AS group_name
+        FROM student_enrollments e
+        JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ? AND e.status = 'active'
+        ORDER BY e.is_primary DESC, e.id
+    """, (student_id,)).fetchall()
+
+    if not rows:
+        row = conn.execute("""
+            SELECT s.group_id, g.name AS group_name
+            FROM students s LEFT JOIN groups g ON g.id = s.group_id
+            WHERE s.id = ?
+        """, (student_id,)).fetchone()
+        if row and row['group_id']:
+            return {
+                'target_group_id': row['group_id'],
+                'groups_available': [{
+                    'group_id': row['group_id'],
+                    'group_name': row['group_name'] or f"#{row['group_id']}",
+                    'is_primary': True,
+                }],
+                'needs_choice': False,
+                'reason': 'legacy_primary',
+            }
+        return {
+            'target_group_id': None,
+            'groups_available': [],
+            'needs_choice': False,
+            'reason': 'no_active_enrollments',
+        }
+
+    if len(rows) == 1:
+        r = rows[0]
+        return {
+            'target_group_id': r['group_id'],
+            'groups_available': [{
+                'group_id': r['group_id'],
+                'group_name': r['group_name'] or f"#{r['group_id']}",
+                'is_primary': bool(r['is_primary']),
+            }],
+            'needs_choice': False,
+            'reason': 'single_enrollment',
+        }
+
+    return {
+        'target_group_id': None,
+        'groups_available': [{
+            'group_id': r['group_id'],
+            'group_name': r['group_name'] or f"#{r['group_id']}",
+            'is_primary': bool(r['is_primary']),
+        } for r in rows],
+        'needs_choice': True,
+        'reason': 'multiple_enrollments',
+    }
+
+
+def _build_passport_import_preview(filepath, conn):
+    """Парсить Excel, будує превью (БЕЗ ЗАПИСУ В БД)."""
+    preview = []
+    global_errors = []
+
+    try:
+        wb = load_workbook(filepath, data_only=True, read_only=True)
+        sheet = wb.active
+    except Exception as e:
+        logger.error(f'[passport_import] open xlsx: {e}', exc_info=True)
+        global_errors.append({'reason': f'Не вдалося відкрити файл: {e}'})
+        return preview, global_errors
+
+    row_counter = 0
+    try:
+        for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+            row_counter += 1
+            if not row or all(cell is None for cell in row):
+                continue
+            item = _build_passport_row_preview(i, row, conn)
+            if item:
+                preview.append(item)
+    finally:
+        try:
+            wb.close()
+        except Exception:
+            pass
+
+    if row_counter == 0:
+        global_errors.append({'reason': 'У файлі немає рядків з даними'})
+
+    return preview, global_errors
+
+
+def _build_passport_row_preview(i, row, conn):
+    fio = row[0] if len(row) > 0 else None
+    document_type = str(row[1]).strip() if len(row) > 1 and row[1] else None
+    series = str(row[2]).strip() if len(row) > 2 and row[2] not in (None, '') else None
+    number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
+    issued_by = str(row[4]).strip() if len(row) > 4 and row[4] not in (None, '') else None
+    issue_date = _excel_date_to_ua(row[5]) if len(row) > 5 else None
+    valid_until = _excel_date_to_ua(row[6]) if len(row) > 6 else None
+    unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
+    group_id_raw = row[8] if len(row) > 8 else None
+    number = normalize_passport_number(number, document_type)
+    base = {
+        'row': i,
+        'fio_excel': str(fio or '').strip() or None,
+        'student_id': None,
+        'student_name': None,
+        'matched_score': None,
+        'document_type': document_type,
+        'series': series,
+        'number': number,
+        'issued_by': issued_by,
+        'issue_date': issue_date,
+        'valid_until': valid_until,
+        'unique_number': unique_number,
+        'requested_group_id': None,
+        'target_group_id': None,
+        'groups_available': [],
+        'needs_choice': False,
+        'target_reason': None,
+        'status': 'error',
+        'error': None,
+        'warning': None,
+        'existing_same_type': None,
+    }
+  
+    # ── Нормалізуємо номер: Excel втрачає провідні нулі (039628 → 39628).
+    # Робимо це ДО перевірки заповненості й ДО пошуку дубліката, щоб
+    # "39628" і "039628" вважались одним паспортом.
+    if document_type in PASSPORT_TYPES:
+        normalized_number = normalize_passport_number(number, document_type)
+        if normalized_number and normalized_number != number:
+            base['number_original'] = number  # для інформації
+            base['number'] = normalized_number
+            number = normalized_number  # для подальших перевірок
+
+    if not fio or not document_type or not number:
+        base['error'] = 'Не заповнено ПІБ, тип документа чи номер'
+        return base
+
+    if document_type not in PASSPORT_TYPES:
+        base['error'] = f"Невідомий тип документа: «{document_type}»"
+        return base
+
+    if group_id_raw not in (None, ''):
+        try:
+            base['requested_group_id'] = int(group_id_raw)
+        except (ValueError, TypeError):
+            base['error'] = f"Некоректний ID групи в колонці I: «{group_id_raw}»"
+            return base
+
+    # Пошук студента
+    student_id, matched_name, score = fuzzy_find_student(conn.cursor(), str(fio).strip())
+    if not student_id:
+        base['error'] = 'Студента не знайдено за ПІБ (або неоднозначно)'
+        return base
+
+    base['student_id'] = student_id
+    base['student_name'] = matched_name
+    base['matched_score'] = round(score, 1) if score is not None else None
+
+    # valid_until має сенс лише для ID-типів
+    if document_type not in PASSPORT_TYPES_ID_STYLE:
+        base['valid_until'] = None
+    
+    
+
+    # Цільова група
+    target_info = _determine_target_enrollment_for_passport(
+        conn, student_id, base['requested_group_id']
+    )
+
+    if target_info['reason'] == 'excel_group_invalid':
+        base['error'] = (
+            f"Вказана в колонці I група ID {base['requested_group_id']} "
+            f"не належить студенту або недоступна"
+        )
+        return base
+
+    base['target_group_id'] = target_info['target_group_id']
+    base['groups_available'] = target_info['groups_available']
+    base['needs_choice'] = target_info['needs_choice']
+    base['target_reason'] = target_info['reason']
+
+    # Дублікат (той самий паспорт уже є в цій групі).
+    # Порівнюємо через NORM_PASSPORT з ОБОХ боків — на випадок, якщо
+    # в БД лежать старі записи без нормалізації ("39628" замість
+    # "039628"). Після міграції (init_db.py) це не критично, але
+    # захищаємось і для ненормалізованих даних.
+    if base['target_group_id'] is not None:
+        duplicate = conn.execute("""
+            SELECT id FROM passport_documents
+            WHERE student_id = ?
+              AND COALESCE(group_id, -1) = COALESCE(?, -1)
+              AND document_type = ?
+              AND COALESCE(series, '') = COALESCE(?, '')
+              AND NORM_PASSPORT(number, document_type) = NORM_PASSPORT(?, document_type)
+        """, (student_id, base['target_group_id'], document_type, series, number)).fetchone()
+        if duplicate:
+            base['status'] = 'skip'
+            base['warning'] = (
+                f'Паспорт з таким самим номером уже є в цій групі '
+                f'(ID запису {duplicate["id"]}) — буде пропущено'
+            )
+            return base
+
+    # Попередження: є інший паспорт того самого типу в цій групі
+    if base['target_group_id'] is not None:
+        same_type = conn.execute("""
+            SELECT id, number, issued_by, issue_date FROM passport_documents
+            WHERE student_id = ?
+              AND COALESCE(group_id, -1) = COALESCE(?, -1)
+              AND document_type = ?
+            ORDER BY id DESC LIMIT 1
+        """, (student_id, base['target_group_id'], document_type)).fetchone()
+        if same_type:
+            base['existing_same_type'] = {
+                'number': same_type['number'] or '',
+                'issued_by': same_type['issued_by'] or '',
+                'issue_date': same_type['issue_date'] or '',
+            }
+            base['warning'] = (
+                f"У студента вже є «{document_type}» у цій групі "
+                f"(номер {same_type['number'] or '—'}, виданий {same_type['issue_date'] or '—'}). "
+                f"Цей паспорт буде ДОДАНО ЯК НОВИЙ ЗАПИС (історія)."
+            )
+
+    base['status'] = 'new'
+    return base
 
 @admin_bp.route('/admin/import_passport_documents', methods=['GET', 'POST'])
 @permission_required('import_passport_documents')
 def import_passport_documents():
+    _cleanup_passport_import_sessions()
+
     if request.method == 'POST':
         file = request.files.get('excel_file')
         if not file or not allowed_file(file.filename):
             flash("⚠️ Оберіть коректний файл .xlsx", "error")
             return redirect(url_for('admin.import_passport_documents'))
 
-        filename = f"passport_import_{int(time.time())}.xlsx"
-        filepath = os.path.join('static', 'uploads', 'tmp', filename)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        filename = secure_filename(file.filename)
+        filepath = os.path.join('uploads', f'{uuid.uuid4().hex}_{filename}')
+        os.makedirs('uploads', exist_ok=True)
         file.save(filepath)
 
         conn = get_db()
-        cursor = conn.cursor()
-        inserted, skipped = 0, 0
-        skipped_details = []          # ← замість flash у циклі
-
         try:
-            wb = load_workbook(filepath)
-            sheet = wb.active
-            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-                if not row or all(cell is None for cell in row):
-                    continue
-                try:
-                    fio = row[0]
-                    document_type = str(row[1]).strip() if len(row) > 1 and row[1] else None
-                    number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
-                    
-                    # Колонка I (9-й индекс) — опційний ID групи документа
-                    group_id_raw = row[8] if len(row) > 8 else None
-                    requested_group_id = None
-                    if group_id_raw not in (None, ''):
-                        try:
-                            requested_group_id = int(group_id_raw)
-                        except (ValueError, TypeError):
-                            skipped_details.append({
-                                'row': i, 'fio': str(fio or ''),
-                                'reason': f"некоректний ID групи в колонці I: '{group_id_raw}'",
-                            })
-                            skipped += 1
-                            continue
-
-                    if not fio or not document_type or not number:
-                        skipped_details.append({
-                            'row': i, 'fio': str(fio or ''),
-                            'reason': 'не заповнено ПІБ, тип документа чи номер',
-                        })
-                        skipped += 1
-                        continue
-
-                    if document_type not in PASSPORT_TYPES:
-                        skipped_details.append({
-                            'row': i, 'fio': str(fio or ''),
-                            'reason': f"невідомий тип документа '{document_type}'",
-                        })
-                        skipped += 1
-                        continue
-
-                    student_id, matched_name, score = fuzzy_find_student(cursor, str(fio).strip())
-                    if not student_id:
-                        skipped_details.append({
-                            'row': i, 'fio': str(fio or ''),
-                            'reason': 'студента не знайдено за ПІБ (або неоднозначно)',
-                        })
-                        skipped += 1
-                        continue
-
-                    series = str(row[2]).strip() if len(row) > 2 and row[2] not in (None, '') else None
-                    issued_by = str(row[4]).strip() if len(row) > 4 and row[4] not in (None, '') else None
-                    issue_date = _excel_date_to_ua(row[5]) if len(row) > 5 else None
-                    valid_until = _excel_date_to_ua(row[6]) if len(row) > 6 else None
-                    unique_number = str(row[7]).strip() if len(row) > 7 and row[7] not in (None, '') else None
-                    if document_type not in PASSPORT_TYPES_ID_STYLE:
-                        valid_until = None
-
-                    # Якщо групу не вказано — прив'язуємо до основної групи студента
-                    if requested_group_id is None:
-                        primary_row = cursor.execute(
-                            "SELECT group_id FROM students WHERE id = ?", (student_id,)
-                        ).fetchone()
-                        target_group_id = primary_row[0] if primary_row else None
-                    else:
-                        target_group_id = requested_group_id
-
-                    cursor.execute("""
-                        INSERT INTO passport_documents (
-                            student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (student_id, target_group_id, document_type, series, number, issued_by,
-                          issue_date, valid_until, unique_number))
-                    inserted += 1
-
-                except Exception as e:
-                    logger.error(f"Row {i} error (passport import): {e}")
-                    skipped_details.append({
-                        'row': i, 'fio': str(fio or ''),
-                        'reason': f'помилка обробки: {e}',
-                    })
-                    skipped += 1
-                    continue
-
-            conn.commit()
-            log_action(
-                current_username(),
-                f"імпорт паспортних даних з Excel: додано {inserted}, пропущено {skipped}",
-                details=f"файл: {filename}",
-            )
-        except Exception as e:
-            conn.rollback()
-            logger.error(f"Error importing passport Excel: {e}")
-            flash(f"⚠️ Помилка при імпорті Excel: {e}", "error")
+            ensure_enrollments_table(conn)
+            preview, global_errors = _build_passport_import_preview(filepath, conn)
         finally:
-            if os.path.exists(filepath):
+            try:
                 os.remove(filepath)
+            except OSError:
+                pass
             conn.close()
 
-        # ── Звіт: деталі — у файл, а не в cookie ──
-        if skipped_details:
-            os.makedirs(PASSPORT_REPORTS_DIR, exist_ok=True)
-            report_id = uuid.uuid4().hex
-            with open(os.path.join(PASSPORT_REPORTS_DIR, f'passport_{report_id}.json'),
-                      'w', encoding='utf-8') as f:
-                json.dump({
-                    'filename': filename,
-                    'inserted': inserted,
-                    'skipped': skipped,
-                    'skipped_details': skipped_details,
-                    'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
-                }, f, ensure_ascii=False)
-            return redirect(url_for('admin.import_passport_report', report_id=report_id))
+        if global_errors:
+            for ge in global_errors:
+                flash(ge['reason'], 'error')
+            return redirect(url_for('admin.import_passport_documents'))
 
-        flash(f"✅ Імпорт завершено. Додано: {inserted}", "success")
-        return redirect(url_for('admin.import_passport_documents'))
+        if not preview:
+            flash('У файлі не знайдено жодного рядка для обробки', 'warning')
+            return redirect(url_for('admin.import_passport_documents'))
+
+        token = uuid.uuid4().hex[:32]
+        _save_passport_state(token, {
+            'preview': preview,
+            'filename': filename,
+            'user_id': session.get('user_id'),
+            'created_at': time.time(),
+        })
+
+        return redirect(url_for('admin.import_passport_preview', token=token))
 
     return render_template('import_passport_documents.html', **passport_template_context())
 
+
+@admin_bp.route('/admin/import_passport_documents/preview/<token>')
+@permission_required('import_passport_documents')
+def import_passport_preview(token):
+    state = _load_passport_state(token)
+    if not state:
+        flash('Сесію імпорту не знайдено або вона застаріла', 'warning')
+        return redirect(url_for('admin.import_passport_documents'))
+
+    if state.get('user_id') != session.get('user_id') and not session.get('is_admin'):
+        flash('Сесію імпорту створено іншим користувачем', 'error')
+        return redirect(url_for('admin.import_passport_documents'))
+
+    preview = state['preview']
+    stats = {
+        'new': sum(1 for p in preview if p['status'] == 'new'),
+        'skip': sum(1 for p in preview if p['status'] == 'skip'),
+        'errors': sum(1 for p in preview if p['status'] == 'error'),
+        'needs_choice': sum(1 for p in preview if p.get('needs_choice')),
+    }
+
+    return render_template(
+        'import_passport_preview.html',
+        token=token,
+        preview=preview,
+        stats=stats,
+        filename=state.get('filename', ''),
+    )
+
+
+@admin_bp.route('/admin/import_passport_documents/commit/<token>', methods=['POST'])
+@permission_required('import_passport_documents')
+def import_passport_commit(token):
+    state = _load_passport_state(token)
+    if not state:
+        flash('Сесію імпорту не знайдено або вона застаріла', 'warning')
+        return redirect(url_for('admin.import_passport_documents'))
+
+    if state.get('user_id') != session.get('user_id') and not session.get('is_admin'):
+        flash('Сесію імпорту створено іншим користувачем', 'error')
+        return redirect(url_for('admin.import_passport_documents'))
+
+    # Валідація: якщо needs_choice і чекбокс стоїть — radio обов'язковий
+    missing_choices = []
+    for item in state['preview']:
+        if item['status'] != 'new':
+            continue
+        if not item.get('needs_choice'):
+            continue
+        row = item['row']
+        if request.form.get(f'apply_{row}') and not request.form.get(f'target_group_{row}'):
+            missing_choices.append(f"рядок {row}")
+
+    if missing_choices:
+        flash(
+            'Не обрано групу для: ' + ', '.join(missing_choices) +
+            '. Оберіть групу біля кожного рядка з паралельним навчанням.',
+            'error',
+        )
+        return redirect(url_for('admin.import_passport_preview', token=token))
+
+    conn = get_db()
+    stats = {'inserted': 0, 'skipped': 0, 'errors': 0, 'warnings': []}
+
+    try:
+        for item in state['preview']:
+            row = item['row']
+
+            if item['status'] == 'error':
+                stats['errors'] += 1
+                continue
+
+            if item['status'] == 'skip':
+                stats['skipped'] += 1
+                continue
+
+            if not request.form.get(f'apply_{row}'):
+                stats['skipped'] += 1
+                continue
+
+            # Визначаємо цільову групу
+            if item.get('needs_choice'):
+                tgid_raw = request.form.get(f'target_group_{row}')
+                try:
+                    target_group_id = int(tgid_raw) if tgid_raw else None
+                except (ValueError, TypeError):
+                    target_group_id = None
+                if not target_group_id:
+                    stats['warnings'].append({
+                        'row': row,
+                        'fio': item.get('fio_excel') or '',
+                        'reason': 'не обрано групу — пропущено',
+                    })
+                    stats['skipped'] += 1
+                    continue
+            else:
+                target_group_id = item.get('target_group_id')
+
+            try:
+                conn.execute("""
+                    INSERT INTO passport_documents (
+                        student_id, group_id, document_type, series, number,
+                        issued_by, issue_date, valid_until, unique_number
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    item['student_id'], target_group_id,
+                    item['document_type'], item['series'],
+                    normalize_passport_number(item['number'], item['document_type']),
+                    item['issued_by'], item['issue_date'],
+                    item['valid_until'], item['unique_number'],
+                ))
+                stats['inserted'] += 1
+            except sqlite3.IntegrityError as e:
+                logger.warning(f'[passport_import] row {row} integrity: {e}')
+                stats['warnings'].append({
+                    'row': row,
+                    'fio': item.get('fio_excel') or '',
+                    'reason': f'Не вдалося додати (можливо, дублікат): {e}',
+                })
+                stats['skipped'] += 1
+            except Exception as e:
+                logger.error(f'[passport_import] row {row}: {e}', exc_info=True)
+                stats['warnings'].append({
+                    'row': row,
+                    'fio': item.get('fio_excel') or '',
+                    'reason': f'Помилка: {e}',
+                })
+                stats['skipped'] += 1
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f'[passport_import] global: {e}', exc_info=True)
+        flash(f'Помилка імпорту: {e}', 'error')
+        conn.close()
+        return redirect(url_for('admin.import_passport_preview', token=token))
+    finally:
+        conn.close()
+
+    log_action(
+        current_username(),
+        f"імпорт паспортних даних з Excel: додано {stats['inserted']}, "
+        f"пропущено {stats['skipped']}, помилок {stats['errors']}",
+        details=f"файл: {state.get('filename')}, попереджень: {len(stats['warnings'])}",
+    )
+
+    try:
+        os.remove(_passport_state_path(token))
+    except OSError:
+        pass
+
+    report_id = None
+    if stats['warnings'] or stats['errors']:
+        os.makedirs(PASSPORT_REPORTS_DIR, exist_ok=True)
+        report_id = uuid.uuid4().hex
+        with open(os.path.join(PASSPORT_REPORTS_DIR, f'passport_{report_id}.json'), 'w', encoding='utf-8') as f:
+            json.dump({
+                'filename': state.get('filename'),
+                'inserted': stats['inserted'],
+                'skipped': stats['skipped'],
+                'skipped_details': [
+                    {'row': p['row'], 'fio': p.get('fio_excel'), 'reason': p.get('error')}
+                    for p in state['preview'] if p['status'] == 'error'
+                ] + stats['warnings'],
+                'when': datetime.now().strftime('%d.%m.%Y %H:%M'),
+            }, f, ensure_ascii=False)
+        return redirect(url_for('admin.import_passport_report', report_id=report_id))
+
+    flash(
+        f"✅ Імпорт завершено. Додано: {stats['inserted']}, пропущено: {stats['skipped']}",
+        'success',
+    )
+    return redirect(url_for('admin.import_passport_documents'))
 
 @admin_bp.route('/admin/import_passport_documents/report/<report_id>')
 @permission_required('import_passport_documents')
@@ -1166,9 +1564,104 @@ def parse_recognition_cell_ua(text):
         "recognition_date": recognition_date,
     }
 
+def _determine_target_enrollment_for_education_doc(cursor, student_id, group_from_excel):
+    """
+    Визначає цільову групу для документа про освіту.
+
+    Пріоритет:
+      1. Якщо в колонці E явно вказано group_id — перевіряємо, що це
+         активна група студента.
+      2. Інакше — активні enrollments:
+         - 0 → fallback на students.group_id (legacy)
+         - 1 → цей enrollment (автоматично)
+         - >1 → needs_choice=True (адмін обирає радіо-кнопкою)
+    """
+    if group_from_excel:
+        ok = cursor.execute("""
+            SELECT 1 FROM groups g WHERE g.id = ? AND COALESCE(g.archived, 0) = 0
+              AND (
+                  ? = (SELECT group_id FROM students WHERE id = ?)
+                  OR EXISTS (
+                      SELECT 1 FROM student_enrollments e
+                      WHERE e.student_id = ? AND e.group_id = ?
+                        AND e.status = 'active'
+                  )
+              )
+        """, (group_from_excel, group_from_excel, student_id,
+              student_id, group_from_excel)).fetchone()
+        if not ok:
+            return {
+                'target_group_id': None,
+                'groups_available': [],
+                'needs_choice': False,
+                'reason': 'excel_group_invalid',
+            }
+        return {
+            'target_group_id': int(group_from_excel),
+            'groups_available': [],
+            'needs_choice': False,
+            'reason': 'excel_column',
+        }
+
+    rows = cursor.execute("""
+        SELECT e.group_id, e.is_primary, g.name AS group_name
+        FROM student_enrollments e
+        JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ? AND e.status = 'active'
+        ORDER BY e.is_primary DESC, e.id
+    """, (student_id,)).fetchall()
+
+    if not rows:
+        row = cursor.execute("""
+            SELECT s.group_id, g.name AS group_name
+            FROM students s LEFT JOIN groups g ON g.id = s.group_id
+            WHERE s.id = ?
+        """, (student_id,)).fetchone()
+        if row and row['group_id']:
+            return {
+                'target_group_id': row['group_id'],
+                'groups_available': [{
+                    'group_id': row['group_id'],
+                    'group_name': row['group_name'] or f"#{row['group_id']}",
+                    'is_primary': True,
+                }],
+                'needs_choice': False,
+                'reason': 'legacy_primary',
+            }
+        return {
+            'target_group_id': None,
+            'groups_available': [],
+            'needs_choice': False,
+            'reason': 'no_active_enrollments',
+        }
+
+    if len(rows) == 1:
+        r = rows[0]
+        return {
+            'target_group_id': r['group_id'],
+            'groups_available': [{
+                'group_id': r['group_id'],
+                'group_name': r['group_name'] or f"#{r['group_id']}",
+                'is_primary': bool(r['is_primary']),
+            }],
+            'needs_choice': False,
+            'reason': 'single_enrollment',
+        }
+
+    return {
+        'target_group_id': None,
+        'groups_available': [{
+            'group_id': r['group_id'],
+            'group_name': r['group_name'] or f"#{r['group_id']}",
+            'is_primary': bool(r['is_primary']),
+        } for r in rows],
+        'needs_choice': True,
+        'reason': 'multiple_enrollments',
+    }
+
 
 def import_documents_preview(file_path, db):
-    """Читає Excel-файл з документами про освіту, для кожного рядка знаходить студента (fuzzy_find_student), парсить документ (parse_document) та формує прев'ю-список змін (нові/оновлення) для підтвердження користувачем перед комітом у import_docs_commit."""
+    """Читає Excel, будує прев'ю (БЕЗ ЗАПИСУ В БД)."""
     wb = load_workbook(file_path)
     sheet = wb.active
     cursor = db.cursor()
@@ -1188,10 +1681,6 @@ def import_documents_preview(file_path, db):
         )
 
         # ── Колонка E (опційна): ID групи документа ──
-        # Порожньо → як і раніше, прив'язка до primary-групи студента.
-        # Вказано → документ прив'яжеться до цієї групи (корисно для
-        # паралельного навчання: диплом бакалавра → магістратура,
-        # атестат → бакалаврат).
         doc_group_id_raw = row[4] if len(row) > 4 else None
         requested_group_id = None
         if doc_group_id_raw not in (None, ''):
@@ -1206,44 +1695,49 @@ def import_documents_preview(file_path, db):
                 continue
 
         if not student_id:
-            preview_rows.append({"row_index": row_index, "error": f"Студент не знайдений: {fio}"})
+            preview_rows.append({
+                "row_index": row_index,
+                "error": f"Студент не знайдений: {fio}",
+            })
             continue
 
         data = parse_document(document_text)
         if not data:
-            preview_rows.append({"row_index": row_index, "error": f"Не вдалося розпізнати документ: {document_text}"})
+            preview_rows.append({
+                "row_index": row_index,
+                "error": f"Не вдалося розпізнати документ: {document_text}",
+            })
             continue
 
         data.update(parse_reference_cell_ua(reference_ua_text))
         data.update(parse_recognition_cell_ua(recognition_ua_text))
 
-        # ── Пошук існуючого документа для КОНКРЕТНОЇ групи ──
-        # Раніше SELECT був по student_id без урахування групи —
-        # при паралельному навчанні (2+ документів) preview показував
-        # «Оновлення» для першого-ліпшого документа студента, а
-        # commit оновлював саме його (не той, що відноситься до групи
-        # з колонки E). Тепер: якщо requested_group_id задано —
-        # шукаємо документ саме для цієї групи; інакше — для primary;
-        # якщо й такого нема — будь-який (legacy-fallback).
-        if requested_group_id is not None:
-            cursor.execute("""
-                SELECT id, document_type, document_type_en, document_number,
-                       completion_date, institution_name, institution_name_en,
-                       country, country_en, group_id
-                FROM education_documents
-                WHERE student_id = ? AND group_id = ?
-                ORDER BY id DESC LIMIT 1
-            """, (student_id, requested_group_id))
-            existing_doc = cursor.fetchone()
-        else:
-            # Група в Excel не вказана — орієнтуємось на primary
-            cursor.execute("""
-                SELECT s.group_id AS primary_gid FROM students s WHERE s.id = ?
-            """, (student_id,))
-            primary_row = cursor.fetchone()
-            primary_gid = primary_row["primary_gid"] if primary_row else None
+        # ── Визначаємо цільову групу ──
+        target_info = _determine_target_enrollment_for_education_doc(
+            cursor, student_id, requested_group_id
+        )
 
-            if primary_gid:
+        if target_info['reason'] == 'excel_group_invalid':
+            preview_rows.append({
+                "row_index": row_index,
+                "error": (
+                    f"Вказана в колонці E група ID {requested_group_id} "
+                    f"не належить студенту або недоступна"
+                ),
+            })
+            continue
+
+        target_group_id = target_info['target_group_id']
+        groups_available = target_info['groups_available']
+        needs_choice = target_info['needs_choice']
+        target_reason = target_info['reason']
+
+        # ── Пошук існуючого документа ──
+        # Для needs_choice (група не визначена) документ не шукаємо —
+        # під час commit його пошукаємо вже для обраної групи.
+        existing_doc = None
+        if not needs_choice:
+            if target_group_id is not None:
                 cursor.execute("""
                     SELECT id, document_type, document_type_en, document_number,
                            completion_date, institution_name, institution_name_en,
@@ -1251,30 +1745,30 @@ def import_documents_preview(file_path, db):
                     FROM education_documents
                     WHERE student_id = ? AND group_id = ?
                     ORDER BY id DESC LIMIT 1
-                """, (student_id, primary_gid))
+                """, (student_id, target_group_id))
                 existing_doc = cursor.fetchone()
             else:
-                existing_doc = None
-
-            # Legacy-fallback: якщо для primary ничего нет, но есть
-            # документы с group_id IS NULL (старые) — берём их
-            if not existing_doc:
+                # Немає груп у студента — шукаємо legacy (group_id IS NULL)
                 cursor.execute("""
                     SELECT id, document_type, document_type_en, document_number,
                            completion_date, institution_name, institution_name_en,
                            country, country_en, group_id
                     FROM education_documents
-                    WHERE student_id = ? AND (group_id IS NULL OR group_id = ?)
+                    WHERE student_id = ? AND group_id IS NULL
                     ORDER BY id DESC LIMIT 1
-                """, (student_id, primary_gid))
+                """, (student_id,))
                 existing_doc = cursor.fetchone()
 
         row_data = {
             "row_index": row_index,
             "student_id": student_id,
             "matched_name": matched_name,
-            "score": score,
+            "score": round(score, 1) if score is not None else None,
             "requested_group_id": requested_group_id,
+            "target_group_id": target_group_id,
+            "groups_available": groups_available,
+            "needs_choice": needs_choice,
+            "target_reason": target_reason,
             **data,
         }
 
@@ -1298,7 +1792,8 @@ def import_documents_preview(file_path, db):
             cursor.execute("""
                 SELECT reference_number, reference_institution, reference_institution_en,
                        reference_country, reference_country_en, reference_issue_date,
-                       recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
+                       recognition_certificate_number, recognition_issuer,
+                       recognition_issuer_en, recognition_date
                 FROM foreign_education_docs WHERE education_doc_id=?
             """, (existing_doc["id"],))
             existing_foreign = cursor.fetchone()
@@ -1323,7 +1818,7 @@ def import_documents_preview(file_path, db):
 
         preview_rows.append(row_data)
     return preview_rows
-
+    
 @admin_bp.route('/admin/import_education_docs_preview', methods=['GET', 'POST'])
 @permission_required('import_education_docs')
 def import_docs_preview():
@@ -1366,19 +1861,16 @@ def import_docs_preview():
 @admin_bp.route('/admin/import_docs_commit', methods=['POST'])
 @permission_required('import_education_docs')
 def import_docs_commit():
-    """Записує в БД документи про освіту (та дані про визнання), підтверджені користувачем на сторінці прев'ю (тільки позначені чекбоксом рядки)."""
+    """Записує в БД документи про освіту, підтверджені користувачем на сторінці прев'ю."""
     preview_id = request.form.get("preview_id")
     preview = load_preview_from_file(preview_id)
     db = get_db()
     added = 0
     updated = 0
+    skipped_no_group = []
 
-    # ── Парсимо edits_json (усі ручні редагування з модалки) ──
-    # Формат: {"2": {"document_number": "...", "document_type": "..."},
-    #          "5": {...}}
-    import json as _json
     try:
-        edits_json = _json.loads(request.form.get("edits_json") or "{}")
+        edits_json = json.loads(request.form.get("edits_json") or "{}")
     except (ValueError, TypeError):
         edits_json = {}
     if not isinstance(edits_json, dict):
@@ -1389,24 +1881,10 @@ def import_docs_commit():
         if f"add_{row_index}" not in request.form:
             continue
 
-        # ── Застосовуємо редагування з нової спільної модалки ──
-        # (edits_json — один hidden input з усіма відредагованими
-        # рядками; замість N×30 полів, які при 500+ рядках давали
-        # 1–7 МБ POST і nginx повертав 413).
+        # ── Застосовуємо редагування з модалки (без групи — група
+        #    обирається радіо-кнопкою в таблиці, а не в модалці) ──
         edits_for_row = edits_json.get(str(row_index)) or edits_json.get(row_index)
         if edits_for_row:
-            # Група документа
-            grp_val = edits_for_row.get('doc_group_id', '')
-            grp_val = (grp_val or '').strip() if isinstance(grp_val, str) else str(grp_val or '').strip()
-            if grp_val == '':
-                row["requested_group_id"] = None
-            else:
-                try:
-                    row["requested_group_id"] = int(grp_val)
-                except (ValueError, TypeError):
-                    pass
-
-            # Решта полів — перезаписуємо у row (вони підуть у commit)
             for _field in (
                 'document_type', 'document_type_en',
                 'institution_name', 'institution_name_en',
@@ -1421,237 +1899,147 @@ def import_docs_commit():
                 if _field in edits_for_row:
                     row[_field] = edits_for_row[_field]
 
-        if not row.get("error"):
-            row["document_type"]       = request.form.get(f"document_type_{row_index}",       row["document_type"])
-            row["document_type_en"]    = request.form.get(f"document_type_en_{row_index}",    row.get("document_type_en", "")) or ""
-            row["document_number"]     = request.form.get(f"document_number_{row_index}",     row["document_number"])
-            row["completion_date"]     = request.form.get(f"completion_date_{row_index}",     row["completion_date"])
-            row["institution_name"]    = request.form.get(f"institution_name_{row_index}",    row["institution_name"])
-            row["institution_name_en"] = request.form.get(f"institution_name_en_{row_index}", row.get("institution_name_en", "")) or ""
-            row["country"]             = request.form.get(f"country_{row_index}",             row["country"])
-            row["country_en"]          = request.form.get(f"country_en_{row_index}",          row["country_en"])
+        if row.get("error"):
+            continue
 
-            reference_number = request.form.get(f"reference_number_{row_index}", row.get("reference_number", "")) or None
-            reference_institution = request.form.get(f"reference_institution_{row_index}", row.get("reference_institution", "")) or None
-            reference_institution_en = request.form.get(f"reference_institution_en_{row_index}", row.get("reference_institution_en", "")) or None
-            reference_country = request.form.get(f"reference_country_{row_index}", row.get("reference_country", "")) or None
-            reference_country_en = request.form.get(f"reference_country_en_{row_index}", row.get("reference_country_en", "")) or None
-            reference_issue_date = request.form.get(f"reference_issue_date_{row_index}", row.get("reference_issue_date", "")) or None
-            recognition_certificate_number = request.form.get(f"recognition_certificate_number_{row_index}", row.get("recognition_certificate_number", "")) or None
-            recognition_issuer = request.form.get(f"recognition_issuer_{row_index}", row.get("recognition_issuer", "")) or None
-            recognition_issuer_en = request.form.get(f"recognition_issuer_en_{row_index}", row.get("recognition_issuer_en", "")) or None
-            recognition_date = request.form.get(f"recognition_date_{row_index}", row.get("recognition_date", "")) or None
+        # ── Визначаємо цільову групу ──
+        if row.get("needs_choice"):
+            tgid_raw = request.form.get(f"target_group_{row_index}")
+            try:
+                target_group_id = int(tgid_raw) if tgid_raw else None
+            except (ValueError, TypeError):
+                target_group_id = None
 
-            country_lower = (row["country"] or "").lower()
+            if not target_group_id:
+                skipped_no_group.append({
+                    'row': row_index,
+                    'fio': row.get('matched_name') or '',
+                    'reason': 'не обрано групу для паралельного студента',
+                })
+                continue
+        else:
+            target_group_id = row.get("target_group_id")
+            if target_group_id is None and row.get("requested_group_id") is not None:
+                target_group_id = row.get("requested_group_id")
 
-            is_foreign = not (country_lower in ('україна', 'ukraine'))
-
+        # ── Пошук існуючого документа для обраної групи ──
+        if target_group_id is not None:
             cursor = db.cursor()
-            # ── Пошук існуючого документа для КОНКРЕТНОЇ групи ──
-            # (той самий підхід, що і в preview вище).
-            requested_gid = row.get("requested_group_id")
+            cursor.execute("""
+                SELECT id, group_id FROM education_documents
+                WHERE student_id = ? AND group_id = ?
+                ORDER BY id DESC LIMIT 1
+            """, (row["student_id"], target_group_id))
+            existing = cursor.fetchone()
+        else:
+            # Немає групи — legacy-запис із group_id IS NULL
+            cursor = db.cursor()
+            cursor.execute("""
+                SELECT id, group_id FROM education_documents
+                WHERE student_id = ? AND group_id IS NULL
+                ORDER BY id DESC LIMIT 1
+            """, (row["student_id"]))
+            existing = cursor.fetchone()
 
-            if requested_gid is not None:
+        doc_type_en  = row.get("document_type_en", "") or ""
+        inst_name_en = row.get("institution_name_en", "") or ""
+        country_en   = row.get("country_en", "") or ""
+
+        if existing:
+            education_doc_id = existing["id"]
+            cursor.execute("""
+                UPDATE education_documents SET
+                    document_type=?, document_type_en=?, document_number=?, completion_date=?,
+                    institution_name=?, institution_name_en=?, country=?, country_en=?,
+                    group_id=?
+                WHERE id=?
+            """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
+                  row["institution_name"], inst_name_en, row["country"], row["country_en"],
+                  target_group_id, education_doc_id))
+            updated += 1
+        else:
+            cursor.execute("""
+                INSERT INTO education_documents (
+                    student_id, group_id, document_type, document_type_en, document_number,
+                    completion_date, institution_name, institution_name_en, country, country_en
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (row["student_id"], target_group_id, row["document_type"], doc_type_en, row["document_number"],
+                  row["completion_date"], row["institution_name"], inst_name_en, row["country"], country_en))
+            education_doc_id = cursor.lastrowid
+            added += 1
+
+        # --- Foreign / recognition data ---
+        reference_number = request.form.get(f"reference_number_{row_index}", row.get("reference_number", "")) or None
+        reference_institution = request.form.get(f"reference_institution_{row_index}", row.get("reference_institution", "")) or None
+        reference_institution_en = request.form.get(f"reference_institution_en_{row_index}", row.get("reference_institution_en", "")) or None
+        reference_country = request.form.get(f"reference_country_{row_index}", row.get("reference_country", "")) or None
+        reference_country_en = request.form.get(f"reference_country_en_{row_index}", row.get("reference_country_en", "")) or None
+        reference_issue_date = request.form.get(f"reference_issue_date_{row_index}", row.get("reference_issue_date", "")) or None
+        recognition_certificate_number = request.form.get(f"recognition_certificate_number_{row_index}", row.get("recognition_certificate_number", "")) or None
+        recognition_issuer = request.form.get(f"recognition_issuer_{row_index}", row.get("recognition_issuer", "")) or None
+        recognition_issuer_en = request.form.get(f"recognition_issuer_en_{row_index}", row.get("recognition_issuer_en", "")) or None
+        recognition_date = request.form.get(f"recognition_date_{row_index}", row.get("recognition_date", "")) or None
+
+        has_foreign_data = any([
+            reference_number, reference_institution, reference_country,
+            reference_issue_date, recognition_certificate_number,
+            recognition_issuer, recognition_date
+        ])
+
+        cursor.execute(
+            "SELECT id FROM foreign_education_docs WHERE education_doc_id = ?",
+            (education_doc_id,)
+        )
+        foreign_exists = cursor.fetchone()
+
+        if foreign_exists:
+            if has_foreign_data:
                 cursor.execute("""
-                    SELECT id, group_id FROM education_documents
-                    WHERE student_id = ? AND group_id = ?
-                    ORDER BY id DESC LIMIT 1
-                """, (row["student_id"], requested_gid))
-                existing = cursor.fetchone()
+                    UPDATE foreign_education_docs SET
+                        reference_number=?, reference_institution=?, reference_institution_en=?,
+                        reference_country=?, reference_country_en=?, reference_issue_date=?,
+                        recognition_certificate_number=?, recognition_issuer=?,
+                        recognition_issuer_en=?, recognition_date=?
+                    WHERE education_doc_id=?
+                """, (
+                    reference_number, reference_institution, reference_institution_en,
+                    reference_country, reference_country_en, reference_issue_date,
+                    recognition_certificate_number, recognition_issuer,
+                    recognition_issuer_en, recognition_date, education_doc_id
+                ))
             else:
-                # Група не вказана — орієнтуємось на primary
-                primary_row_gid = cursor.execute(
-                    "SELECT group_id FROM students WHERE id = ?",
-                    (row["student_id"],)
-                ).fetchone()
-                primary_gid_for_search = (
-                    primary_row_gid["group_id"] if primary_row_gid else None
+                cursor.execute(
+                    "DELETE FROM foreign_education_docs WHERE education_doc_id=?",
+                    (education_doc_id,)
                 )
-
-                if primary_gid_for_search:
-                    cursor.execute("""
-                        SELECT id, group_id FROM education_documents
-                        WHERE student_id = ? AND group_id = ?
-                        ORDER BY id DESC LIMIT 1
-                    """, (row["student_id"], primary_gid_for_search))
-                    existing = cursor.fetchone()
-                else:
-                    existing = None
-
-                # Legacy-fallback: документы без group_id
-                if not existing:
-                    cursor.execute("""
-                        SELECT id, group_id FROM education_documents
-                        WHERE student_id = ? AND group_id IS NULL
-                        ORDER BY id DESC LIMIT 1
-                    """, (row["student_id"],))
-                    existing = cursor.fetchone()
-
-            doc_type_en  = row.get("document_type_en", "") or ""
-            inst_name_en = row.get("institution_name_en", "") or ""
-            country_en   = row.get("country_en", "") or ""
-
-            if existing:
-                education_doc_id = existing["id"]
-                # Оновлюємо також group_id, якщо в Excel вказано
-                # конкретну групу (щоб можна було «переприв'язати»
-                # документ, якщо при першому імпорті обрали не ту).
-                # Якщо requested_gid is None — group_id лишається
-                # як був (не скидаємо до NULL без причини).
-                if requested_gid is not None:
-                    cursor.execute("""
-                        UPDATE education_documents SET
-                            document_type=?, document_type_en=?, document_number=?, completion_date=?,
-                            institution_name=?, institution_name_en=?, country=?, country_en=?,
-                            group_id=?
-                        WHERE id=?
-                    """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
-                          row["institution_name"], inst_name_en, row["country"], row["country_en"],
-                          requested_gid, education_doc_id))
-                else:
-                    cursor.execute("""
-                        UPDATE education_documents SET
-                            document_type=?, document_type_en=?, document_number=?, completion_date=?,
-                            institution_name=?, institution_name_en=?, country=?, country_en=?
-                        WHERE id=?
-                    """, (row["document_type"], doc_type_en, row["document_number"], row["completion_date"],
-                          row["institution_name"], inst_name_en, row["country"], row["country_en"],
-                          education_doc_id))
-                updated += 1
-            else:
-                # Група для нового документа:
-                # 1. Якщо в рядку Excel вказано ID групи (колонка E) —
-                #    використовуємо його (важливо для паралельного
-                #    навчання: диплом бакалавра → магістратура).
-                # 2. Інакше — primary-група студента (як раніше).
-                requested_gid = row.get("requested_group_id")
-                if requested_gid is not None:
-                    # Перевіряємо, що це справді активна група студента
-                    ok_group = cursor.execute("""
-                        SELECT 1 FROM groups g WHERE g.id = ?
-                          AND (g.archived = 0)
-                          AND (
-                              ? = (SELECT group_id FROM students WHERE id = ?)
-                              OR EXISTS (
-                                  SELECT 1 FROM student_enrollments e
-                                  WHERE e.student_id = ?
-                                    AND e.group_id = ?
-                                    AND e.status = 'active'
-                              )
-                          )
-                    """, (requested_gid, requested_gid, row["student_id"],
-                          row["student_id"], requested_gid)).fetchone()
-                    if not ok_group:
-                        flash(
-                            f"Рядок {row_index}: студент не має активної групи "
-                            f"ID {requested_gid} — документ прив'язано до "
-                            f"основної групи студента.",
-                            "warning",
-                        )
-                        requested_gid = None
-                primary_row = cursor.execute(
-                    "SELECT group_id FROM students WHERE id = ?",
-                    (row["student_id"],)
-                ).fetchone()
-                primary_gid = (
-                    requested_gid if requested_gid is not None
-                    else (primary_row["group_id"] if primary_row else None)
-                )
-
-                cursor.execute("""
-                    INSERT INTO education_documents (
-                        student_id, group_id, document_type, document_type_en, document_number,
-                        completion_date, institution_name, institution_name_en, country, country_en
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (row["student_id"], primary_gid, row["document_type"], doc_type_en, row["document_number"],
-                      row["completion_date"], row["institution_name"], inst_name_en, row["country"], country_en))
-                education_doc_id = cursor.lastrowid
-                added += 1
-
-            # --- Foreign / recognition data ---
-            cursor.execute(
-                "SELECT id FROM foreign_education_docs WHERE education_doc_id = ?",
-                (education_doc_id,)
-            )
-            foreign_exists = cursor.fetchone()
-
-            # Если заполнена хотя бы одна колонка аккредитации/признания
-            has_foreign_data = any([
-                reference_number,
-                reference_institution,
-                reference_country,
-                reference_issue_date,
-                recognition_certificate_number,
-                recognition_issuer,
-                recognition_date
-            ])
-
-            if foreign_exists:
-                if has_foreign_data:
-                    cursor.execute("""
-                        UPDATE foreign_education_docs SET
-                            reference_number=?, reference_institution=?, reference_institution_en=?,
-                            reference_country=?, reference_country_en=?, reference_issue_date=?,
-                            recognition_certificate_number=?, recognition_issuer=?,
-                            recognition_issuer_en=?, recognition_date=?
-                        WHERE education_doc_id=?
-                    """, (
-                        reference_number,
-                        reference_institution,
-                        reference_institution_en,
-                        reference_country,
-                        reference_country_en,
-                        reference_issue_date,
-                        recognition_certificate_number,
-                        recognition_issuer,
-                        recognition_issuer_en,
-                        recognition_date,
-                        education_doc_id
-                    ))
-                else:
-                    # если все поля пустые - удаляем старую запись
-                    cursor.execute(
-                        "DELETE FROM foreign_education_docs WHERE education_doc_id=?",
-                        (education_doc_id,)
-                    )
-
-            else:
-                if has_foreign_data:
-                    cursor.execute("""
-                        INSERT INTO foreign_education_docs (
-                            education_doc_id,
-                            reference_number,
-                            reference_institution,
-                            reference_institution_en,
-                            reference_country,
-                            reference_country_en,
-                            reference_issue_date,
-                            recognition_certificate_number,
-                            recognition_issuer,
-                            recognition_issuer_en,
-                            recognition_date
-                        )
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        education_doc_id,
-                        reference_number,
-                        reference_institution,
-                        reference_institution_en,
-                        reference_country,
-                        reference_country_en,
-                        reference_issue_date,
-                        recognition_certificate_number,
-                        recognition_issuer,
-                        recognition_issuer_en,
-                        recognition_date
-                    ))
+        elif has_foreign_data:
+            cursor.execute("""
+                INSERT INTO foreign_education_docs (
+                    education_doc_id,
+                    reference_number, reference_institution, reference_institution_en,
+                    reference_country, reference_country_en, reference_issue_date,
+                    recognition_certificate_number, recognition_issuer,
+                    recognition_issuer_en, recognition_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                education_doc_id, reference_number, reference_institution,
+                reference_institution_en, reference_country, reference_country_en,
+                reference_issue_date, recognition_certificate_number,
+                recognition_issuer, recognition_issuer_en, recognition_date
+            ))
 
     db.commit()
 
     log_action(
         current_username(),
         f"імпорт документів про освіту: додано {added}, оновлено {updated}"
+        + (f", пропущено {len(skipped_no_group)} (не обрано групу)" if skipped_no_group else "")
     )
 
-    flash(f"Додано записів: {added}, Оновлено записів: {updated}", "success")
+    msg = f"Додано записів: {added}, Оновлено записів: {updated}"
+    if skipped_no_group:
+        msg += f". Пропущено: {len(skipped_no_group)} (не обрано групу для паралельного студента)"
+        for s in skipped_no_group:
+            flash(f"Рядок {s['row']} ({s['fio']}): {s['reason']}", 'warning')
+    flash(msg, "success")
     return redirect(url_for('admin.manage_education_documents'))

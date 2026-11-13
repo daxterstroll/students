@@ -54,8 +54,10 @@
     .import-row__badge--new     { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
     .import-row__badge--update  { background: var(--brass-soft); color: #8a6a1a; border-color: var(--brass-semi); }
     .import-row__badge--error   { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    .import-row__badge--search  { background: rgba(74,110,168,.14); color: #2f5f87; border-color: rgba(74,110,168,.35); }
     html[data-theme="dark"] .import-row__badge--new    { background: rgba(79,122,82,.25); color: #bfe3c2; }
     html[data-theme="dark"] .import-row__badge--update { color: var(--brass-lt); }
+    html[data-theme="dark"] .import-row__badge--search { color: #a9c2e8; }
 
     .import-row__body {
         padding: 1rem 1.1rem;
@@ -115,9 +117,38 @@
         cursor: pointer;
     }
 
-    .card-group__row--primary {
-        background: var(--brass-soft);
+    .same-fields-toggle {
+        font-size: .8rem;
+        font-weight: 600;
+        color: var(--muted);
+        background: transparent;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        padding: .4rem .8rem;
+        width: 100%;
+        text-align: left;
+        cursor: pointer;
+        transition: background .15s ease, border-color .15s ease;
     }
+    .same-fields-toggle:hover {
+        background: var(--paper);
+        border-color: var(--brass-semi);
+    }
+    .same-fields-toggle .bi { margin-right: .35rem; }
+    .same-fields-body {
+        padding: .5rem .75rem;
+        background: var(--paper);
+        border-radius: 8px;
+        margin-top: .35rem;
+    }
+    .same-field-line {
+        display: flex;
+        align-items: center;
+        padding: .2rem 0;
+        font-size: .85rem;
+    }
+    .same-field-line .bi-check-circle-fill { color: #3f7556; margin-right: .4rem; }
+    html[data-theme="dark"] .same-field-line .bi-check-circle-fill { color: #bfe3c2; }
 </style>
 
 <div class="container py-4">
@@ -201,7 +232,16 @@
         {% set has_enroll = item.enrollment %}
         {% set has_card_fields = item.card_fields %}
         {% set has_enroll_fields = item.enrollment_fields %}
+        {% set has_same_fields = item.same_card_fields %}
+        {% set search_source = item.search_source %}
         {% set has_any = has_new or has_enroll or has_card_fields or has_enroll_fields %}
+
+        {% set _search_labels = {
+            'student_id': 'за student_id',
+            'tax_id': 'за ІПН',
+            'fio_date': 'за ПІБ + датою',
+            'fio_only': 'за ПІБ',
+        } %}
 
         <div class="import-row">
             <div class="import-row__header">
@@ -212,6 +252,12 @@
                     <span class="text-muted small">→ {{ item.student_fio }} (ID {{ item.student_id }})</span>
                     {% elif item.student_id %}
                     <span class="text-muted small">(ID {{ item.student_id }})</span>
+                    {% endif %}
+                    {% if search_source %}
+                    <span class="import-row__badge import-row__badge--search ms-2"
+                          title="Як знайдено студента в базі — важливо для перевірки тезок">
+                        <i class="bi bi-search"></i> {{ _search_labels.get(search_source, search_source) }}
+                    </span>
                     {% endif %}
                 </div>
                 {% if has_new %}
@@ -229,7 +275,7 @@
                 {% endif %}
             </div>
 
-            {% if has_any %}
+            {% if has_any or has_same_fields %}
             <div class="import-row__body">
 
                 {# ── Warnings ── #}
@@ -355,7 +401,6 @@
                                 {% endif %}
                             </div>
 
-                            {# Вибір групи, якщо >1 активних enrollments #}
                             {% if ef.needs_choice %}
                             <div class="field-group-choice">
                                 <div class="field-group-choice__hint">
@@ -400,6 +445,37 @@
                 </div>
                 {% endif %}
 
+                {# ── Секція: Поля, що вже збігаються ── #}
+                {% if has_same_fields %}
+                <div class="import-section">
+                    <button type="button" class="same-fields-toggle"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#same-fields-{{ row }}">
+                        <i class="bi bi-check2-all"></i>
+                        Вже заповнено, змін не потребує
+                        <span class="badge bg-success-subtle text-success-emphasis ms-1">
+                            {{ has_same_fields|length }}
+                        </span>
+                    </button>
+                    <div class="collapse" id="same-fields-{{ row }}">
+                        <div class="same-fields-body">
+                            <div class="small text-muted mb-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Ці поля є в Excel, але значення в базі вже таке саме —
+                                система не пропонує їх змінювати, бо нічого не зміниться.
+                            </div>
+                            {% for sf in has_same_fields %}
+                            <div class="same-field-line">
+                                <i class="bi bi-check-circle-fill"></i>
+                                <strong>{{ sf.label }}:</strong>&nbsp;
+                                <span class="text-muted">{{ sf.value }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
             </div>
             {% endif %}
         </div>
@@ -424,20 +500,15 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // "Обрати все" / "Зняти все" — усі чекбокси js-apply
     window.toggleAll = function (state) {
         document.querySelectorAll('.js-apply').forEach(cb => { cb.checked = state; });
     };
-
-    // "Обрати лише конфлікти" — увімкнути тільки .js-conflict, fill_empty вимкнути
     window.toggleOnlyConflicts = function (state) {
         document.querySelectorAll('.js-apply').forEach(cb => {
             cb.checked = state && cb.classList.contains('js-conflict');
         });
     };
 
-    // Валідація перед submit: усі "needs_choice" поля, які увімкнені,
-    // повинні мати обрану radio-кнопку
     document.getElementById('importForm').addEventListener('submit', function (e) {
         const missing = [];
         document.querySelectorAll('.field-group-choice').forEach(choiceBlock => {

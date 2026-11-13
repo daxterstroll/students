@@ -1748,6 +1748,30 @@ if rows:
         print(f"   ⚠️ {len(rows) - updated} студентів без по батькові — стать "
               f"лишилась NULL (заповніть вручну в картці)")
 
+# ═══════════════════════════════════════════════════════════════════════
+# 4.6. Одноразова нормалізація номерів паспортів
+# ═══════════════════════════════════════════════════════════════════════
+# Excel втрачає провідні нулі: "039628" зберігається як число 39628.
+# Через це при імпорті дублікат не знаходився (39628 ≠ 039628) і
+# створювався новий запис. Ця нормалізація приводить усі номери
+# у БД до очікуваної довжини (6 для книжки, 9 для ID-картки).
+try:
+    from routes.passport_types import normalize_passport_number
+    conn.create_function(
+        "NORM_PASSPORT", 2,
+        lambda n, t: (normalize_passport_number(n, t) or '')
+    )
+    cur.execute("""
+        UPDATE passport_documents
+        SET number = NORM_PASSPORT(number, document_type)
+        WHERE number IS NOT NULL AND number != ''
+          AND number != NORM_PASSPORT(number, document_type)
+    """)
+    if cur.rowcount:
+        print(f"➕ passport_documents: нормалізовано {cur.rowcount} номерів "
+              f"(додано провідні нулі)")
+except Exception as e:
+    print(f"⚠️ Не вдалося нормалізувати паспортні номери: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════
 # 5. ФІНАЛ

@@ -54,8 +54,40 @@ REPORTS_TTL_SECONDS = 24 * 3600
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# "Ефективно порожні" значення
+# ═══════════════════════════════════════════════════════════════════════
+# Реальні приклади: люди пишуть у поле ІПН «-», «—», «немає», «n/a» —
+# це фактично "порожньо". Без цієї нормалізації такі поля вважаються
+# "заповненими" і потрапляють у conflict → не відмічаються автоматично.
+_EFFECTIVELY_EMPTY = {
+    '-', '--', '---',
+    '—', '–', '−', '―',
+    'none', 'null', 'n/a', 'na',
+    'немає', 'нема', 'нет', 'н/д', 'нд', 'ні',
+}
+
+def _is_effectively_empty(value, field=None):
+    """
+    True, якщо значення фактично порожнє (або його плейсхолдер).
+
+    Для полів з числовими кодами (tax_id, edebo_code) додатково
+    вважаємо порожнім '0' — типовий "заглушковий" код.
+    """
+    if value is None:
+        return True
+    s = str(value).strip()
+    if s == '':
+        return True
+    s_low = s.lower()
+    if s_low in _EFFECTIVELY_EMPTY:
+        return True
+    if field in ('tax_id', 'edebo_code') and s in ('0', '0.0'):
+        return True
+    return False
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # Допоміжні функції — перенесені БЕЗ ЗМІН з поточного файлу
-# (використовуються в _build_import_preview)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _normalize_date_for_compare(s):
@@ -129,14 +161,14 @@ def _collect_field_diffs(existing, new_values):
                 'old': '...',
                 'new': '...',
                 'type': 'fill_empty' | 'conflict',
-                'enabled': True|False,   # за замовчуванням: fill_empty → True, conflict → False
+                'enabled': True|False,
             },
             ...
         ]
 
-    Пусті в БД поля → fill_empty (увімкнено).
+    Пусті (або "ефективно пусті") в БД поля → fill_empty (увімкнено).
     Заповнені, але різні → conflict (вимкнено — користувач має свідомо вирішити).
-    Однакові → не включаються (нічого не змінюється).
+    Однакові (без урахування нормалізації) → не включаються (нічого не змінюється).
     """
     from routes.db import normalize_name_for_match
 
@@ -144,8 +176,11 @@ def _collect_field_diffs(existing, new_values):
     for field, new_val in new_values.items():
         if not new_val:
             continue
+        if _is_effectively_empty(new_val, field):
+            continue  # в Excel теж стоїть плейсхолдер — нічого не змінюємо
 
         cur_raw = existing[field] if existing[field] is not None else ''
+        cur_is_empty = _is_effectively_empty(cur_raw, field)
 
         # Нормалізація для порівняння
         if field == 'birth_date':
@@ -165,19 +200,56 @@ def _collect_field_diffs(existing, new_values):
             cur_norm = str(cur_raw).strip()
             new_norm = str(new_val).strip()
 
-        if cur_norm == new_norm:
-            continue  # однаково — нічого не змінюємо
+        # Однакові значення — змін немає
+        if cur_norm == new_norm and not cur_is_empty:
+            continue
+        if cur_is_empty and cur_norm == new_norm:
+            # Обидва "порожні" (напр. '-' і '-' — вже пропущено вище,
+            # але якщо обидва '', теж нічого не робимо)
+            continue
 
         diffs.append({
             'field': field,
             'label': FIELD_LABELS.get(field, field),
             'old': str(cur_raw or ''),
             'new': str(new_val),
-            'type': 'fill_empty' if not cur_norm else 'conflict',
-            'enabled': (not cur_norm),  # fill_empty → True, conflict → False
+            'type': 'fill_empty' if cur_is_empty else 'conflict',
+            'enabled': cur_is_empty,
         })
 
     return diffs
+
+
+def _collect_same_fields(existing, new_values, diff_field_names):
+    """
+    Повертає список полів із Excel, які вже збігаються з БД
+    (не потребують змін). Показується окремим блоком у прев'ю, щоб
+    користувач бачив, що система побачила поле — просто не пропонує
+    його змінювати, бо там уже таке ж значення.
+
+    diff_field_names — множина полів, які вже пішли в _collect_field_diffs
+    (щоб не дублювати їх у "same").
+    """
+    same = []
+    for field, new_val in new_values.items():
+        if not new_val:
+            continue
+        if _is_effectively_empty(new_val, field):
+            continue
+        if field in diff_field_names:
+            continue
+
+        cur_raw = existing[field] if existing[field] is not None else ''
+        cur_is_empty = _is_effectively_empty(cur_raw, field)
+        if cur_is_empty:
+            continue
+
+        same.append({
+            'field': field,
+            'label': FIELD_LABELS.get(field, field),
+            'value': str(cur_raw).strip(),
+        })
+    return same
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -232,12 +304,6 @@ def _determine_target_enrollment(conn, student_id, group_from_excel):
             'needs_choice': bool,
             'reason': 'excel_column_a' | 'single_enrollment' | 'multiple_enrollments' | 'no_active_enrollments',
         }
-
-    Правила:
-      - Колонка A заповнена → target = A, needs_choice=False (довіряємо Excel).
-      - Колонка A порожня + 1 активний enrollment → target = він, needs_choice=False.
-      - Колонка A порожня + >1 → target=None, needs_choice=True (radio у прев'ю).
-      - Немає активних enrollment'ів → target=None, needs_choice=False.
     """
     if group_from_excel:
         return {
@@ -422,6 +488,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
             'warnings': [],
             'new_student': None, 'enrollment': None,
             'card_fields': [], 'enrollment_fields': [],
+            'same_card_fields': [], 'search_source': None,
         }
 
     # ── Розбір ПІБ ──
@@ -434,6 +501,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
             'error': f'Невірний формат ПІБ: «{full_name}» (мін. 3 слова)',
             'warnings': [], 'new_student': None, 'enrollment': None,
             'card_fields': [], 'enrollment_fields': [],
+            'same_card_fields': [], 'search_source': None,
         }
     last_name = name_parts[0]
     middle_name = name_parts[-1]
@@ -470,6 +538,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 'error': f'Некоректний ID групи в колонці A: «{group_id_raw}»',
                 'warnings': [], 'new_student': None, 'enrollment': None,
                 'card_fields': [], 'enrollment_fields': [],
+                'same_card_fields': [], 'search_source': None,
             }
         if group_id not in allowed_group_ids:
             return {
@@ -479,6 +548,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 'error': f'Група ID {group_id} не існує або недоступна',
                 'warnings': [], 'new_student': None, 'enrollment': None,
                 'card_fields': [], 'enrollment_fields': [],
+                'same_card_fields': [], 'search_source': None,
             }
         g_row = conn.execute(
             "SELECT name, study_form FROM groups WHERE id = ?", (group_id,)
@@ -498,12 +568,14 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
         FROM students
     """
     existing = None
+    search_source = None
     warnings = []
 
     if force_student_id is not None:
         existing = conn.execute(
             SELECT_EXISTING + " WHERE id = ?", (force_student_id,)
         ).fetchone()
+        search_source = 'student_id'
         if not existing:
             return {
                 'row': i, 'status': 'error',
@@ -512,12 +584,15 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 'error': f'student_id={force_student_id} не існує в базі',
                 'warnings': [], 'new_student': None, 'enrollment': None,
                 'card_fields': [], 'enrollment_fields': [],
+                'same_card_fields': [], 'search_source': None,
             }
     else:
         if tax_id:
             existing = conn.execute(
                 SELECT_EXISTING + " WHERE tax_id = ?", (tax_id,)
             ).fetchone()
+            if existing:
+                search_source = 'tax_id'
 
         if not existing and birth_date:
             existing = conn.execute(
@@ -539,6 +614,8 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 """,
                 (str(full_name).strip(), birth_date),
             ).fetchone()
+            if existing:
+                search_source = 'fio_date'
 
         if not existing and update_only_mode:
             candidates = conn.execute(
@@ -553,6 +630,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
 
             if len(candidates) == 1:
                 existing = candidates[0]
+                search_source = 'fio_only'
                 if birth_date:
                     warnings.append(
                         f"Точного збігу за ФІО+датою не знайдено, "
@@ -568,6 +646,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                               f"уточніть дату народження, ІПН (кол. I) або student_id (кол. L)"),
                     'warnings': [], 'new_student': None, 'enrollment': None,
                     'card_fields': [], 'enrollment_fields': [],
+                    'same_card_fields': [], 'search_source': None,
                 }
 
     # ═════════════════════════════════════════════════════════════════
@@ -583,6 +662,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                           'не вказана — для нового студента група обов\'язкова'),
                 'warnings': [], 'new_student': None, 'enrollment': None,
                 'card_fields': [], 'enrollment_fields': [],
+                'same_card_fields': [], 'search_source': None,
             }
 
         last_name_eng, first_name_eng = generate_english_name(last_name, first_name)
@@ -626,7 +706,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 'group_id': group_id,
                 'group_name': group_name,
                 'group_form': group_form,
-                'is_primary': True,  # новий студент → перша група = основна
+                'is_primary': True,
                 'license_id': license_id,
                 'license_name': license_name,
                 'edebo_code': edebo_code or None,
@@ -634,6 +714,8 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
             },
             'card_fields': [],
             'enrollment_fields': [],
+            'same_card_fields': [],
+            'search_source': None,
         }
 
     # ═════════════════════════════════════════════════════════════════
@@ -655,7 +737,6 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
         ).fetchone()
 
         if enroll_row and enroll_row['status'] == 'active':
-            # Сценарій A: вже активний → пропуск рядка
             return {
                 'row': i, 'status': 'error',
                 'fio_excel': f"{last_name} {first_name} {middle_name}",
@@ -663,6 +744,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                 'error': f'Вже активно навчається в цій групі (студент ID {sid})',
                 'warnings': [], 'new_student': None, 'enrollment': None,
                 'card_fields': [], 'enrollment_fields': [],
+                'same_card_fields': [], 'search_source': search_source,
             }
 
         was_reactivation = bool(
@@ -684,13 +766,10 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
             'edebo_code': edebo_code or None,
             'program_credits_override': program_credits_override,
         }
-    else:
-        # update-only: enrollment не створюємо, але користувачу треба
-        # показати, куди писатимуться enrollment-поля (edebo, credits).
-        enrollment = None
 
     # ── Поля картки студента (students.*) ──
     card_fields = []
+    same_card_fields = []
     if update_existing_data:
         field_candidates = {
             'last_name_UA': last_name,
@@ -705,6 +784,10 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
             'gender': gender,
         }
         card_fields = _collect_field_diffs(existing, field_candidates)
+        diff_field_names = {d['field'] for d in card_fields}
+        same_card_fields = _collect_same_fields(
+            existing, field_candidates, diff_field_names,
+        )
 
     # ── Поля enrollment'а (edebo_code, program_credits_override) ──
     enrollment_fields = []
@@ -713,12 +796,6 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
     if update_existing_data:
         # edebo_code
         if edebo_code:
-            cur_edc = (
-                str(existing['edebo_code'] or '').strip()
-                if not update_only_mode
-                else None
-            )
-
             # Визначаємо поточне значення у цільовому enrollment'ї
             target_gid_for_check = (
                 target_info['target_group_id']
@@ -731,16 +808,21 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                     (sid, target_gid_for_check),
                 ).fetchone()
                 cur_edc = str(row_edc['edebo_code'] or '').strip() if row_edc else ''
+            else:
+                cur_edc = ''
 
+            cur_edc_is_empty = _is_effectively_empty(cur_edc, 'edebo_code')
             new_edc = str(edebo_code).strip()
-            if cur_edc != new_edc:
+            if not _is_effectively_empty(new_edc, 'edebo_code') and (
+                cur_edc_is_empty or cur_edc != new_edc
+            ):
                 enrollment_fields.append({
                     'field': 'edebo_code',
                     'label': ENROLLMENT_FIELD_LABELS['edebo_code'],
                     'old': cur_edc,
                     'new': new_edc,
-                    'type': 'fill_empty' if not cur_edc else 'conflict',
-                    'enabled': (not cur_edc),
+                    'type': 'fill_empty' if cur_edc_is_empty else 'conflict',
+                    'enabled': cur_edc_is_empty,
                     'target_group_id': target_info['target_group_id'],
                     'groups_available': target_info['groups_available'],
                     'needs_choice': target_info['needs_choice'],
@@ -766,7 +848,7 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
                     'new': str(program_credits_override),
                     'type': 'fill_empty' if not cur_cred else 'conflict',
                     'enabled': (not cur_cred),
-                    'target_group_id': group_id,  # credits пишуться ТІЛЬКИ в group_id з A
+                    'target_group_id': group_id,
                     'groups_available': [],
                     'needs_choice': False,
                 })
@@ -783,6 +865,8 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
         'enrollment': enrollment,
         'card_fields': card_fields,
         'enrollment_fields': enrollment_fields,
+        'same_card_fields': same_card_fields,
+        'search_source': search_source,
     }
 
 
@@ -793,11 +877,6 @@ def _build_row_preview(i, row, conn, allowed_group_ids, license_lookup):
 @students_bp.route('/import_from_excel', methods=['GET', 'POST'])
 @permission_required('import_from_excel')
 def import_from_excel():
-    """
-    GET  — показує форму завантаження файлу.
-    POST — приймає файл, будує preview (БЕЗ запису), редіректить на
-           /import_from_excel/preview/<token>.
-    """
     _cleanup_old_states()
 
     if request.method == 'GET':
@@ -874,26 +953,23 @@ def import_from_excel():
 @students_bp.route('/import_from_excel/preview/<token>')
 @permission_required('import_from_excel')
 def import_preview(token):
-    """Сторінка прев'ю: усі зміни з чекбоксами/radio."""
     state = _load_state(token)
     if not state:
         flash('Сесію імпорту не знайдено або вона застаріла', 'warning')
         return redirect(url_for('students.import_from_excel'))
 
-    # Захист: чужа сесія (не адмін)
     if state.get('user_id') != session.get('user_id') and not session.get('is_admin'):
         flash('Сесію імпорту створено іншим користувачем', 'error')
         return redirect(url_for('students.import_from_excel'))
 
     preview = state['preview']
 
-    # Статистика для верхньої панелі
     stats = {
-        'new_students': sum(1 for p in preview if p['new_student']),
-        'enrollments': sum(1 for p in preview if p['enrollment']),
+        'new_students': sum(1 for p in preview if p.get('new_student')),
+        'enrollments': sum(1 for p in preview if p.get('enrollment')),
         'updates': sum(1 for p in preview
-                       if p['card_fields'] or p['enrollment_fields']),
-        'errors': sum(1 for p in preview if p['error']),
+                       if p.get('card_fields') or p.get('enrollment_fields')),
+        'errors': sum(1 for p in preview if p.get('error')),
     }
 
     return render_template(
@@ -912,7 +988,6 @@ def import_preview(token):
 @students_bp.route('/import_from_excel/commit/<token>', methods=['POST'])
 @permission_required('import_from_excel')
 def import_commit(token):
-    """Застосовує лише те, що користувач позначив чекбоксами у прев'ю."""
     state = _load_state(token)
     if not state:
         flash('Сесію імпорту не знайдено або вона застаріла', 'warning')
@@ -974,7 +1049,6 @@ def import_commit(token):
             if item.get('new_student'):
                 if not request.form.get(f'apply_new_student_{row}'):
                     stats['skipped_by_user'] += 1
-                    # Якщо новий не створюємо — enrollment теж пропускаємо
                     continue
                 ns = item['new_student']
                 f = ns['fields']
@@ -1055,7 +1129,6 @@ def import_commit(token):
                     if not request.form.get(f'apply_enroll_{row}_{ef["field"]}'):
                         continue
 
-                    # Куди писати: якщо needs_choice — з форми, інакше target_group_id з preview
                     if ef.get('needs_choice'):
                         target_gid = request.form.get(f'target_group_{row}_{ef["field"]}')
                         try:
@@ -1112,7 +1185,6 @@ def import_commit(token):
     finally:
         conn.close()
 
-    # Логуємо
     log_action(
         current_username(),
         f"імпорт студентів з Excel (підтверджено): "
@@ -1124,13 +1196,11 @@ def import_commit(token):
                 f"попереджень: {len(stats['warnings'])}",
     )
 
-    # Видаляємо стан (успіх чи ні — повторно не застосувати)
     try:
         os.remove(_state_path(token))
     except OSError:
         pass
 
-    # Зберігаємо звіт для сторінки /report
     report_id = None
     if stats['warnings'] or stats['skipped_errors'] or stats['skipped_by_user']:
         os.makedirs(REPORTS_DIR, exist_ok=True)
@@ -1148,7 +1218,6 @@ def import_commit(token):
             }, f, ensure_ascii=False)
         return redirect(url_for('students.import_report', report_id=report_id))
 
-    # Інакше — коротке flash + редірект на список
     flash(
         f"✅ Імпорт завершено. "
         f"Нових студентів: {stats['students_created']}. "
@@ -1161,13 +1230,11 @@ def import_commit(token):
 
 # ═══════════════════════════════════════════════════════════════════════
 # Маршрут 4: GET /import_from_excel/report/<report_id>
-# (спрощений — тільки статистика + skipped + warnings)
 # ═══════════════════════════════════════════════════════════════════════
 
 @students_bp.route('/import_from_excel/report/<report_id>')
 @permission_required('import_from_excel')
 def import_report(report_id):
-    """Підсумковий звіт після commit."""
     report_id = re.sub(r'[^0-9a-f]', '', report_id or '')
     report_path = os.path.join(REPORTS_DIR, f'{report_id}.json')
     if not report_id or not os.path.isfile(report_path):

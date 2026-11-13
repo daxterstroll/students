@@ -128,6 +128,17 @@ def get_db():
     # "Анна-Марія" == "Анна Марія" == "Анна‑Марія" == "Анна’Марія",
     # навіть якщо в БД та Excel використано різні Unicode-символи.
     conn.create_function("NORM_NAME", 1, normalize_name_for_match)
+    # NORM_PASSPORT() — нормалізує номер паспорта для SQL-порівнянь.
+    # Потрібна, щоб `WHERE number = ?` не вважав "39628" і "039628"
+    # різними паспортами (Excel втрачає провідні нулі).
+    try:
+        from routes.passport_types import normalize_passport_number
+        conn.create_function(
+            "NORM_PASSPORT", 2,
+            lambda n, t: (normalize_passport_number(n, t) or '')
+        )
+    except Exception as _e:
+        logger.warning(f"Не вдалося зареєструвати SQL-функцію NORM_PASSPORT: {_e}")
     # WAL замість типового rollback journal - дозволяє читачам не
     # блокуватись, поки триває запис (і навпаки), що критично важливо
     # під час одночасних запитів на багатопотоковому сервері (waitress).

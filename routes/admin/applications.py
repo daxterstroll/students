@@ -18,7 +18,8 @@ from datetime import datetime
 import json
 from routes.passport_types import (
     PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
-    normalize_passport_type, passport_template_context,
+    normalize_passport_type, normalize_passport_number,
+    passport_template_context,
 )
 
 
@@ -689,6 +690,10 @@ def pending_student_review(pending_id):
 
             # Паспорт
             if row['passport_number']:
+                _passport_doc_type = (
+                    normalize_passport_type(row['passport_document_type'])
+                    or PASSPORT_TYPE_DEFAULT
+                )
                 cur_passport = conn.execute("""
                     INSERT INTO passport_documents (
                         student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
@@ -696,9 +701,10 @@ def pending_student_review(pending_id):
                 """, (
                     student_id,
                     group_id,
-                    normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
+                    _passport_doc_type,
                     row['passport_series'],
-                    row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
+                    normalize_passport_number(row['passport_number'], _passport_doc_type),
+                    row['passport_issued_by'], row['passport_issue_date'],
                     row['passport_valid_until'], row['passport_unique_number'],
                 ))
                 conn.execute(
@@ -1070,15 +1076,20 @@ def pending_student_review(pending_id):
                 ).fetchone()
                 _doc_gid = _grp_row['group_id'] if _grp_row else None
 
+                _passport_doc_type = (
+                    normalize_passport_type(row['passport_document_type'])
+                    or PASSPORT_TYPE_DEFAULT
+                )
                 cur_passport = conn.execute("""
                     INSERT INTO passport_documents (
                         student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     existing_id, _doc_gid,
-                    normalize_passport_type(row['passport_document_type']) or PASSPORT_TYPE_DEFAULT,
+                    _passport_doc_type,
                     row['passport_series'],
-                    row['passport_number'], row['passport_issued_by'], row['passport_issue_date'],
+                    normalize_passport_number(row['passport_number'], _passport_doc_type),
+                    row['passport_issued_by'], row['passport_issue_date'],
                     row['passport_valid_until'], row['passport_unique_number'],
                 ))
                 passport_id_for_scans = cur_passport.lastrowid

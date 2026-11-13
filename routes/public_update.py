@@ -14,7 +14,8 @@ from routes.utils import save_multiple_attachments, logger
 from routes.photo import process_and_save_pending_photo
 from routes.config import PROJECT_ROOT
 from routes.passport_types import (
-    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, passport_template_context,
+    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE,
+    normalize_passport_number, passport_template_context,
 )
 
 public_update_bp = Blueprint('public_update', __name__)
@@ -313,7 +314,9 @@ def update_info(token):
             submitted['passport'] = {
                 'document_type': passport_doc_type,
                 'series': f('passport_series'),
-                'number': f('passport_number'),
+                'number': normalize_passport_number(
+                    f('passport_number'), passport_doc_type,
+                ),
                 'issued_by': f('passport_issued_by'),
                 'issue_date': _iso_to_ua_date(f('passport_issue_date')),
                 'valid_until': _iso_to_ua_date(f('passport_valid_until')) if passport_doc_type in PASSPORT_TYPES_ID_STYLE else None,

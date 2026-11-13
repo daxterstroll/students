@@ -17,7 +17,8 @@ from routes.utils import generate_english_name, save_multiple_attachments, logge
 from routes.photo import process_and_save_pending_photo, load_and_validate_image
 from routes.config import PROJECT_ROOT
 from routes.passport_types import (
-    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, passport_template_context,
+    PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE,
+    normalize_passport_number, passport_template_context,
 )
 
 public_apply_bp = Blueprint('public_apply', __name__)
@@ -404,7 +405,9 @@ def apply():
         passport_unique_number_val = None
     else:
         passport_series_val = f('passport_series')
-        passport_number_val = f('passport_number')
+        passport_number_val = normalize_passport_number(
+            f('passport_number'), passport_document_type,
+        )
         passport_issued_by_val = f('passport_issued_by')
         passport_issue_date = _iso_to_ua_date(f('passport_issue_date'))
         passport_valid_until = (

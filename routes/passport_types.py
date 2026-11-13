@@ -71,3 +71,55 @@ def passport_template_context():
         'passport_types_id_style': list(PASSPORT_TYPES_ID_STYLE),
         'passport_type_default': PASSPORT_TYPE_DEFAULT,
     }
+ 
+def normalize_passport_number(number, document_type):
+    """
+    Додає провідні нулі до номера паспорта, якщо Excel/користувач їх
+    втратив (Excel зберігає "039628" як число 39628 — нулі зникають).
+
+    Правила:
+      - Паспорт-книжка: очікується 6 цифр (39628 → 039628)
+      - ID-картка / ID-картка без чипа: 9 цифр (39628 → 000039628)
+      - Свідоцтво про народження: НЕ чіпаємо (там формат не фіксований,
+        часто містить літери)
+      - Якщо в номері є не лише цифри (напр. "12345А", "АБ-123") —
+        НЕ чіпаємо: це не стандартний числовий номер
+      - Якщо номер вже довший за очікувану довжину — НЕ чіпаємо
+        (це не наш формат, хай буде як є)
+
+    Приклади:
+      normalize_passport_number('39628', 'Паспорт громадянина України')
+        → '039628'
+      normalize_passport_number('39628', 'Паспорт громадянина України з безконтактним електронним носієм')
+        → '000039628'
+      normalize_passport_number('039628', 'Паспорт громадянина України')
+        → '039628'  (не чіпаємо — вже правильно)
+      normalize_passport_number('12345А', 'Паспорт громадянина України')
+        → '12345А'  (є літера — не чіпаємо)
+      normalize_passport_number('12345678', 'Паспорт громадянина України')
+        → '12345678'  (довший за 6 — не чіпаємо)
+      normalize_passport_number('1234', 'Свідоцтво про народження')
+        → '1234'  (свідоцтво — не чіпаємо)
+    """
+    if not number or not document_type:
+        return number
+
+    s = str(number).strip()
+    if not s:
+        return number
+
+    # Тільки цифри — інакше залишаємо як є
+    if not s.isdigit():
+        return s
+
+    if document_type == PASSPORT_TYPE_BOOK:
+        target_len = 6
+    elif document_type in PASSPORT_TYPES_ID_STYLE:
+        target_len = 9
+    else:
+        # Свідоцтво про народження або невідомий тип — не чіпаємо
+        return s
+
+    if len(s) < target_len:
+        return s.zfill(target_len)
+    return s

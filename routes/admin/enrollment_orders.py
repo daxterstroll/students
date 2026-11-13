@@ -25,7 +25,6 @@ from routes.helpers import current_username, sort_ukrainian
 from routes.utils import log_action, permission_required, logger
 from routes.orders_service import (
     create_order,
-    get_enrollment_student_ids,
     orders_tables_ready,
     ORDER_TYPE_LABELS,
 )
@@ -1060,126 +1059,6 @@ def _batch_lookup_students(cursor, fios: list[str]) -> dict:
 
     return results
 
-
-def _process_bulk_text(raw_text: str):
-    """Розбирає текст, зберігає стан у JSON і ПОВЕРТАЄ РЕДИРЕКТ на превью."""
-    from routes.utils import logger
-
-    raw_text = (raw_text or '').strip()
-    logger.info(f"[enrollment_bulk] processing {len(raw_text)} chars, "
-                f"{raw_text.count(chr(10)) + 1} lines")
-
-    if not raw_text:
-        flash('Вставте, будь ласка, список у текстове поле', 'error')
-        return redirect(url_for('admin.enrollment_bulk'))
-
-    conn = get_db()
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    enrolled_ids = get_enrollment_student_ids(conn=conn)
-    seen_student_ids = set()
-
-    parsed, errors = [], []
-    parsed_lines = []
-
-    for line_num, line in enumerate(raw_text.splitlines(), 1):
-        if not line.strip():
-            continue
-        data = _parse_bulk_line(line)
-        if not data:
-            errors.append({'line': line_num, 'raw': line,
-                           'reason': 'не вдалося розпізнати формат'})
-            continue
-        if not data['fio']:
-            errors.append({'line': line_num, 'raw': line, 'reason': 'порожнє ПІБ'})
-            continue
-        if not data['number'] or not data['date']:
-            errors.append({'line': line_num, 'raw': line, 'fio': data['fio'],
-                           'reason': 'не вказано номер або дату наказу'})
-            continue
-        try:
-            datetime.strptime(data['date'], '%d.%m.%Y')
-        except ValueError:
-            errors.append({'line': line_num, 'raw': line, 'fio': data['fio'],
-                           'reason': f"некоректна дата '{data['date']}'"})
-            continue
-        parsed_lines.append((line_num, data))
-
-    # ── Один batch-пошук для всіх ПІБ ──
-    all_fios = [d['fio'] for _ln, d in parsed_lines]
-    lookups = _batch_lookup_students(cursor, all_fios)
-
-    for line_num, data in parsed_lines:
-        student_id, matched_name, score = lookups[data['fio']]
-
-        if not student_id:
-            errors.append({'line': line_num, 'raw': data['raw'], 'fio': data['fio'],
-                           'reason': 'студента не знайдено (або неоднозначно)'})
-            continue
-
-        st = conn.execute("SELECT archived FROM students WHERE id = ?",
-                          (student_id,)).fetchone()
-        if st and st['archived']:
-            errors.append({'line': line_num, 'raw': data['raw'], 'fio': matched_name,
-                           'reason': 'студент в архіві'})
-            continue
-        if student_id in enrolled_ids:
-            errors.append({'line': line_num, 'raw': data['raw'], 'fio': matched_name,
-                           'reason': 'уже має наказ про зарахування'})
-            continue
-        if student_id in seen_student_ids:
-            errors.append({'line': line_num, 'raw': data['raw'], 'fio': matched_name,
-                           'reason': 'дублікат у списку'})
-            continue
-        seen_student_ids.add(student_id)
-
-        parsed.append({
-            'line': line_num,
-            'student_id': student_id,
-            'matched_name': matched_name,
-            'fio_input': data['fio'],
-            'score': round(score, 1),
-            'code': data['code'],
-            'number': data['number'],
-            'date': data['date'],
-        })
-
-    groups = {}
-    for p in parsed:
-        key = (p['number'], p['date'])
-        g = groups.setdefault(key, {'number': p['number'], 'date': p['date'],
-                                     'codes': set(), 'students': []})
-        if p['code']:
-            g['codes'].add(p['code'])
-        g['students'].append(p)
-
-    def _key(k):
-        try:
-            return (datetime.strptime(k[1], '%d.%m.%Y'), k[0])
-        except (ValueError, TypeError):
-            return (datetime.max, k[0] or '')
-
-    group_list = []
-    for k in sorted(groups.keys(), key=_key):
-        g = groups[k]
-        g['codes'] = sorted(g['codes'])
-        group_list.append(g)
-
-    conn.close()
-
-    token = uuid.uuid4().hex[:16]
-    state = {'groups': group_list, 'errors': errors}
-    with open(BULK_SESSIONS_DIR / f'{token}.json', 'w', encoding='utf-8') as f:
-        json.dump(state, f, ensure_ascii=False)
-
-    from routes.utils import logger
-    logger.info(f"[enrollment_bulk] done: {len(parsed)} students, "
-                f"{len(group_list)} orders, {len(errors)} errors, token={token}")
-
-    return redirect(url_for('admin.enrollment_bulk_preview', token=token))
-
-
 # ── Форма ──────────────────────────────────────────────────────────
 @admin_bp.route('/admin/orders/enrollment/bulk', methods=['GET', 'POST'])
 @permission_required('create_enrollment_order')
@@ -1303,7 +1182,19 @@ def enrollment_bulk_confirm():
     def is_included(sid, gid) -> bool:
         if not include_present:
             return True  # backward-compat
-        return f'{sid}_{gid}' in included_keys
+
+        # Точне співпадіння пари (студент, група)
+        if f'{sid}_{gid}' in included_keys:
+            return True
+
+        # Backward-compat для старих сесій, де group_id був None
+        # (вони створювались старою версією _process_bulk_text без group_id,
+        #  тоді в шаблоні value = "123_None"). Якщо в БД є наказ саме
+        # для цієї групи — вважаємо рядок включеним.
+        if f'{sid}_None' in included_keys:
+            return True
+
+        return False
 
     from routes.orders_service import get_enrollment_pairs
     conn = get_db()
