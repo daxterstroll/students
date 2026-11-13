@@ -73,6 +73,18 @@ def teacher_grade_form(token):
             SET status=?, submitted_at=datetime('now','localtime')
             WHERE id=?
         """, (new_status, sheet['id']))
+
+        # ── ДОБАВИТЬ ──
+        from routes.exam_sessions.history import log_history
+        log_history(
+            conn,
+            entity_type='sheet', entity_id=sheet['id'],
+            session_id=sheet['session_id'], sheet_id=sheet['id'],
+            action='update', field_name='status',
+            old_value=sheet['status'], new_value=new_status,
+            details={'saved_by': 'teacher (public form)'},
+        )
+
         conn.commit()
         logger.info(f"[session-grade] teacher saved sheet_id={sheet['id']}")
         flash('Оцінки збережено. Дякуємо!', 'success')

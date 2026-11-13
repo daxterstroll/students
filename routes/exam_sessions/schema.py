@@ -105,6 +105,31 @@ def ensure_exam_session_tables(conn) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_sheet_students_sheet ON session_sheet_students(sheet_id)"
     )
+    
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS exam_session_history (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type     TEXT NOT NULL,
+            entity_id       INTEGER NOT NULL,
+            session_id      INTEGER,
+            sheet_id        INTEGER,
+            action          TEXT NOT NULL,
+            field_name      TEXT,
+            old_value       TEXT,
+            new_value       TEXT,
+            details         TEXT,
+            changed_at      TEXT DEFAULT (datetime('now', 'localtime')),
+            changed_by      TEXT NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_exam_sess_hist_session "
+        "ON exam_session_history(session_id, id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_exam_sess_hist_entity "
+        "ON exam_session_history(entity_type, entity_id, id DESC)"
+    )
 
     try:
         conn.execute("ALTER TABLE session_sheets ADD COLUMN work_topic TEXT")

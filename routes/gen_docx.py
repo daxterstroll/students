@@ -810,6 +810,25 @@ def _vidomist_national(points, control_form):
     if p >= 60: return 'Задовільно/ Satisfactory'
     return 'Незадовільно/ Fail'
 
+def _fmt_exam_date_ua(iso_date_str):
+    """YYYY-MM-DD → «15 грудня 2026». Если не ISO — вернуть как есть."""
+    if not iso_date_str:
+        return ''
+    s = str(iso_date_str).strip()
+    import re as _re
+    m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
+    if not m:
+        return s
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    months_ua = {
+        1: 'січня', 2: 'лютого', 3: 'березня', 4: 'квітня',
+        5: 'травня', 6: 'червня', 7: 'липня', 8: 'серпня',
+        9: 'вересня', 10: 'жовтня', 11: 'листопада', 12: 'грудня',
+    }
+    name = months_ua.get(month)
+    if not name:
+        return s
+    return f"{day} {name} {year}"
 
 def _vidomist_build_context(sheet, students):
     """Контекст для DocxTemplate — ті самі ключі що {{ }} у шаблоні."""
@@ -876,7 +895,7 @@ def _vidomist_build_context(sheet, students):
         'degree_level': sheet.get('degree_level') or '',
         'statement_title': f'ВІДОМІСТЬ  № {num}.'.strip() if num else 'ВІДОМІСТЬ',
         'statement_number': num,
-        'exam_date': sheet.get('exam_date') or '',
+        'exam_date': _fmt_exam_date_ua(sheet.get('exam_date')),
         'discipline_name': sheet.get('discipline_name') or '',
         'semester_word': _vidomist_semester_word(sheet.get('semester')),
         'semester': str(sheet.get('semester') or ''),

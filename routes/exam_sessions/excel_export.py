@@ -198,6 +198,7 @@ def _fill_header(ws, sheet: dict):
         pass
 
     exam_date = _get(sheet, 'exam_date') or ''
+    exam_date = _fmt_exam_date_ua(dict(sheet).get('exam_date') if not isinstance(sheet, dict) else sheet.get('exam_date'))
     _set(ws, 8, 1, f'Дата проведення                                       {exam_date}', f14b)
     try:
         ws.merge_cells('A8:G8')

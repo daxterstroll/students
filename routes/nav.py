@@ -77,6 +77,8 @@ NAV_SECTIONS = [
              'icon': 'bi-clipboard2-check',      'label': 'Сесії та відомості'},
             {'perm': 'transfer_exam_grades',     'url': 'exam_sessions.transfer_queue',
              'icon': 'bi-arrow-left-right',      'label': 'Перенос оцінок із сесій'},
+             {'perm': 'view_exam_session_history', 'url': 'exam_sessions.history_index',
+             'icon': 'bi-journal-text',          'label': 'Журнал сесій та відомостей'},
             {'divider': True},
             {'perm': 'import_subjects',          'url': 'admin.import_subjects',
              'icon': 'bi-journal-plus',          'label': 'Імпорт предметів (Excel)'},

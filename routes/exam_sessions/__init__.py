@@ -19,3 +19,4 @@ exam_sessions_bp = Blueprint('exam_sessions', __name__)
 from . import admin  # noqa: E402, F401
 from . import public  # noqa: E402, F401
 from . import transfer  # noqa: E402, F401
+from . import history  # noqa: E402, F401

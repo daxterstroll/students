@@ -45,11 +45,61 @@
         font-family: 'JetBrains Mono', monospace; font-size: .8rem;
     }
     .search-order__arrow { color: var(--muted); }
+
+    /* Плашка «нічого не пишеться в БД без підтвердження» */
+    .confirm-banner {
+        display: flex;
+        gap: .7rem;
+        align-items: flex-start;
+        padding: .9rem 1.1rem;
+        margin-bottom: 1.5rem;
+        background: linear-gradient(135deg, rgba(79,122,82,.12), rgba(79,122,82,.04));
+        border: 1px solid rgba(79,122,82,.3);
+        border-left: 3px solid #3f7556;
+        border-radius: 8px;
+        font-size: .9rem;
+    }
+    .confirm-banner__icon {
+        flex-shrink: 0;
+        color: #3f7556;
+        font-size: 1.2rem;
+    }
+    .confirm-banner__title {
+        font-weight: 700;
+        color: #3f7556;
+        margin-bottom: .2rem;
+    }
+    html[data-theme="dark"] .confirm-banner {
+        background: linear-gradient(135deg, rgba(79,122,82,.22), rgba(79,122,82,.08));
+        border-color: rgba(79,122,82,.5);
+    }
+    html[data-theme="dark"] .confirm-banner__icon,
+    html[data-theme="dark"] .confirm-banner__title {
+        color: #bfe3c2;
+    }
 </style>
 
 <div class="container py-4">
 
-{{ ui.page_header('bi-file-earmark-arrow-up', 'Імпорт студентів з Excel', 'Масове додавання нових студентів, паралельних навчань або оновлення полів карток без створення навчання') }}
+{{ ui.page_header(
+    'bi-file-earmark-arrow-up',
+    'Імпорт студентів з Excel',
+    'Масове додавання нових студентів, паралельних навчань та оновлення полів карток'
+) }}
+
+{# ── Плашка: нічого не пишеться в БД без підтвердження ── #}
+<div class="confirm-banner">
+    <i class="bi bi-shield-check confirm-banner__icon"></i>
+    <div>
+        <div class="confirm-banner__title">Безпечний двоетапний імпорт</div>
+        <div>
+            Після завантаження файлу <strong>нічого не записується в базу</strong>.
+            Система покаже всі зміни — нових студентів, нові навчання, оновлення полів —
+            на окремій сторінці. Ви самостійно позначите галочками, що саме застосувати,
+            і лише тоді натиснете «Застосувати вибране».
+        </div>
+    </div>
+</div>
 
 <div class="row g-4">
 
@@ -65,7 +115,7 @@
             <div class="form-text">Тільки формат .xlsx</div>
           </div>
           <button type="submit" class="btn btn-primary w-100">
-            <i class="bi bi-cloud-arrow-up me-1"></i> Імпортувати
+            <i class="bi bi-clipboard-check me-1"></i> Розпізнати та переглянути
           </button>
         </form>
 
@@ -74,12 +124,11 @@
         <h6 class="mb-2">Що робить імпорт</h6>
         <ul class="list-unstyled small mb-0">
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Знаходить наявного студента за <code>student_id</code> → <code>tax_id</code> → ФІО+дата → ФІО (тільки якщо збіг рівно один)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Створює нового студента з транслітерацією ПІБ (КМУ №55-2010)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Додає/перевідкриває enrollment у вказаній групі (паралельне навчання, реактивація з архіву)</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Без групи в колонці A — оновлює лише порожні поля картки, не чіпаючи навчання</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Оновлює <strong>лише порожні</strong> поля — заповнені вручну не перезаписує</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Готує нового студента з транслітерацією ПІБ (КМУ №55-2010)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Готує нове навчання (паралельне, реактивація з архіву, відновлення після відрахування)</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує <strong>різницю</strong> по кожному полю: що було / що стане</li>
           <li><i class="bi bi-check-circle-fill text-success me-2"></i>Визначає стать — з колонки K або автоматично за по батькові</li>
-          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує детальний звіт: хто оброблений, хто пропущений і чому</li>
+          <li><i class="bi bi-check-circle-fill text-success me-2"></i>Показує прев'ю — ви вирішуєте, що застосувати</li>
         </ul>
 
         <hr>
@@ -119,12 +168,12 @@
                 A заповнено — з групою
               </div>
               <ul>
-                <li>Новий студент → створюється + enrollment</li>
+                <li>Новий студент → створиться + навчання</li>
                 <li>Є в іншій групі → паралельне навчання</li>
-                <li>Був відрахований/випущений → перевідкривається</li>
-                <li>Був в архіві → розархівовується</li>
+                <li>Був відрахований/випущений → реактивується</li>
+                <li>Був в архіві → розархівується</li>
                 <li>Вже активний у цій групі → <strong>пропуск</strong> (дублікат)</li>
-                <li>+ оновлення порожніх полів картки</li>
+                <li>+ оновлення полів картки</li>
               </ul>
             </div>
           </div>
@@ -135,8 +184,8 @@
                 A порожньо — тільки оновлення
               </div>
               <ul>
-                <li>Студент <strong>знайдено</strong> → оновлюються лише порожні поля картки (телефон, email, ІПН, ЄДЕБО, адреса, стать)</li>
-                <li>Enrollment, ліцензія, група, кредити, архів — <strong>не чіпаються</strong></li>
+                <li>Студент <strong>знайдено</strong> → оновлюються лише вибрані поля картки (телефон, email, ІПН, ЄДЕБО, адреса, стать)</li>
+                <li>Навчання, ліцензія, група, кредити, архів — <strong>не змінюються</strong></li>
                 <li>Студент <strong>не знайдено</strong> → пропуск з поясненням «для нового група обов'язкова»</li>
                 <li>Колонка F (кредити override) <strong>ігнорується</strong> — немає прив'язки до групи</li>
               </ul>
@@ -184,7 +233,7 @@
                 <td class="text-center fw-bold">A</td>
                 <td>ID групи</td>
                 <td class="text-center"><span class="badge bg-secondary">Умовно</span></td>
-                <td><code>1</code> — числовий ID групи. <strong>Порожньо</strong> = режим «тільки оновити» (без створення enrollment).</td>
+                <td><code>1</code> — числовий ID групи. <strong>Порожньо</strong> = режим «тільки оновити» (без створення навчання).</td>
               </tr>
               <tr class="col-group-a">
                 <td class="text-center fw-bold">B</td>
@@ -275,19 +324,19 @@
                 <td class="text-center fw-bold">M</td>
                 <td>is_primary</td>
                 <td class="text-center"><span class="badge bg-secondary">auto</span></td>
-                <td><code>1</code> — зробити цю групу основною. <code>0</code> — не змінювати. Порожньо: для нового студента група стає основною; для існуючого — не змінюється.</td>
+                <td><code>1</code> — зробити цю групу основною. <code>0</code> — не змінювати. Порожньо: для нового студента група стає основною; для існуючого — не змінюється. <em>(Застосовується разом з новим enrollment у прев'ю.)</em></td>
               </tr>
               <tr class="col-group-l">
                 <td class="text-center fw-bold">N</td>
                 <td>update_existing_data</td>
                 <td class="text-center"><span class="badge bg-success-subtle text-success-emphasis">1</span></td>
-                <td><code>1</code> (або порожньо) — оновлювати порожні поля картки наявного студента. <code>0</code> — не оновлювати нічого (тільки enrollment).</td>
+                <td><code>1</code> (або порожньо) — у прев'ю будуть показані поля картки для оновлення. <code>0</code> — поля не показуються (тільки навчання).</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <h6 class="mb-2">Коли рядок пропускається</h6>
+        <h6 class="mb-2">Коли рядок позначається як помилковий (пропускається)</h6>
         <ul class="small mb-3">
           <li>ПІБ містить не рівно 3 слова</li>
           <li>A вказана, але ID групи не існує, заархівована або недоступна користувачу</li>
@@ -319,7 +368,7 @@
                 <td>+380991234567</td>
                 <td></td>
                 <td></td>
-                <td class="text-success"><i class="bi bi-plus-circle"></i> Новий студент + enrollment у групі 1</td>
+                <td class="text-success"><i class="bi bi-plus-circle"></i> Новий студент + навчання у групі 1</td>
               </tr>
               <tr>
                 <td><code>5</code></td>
@@ -337,7 +386,7 @@
                 <td>+380671112233</td>
                 <td></td>
                 <td></td>
-                <td class="text-success"><i class="bi bi-pencil-square"></i> Тільки оновлення телефону (пошук за ФІО)</td>
+                <td class="text-success"><i class="bi bi-pencil-square"></i> Оновлення телефону (пошук за ФІО)</td>
               </tr>
               <tr>
                 <td></td>
@@ -365,7 +414,9 @@
           <i class="bi bi-lightbulb me-1"></i>
           <strong>Порада:</strong> для масової правки телефонів/ІПН/адрес по всій базі —
           залишайте A порожньою, а в L вказуйте ID студентів. Це найшвидший і
-          найбезпечніший спосіб — enrollment, ліцензія, група й архів не зміняться.
+          найбезпечніший спосіб — навчання, ліцензія, група й архів не зміняться.
+          На сторінці перевірки ви побачите різницю по кожному полю і зможете
+          вибірково застосувати лише те, що справді потрібно оновити.
         </div>
       </div>
     </div>

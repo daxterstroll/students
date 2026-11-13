@@ -57,8 +57,10 @@ PERMISSION_DEFINITIONS = [
     ('create_enrollment_order',     'Наказ про зарахування',                     'orders'),
 
     # ─── Сесії ──────────────────────────────────────────────────
-    ('manage_exam_sessions',        'Сесії та відомості',                        'sessions'),
-    ('transfer_exam_grades',        'Перенос оцінок із сесій у план',            'sessions'),
+    ('manage_exam_sessions',        'Сесії та відомості — створення та редагування', 'sessions'),
+    ('delete_exam_sessions',        'Сесії та відомості — ВИДАЛЕННЯ',                'sessions'),
+    ('view_exam_session_history',   'Історія сесій та відомостей (перегляд)',        'sessions'),
+    ('transfer_exam_grades',        'Перенос оцінок із сесій у план',                'sessions'),
 
     # ─── Імпорт ─────────────────────────────────────────────────
     ('import_from_excel',           'Імпорт студентів з Excel',                  'import'),

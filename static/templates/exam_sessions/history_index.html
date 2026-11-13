@@ -1,0 +1,281 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Журнал сесій та відомостей{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+
+<style>
+    .hist-action {
+        display: inline-flex; align-items: center; gap: .3rem;
+        padding: .18rem .55rem; border-radius: 6px;
+        font-size: .72rem; font-weight: 700;
+        border: 1px solid transparent; white-space: nowrap;
+    }
+    .hist-action--create       { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
+    .hist-action--update       { background: var(--brass-soft); color: #8a6a1a; border-color: var(--brass-semi); }
+    .hist-action--delete       { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    .hist-action--grade_set    { background: rgba(74,110,168,.16); color: #2f5f87; border-color: rgba(74,110,168,.35); }
+    .hist-action--approve      { background: rgba(79,122,82,.20); color: #3f7556; border-color: rgba(79,122,82,.4); }
+    .hist-action--lock         { background: var(--ink); color: var(--brass-lt); border-color: var(--ink); }
+    .hist-action--token_issued { background: rgba(200,162,74,.20); color: #8a6a1a; border-color: var(--brass-semi); }
+    .hist-action--transfer     { background: rgba(74,110,168,.20); color: #2f5f87; border-color: rgba(74,110,168,.4); }
+    .hist-action--refresh      { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+
+.hist-action--unlink { background: rgba(162,59,46,.12); color: #7a2b21; border-color: var(--stamp-semi); }
+html[data-theme="dark"] .hist-action--unlink { color: #f0b3ab; }
+
+    html[data-theme="dark"] .hist-action--create,
+    html[data-theme="dark"] .hist-action--approve { color: #bfe3c2; }
+    html[data-theme="dark"] .hist-action--update,
+    html[data-theme="dark"] .hist-action--token_issued { color: var(--brass-lt); }
+    html[data-theme="dark"] .hist-action--grade_set,
+    html[data-theme="dark"] .hist-action--transfer { color: #a9c2e8; }
+
+    .hist-old { color: var(--stamp); text-decoration: line-through; }
+    .hist-new { color: #3f7556; font-weight: 600; }
+    html[data-theme="dark"] .hist-new { color: #bfe3c2; }
+
+    .deleted-badge {
+        display: inline-flex; align-items: center; gap: .25rem;
+        padding: .12rem .5rem; border-radius: 4px;
+        background: var(--stamp-soft); color: var(--stamp);
+        border: 1px solid var(--stamp-semi);
+        font-size: .68rem; font-weight: 700;
+        margin-left: .35rem;
+    }
+
+    .history-filters {
+        background: var(--paper-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+</style>
+
+<div class="container py-4">
+
+    <div class="mb-3 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+            ← До списку сесій
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-journal-text',
+        'Журнал сесій та відомостей',
+        'Усі зміни по всіх сесіях і відомостях — включно з видаленими'
+    ) }}
+
+    {# ── Фильтры ── #}
+    <div class="history-filters">
+        <form method="GET" class="row g-2 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Тип</label>
+                <select name="entity_type" class="form-select form-select-sm">
+                    <option value="">Всі</option>
+                    {% for key, label in [('session','Сесія'),('sheet','Відомість'),('sheet_student','Студент')] %}
+                    <option value="{{ key }}" {% if filter_entity_type == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Дія</label>
+                <select name="action" class="form-select form-select-sm">
+                    <option value="">Всі</option>
+                    {% for key, label in action_labels.items() %}
+                    <option value="{{ key }}" {% if filter_action == key %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small mb-1">Користувач</label>
+                <select name="user" class="form-select form-select-sm">
+                    <option value="">Всі</option>
+                    {% for u in users %}
+                    <option value="{{ u }}" {% if filter_user == u %}selected{% endif %}>{{ u }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small mb-1">Від</label>
+                <input type="date" name="date_from" class="form-control form-control-sm"
+                       value="{{ filter_date_from }}">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small mb-1">До</label>
+                <input type="date" name="date_to" class="form-control form-control-sm"
+                       value="{{ filter_date_to }}">
+            </div>
+            <div class="col-md-1">
+                <label class="form-label small mb-1">На стор.</label>
+                <select name="per_page" class="form-select form-select-sm">
+                    {% for n in [50,100,200,500] %}
+                    <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label small mb-1">Пошук</label>
+                <input type="text" name="search" class="form-control form-control-sm"
+                       placeholder="Поле, значення, ФІО, назва дисципліни..."
+                       value="{{ filter_search }}">
+            </div>
+            {% if filter_session_id %}
+            <input type="hidden" name="session_id" value="{{ filter_session_id }}">
+            {% endif %}
+            {% if filter_sheet_id %}
+            <input type="hidden" name="sheet_id" value="{{ filter_sheet_id }}">
+            {% endif %}
+            <div class="col-md-6 d-flex gap-2 align-items-end">
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="bi bi-funnel me-1"></i>Фільтрувати
+                </button>
+                <a href="{{ url_for('exam_sessions.history_index') }}" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-x-circle me-1"></i>Скинути
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2 small text-muted">
+        <span>Усього записів: <strong>{{ total }}</strong></span>
+        {% if filter_session_id %}
+        <span>Тільки для сесії #{{ filter_session_id }}</span>
+        {% endif %}
+        {% if filter_sheet_id %}
+        <span>Тільки для відомості #{{ filter_sheet_id }}</span>
+        {% endif %}
+    </div>
+
+    {% if not rows %}
+    <div class="alert alert-light border text-center py-4">
+        <i class="bi bi-inbox fs-2 d-block mb-2 opacity-50"></i>
+        Записів не знайдено.
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:140px;">Коли</th>
+                            <th style="width:130px;">Хто</th>
+                            <th style="width:140px;">Дія</th>
+                            <th>Сесія / відомість</th>
+                            <th>Деталі</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in rows %}
+                        <tr>
+                            <td class="text-muted small font-monospace">{{ r.changed_at }}</td>
+                            <td class="small">
+                                <i class="bi bi-person me-1"></i>{{ r.changed_by }}
+                            </td>
+                            <td>
+                                <span class="hist-action hist-action--{{ r.action }}">
+                                    {{ action_labels.get(r.action, r.action) }}
+                                </span>
+                            </td>
+                            <td class="small">
+                                {% if r.session_id %}
+                                    {% if r.session_is_deleted %}
+                                    <a href="{{ url_for('exam_sessions.deleted_session_history', session_id=r.session_id) }}"
+                                       class="text-decoration-none">
+                                        <strong>{{ r.session_name }}</strong>
+                                        <span class="deleted-badge">
+                                            <i class="bi bi-archive"></i> видалена
+                                        </span>
+                                    </a>
+                                    {% else %}
+                                    <a href="{{ url_for('exam_sessions.session_detail', session_id=r.session_id) }}"
+                                       class="text-decoration-none">
+                                        <strong>{{ r.session_name }}</strong>
+                                    </a>
+                                    {% endif %}
+                                    {% if r.session_group %}
+                                    <span class="text-muted">· {{ r.session_group }}</span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+
+                                <div class="text-muted" style="font-size:.72rem;">
+                                    {{ entity_labels.get(r.entity_type, r.entity_type) }} #{{ r.entity_id }}
+                                    {% if r.sheet_id and r.entity_type == 'sheet_student' %}
+                                    · відомість #{{ r.sheet_id }}
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="small">
+                                {% if r.field_name %}
+                                    <div>
+                                        <strong>{{ r.field_name }}:</strong>
+                                        {% if r.old_value is not none and r.old_value != '' %}
+                                        <span class="hist-old">{{ r.old_value }}</span>
+                                        <i class="bi bi-arrow-right mx-1"></i>
+                                        {% endif %}
+                                        {% if r.new_value is not none and r.new_value != '' %}
+                                        <span class="hist-new">{{ r.new_value }}</span>
+                                        {% else %}
+                                        <span class="text-muted fst-italic">— очищено —</span>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
+
+                                {% if r.details %}
+                                {% set det = r.details | fromjson %}
+                                {% if det %}
+                                <div class="text-muted" style="font-size:.78rem;">
+                                    {% if det.student_name %}<div><i class="bi bi-person"></i> {{ det.student_name }}</div>{% endif %}
+                                    {% if det.discipline_name %}<div><i class="bi bi-book"></i> {{ det.discipline_name }}</div>{% endif %}
+                                    {% if det.students_count is defined %}<div><i class="bi bi-people"></i> Студентів: {{ det.students_count }}</div>{% endif %}
+                                    {% if det.days %}<div><i class="bi bi-clock"></i> Токен: {{ det.days }} днів</div>{% endif %}
+                                    {% if det.target_kind %}<div><i class="bi bi-arrow-right-circle"></i> → {{ det.target_kind }} #{{ det.target_id }} ({{ det.written_grades }} оцінок)</div>{% endif %}
+                                    {% if det.sheets_count is defined %}<div><i class="bi bi-file-earmark"></i> Відомостей: {{ det.sheets_count }}</div>{% endif %}
+                                    {% if det.name and not r.field_name %}<div><i class="bi bi-bookmark"></i> {{ det.name }}</div>{% endif %}
+                                </div>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if total_pages > 1 %}
+        {% set base_params = {
+            'entity_type': filter_entity_type or '',
+            'action': filter_action or '',
+            'user': filter_user or '',
+            'date_from': filter_date_from or '',
+            'date_to': filter_date_to or '',
+            'search': filter_search or '',
+            'per_page': per_page,
+            'session_id': filter_session_id or '',
+            'sheet_id': filter_sheet_id or '',
+        } %}
+        <div class="card-footer d-flex justify-content-center gap-2 py-3">
+            {% if page > 1 %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('exam_sessions.history_index', page=page-1, **base_params) }}">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+            {% endif %}
+            <span class="small align-self-center">Стор. {{ page }} з {{ total_pages }}</span>
+            {% if page < total_pages %}
+            <a class="btn btn-sm btn-outline-secondary"
+               href="{{ url_for('exam_sessions.history_index', page=page+1, **base_params) }}">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

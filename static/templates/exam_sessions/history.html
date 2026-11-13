@@ -1,0 +1,164 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Історія змін{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+
+<style>
+    .hist-row {
+        border-bottom: 1px solid var(--line);
+        padding: .7rem .9rem;
+    }
+    .hist-row:last-child { border-bottom: none; }
+    .hist-row:hover { background: rgba(0,0,0,.02); }
+    html[data-theme="dark"] .hist-row:hover { background: rgba(255,255,255,.03); }
+    .hist-action {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .55rem;
+        border-radius: 6px;
+        font-size: .72rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .hist-action--create       { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
+    .hist-action--update       { background: var(--brass-soft); color: #8a6a1a; border-color: var(--brass-semi); }
+    .hist-action--delete       { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    .hist-action--grade_set    { background: rgba(74,110,168,.16); color: #2f5f87; border-color: rgba(74,110,168,.35); }
+    .hist-action--approve      { background: rgba(79,122,82,.20); color: #3f7556; border-color: rgba(79,122,82,.4); }
+    .hist-action--lock         { background: var(--ink); color: var(--brass-lt); border-color: var(--ink); }
+    .hist-action--token_issued { background: rgba(200,162,74,.20); color: #8a6a1a; border-color: var(--brass-semi); }
+    .hist-action--transfer     { background: rgba(74,110,168,.20); color: #2f5f87; border-color: rgba(74,110,168,.4); }
+    .hist-action--refresh      { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+
+.hist-action--unlink { background: rgba(162,59,46,.12); color: #7a2b21; border-color: var(--stamp-semi); }
+html[data-theme="dark"] .hist-action--unlink { color: #f0b3ab; }
+
+    html[data-theme="dark"] .hist-action--create,
+    html[data-theme="dark"] .hist-action--approve { color: #bfe3c2; }
+    html[data-theme="dark"] .hist-action--update,
+    html[data-theme="dark"] .hist-action--token_issued { color: var(--brass-lt); }
+    html[data-theme="dark"] .hist-action--grade_set,
+    html[data-theme="dark"] .hist-action--transfer { color: #a9c2e8; }
+
+    .hist-old { color: var(--stamp); text-decoration: line-through; }
+    .hist-new { color: #3f7556; font-weight: 600; }
+    html[data-theme="dark"] .hist-new { color: #bfe3c2; }
+</style>
+
+<div class="container py-4">
+
+    {% if mode == 'session' %}
+    {{ ui.page_header(
+        'bi-clock-history',
+        'Історія змін: ' ~ entity.name,
+        entity.group_name ~ ' · ' ~ entity.academic_year ~ ' · семестр ' ~ entity.semester
+    ) }}
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.session_detail', session_id=entity.id) }}"
+           class="btn btn-sm btn-outline-secondary">← До сесії</a>
+    </div>
+    {% else %}
+    {{ ui.page_header(
+        'bi-clock-history',
+        'Історія змін: ' ~ entity.discipline_name,
+        entity.session_name ~ ' · ' ~ entity.group_name
+    ) }}
+    <div class="mb-3">
+        <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=entity.id) }}"
+           class="btn btn-sm btn-outline-secondary">← До відомості</a>
+    </div>
+    {% endif %}
+
+    {% if not rows %}
+    <div class="alert alert-light border text-center py-4">
+        <i class="bi bi-clock-history fs-2 d-block mb-2 opacity-50"></i>
+        Історія поки порожня — тут з'являться всі зміни, зроблені після впровадження модуля.
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-journal-text me-1"></i>Усього записів: <strong>{{ rows|length }}</strong></span>
+            <span class="text-muted small">Найновіші — згори</span>
+        </div>
+        <div class="card-body p-0">
+            {% for r in rows %}
+            <div class="hist-row">
+                <div class="d-flex align-items-start gap-3 flex-wrap">
+                    <div class="text-muted small font-monospace" style="white-space:nowrap;">
+                        {{ r.changed_at }}
+                    </div>
+                    <div>
+                        <span class="hist-action hist-action--{{ r.action }}">
+                            {{ action_labels.get(r.action, r.action) }}
+                        </span>
+                        <span class="text-muted small ms-2">
+                            {{ entity_labels.get(r.entity_type, r.entity_type) }} #{{ r.entity_id }}
+                        </span>
+                        <span class="text-muted small ms-2">
+                            <i class="bi bi-person"></i> {{ r.changed_by }}
+                        </span>
+                    </div>
+                </div>
+
+                {# Изменения поля (если есть) #}
+                {% if r.field_name %}
+                <div class="ms-4 mt-1 small">
+                    <strong>{{ r.field_name }}:</strong>
+                    {% if r.old_value is not none and r.old_value != '' %}
+                    <span class="hist-old">{{ r.old_value }}</span>
+                    <i class="bi bi-arrow-right mx-1"></i>
+                    {% endif %}
+                    {% if r.new_value is not none and r.new_value != '' %}
+                    <span class="hist-new">{{ r.new_value }}</span>
+                    {% else %}
+                    <span class="text-muted fst-italic">— очищено —</span>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {# details (если есть) #}
+                {% if r.details %}
+                {% set det = r.details | fromjson %}
+                {% if det %}
+                <div class="ms-4 mt-1 small text-muted">
+                    {% if det.student_name %}
+                    <div><i class="bi bi-person me-1"></i>Студент: <strong>{{ det.student_name }}</strong></div>
+                    {% endif %}
+                    {% if det.discipline_name %}
+                    <div><i class="bi bi-book me-1"></i>Дисципліна: {{ det.discipline_name }}</div>
+                    {% endif %}
+                    {% if det.students_count is defined %}
+                    <div><i class="bi bi-people me-1"></i>Студентів: {{ det.students_count }}</div>
+                    {% endif %}
+                    {% if det.days %}
+                    <div><i class="bi bi-clock me-1"></i>Термін дії токена: {{ det.days }} днів</div>
+                    {% endif %}
+                    {% if det.target_kind %}
+                    <div><i class="bi bi-arrow-right-circle me-1"></i>Перенесено в: {{ det.target_kind }} #{{ det.target_id }} (оцінок: {{ det.written_grades }})</div>
+                    {% endif %}
+                    {% if det.sheets_count is defined %}
+                    <div><i class="bi bi-file-earmark me-1"></i>Відомостей у сесії: {{ det.sheets_count }}</div>
+                    {% endif %}
+                    {% if det.sheets %}
+                    <details class="mt-1">
+                        <summary class="small text-muted" style="cursor:pointer;">Перелік відомостей</summary>
+                        <ul class="small mb-0">
+                            {% for sh in det.sheets %}
+                            <li>#{{ sh.id }} — {{ sh.discipline }}</li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% endif %}
+                </div>
+                {% endif %}
+                {% endif %}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

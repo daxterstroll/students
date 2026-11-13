@@ -164,20 +164,35 @@ def transfer_sheet(sheet_id):
                         )
                 written += 1
 
-            conn.execute("""
-                UPDATE session_sheets
-                SET linked_entity_type=?, linked_entity_id=?,
-                    linked_at=datetime('now','localtime'), linked_by=?
-                WHERE id=?
-            """, (kind, target_id, current_username(), sheet_id))
-            conn.commit()
-            log_action(
-                current_username(),
-                f"переніс відомість #{sheet_id} → {kind}#{target_id} ({written} оцінок)",
-            )
-            flash(f'Перенесено оцінок: {written}', 'success')
-            conn.close()
-            return redirect(url_for('exam_sessions.transfer_queue'))
+        conn.execute("""
+            UPDATE session_sheets
+            SET linked_entity_type=?, linked_entity_id=?,
+                linked_at=datetime('now','localtime'), linked_by=?
+            WHERE id=?
+        """, (kind, target_id, current_username(), sheet_id))
+
+        # ── ДОБАВИТЬ ──
+        from routes.exam_sessions.history import log_history
+        log_history(
+            conn,
+            entity_type='sheet', entity_id=sheet_id,
+            session_id=sheet['session_id'], sheet_id=sheet_id,
+            action='transfer',
+            details={
+                'target_kind': kind,
+                'target_id': target_id,
+                'written_grades': written,
+            },
+        )
+
+        conn.commit()
+        log_action(
+            current_username(),
+            f"переніс відомість #{sheet_id} → {kind}#{target_id} ({written} оцінок)",
+        )
+        flash(f'Перенесено оцінок: {written}', 'success')
+        conn.close()
+        return redirect(url_for('exam_sessions.transfer_queue'))
 
     # fuzzy hint by name
     import difflib

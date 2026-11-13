@@ -27,10 +27,46 @@
 <div class="container py-4">
   {{ ui.page_header('bi-file-earmark-text', sheet.discipline_name,
      sheet.session_name ~ ' · ' ~ sheet.group_name ~ ' · ' ~ (sheet.license_name or 'без ліцензії')) }}
-
+<div class="d-flex flex-wrap gap-2 mb-3">
   <a href="{{ url_for('exam_sessions.session_detail', session_id=sheet.session_id) }}"
-     class="btn btn-sm btn-outline-secondary mb-3">← До сесії</a>
-
+     class="btn btn-sm btn-outline-secondary">← До сесії</a>
+  {% if has_perm('view_exam_session_history') %}
+  <a href="{{ url_for('exam_sessions.sheet_history', sheet_id=sheet.id) }}"
+     class="btn btn-sm btn-outline-info">
+    <i class="bi bi-clock-history me-1"></i> Історія змін
+  </a>
+  {% endif %}
+  <div class="ms-auto d-flex flex-wrap gap-2">
+    {# ── Якщо прив'язана: "Відв'язати" + "Примусово видалити" ── #}
+    {% if sheet.linked_entity_id %}
+      {% if has_perm('manage_exam_sessions') %}
+      <form method="post" class="d-inline"
+            onsubmit="return confirm('Відв\'язати відомість від плану?\n\nОцінки, які ця відомість записала в «{{ sheet.linked_entity_type }} #{{ sheet.linked_entity_id }}», будуть ВИДАЛЕНІ з плану (їх можна буде внести повторно через повторний перенос).\n\nОцінки залишаться у відомості.');">
+        <input type="hidden" name="action" value="unlink_from_plan">
+        <button type="submit" class="btn btn-sm btn-warning">
+          <i class="bi bi-link-45deg me-1"></i> Відв'язати від плану
+        </button>
+      </form>
+      {% endif %}
+      {% if has_perm('delete_exam_sessions') %}
+      <button type="button" class="btn btn-sm btn-outline-danger"
+              data-bs-toggle="modal" data-bs-target="#forceDeleteModal">
+        <i class="bi bi-trash me-1"></i> Видалити відомість
+      </button>
+      {% endif %}
+    {% else %}
+      {% if has_perm('delete_exam_sessions') %}
+      <form method="post" class="d-inline"
+            onsubmit="return confirm('Видалити відомість «{{ sheet.discipline_name }}»?\n\nЦю дію НЕ МОЖНА скасувати.');">
+        <input type="hidden" name="action" value="delete_sheet">
+        <button type="submit" class="btn btn-sm btn-outline-danger">
+          <i class="bi bi-trash me-1"></i> Видалити відомість
+        </button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
   <div class="row g-3 mb-3">
     {# ========== Ліва колонка: метадані ========== #}
     <div class="col-lg-5">
@@ -89,8 +125,8 @@
               </div>
               <div class="col-6">
                 <label class="form-label small mb-1">Дата проведення</label>
-                <input class="form-control form-control-sm" name="exam_date"
-                       value="{{ sheet.exam_date or '' }}"
+                <input type="date" class="form-control form-control-sm" name="exam_date"
+                       value="{{ sheet.exam_date_iso or '' }}"
                        {% if sheet.status == 'locked' %}readonly{% endif %}>
               </div>
             </div>
@@ -434,5 +470,61 @@
   document.querySelectorAll('table tbody tr').forEach(bindRow);
 })();
 </script>
+
+{# ── Модалка: примусове видалення прив'язаної відомості ── #}
+{% if sheet.linked_entity_id %}
+<div class="modal fade" id="forceDeleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="post">
+                <input type="hidden" name="action" value="force_delete_sheet">
+                <div class="modal-header bg-danger-subtle">
+                    <h5 class="modal-title">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        Видалити відомість, прив'язану до плану?
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">
+                        Цю відомість <strong>уже перенесено в навчальний план</strong>
+                        ({{ sheet.linked_entity_type }} #{{ sheet.linked_entity_id }}).
+                        При видаленні ведомости її оцінки в плані
+                        <strong>залишаться</strong>, якщо ви не позначите опцію нижче —
+                        тоді вони стануть «сиротами» (без джерела в сесії),
+                        але їх можна буде редагувати вручну.
+                    </p>
+                    <div class="form-check mb-2">
+                        <input type="checkbox" name="remove_grades" value="1"
+                               id="removeGradesCheck" class="form-check-input">
+                        <label class="form-check-label" for="removeGradesCheck">
+                            <strong>Також видалити оцінки з плану</strong>
+                            <div class="text-muted small">
+                                Оцінки, які ця відомість записала
+                                ({{ sheet.linked_entity_type }} #{{ sheet.linked_entity_id }}),
+                                будуть <strong>видалені</strong>. Якщо це ручні оцінки —
+                                їх треба буде ввести заново.
+                            </div>
+                        </label>
+                    </div>
+                    <div class="alert alert-warning small mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        Видалення ведомости незворотнє. Історія дій збережеться в журналі.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                        Скасувати
+                    </button>
+                    <button type="submit" class="btn btn-danger"
+                            onclick="return confirm('Точно видалити? Цю дію НЕ МОЖНА скасувати.');">
+                        <i class="bi bi-trash me-1"></i> Видалити
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 {% endblock %}

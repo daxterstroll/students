@@ -8,135 +8,71 @@
     {{ ui.page_header('bi-clipboard-check', 'Звіт про імпорт з Excel',
         report.filename ~ ' · ' ~ report.when) }}
 
+    {% set stats = report.stats or {} %}
+
     <div class="row g-3 mb-4">
         <div class="col-6 col-md-3">
             <div class="card text-center"><div class="card-body">
-                <div class="fs-3 fw-bold text-success">{{ report.inserted }}</div>
+                <div class="fs-3 fw-bold text-success">{{ stats.get('students_created', 0) }}</div>
                 <div class="text-muted small">Нових студентів</div>
             </div></div>
         </div>
         <div class="col-6 col-md-3">
             <div class="card text-center"><div class="card-body">
                 <div class="fs-3 fw-bold text-info">
-                    {{ report.enrollments_added|default(0) }}
+                    {{ stats.get('enrollments_created', 0) + stats.get('enrollments_reactivated', 0) }}
                 </div>
-                <div class="text-muted small">Паралельних навчань</div>
+                <div class="text-muted small">
+                    Навчань ({{ stats.get('enrollments_created', 0) }} нових,
+                    {{ stats.get('enrollments_reactivated', 0) }} реактивовано)
+                </div>
             </div></div>
         </div>
-        {% if report.enrollments_reactivated %}
-        <div class="col-6 col-md-3">
-            <div class="card text-center"><div class="card-body">
-                <div class="fs-3 fw-bold text-primary">
-                    {{ report.enrollments_reactivated }}
-                </div>
-                <div class="text-muted small">Реактивовано з архіву</div>
-            </div></div>
-        </div>
-        {% endif %}
-        {% if report.data_updated %}
         <div class="col-6 col-md-3">
             <div class="card text-center"><div class="card-body">
                 <div class="fs-3 fw-bold text-secondary">
-                    {{ report.data_updated }}
+                    {{ stats.get('card_fields_updated', 0) + stats.get('enrollment_fields_updated', 0) }}
                 </div>
-                <div class="text-muted small">Оновлено карток</div>
+                <div class="text-muted small">Оновлених полів</div>
             </div></div>
         </div>
-        {% endif %}
-        <div class="col-6 col-md-3">
-            <div class="card text-center"><div class="card-body">
-                <div class="fs-3 fw-bold {% if report.skipped_rows %}text-danger{% else %}text-muted{% endif %}">
-                    {{ report.skipped_rows|length }}
-                </div>
-                <div class="text-muted small">Пропущено</div>
-            </div></div>
-        </div>
-        {% if report.warnings %}
         <div class="col-6 col-md-3">
             <div class="card text-center"><div class="card-body">
                 <div class="fs-3 fw-bold text-warning">
-                    {{ report.warnings|length }}
+                    {{ stats.get('skipped_by_user', 0) + stats.get('skipped_errors', 0) }}
                 </div>
-                <div class="text-muted small">Попереджень</div>
+                <div class="text-muted small">
+                    Пропущено ({{ stats.get('skipped_by_user', 0) }} вручну,
+                    {{ stats.get('skipped_errors', 0) }} з помилками)
+                </div>
             </div></div>
         </div>
-        {% endif %}
     </div>
 
-    {# ── Оброблено успішно: детальні списки ── #}
-    {% if report.inserted_list or report.enrollments_added_list or report.enrollments_reactivated_list or report.data_updated_list %}
-    <div class="card mb-4 border-success">
-        <div class="card-header bg-success-subtle">
+    {% if stats.get('warnings') %}
+    <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning-subtle">
             <h6 class="mb-0">
-                <i class="bi bi-check-circle-fill me-2"></i>
-                Оброблено успішно:
-                {{ ((report.inserted_list or []) + (report.enrollments_added_list or []) + (report.enrollments_reactivated_list or []) + (report.data_updated_list or []))|length }}
-                дій
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                Попередження під час застосування ({{ stats['warnings']|length }})
             </h6>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm mb-0">
                     <thead class="table-light">
                         <tr>
                             <th style="width:70px;">Рядок</th>
-                            <th>ПІБ</th>
-                            <th>Студент</th>
-                            <th>Що зроблено</th>
+                            <th style="width:200px;">Поле</th>
+                            <th>Причина</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for r in report.inserted_list or [] %}
+                        {% for w in stats['warnings'] %}
                         <tr>
-                            <td class="text-center font-monospace">{{ r.row }}</td>
-                            <td>{{ r.fio }}</td>
-                            <td class="font-monospace small">ID {{ r.student_id }}</td>
-                            <td class="small">
-                                <span class="badge bg-success">
-                                    <i class="bi bi-plus-circle me-1"></i>Новий студент
-                                </span>
-                                <a href="{{ url_for('students.student_details', student_id=r.student_id) }}"
-                                   class="small ms-1">картка →</a>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% for r in report.enrollments_added_list or [] %}
-                        <tr>
-                            <td class="text-center font-monospace">{{ r.row }}</td>
-                            <td>{{ r.fio }}</td>
-                            <td class="font-monospace small">ID {{ r.student_id }}</td>
-                            <td class="small">
-                                <span class="badge bg-info text-dark">
-                                    <i class="bi bi-people me-1"></i>Паралельне навчання
-                                </span>
-                                <span class="text-muted ms-1">→ {{ r.group_name }}</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% for r in report.enrollments_reactivated_list or [] %}
-                        <tr>
-                            <td class="text-center font-monospace">{{ r.row }}</td>
-                            <td>{{ r.fio }}</td>
-                            <td class="font-monospace small">ID {{ r.student_id }}</td>
-                            <td class="small">
-                                <span class="badge bg-primary">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>Реактивовано
-                                </span>
-                                <span class="text-muted ms-1">→ {{ r.group_name }}</span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                        {% for r in report.data_updated_list or [] %}
-                        <tr>
-                            <td class="text-center font-monospace">{{ r.row }}</td>
-                            <td>{{ r.fio }}</td>
-                            <td class="font-monospace small">ID {{ r.student_id }}</td>
-                            <td class="small">
-                                <span class="badge bg-secondary">
-                                    <i class="bi bi-pencil me-1"></i>Оновлено картку
-                                </span>
-                                <span class="text-muted ms-1">{{ r.fields|join(', ') }}</span>
-                            </td>
+                            <td class="text-center font-monospace">{{ w.row }}</td>
+                            <td class="small">{{ w.field or '—' }}</td>
+                            <td class="small text-warning-emphasis">{{ w.reason }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -146,229 +82,29 @@
     </div>
     {% endif %}
 
-    {% if report.warnings %}
-    {% set resolved_count = report.warnings|selectattr('resolved')|list|length %}
-    {% set pending_conflicts = report.warnings|selectattr('action', 'equalto', 'replace_fields')|rejectattr('resolved')|list %}
-    <div class="card mb-4 border-warning">
-        <div class="card-header bg-warning-subtle d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <h6 class="mb-0">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                Попередження ({{ report.warnings|length }})
-                {% if resolved_count %}
-                · <span class="text-success small">вирішено {{ resolved_count }}</span>
-                {% endif %}
-            </h6>
-
-            {% if pending_conflicts %}
-            <div class="d-flex align-items-center gap-2 flex-wrap">
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="toggleAllConflicts(true)"
-                        title="Позначити всі галочки">
-                    <i class="bi bi-check-square"></i> Вибрати всі
-                </button>
-                <button type="button" class="btn btn-sm btn-outline-secondary"
-                        onclick="toggleAllConflicts(false)"
-                        title="Зняти всі галочки">
-                    <i class="bi bi-square"></i> Зняти всі
-                </button>
-                <button type="submit" form="applyAllFieldsForm"
-                        class="btn btn-sm btn-primary"
-                        onclick="return prepareApplyAllPayload()">
-                    <i class="bi bi-check-all me-1"></i>
-                    Застосувати вибрані (<span id="applyAllCount">0</span>)
-                </button>
-            </div>
-            {% endif %}
-        </div>
-
-        {# ── ОДНА форма на всю таблицю ──
-           Внутри — таблица warnings, но БЕЗ вложенных <form>.
-           Для update_birth_date отдельные формы размещены НИЖЕ карточки
-           (HTML не допускает вложенные формы). Кнопки внутри таблицы
-           ссылаются на них через атрибут form="id". #}
-        <form id="applyAllFieldsForm" method="POST"
-              action="{{ url_for('students.import_report_apply_all_fields', report_id=report_id) }}">
-            <input type="hidden" name="payload" id="applyAllPayload">
-
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-sm align-middle mb-0">
-                        <thead>
-                            <tr>
-                                <th style="width:70px;">Рядок</th>
-                                <th>ПІБ</th>
-                                <th>Причина / розбіжності</th>
-                                <th style="width:230px;" class="text-end">Дія</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for w in report.warnings %}
-                            <tr class="{% if w.resolved %}table-success{% endif %}">
-                                <td class="text-center font-monospace">{{ w.row }}</td>
-                                <td class="fw-semibold">{{ w.fio }}</td>
-                                <td class="small {% if w.resolved %}text-muted{% else %}text-warning-emphasis{% endif %}">
-                                    {{ w.reason }}
-
-                                    {# ── Таблиця конфліктів ── #}
-                                    {% if w.action == 'replace_fields' and w.conflicts %}
-                                    <div class="mt-2 p-2 border rounded-2"
-                                         style="background: var(--paper-2);">
-                                        <table class="table table-sm mb-0">
-                                            <thead>
-                                                <tr>
-                                                    <th style="width:30px;"></th>
-                                                    <th style="width:140px;">Поле</th>
-                                                    <th>Було в БД</th>
-                                                    <th>Стане (з Excel)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {% for c in w.conflicts %}
-                                                <tr>
-                                                    <td>
-                                                        <input type="checkbox"
-                                                               class="form-check-input conflict-checkbox"
-                                                               data-row="{{ w.row }}"
-                                                               data-field="{{ c.field }}"
-                                                               checked>
-                                                    </td>
-                                                    <td class="small fw-semibold">{{ c.label }}</td>
-                                                    <td class="small text-danger"
-                                                        style="word-break:break-word;">{{ c.current }}</td>
-                                                    <td class="small text-success"
-                                                        style="word-break:break-word;">{{ c.new }}</td>
-                                                </tr>
-                                                {% endfor %}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {% endif %}
-
-                                    {# ── Позначка «вирішено» ── #}
-                                    {% if w.resolved and w.action == 'replace_fields' %}
-                                    <div class="mt-1 small text-success">
-                                        <i class="bi bi-check-circle-fill"></i>
-                                        Замінено: {{ (w.applied_fields or [])|join(', ') }}
-                                        {% if w.resolved_at %}· {{ w.resolved_at }}{% endif %}
-                                        {% if w.resolved_by %}· {{ w.resolved_by }}{% endif %}
-                                    </div>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">
-                                    {% if w.action == 'update_birth_date' %}
-                                        {% if w.resolved %}
-                                        <span class="badge bg-success-subtle text-success-emphasis"
-                                              title="{{ w.resolved_by or '' }} · {{ w.resolved_at or '' }}">
-                                            <i class="bi bi-check-circle-fill"></i> Оновлено
-                                        </span>
-                                        {% else %}
-                                        <button type="submit"
-                                                form="birth-date-form-{{ w.row }}"
-                                                class="btn btn-sm btn-outline-primary"
-                                                onclick="return confirm('Оновити дату народження студента ID {{ w.student_id }} з {{ (w.current_birth_date or '—')|e }} на {{ w.new_birth_date|e }}?');">
-                                            <i class="bi bi-calendar-check me-1"></i>
-                                            Оновити дату в БД
-                                        </button>
-                                        {% endif %}
-                                    {% endif %}
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </form>
-    </div>
-
-    {# ── Окремі форми для update_birth_date (вне основной формы) ── #}
-    {% for w in report.warnings %}
-        {% if w.action == 'update_birth_date' and not w.resolved %}
-        <form id="birth-date-form-{{ w.row }}" method="POST"
-              action="{{ url_for('students.import_report_apply_birth_date', report_id=report_id) }}"
-              class="d-none">
-            <input type="hidden" name="row" value="{{ w.row }}">
-        </form>
-        {% endif %}
-    {% endfor %}
-
-    <script>
-    (function () {
-        function updateApplyAllCount() {
-            var n = document.querySelectorAll('.conflict-checkbox:checked').length;
-            var el = document.getElementById('applyAllCount');
-            if (el) el.textContent = n;
-        }
-
-        window.toggleAllConflicts = function (state) {
-            document.querySelectorAll('.conflict-checkbox').forEach(function (cb) {
-                cb.checked = state;
-            });
-            updateApplyAllCount();
-        };
-
-        window.prepareApplyAllPayload = function () {
-            var payload = {};
-            document.querySelectorAll('.conflict-checkbox:checked').forEach(function (cb) {
-                var row = cb.dataset.row;
-                var field = cb.dataset.field;
-                if (!payload[row]) payload[row] = [];
-                payload[row].push(field);
-            });
-
-            if (Object.keys(payload).length === 0) {
-                alert('Не обрано жодного поля для заміни');
-                return false;
-            }
-
-            var total = Object.keys(payload).reduce(function (s, k) {
-                return s + payload[k].length;
-            }, 0);
-            var students = Object.keys(payload).length;
-
-            var ok = confirm(
-                'Застосувати ' + total + ' полів для ' + students + ' студент(ів)?'
-            );
-            if (!ok) return false;
-
-            document.getElementById('applyAllPayload').value = JSON.stringify(payload);
-            return true;
-        };
-
-        // Ініціалізація
-        document.addEventListener('DOMContentLoaded', function () {
-            updateApplyAllCount();
-            document.querySelectorAll('.conflict-checkbox').forEach(function (cb) {
-                cb.addEventListener('change', updateApplyAllCount);
-            });
-        });
-    })();
-    </script>
-    {% endif %}
-
-    {# ── Пропущені рядки (помилки) ── #}
     {% if report.skipped_rows %}
     <div class="card mb-4 border-danger">
         <div class="card-header bg-danger-subtle">
-            <h6 class="mb-0"><i class="bi bi-x-circle-fill me-2"></i>Пропущені рядки ({{ report.skipped_rows|length }})</h6>
+            <h6 class="mb-0">
+                <i class="bi bi-x-circle-fill me-2"></i>
+                Пропущені рядки ({{ report.skipped_rows|length }})
+            </h6>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead>
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
                         <tr>
                             <th style="width:70px;">Рядок</th>
                             <th>ПІБ</th>
-                            <th>Дата народження</th>
-                            <th>Причина пропуску</th>
+                            <th>Причина</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for s in report.skipped_rows %}
                         <tr>
                             <td class="text-center font-monospace">{{ s.row }}</td>
-                            <td class="fw-semibold">{{ s.fio }}</td>
-                            <td class="font-monospace small">{{ s.birth_date }}</td>
+                            <td class="fw-semibold">{{ s.fio or '—' }}</td>
                             <td class="small text-danger">{{ s.reason }}</td>
                         </tr>
                         {% endfor %}
@@ -377,21 +113,12 @@
             </div>
         </div>
     </div>
+    {% endif %}
 
-    <div class="alert alert-light border small">
-        <i class="bi bi-info-circle me-1"></i>
-        <strong>Причини пропуску бувають різні:</strong>
-        <ul class="mb-0 mt-1">
-            <li><em>«Вже активно навчається в цій групі»</em> — це нормально для повторного імпорту: нічого не змінилось, запис уже є.</li>
-            <li><em>«Група не існує або недоступна»</em> — перевірте ID групи в колонці A.</li>
-            <li><em>«Невірний формат ПІБ»</em> — очікується рівно 3 слова через пробіл.</li>
-            <li><em>«student_id=N не існує в базі»</em> — ви вказали ID у колонці L, але такого студента немає.</li>
-        </ul>
-    </div>
-    {% else %}
+    {% if not stats.get('warnings') and not report.skipped_rows %}
     <div class="alert alert-success">
         <i class="bi bi-check-circle-fill me-1"></i>
-        Усі рядки файлу успішно імпортовано — пропусків немає.
+        Усі позначені зміни успішно застосовано. Проблем не виникло.
     </div>
     {% endif %}
 

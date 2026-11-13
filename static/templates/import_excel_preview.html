@@ -1,0 +1,461 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Перевірка імпорту студентів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+
+<style>
+    .import-stats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .75rem;
+        margin-bottom: 1.25rem;
+    }
+    .import-stats__item {
+        background: var(--paper-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .55rem 1rem;
+        font-size: .9rem;
+    }
+    .import-stats__value { font-weight: 800; margin-left: .3rem; }
+
+    .import-row {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        background: var(--paper-2);
+        overflow: hidden;
+    }
+    .import-row--error {
+        background: var(--stamp-soft);
+        border-color: var(--stamp-semi);
+    }
+    .import-row__header {
+        padding: .85rem 1.1rem;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+    .import-row__title { font-weight: 700; font-size: 1rem; }
+    .import-row__badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .22rem .65rem;
+        border-radius: 999px;
+        font-size: .72rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+    }
+    .import-row__badge--new     { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
+    .import-row__badge--update  { background: var(--brass-soft); color: #8a6a1a; border-color: var(--brass-semi); }
+    .import-row__badge--error   { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
+    html[data-theme="dark"] .import-row__badge--new    { background: rgba(79,122,82,.25); color: #bfe3c2; }
+    html[data-theme="dark"] .import-row__badge--update { color: var(--brass-lt); }
+
+    .import-row__body {
+        padding: 1rem 1.1rem;
+    }
+    .import-section { margin-bottom: 1rem; }
+    .import-section:last-child { margin-bottom: 0; }
+    .import-section__title {
+        font-size: .78rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--muted);
+        margin-bottom: .5rem;
+    }
+
+    .field-row {
+        display: flex;
+        align-items: flex-start;
+        gap: .5rem;
+        padding: .35rem .5rem;
+        border-radius: 6px;
+        margin-bottom: .15rem;
+    }
+    .field-row:hover { background: rgba(0,0,0,.03); }
+    html[data-theme="dark"] .field-row:hover { background: rgba(255,255,255,.03); }
+    .field-row input[type=checkbox] { margin-top: .25rem; flex-shrink: 0; }
+    .field-row__label { font-weight: 600; font-size: .9rem; }
+    .field-row__values { font-size: .85rem; margin-top: .15rem; }
+    .field-row__old { color: var(--stamp); text-decoration: line-through; }
+    .field-row__new { color: #3f7556; }
+    html[data-theme="dark"] .field-row__new { color: #bfe3c2; }
+    .field-row__arrow { color: var(--muted); margin: 0 .3rem; }
+
+    .field-group-choice {
+        margin-top: .45rem;
+        padding: .55rem .75rem;
+        background: rgba(200,162,74,.10);
+        border: 1px dashed var(--brass-semi);
+        border-radius: 8px;
+        font-size: .85rem;
+    }
+    .field-group-choice__hint {
+        color: #8a6a1a;
+        font-weight: 600;
+        margin-bottom: .35rem;
+    }
+    html[data-theme="dark"] .field-group-choice__hint { color: var(--brass-lt); }
+    .field-group-choice__opts {
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+    }
+    .field-group-choice__opt {
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+        cursor: pointer;
+    }
+
+    .card-group__row--primary {
+        background: var(--brass-soft);
+    }
+</style>
+
+<div class="container py-4">
+
+    <div class="mb-3">
+        <a href="{{ url_for('students.import_from_excel') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> Завантажити інший файл
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-clipboard-check',
+        'Перевірка імпорту студентів',
+        'Файл: ' ~ filename
+    ) }}
+
+    <div class="alert alert-light border small mb-3">
+        <i class="bi bi-info-circle me-1"></i>
+        <strong>Нічого ще не записано в базу.</strong>
+        Позначте галочками, що саме потрібно застосувати, і натисніть «Застосувати»
+        внизу сторінки. Поля, які <em>заповнюються з пустого</em>, увімкнені
+        автоматично. Поля, де <em>замінюється наявне значення</em>, вимкнені —
+        ви маєте свідомо їх увімкнути.
+    </div>
+
+    <div class="import-stats">
+        <div class="import-stats__item">
+            <i class="bi bi-person-plus-fill" style="color: #3f7556;"></i>
+            Нових студентів:<span class="import-stats__value">{{ stats.new_students }}</span>
+        </div>
+        <div class="import-stats__item">
+            <i class="bi bi-mortarboard-fill" style="color: var(--brass);"></i>
+            Нові навчання:<span class="import-stats__value">{{ stats.enrollments }}</span>
+        </div>
+        <div class="import-stats__item">
+            <i class="bi bi-pencil-fill" style="color: var(--brass);"></i>
+            Змін полів:<span class="import-stats__value">{{ stats.updates }}</span>
+        </div>
+        <div class="import-stats__item">
+            <i class="bi bi-x-circle-fill" style="color: var(--stamp);"></i>
+            Помилок (пропустяться):<span class="import-stats__value">{{ stats.errors }}</span>
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(true)">
+            <i class="bi bi-check-square me-1"></i> Обрати все
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAll(false)">
+            <i class="bi bi-square me-1"></i> Зняти все
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-warning" onclick="toggleOnlyConflicts(true)">
+            <i class="bi bi-exclamation-triangle me-1"></i> Обрати лише конфлікти
+        </button>
+    </div>
+
+    <form method="POST" action="{{ url_for('students.import_commit', token=token) }}" id="importForm">
+
+        {% for item in preview %}
+        {% set row = item.row %}
+
+        {# ── Рядок з помилкою — без чекбоксів, тільки текст ── #}
+        {% if item.error %}
+        <div class="import-row import-row--error">
+            <div class="import-row__header">
+                <div>
+                    <span class="import-row__title">Рядок {{ row }}:</span>
+                    {{ item.fio_excel or '—' }}
+                </div>
+                <span class="import-row__badge import-row__badge--error">
+                    <i class="bi bi-x-circle"></i> Пропущено
+                </span>
+            </div>
+            <div class="import-row__body small text-danger">
+                {{ item.error }}
+            </div>
+        </div>
+        {% else %}
+
+        {% set has_new = item.new_student %}
+        {% set has_enroll = item.enrollment %}
+        {% set has_card_fields = item.card_fields %}
+        {% set has_enroll_fields = item.enrollment_fields %}
+        {% set has_any = has_new or has_enroll or has_card_fields or has_enroll_fields %}
+
+        <div class="import-row">
+            <div class="import-row__header">
+                <div>
+                    <span class="import-row__title">Рядок {{ row }}:</span>
+                    {{ item.fio_excel }}
+                    {% if item.student_fio and item.student_fio != item.fio_excel %}
+                    <span class="text-muted small">→ {{ item.student_fio }} (ID {{ item.student_id }})</span>
+                    {% elif item.student_id %}
+                    <span class="text-muted small">(ID {{ item.student_id }})</span>
+                    {% endif %}
+                </div>
+                {% if has_new %}
+                <span class="import-row__badge import-row__badge--new">
+                    <i class="bi bi-person-plus"></i> Новий студент
+                </span>
+                {% elif has_card_fields or has_enroll_fields or has_enroll %}
+                <span class="import-row__badge import-row__badge--update">
+                    <i class="bi bi-pencil"></i> Оновлення
+                </span>
+                {% else %}
+                <span class="import-row__badge" style="background: var(--paper-2); color: var(--muted); border-color: var(--line);">
+                    Без змін
+                </span>
+                {% endif %}
+            </div>
+
+            {% if has_any %}
+            <div class="import-row__body">
+
+                {# ── Warnings ── #}
+                {% if item.warnings %}
+                <div class="alert alert-warning small py-2 mb-3">
+                    {% for w in item.warnings %}
+                    <div><i class="bi bi-exclamation-triangle me-1"></i>{{ w }}</div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# ── Секція: Новий студент ── #}
+                {% if has_new %}
+                <div class="import-section">
+                    <div class="import-section__title">Створити нового студента</div>
+                    <div class="field-row">
+                        <input type="checkbox" class="form-check-input js-apply"
+                               id="new_{{ row }}" name="apply_new_student_{{ row }}" value="1" checked>
+                        <label for="new_{{ row }}" class="flex-grow-1">
+                            <div class="field-row__label">
+                                ПІБ: {{ item.new_student.fields.last_name_UA }}
+                                {{ item.new_student.fields.first_name_UA }}
+                                {{ item.new_student.fields.middle_name_UA }}
+                            </div>
+                            <div class="field-row__values text-muted">
+                                Група: <strong>{{ item.new_student.group_name or ('#' ~ item.new_student.group_id) }}</strong>
+                                {% if item.new_student.group_form %} · {{ item.new_student.group_form }}{% endif %}
+                                {% if item.new_student.license_name %}
+                                · ліцензія: {{ item.new_student.license_name }}
+                                {% endif %}
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# ── Секція: Enrollment ── #}
+                {% if has_enroll %}
+                <div class="import-section">
+                    <div class="import-section__title">
+                        {% if item.enrollment.action == 'reactivate' %}
+                        Реактивувати навчання
+                        {% else %}
+                        Створити навчання
+                        {% endif %}
+                    </div>
+                    <div class="field-row">
+                        <input type="checkbox" class="form-check-input js-apply"
+                               id="enroll_{{ row }}" name="apply_enrollment_{{ row }}" value="1" checked>
+                        <label for="enroll_{{ row }}" class="flex-grow-1">
+                            <div class="field-row__label">
+                                Група: <strong>{{ item.enrollment.group_name or ('#' ~ item.enrollment.group_id) }}</strong>
+                                {% if item.enrollment.group_form %} · {{ item.enrollment.group_form }}{% endif %}
+                            </div>
+                            <div class="field-row__values text-muted">
+                                {% if item.enrollment.license_name %}Ліцензія: {{ item.enrollment.license_name }}{% endif %}
+                                {% if item.enrollment.is_primary %}· <strong>зробити основною</strong>{% endif %}
+                                {% if item.enrollment.edebo_code %}· ЄДЕБО: {{ item.enrollment.edebo_code }}{% endif %}
+                                {% if item.enrollment.program_credits_override %}· кредити: {{ item.enrollment.program_credits_override }}{% endif %}
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                {% endif %}
+
+                {# ── Секція: Поля картки студента ── #}
+                {% if has_card_fields %}
+                <div class="import-section">
+                    <div class="import-section__title">Поля картки студента</div>
+                    {% for cf in item.card_fields %}
+                    <div class="field-row">
+                        <input type="checkbox" class="form-check-input js-apply js-{{ cf.type }}"
+                               id="cf_{{ row }}_{{ cf.field }}"
+                               name="apply_card_{{ row }}_{{ cf.field }}" value="1"
+                               {% if cf.enabled %}checked{% endif %}>
+                        <label for="cf_{{ row }}_{{ cf.field }}" class="flex-grow-1">
+                            <div class="field-row__label">{{ cf.label }}</div>
+                            <div class="field-row__values">
+                                {% if cf.old %}
+                                <span class="field-row__old">{{ cf.old }}</span>
+                                <span class="field-row__arrow"><i class="bi bi-arrow-right"></i></span>
+                                {% else %}
+                                <span class="text-muted fst-italic">— порожньо —</span>
+                                <span class="field-row__arrow"><i class="bi bi-arrow-right"></i></span>
+                                {% endif %}
+                                <span class="field-row__new">{{ cf.new }}</span>
+                                {% if cf.type == 'conflict' %}
+                                <span class="badge bg-warning text-dark ms-2"
+                                      title="У базі вже є значення — увімкніть, щоб перезаписати">
+                                    конфлікт
+                                </span>
+                                {% endif %}
+                            </div>
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {# ── Секція: Поля enrollment'а ── #}
+                {% if has_enroll_fields %}
+                <div class="import-section">
+                    <div class="import-section__title">Поля навчання (група)</div>
+                    {% for ef in item.enrollment_fields %}
+                    <div class="field-row">
+                        <input type="checkbox" class="form-check-input js-apply js-{{ ef.type }}"
+                               id="ef_{{ row }}_{{ ef.field }}"
+                               name="apply_enroll_{{ row }}_{{ ef.field }}" value="1"
+                               {% if ef.enabled %}checked{% endif %}>
+                        <label for="ef_{{ row }}_{{ ef.field }}" class="flex-grow-1">
+                            <div class="field-row__label">{{ ef.label }}</div>
+                            <div class="field-row__values">
+                                {% if ef.old %}
+                                <span class="field-row__old">{{ ef.old }}</span>
+                                <span class="field-row__arrow"><i class="bi bi-arrow-right"></i></span>
+                                {% else %}
+                                <span class="text-muted fst-italic">— порожньо —</span>
+                                <span class="field-row__arrow"><i class="bi bi-arrow-right"></i></span>
+                                {% endif %}
+                                <span class="field-row__new">{{ ef.new }}</span>
+                                {% if ef.type == 'conflict' %}
+                                <span class="badge bg-warning text-dark ms-2">конфлікт</span>
+                                {% endif %}
+                            </div>
+
+                            {# Вибір групи, якщо >1 активних enrollments #}
+                            {% if ef.needs_choice %}
+                            <div class="field-group-choice">
+                                <div class="field-group-choice__hint">
+                                    <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                    У студента {{ ef.groups_available|length }} активних груп — оберіть,
+                                    у яку записати «{{ ef.label }}»:
+                                </div>
+                                <div class="field-group-choice__opts">
+                                    {% for g in ef.groups_available %}
+                                    <label class="field-group-choice__opt">
+                                        <input type="radio"
+                                               name="target_group_{{ row }}_{{ ef.field }}"
+                                               value="{{ g.group_id }}">
+                                        {{ g.group_name }}
+                                        {% if g.is_primary %}
+                                        <span class="badge bg-primary-subtle text-primary-emphasis ms-1">основна</span>
+                                        {% endif %}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                            {% elif ef.target_group_id %}
+                            <div class="text-muted small mt-1">
+                                <i class="bi bi-arrow-return-right me-1"></i>
+                                Запишеться до групи
+                                {% for g in ef.groups_available %}
+                                {% if g.group_id == ef.target_group_id %}
+                                <strong>{{ g.group_name }}</strong>
+                                {% if g.is_primary %}<span class="badge bg-primary-subtle text-primary-emphasis ms-1">основна</span>{% endif %}
+                                {% endif %}
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <div class="text-danger small mt-1">
+                                <i class="bi bi-exclamation-circle me-1"></i>
+                                Немає активних навчань — поле не буде записано
+                            </div>
+                            {% endif %}
+                        </label>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+            </div>
+            {% endif %}
+        </div>
+
+        {% endif %}
+        {% endfor %}
+
+        <div class="d-flex flex-wrap gap-2 align-items-center mt-4 pt-3 border-top">
+            <button type="submit" class="btn btn-primary btn-lg">
+                <i class="bi bi-check-circle me-2"></i>Застосувати вибране
+            </button>
+            <a href="{{ url_for('students.import_from_excel') }}" class="btn btn-outline-secondary btn-lg">
+                Скасувати
+            </a>
+            <span class="text-muted small ms-auto">
+                <i class="bi bi-shield-check me-1"></i>
+                Нічого не буде змінено, поки ви не натиснете «Застосувати вибране».
+            </span>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // "Обрати все" / "Зняти все" — усі чекбокси js-apply
+    window.toggleAll = function (state) {
+        document.querySelectorAll('.js-apply').forEach(cb => { cb.checked = state; });
+    };
+
+    // "Обрати лише конфлікти" — увімкнути тільки .js-conflict, fill_empty вимкнути
+    window.toggleOnlyConflicts = function (state) {
+        document.querySelectorAll('.js-apply').forEach(cb => {
+            cb.checked = state && cb.classList.contains('js-conflict');
+        });
+    };
+
+    // Валідація перед submit: усі "needs_choice" поля, які увімкнені,
+    // повинні мати обрану radio-кнопку
+    document.getElementById('importForm').addEventListener('submit', function (e) {
+        const missing = [];
+        document.querySelectorAll('.field-group-choice').forEach(choiceBlock => {
+            const cb = choiceBlock.closest('.field-row').querySelector('.js-apply');
+            if (!cb || !cb.checked) return;
+            const radios = choiceBlock.querySelectorAll('input[type=radio]');
+            if (![...radios].some(r => r.checked)) {
+                missing.push('— ' + (cb.closest('.field-row').querySelector('.field-row__label')?.textContent.trim() || 'поле'));
+            }
+        });
+        if (missing.length) {
+            e.preventDefault();
+            alert('Не обрано групу для деяких полів:\n\n' + missing.join('\n'));
+            return false;
+        }
+        return confirm('Застосувати вибрані зміни в базу?');
+    });
+});
+</script>
+
+{% endblock %}

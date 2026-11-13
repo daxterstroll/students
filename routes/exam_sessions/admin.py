@@ -21,6 +21,7 @@ from routes.exam_sessions.service import (
     licenses_present_in_group, populate_sheet_students,
     issue_sheet_token, points_to_national_ects, parse_points, compute_final_points,
 )
+from routes.exam_sessions.history import log_history
 from routes.exam_sessions.excel_export import build_statement_xlsx, build_group_course_summary_xlsx
 from routes.exam_sessions.word_export import build_sheet_docx, build_session_summary_docx
 
@@ -78,9 +79,71 @@ def sessions_list():
         filter_status=filter_status,
     )
 
+def _format_exam_date_ua(iso_date_str):
+    """
+    YYYY-MM-DD (то, что отдаёт <input type="date">) → «15 грудня 2026».
+    Если строка не в ISO-формате (напр. старые данные «15 грудня 2026») —
+    возвращает как есть.
+    """
+    if not iso_date_str:
+        return None
+    s = str(iso_date_str).strip()
+    import re as _re
+    m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
+    if not m:
+        return s
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    months_ua = {
+        1: 'січня', 2: 'лютого', 3: 'березня', 4: 'квітня',
+        5: 'травня', 6: 'червня', 7: 'липня', 8: 'серпня',
+        9: 'вересня', 10: 'жовтня', 11: 'листопада', 12: 'грудня',
+    }
+    name = months_ua.get(month)
+    if not name:
+        return s
+    return f"{day} {name} {year}"
+
+
+def _to_iso_date(date_str):
+    """
+    Любой поддерживаемый формат («15 грудня 2026», «15.12.2026»,
+    «15/12/2026», «2026-12-15») → YYYY-MM-DD. Если распарсить
+    не удалось — возвращает пустую строку.
+    """
+    if not date_str:
+        return ''
+    s = str(date_str).strip()
+    import re as _re
+
+    # Уже ISO
+    if _re.match(r'^\d{4}-\d{2}-\d{2}$', s):
+        return s
+
+    months_ua = {
+        'січня': 1, 'лютого': 2, 'березня': 3, 'квітня': 4,
+        'травня': 5, 'червня': 6, 'липня': 7, 'серпня': 8,
+        'вересня': 9, 'жовтня': 10, 'листопада': 11, 'грудня': 12,
+    }
+
+    # «15 грудня 2026»
+    m = _re.match(r'^(\d{1,2})\s+([а-яіїєґ]+)\s+(\d{4})$', s.lower())
+    if m:
+        day = int(m.group(1))
+        month = months_ua.get(m.group(2))
+        year = int(m.group(3))
+        if month:
+            return f"{year:04d}-{month:02d}-{day:02d}"
+
+    # «15.12.2026» / «15/12/2026»
+    m = _re.match(r'^(\d{1,2})[./](\d{1,2})[./](\d{4})$', s)
+    if m:
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return f"{year:04d}-{month:02d}-{day:02d}"
+
+    return ''
+
 
 # ── Створення / редагування сесії ─────────────────────────────────
-
 @exam_sessions_bp.route('/admin/exam-sessions/new', methods=['GET', 'POST'])
 @permission_required('manage_exam_sessions')
 def session_new():
@@ -95,8 +158,8 @@ def session_new():
 
         if not group_id or not user_can_access_group(conn, session, group_id):
             flash('Оберіть доступну групу', 'error')
-        elif not academic_year or semester not in (1, 2, 3):
-            flash('Вкажіть навчальний рік і семестр (1–3)', 'error')
+        elif not academic_year or semester not in (1, 2):
+            flash('Вкажіть навчальний рік і семестр (1 або 2)', 'error')
         else:
             if not name:
                 name = f"Сесія {semester} семестру {academic_year}"
@@ -105,8 +168,20 @@ def session_new():
                     (group_id, academic_year, semester, name, status, notes, created_by)
                 VALUES (?, ?, ?, ?, 'open', ?, ?)
             """, (group_id, academic_year, semester, name, notes, current_username()))
-            conn.commit()
             sid = cur.lastrowid
+            log_history(
+                conn,
+                entity_type='session', entity_id=sid,
+                session_id=sid,
+                action='create',
+                details={
+                    'name': name,
+                    'group_id': group_id,
+                    'academic_year': academic_year,
+                    'semester': semester,
+                },
+            )
+            conn.commit()
             log_action(current_username(), f"створив сесію #{sid}: {name}")
             conn.close()
             flash('Сесію створено', 'success')
@@ -135,21 +210,155 @@ def session_detail(session_id):
 
     if request.method == 'POST':
         action = request.form.get('action')
+
         if action == 'update_meta':
             name = (request.form.get('name') or '').strip() or es['name']
             status = request.form.get('status') or es['status']
             if status not in ('draft', 'open', 'closed'):
                 status = es['status']
             notes = (request.form.get('notes') or '').strip() or None
-            conn.execute("""
-                UPDATE exam_sessions
-                SET name=?, status=?, notes=?, updated_at=datetime('now','localtime')
-                WHERE id=?
-            """, (name, status, notes, session_id))
-            conn.commit()
-            flash('Сесію оновлено', 'success')
+            academic_year = (request.form.get('academic_year') or '').strip() or es['academic_year']
+            semester = request.form.get('semester', type=int) or es['semester']
+
+            # Защита: academic_year / semester менять можно только если ведомостей нет
+            # (иначе существующие ведомости имеют snapshot и разойдутся с сессией).
+            sheets_count = conn.execute(
+                "SELECT COUNT(*) FROM session_sheets WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()[0]
+
+            if sheets_count > 0:
+                if academic_year != es['academic_year']:
+                    flash('Не можна змінити навчальний рік — у сесії вже є відомості. '
+                          'Спочатку видаліть їх.', 'error')
+                    academic_year = es['academic_year']
+                if semester != es['semester']:
+                    flash('Не можна змінити семестр — у сесії вже є відомості. '
+                          'Спочатку видаліть їх.', 'error')
+                    semester = es['semester']
+
+            # Собираем изменения для истории
+            changes = {}
+            if name != es['name']:
+                changes['name'] = (es['name'], name)
+            if status != es['status']:
+                changes['status'] = (es['status'], status)
+            if notes != (es['notes'] or None):
+                changes['notes'] = (es['notes'] or None, notes)
+            if academic_year != es['academic_year']:
+                changes['academic_year'] = (es['academic_year'], academic_year)
+            if semester != es['semester']:
+                changes['semester'] = (es['semester'], semester)
+
+            if changes:
+                conn.execute("""
+                    UPDATE exam_sessions
+                    SET name=?, status=?, notes=?, academic_year=?, semester=?,
+                        updated_at=datetime('now','localtime')
+                    WHERE id=?
+                """, (name, status, notes, academic_year, semester, session_id))
+                for field, (old, new) in changes.items():
+                    log_history(
+                        conn,
+                        entity_type='session', entity_id=session_id,
+                        session_id=session_id,
+                        action='update',
+                        field_name=field, old_value=old, new_value=new,
+                    )
+                conn.commit()
+                flash('Сесію оновлено', 'success')
+            else:
+                flash('Немає змін', 'info')
             conn.close()
             return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+        # ── УДАЛЕНИЕ СЕССИИ ──
+        if action in ('delete_session', 'delete_session_with_links'):
+            if not (session.get('is_admin')
+                    or 'delete_exam_sessions' in (session.get('permissions') or [])):
+                conn.close()
+                flash('Немає права видаляти сесії', 'error')
+                return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+            remove_grades = request.form.get('remove_grades') == '1'
+
+            # Собираем все привязанные ведомости для чистки/истории
+            linked_sheets = conn.execute("""
+                SELECT id, linked_entity_type, linked_entity_id
+                FROM session_sheets
+                WHERE session_id = ? AND linked_entity_id IS NOT NULL
+            """, (session_id,)).fetchall()
+
+            # Жёсткий запрет только если linked есть, а удалять оценки не разрешили
+            # и пользователь нажал старую кнопку delete_session
+            if action == 'delete_session' and linked_sheets:
+                conn.close()
+                flash(f'Неможливо видалити: {len(linked_sheets)} відомостей уже '
+                      f'перенесено в навчальний план. Використайте «Видалити сесію» '
+                      f'з галочкою «Видалити оцінки з плану».', 'error')
+                return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+            # Собираем snapshot ДО удаления
+            sheets_snapshot = conn.execute("""
+                SELECT id, discipline_name FROM session_sheets WHERE session_id = ?
+            """, (session_id,)).fetchall()
+            session_snapshot = {
+                'name': es['name'],
+                'group_id': es['group_id'],
+                'group_name': es['group_name'],
+                'academic_year': es['academic_year'],
+                'semester': es['semester'],
+                'sheets_count': len(sheets_snapshot),
+                'sheets': [{'id': s['id'], 'discipline': s['discipline_name']}
+                           for s in sheets_snapshot],
+                'linked_sheets_count': len(linked_sheets),
+                'grades_removed_from_plan': 0,
+            }
+
+            try:
+                # Чистим оценки из плана, если попросили
+                if linked_sheets and remove_grades:
+                    total_removed = 0
+                    for sh in linked_sheets:
+                        total_removed += _unlink_grades_from_plan(
+                            conn, sh['id'],
+                            sh['linked_entity_type'], sh['linked_entity_id'],
+                            session_id, sh['linked_entity_type'],
+                        )
+                    session_snapshot['grades_removed_from_plan'] = total_removed
+
+                conn.execute("DELETE FROM exam_sessions WHERE id = ?", (session_id,))
+                log_history(
+                    conn,
+                    entity_type='session', entity_id=session_id,
+                    session_id=session_id,
+                    action='delete',
+                    details=session_snapshot,
+                )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                logger.error(f'delete session {session_id}: {e}', exc_info=True)
+                flash(f'Помилка видалення: {e}', 'error')
+                return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+            conn.close()
+            log_action(
+                current_username(),
+                f"ВИДАЛИВ сесію #{session_id} «{session_snapshot['name']}» "
+                f"({session_snapshot['sheets_count']} відомостей, "
+                f"з них прив'язаних: {session_snapshot['linked_sheets_count']}, "
+                f"оцінок видалено з плану: {session_snapshot['grades_removed_from_plan']})",
+            )
+            flash(
+                f'Сесію «{session_snapshot["name"]}» видалено '
+                f'разом з {session_snapshot["sheets_count"]} відомостями.'
+                + (f' З плану видалено {session_snapshot["grades_removed_from_plan"]} оцінок.'
+                   if session_snapshot['grades_removed_from_plan'] else ''),
+                'success',
+            )
+            return redirect(url_for('exam_sessions.sessions_list'))
 
     sheets = [dict(r) for r in conn.execute("""
         SELECT ss.*,
@@ -195,7 +404,7 @@ def sheet_new(session_id):
         control_form = request.form.get('control_form') or 'Залік'
         hours_credits = (request.form.get('hours_credits') or '').strip() or None
         teacher_name = (request.form.get('teacher_name') or '').strip() or None
-        exam_date = (request.form.get('exam_date') or '').strip() or None
+        exam_date = _format_exam_date_ua(request.form.get('exam_date') or '')
         statement_number = (request.form.get('statement_number') or '').strip() or None
         lic_raw = request.form.get('license_id')
         license_id = int(lic_raw) if lic_raw and lic_raw.isdigit() else None
@@ -221,6 +430,19 @@ def sheet_new(session_id):
             ))
             sheet_id = cur.lastrowid
             n = populate_sheet_students(conn, sheet_id, es['group_id'], license_id)
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=session_id, sheet_id=sheet_id,
+                action='create',
+                details={
+                    'discipline_name': discipline_name,
+                    'entity_kind': entity_kind,
+                    'control_form': control_form,
+                    'license_id': license_id,
+                    'students_count': n,
+                },
+            )
             conn.commit()
             log_action(
                 current_username(),
@@ -271,27 +493,54 @@ def sheet_detail(sheet_id):
                 'control_form': request.form.get('control_form') or sheet['control_form'],
                 'hours_credits': (request.form.get('hours_credits') or '').strip() or None,
                 'teacher_name': (request.form.get('teacher_name') or '').strip() or None,
-                'exam_date': (request.form.get('exam_date') or '').strip() or None,
+                'exam_date': _format_exam_date_ua(request.form.get('exam_date') or ''),
                 'statement_number': (request.form.get('statement_number') or '').strip() or None,
             }
+
             if fields['discipline_name']:
+                # ── Собираем diff ДО UPDATE ──
+                changes = {
+                    f: (sheet.get(f), v)
+                    for f, v in fields.items()
+                    if sheet.get(f) != v
+                }
+
                 conn.execute("""
                     UPDATE session_sheets SET
                         discipline_name=?, work_topic=?, entity_kind=?, control_form=?,
                         hours_credits=?, teacher_name=?, exam_date=?, statement_number=?
                     WHERE id=?
                 """, (
-                    fields['discipline_name'], fields['work_topic'], fields['entity_kind'], fields['control_form'],
-                    fields['hours_credits'], fields['teacher_name'], fields['exam_date'],
-                    fields['statement_number'], sheet_id,
+                    fields['discipline_name'], fields['work_topic'],
+                    fields['entity_kind'], fields['control_form'],
+                    fields['hours_credits'], fields['teacher_name'],
+                    fields['exam_date'], fields['statement_number'], sheet_id,
                 ))
+
+                for field, (old, new) in changes.items():
+                    log_history(
+                        conn,
+                        entity_type='sheet', entity_id=sheet_id,
+                        session_id=sheet['session_id'], sheet_id=sheet_id,
+                        action='update', field_name=field,
+                        old_value=old, new_value=new,
+                    )
                 conn.commit()
                 flash('Метадані збережено', 'success')
+            else:
+                flash("Назва дисципліни обов'язкова", 'error')
             conn.close()
             return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
         if action == 'refresh_students' and sheet['status'] in ('draft', 'sent'):
             n = populate_sheet_students(conn, sheet_id, sheet['group_id'], sheet['license_id'])
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=sheet['session_id'], sheet_id=sheet_id,
+                action='refresh',
+                details={'students_count': n},
+            )
             conn.commit()
             flash(f'Список студентів оновлено ({n})', 'success')
             conn.close()
@@ -300,12 +549,18 @@ def sheet_detail(sheet_id):
         if action == 'issue_token':
             days = request.form.get('token_days', type=int) or 21
             token = issue_sheet_token(conn, sheet_id, days=days)
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=sheet['session_id'], sheet_id=sheet_id,
+                action='token_issued',
+                details={'days': days},
+            )
             conn.commit()
             log_action(current_username(), f"видано токен відомості #{sheet_id}")
             link = f"{PUBLIC_APPLY_BASE_URL.rstrip('/')}/session-grade/{token}"
             flash('Посилання для викладача створено', 'success')
             students = _load_students(conn, sheet_id)
-            sheet = dict(conn.execute("SELECT ss.*, es.group_id FROM session_sheets ss JOIN exam_sessions es ON es.id=ss.session_id WHERE ss.id=?", (sheet_id,)).fetchone())
             # re-fetch full
             sheet = dict(conn.execute("""
                 SELECT ss.*, es.group_id, es.name AS session_name, es.academic_year,
@@ -326,7 +581,16 @@ def sheet_detail(sheet_id):
             )
 
         if action == 'save_grades' and sheet['status'] not in ('locked',):
-            # збираємо поля по student_id
+            # Загружаем текущие значения, чтобы отследить diff
+            current_rows = conn.execute("""
+                SELECT student_id, full_name,
+                       points_mid, points_current, points_exam,
+                       points, national_grade, ects, work_topic
+                FROM session_sheet_students
+                WHERE sheet_id = ?
+            """, (sheet_id,)).fetchall()
+            current_by_sid = {r['student_id']: dict(r) for r in current_rows}
+
             by_sid = {}
             for key, val in request.form.items():
                 for prefix in ('points_mid_', 'points_current_', 'points_exam_', 'points_', 'work_topic_'):
@@ -334,31 +598,76 @@ def sheet_detail(sheet_id):
                         sid = key[len(prefix):]
                         by_sid.setdefault(sid, {})[prefix.rstrip('_')] = val
                         break
+
             for sid, fields in by_sid.items():
+                old = current_by_sid.get(int(sid)) or {}
+                student_name = old.get('full_name') or f'student#{sid}'
+
+                # work_topic — отдельное поле
                 if 'work_topic' in fields:
                     topic = (fields.get('work_topic') or '').strip() or None
-                    conn.execute("""
-                        UPDATE session_sheet_students SET work_topic=?
-                        WHERE sheet_id=? AND student_id=?
-                    """, (topic, sheet_id, sid))
+                    if topic != (old.get('work_topic') or None):
+                        log_history(
+                            conn,
+                            entity_type='sheet_student', entity_id=int(sid),
+                            session_id=sheet['session_id'], sheet_id=sheet_id,
+                            action='update', field_name='work_topic',
+                            old_value=old.get('work_topic'), new_value=topic,
+                            details={'student_name': student_name},
+                        )
+                        conn.execute(
+                            "UPDATE session_sheet_students SET work_topic=? "
+                            "WHERE sheet_id=? AND student_id=?",
+                            (topic, sheet_id, sid),
+                        )
+
                 mid = parse_points(fields.get('points_mid'))
                 cur = parse_points(fields.get('points_current'))
                 exam = parse_points(fields.get('points_exam'))
                 explicit = fields.get('points')
-                # компоненти → сума; інакше пряма підсумкова
                 total = compute_final_points(mid, cur, exam, explicit)
                 nat, ects = points_to_national_ects(total, sheet['control_form'])
-                conn.execute("""
-                    UPDATE session_sheet_students
-                    SET points_mid=?, points_current=?, points_exam=?,
-                        points=?, national_grade=?, ects=?
-                    WHERE sheet_id=? AND student_id=?
-                """, (mid, cur, exam, total, nat, ects, sheet_id, sid))
+
+                # Собираем diff по 6 полям
+                new_vals = {
+                    'points_mid': mid, 'points_current': cur, 'points_exam': exam,
+                    'points': total, 'national_grade': nat, 'ects': ects,
+                }
+                field_changes = {
+                    f: (old.get(f), v) for f, v in new_vals.items()
+                    if old.get(f) != v
+                }
+                if field_changes:
+                    for field, (old_v, new_v) in field_changes.items():
+                        log_history(
+                            conn,
+                            entity_type='sheet_student', entity_id=int(sid),
+                            session_id=sheet['session_id'], sheet_id=sheet_id,
+                            action='grade_set', field_name=field,
+                            old_value=old_v, new_value=new_v,
+                            details={'student_name': student_name},
+                        )
+                    conn.execute("""
+                        UPDATE session_sheet_students
+                        SET points_mid=?, points_current=?, points_exam=?,
+                            points=?, national_grade=?, ects=?
+                        WHERE sheet_id=? AND student_id=?
+                    """, (mid, cur, exam, total, nat, ects, sheet_id, sid))
+
             if sheet['status'] == 'draft':
                 conn.execute(
-                    "UPDATE session_sheets SET status='submitted', submitted_at=datetime('now','localtime') WHERE id=?",
+                    "UPDATE session_sheets SET status='submitted', "
+                    "submitted_at=datetime('now','localtime') WHERE id=?",
                     (sheet_id,),
                 )
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=sheet_id,
+                    session_id=sheet['session_id'], sheet_id=sheet_id,
+                    action='update', field_name='status',
+                    old_value='draft', new_value='submitted',
+                )
+
             conn.commit()
             flash('Оцінки збережено', 'success')
             conn.close()
@@ -370,6 +679,13 @@ def sheet_detail(sheet_id):
                 SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
                 WHERE id=?
             """, (current_username(), sheet_id))
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=sheet['session_id'], sheet_id=sheet_id,
+                action='approve',
+                old_value=sheet['status'], new_value='approved',
+            )
             conn.commit()
             log_action(current_username(), f"затвердив відомість #{sheet_id}")
             flash('Відомість затверджено', 'success')
@@ -378,10 +694,199 @@ def sheet_detail(sheet_id):
 
         if action == 'lock' and sheet['status'] == 'approved':
             conn.execute("UPDATE session_sheets SET status='locked' WHERE id=?", (sheet_id,))
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=sheet['session_id'], sheet_id=sheet_id,
+                action='lock',
+                old_value='approved', new_value='locked',
+            )
             conn.commit()
             flash('Відомість заблоковано', 'success')
             conn.close()
             return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+        # ── ВІДВ'ЯЗАТИ ВІД ПЛАНУ ──
+        if action == 'unlink_from_plan':
+            if not (session.get('is_admin')
+                    or 'manage_exam_sessions' in (session.get('permissions') or [])):
+                conn.close()
+                flash('Немає права змінювати відомість', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            if not sheet.get('linked_entity_id'):
+                conn.close()
+                flash("Відомість не прив'язана до плану", 'info')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            old_kind = sheet.get('linked_entity_type')
+            old_target_id = sheet.get('linked_entity_id')
+
+            # Удаляем оценки, которые были записаны этой ведомостью
+            removed = _unlink_grades_from_plan(
+                conn, sheet_id, old_kind, old_target_id,
+                sheet['session_id'], old_kind,
+            )
+
+            # Обнуляем linked_* — теперь можно удалить
+            conn.execute("""
+                UPDATE session_sheets
+                SET linked_entity_type = NULL,
+                    linked_entity_id = NULL,
+                    linked_at = NULL,
+                    linked_by = NULL
+                WHERE id = ?
+            """, (sheet_id,))
+
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=sheet_id,
+                session_id=sheet['session_id'], sheet_id=sheet_id,
+                action='unlink',
+                details={
+                    'old_target_kind': old_kind,
+                    'old_target_id': old_target_id,
+                    'removed_grades': removed,
+                    'discipline_name': sheet['discipline_name'],
+                },
+            )
+            conn.commit()
+            conn.close()
+
+            log_action(
+                current_username(),
+                f"відв'язав відомість #{sheet_id} від плану "
+                f"({old_kind}#{old_target_id}, видалено оцінок: {removed})",
+            )
+            flash(
+                f"Відомість відв'язано від плану. "
+                f"Видалено оцінок: {removed}. "
+                f"Тепер можна видалити відомість або перенести в інше місце.",
+                'success',
+            )
+            return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+        # ── ПРИМУСОВЕ ВИДАЛЕННЯ (з опцією видалити оцінки з плану) ──
+        if action == 'force_delete_sheet':
+            if not (session.get('is_admin')
+                    or 'delete_exam_sessions' in (session.get('permissions') or [])):
+                conn.close()
+                flash('Немає права видаляти відомості', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            # Собираем snapshot
+            linked_kind = sheet.get('linked_entity_type')
+            linked_target = sheet.get('linked_entity_id')
+            remove_grades = request.form.get('remove_grades') == '1'
+
+            students_count = conn.execute(
+                "SELECT COUNT(*) FROM session_sheet_students WHERE sheet_id = ?",
+                (sheet_id,),
+            ).fetchone()[0]
+
+            snapshot = {
+                'discipline_name': sheet['discipline_name'],
+                'session_id': sheet['session_id'],
+                'session_name': sheet['session_name'],
+                'group_name': sheet['group_name'],
+                'students_count': students_count,
+                'was_linked': bool(linked_target),
+                'linked_kind': linked_kind,
+                'linked_target_id': linked_target,
+                'grades_removed_from_plan': 0,
+            }
+
+            try:
+                # Если пользователь выбрал «удалить и из плана» — чистим оценки
+                if linked_target and remove_grades:
+                    removed = _unlink_grades_from_plan(
+                        conn, sheet_id, linked_kind, linked_target,
+                        sheet['session_id'], linked_kind,
+                    )
+                    snapshot['grades_removed_from_plan'] = removed
+
+                conn.execute("DELETE FROM session_sheets WHERE id = ?", (sheet_id,))
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=sheet_id,
+                    session_id=sheet['session_id'], sheet_id=sheet_id,
+                    action='delete',
+                    details=snapshot,
+                )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                logger.error(f'force_delete sheet {sheet_id}: {e}', exc_info=True)
+                flash(f'Помилка видалення: {e}', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            conn.close()
+            log_action(
+                current_username(),
+                f"ВИДАЛИВ відомість #{sheet_id} «{snapshot['discipline_name']}» "
+                f"(примусово, оцінок видалено з плану: "
+                f"{snapshot['grades_removed_from_plan']})",
+            )
+            flash(
+                f'Відомість «{snapshot["discipline_name"]}» видалено'
+                + (f' (з плану видалено {snapshot["grades_removed_from_plan"]} оцінок).'
+                   if snapshot['grades_removed_from_plan'] else '.'),
+                'success',
+            )
+            return redirect(url_for('exam_sessions.session_detail',
+                                    session_id=sheet['session_id']))
+
+        if action == 'delete_sheet':
+            if not (session.get('is_admin')
+                    or 'delete_exam_sessions' in (session.get('permissions') or [])):
+                conn.close()
+                flash('Немає права видаляти відомості', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            if sheet['linked_entity_id']:
+                conn.close()
+                flash('Неможливо видалити: відомість уже перенесена в навчальний план.',
+                      'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            snapshot = {
+                'discipline_name': sheet['discipline_name'],
+                'session_id': sheet['session_id'],
+                'session_name': sheet['session_name'],
+                'group_name': sheet['group_name'],
+                'students_count': conn.execute(
+                    "SELECT COUNT(*) FROM session_sheet_students WHERE sheet_id=?",
+                    (sheet_id,)
+                ).fetchone()[0],
+            }
+
+            try:
+                conn.execute("DELETE FROM session_sheets WHERE id = ?", (sheet_id,))
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=sheet_id,
+                    session_id=sheet['session_id'], sheet_id=sheet_id,
+                    action='delete',
+                    details=snapshot,
+                )
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                conn.close()
+                logger.error(f'delete sheet {sheet_id}: {e}', exc_info=True)
+                flash(f'Помилка видалення: {e}', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+            conn.close()
+            log_action(
+                current_username(),
+                f"ВИДАЛИВ відомість #{sheet_id} «{snapshot['discipline_name']}» "
+                f"({snapshot['students_count']} студентів)",
+            )
+            flash(f'Відомість «{snapshot["discipline_name"]}» видалено.', 'success')
+            return redirect(url_for('exam_sessions.session_detail',
+                                    session_id=sheet['session_id']))
 
         conn.close()
         return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
@@ -392,6 +897,10 @@ def sheet_detail(sheet_id):
         teacher_link = f"{PUBLIC_APPLY_BASE_URL.rstrip('/')}/session-grade/{sheet['token']}"
     can_transfer = session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or [])
     conn.close()
+
+    # Для <input type="date"> нужно ISO-значение
+    sheet['exam_date_iso'] = _to_iso_date(sheet.get('exam_date'))
+
     return render_template(
         'exam_sessions/sheet_detail.html',
         sheet=sheet, students=students, teacher_link=teacher_link, can_transfer=can_transfer,
@@ -680,3 +1189,53 @@ def session_summary_xlsx(session_id):
         download_name=fname,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
+
+
+def _unlink_grades_from_plan(conn, sheet_id, linked_kind, linked_target_id,
+                              session_id, entity_kind):
+    """
+    Удаляет оценки, ранее записанные ведомостью `sheet_id` в subjects.grades
+    или activity_grades (в зависимости от `linked_kind`).
+
+    Возвращает количество удалённых записей.
+
+    ⚠️ ВАЖНО: удаляем ТОЛЬКО те оценки, которые были записаны этой
+    ведомостью. Определяем по списку студентов ведомости
+    (`session_sheet_students`) и целевому предмету/активности.
+
+    ВНИМАНИЕ: если у студента БЫЛА оценка в этом предмете ДО переноса
+    (например, введена вручную на карточке студента), она тоже будет
+    удалена — потому что мы не различаем «оценку из сессии» от «оценки
+    вручную». Это осознанное упрощение: после переноса ведомости оценки
+    всё равно источник один — ведомость. Если админ хочет сохранить
+    ручную оценку — пусть сначала перенесёт ведомость в другой предмет,
+    а этот ручной — введёт заново.
+    """
+    student_ids = [
+        r['student_id'] for r in conn.execute(
+            "SELECT student_id FROM session_sheet_students WHERE sheet_id = ?",
+            (sheet_id,),
+        ).fetchall()
+    ]
+    if not student_ids:
+        return 0
+
+    placeholders = ','.join('?' * len(student_ids))
+    removed = 0
+
+    if linked_kind == 'subject':
+        cur = conn.execute(
+            f"DELETE FROM grades WHERE subject_id = ? "
+            f"AND student_id IN ({placeholders})",
+            [linked_target_id] + student_ids,
+        )
+        removed = cur.rowcount or 0
+    elif linked_kind in ('practice', 'coursework', 'attestation'):
+        cur = conn.execute(
+            f"DELETE FROM activity_grades WHERE entity_type = ? "
+            f"AND entity_id = ? AND student_id IN ({placeholders})",
+            [linked_kind, linked_target_id] + student_ids,
+        )
+        removed = cur.rowcount or 0
+
+    return removed
