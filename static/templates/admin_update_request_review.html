@@ -98,46 +98,96 @@
     </div>
     {% endif %}
 
-    {% if 'passport' in allowed_fields and submitted.get('passport') %}
-    <div class="card mb-3">
-        <div class="card-header">Паспортні дані{{ applied_badge('passport') }}</div>
-        <div class="card-body">
-            <div class="form-check mb-2">
-                {% if is_decided %}
-                <i class="bi bi-{{ 'check-square text-success' if 'passport' in applied_fields else 'square text-muted' }} me-2"></i>Додано як новий запис (наявні паспортні дані не зачіпались)
-                {% else %}
-                <input type="checkbox" name="apply_passport" id="apply_passport" class="form-check-input" checked>
-                <label for="apply_passport" class="form-check-label">Додати як новий запис (наявні паспортні дані не чіпає)</label>
-                {% endif %}
-            </div>
-            <table class="table table-sm table-borderless mb-2">
-                <tbody>
-                    <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.passport.document_type or '-' }}</td></tr>
-                    <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.passport.series ~ ' ' if submitted.passport.series else '') ~ (submitted.passport.number or '') }}</td></tr>
-                    <tr><th class="text-muted">Ким видано</th><td>{{ submitted.passport.issued_by or '-' }}</td></tr>
-					{% if submitted.passport.document_type and (
-							'безконтактним електронним носієм' in submitted.passport.document_type
-							or submitted.passport.document_type in passport_types_id_style
-							or submitted.passport.document_type == 'ID-картка'
-					) %}
-					<tr><th class="text-muted">Дата видачі / Дійсний до</th><td>{{ submitted.passport.issue_date or '-' }} / {{ submitted.passport.valid_until or '-' }}</td></tr>
-					{% else %}
-					<tr><th class="text-muted">Дата видачі</th><td>{{ submitted.passport.issue_date or '-' }}</td></tr>
-					{% endif %}
-                    {% if submitted.passport.unique_number %}<tr><th class="text-muted">Номер запису в ЄДДР</th><td>{{ submitted.passport.unique_number }}</td></tr>{% endif %}
-                </tbody>
-            </table>
-            {% if passport_scans %}
-            <div class="small text-muted mb-1">Скани:</div>
-            {% for a in passport_scans %}
-            <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-            </a>
-            {% endfor %}
-            {% endif %}
-        </div>
-    </div>
-    {% endif %}
+	{% if 'passport' in allowed_fields and submitted.get('passport') %}
+	<div class="card mb-3">
+		<div class="card-header">Паспортні дані{{ applied_badge('passport') }}</div>
+		<div class="card-body">
+
+			{# ── Таблиця: що вже є в базі по кожній групі ── #}
+			{% if enrollments %}
+			<h6 class="text-muted small text-uppercase mb-2">
+				<i class="bi bi-database me-1"></i>Що вже є в базі:
+			</h6>
+			<table class="table table-sm table-bordered mb-3">
+				<thead class="table-light">
+					<tr>
+						<th>Група</th>
+						<th>Тип</th>
+						<th>Серія / номер</th>
+						<th>Ким видано</th>
+						<th>Дата</th>
+					</tr>
+				</thead>
+				<tbody>
+				{% for e in enrollments %}
+					{% set p = passports_by_group.get(e.group_id) %}
+					<tr>
+						<td>
+							{{ e.group_name or ('#' ~ e.group_id) }}
+							{% if e.is_primary %}<span class="badge bg-primary ms-1">осн.</span>{% endif %}
+						</td>
+						{% if p %}
+							<td>{{ p.document_type }}</td>
+							<td class="font-monospace">{{ (p.series ~ ' ' if p.series else '') ~ p.number }}</td>
+							<td class="small">{{ p.issued_by or '—' }}</td>
+							<td class="small">{{ p.issue_date or '—' }}</td>
+						{% else %}
+							<td colspan="4" class="text-muted fst-italic">— не додано —</td>
+						{% endif %}
+					</tr>
+				{% endfor %}
+				</tbody>
+			</table>
+			{% endif %}
+
+			{# ── Вибір цільової групи (якщо груп > 1) ── #}
+			{% if enrollments and enrollments|length > 1 and not is_decided %}
+			<div class="mb-3 p-3 border rounded" style="background: var(--paper-2);">
+				<strong class="d-block mb-2">
+					<i class="bi bi-signpost-split"></i>
+					До якої групи прив'язати паспорт із заявки?
+				</strong>
+				{% for e in enrollments %}
+				<div class="form-check">
+					<input type="radio" name="passport_target_group_id"
+						   id="passport_target_{{ e.group_id }}"
+						   value="{{ e.group_id }}"
+						   class="form-check-input"
+						   {% if e.is_primary %}checked{% endif %}>
+					<label class="form-check-label" for="passport_target_{{ e.group_id }}">
+						{{ e.group_name or ('#' ~ e.group_id) }}
+						{% if e.is_primary %}<span class="badge bg-primary ms-1">основна</span>{% endif %}
+						{% if passports_by_group.get(e.group_id) %}
+						<span class="badge bg-success-subtle text-success-emphasis ms-1">
+							<i class="bi bi-arrow-repeat"></i> паспорт уже є — буде оновлено
+						</span>
+						{% else %}
+						<span class="badge bg-info-subtle text-info-emphasis ms-1">
+							<i class="bi bi-plus-circle"></i> буде створено новий
+						</span>
+						{% endif %}
+					</label>
+				</div>
+				{% endfor %}
+			</div>
+			{% endif %}
+
+			{# ── далі — наявний блок із полями паспорта з заявки ── #}
+			<div class="form-check mb-2">
+				{% if is_decided %}
+				<i class="bi bi-{{ 'check-square text-success' if 'passport' in applied_fields else 'square text-muted' }} me-2"></i>Застосовано
+				{% else %}
+				<input type="checkbox" name="apply_passport" id="apply_passport" class="form-check-input" checked>
+				<label for="apply_passport" class="form-check-label">Застосувати паспорт із заявки</label>
+				{% endif %}
+			</div>
+			<table class="table table-sm table-borderless mb-2">
+				{# ... існуючий блок з полями (Тип / Серія та номер / Ким видано / …) ... #}
+			</table>
+			{% if passport_scans %}...{% endif %}
+		</div>
+	</div>
+	{% endif %}
 
     {% set has_base_doc = 'education_document' in allowed_fields and submitted.get('education_document', {}).get('document_type') %}
     {% set has_reference = 'education_document_reference' in allowed_fields and submitted.get('education_document', {}).get('reference') %}

@@ -126,7 +126,6 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         'military_registration_document': parsed.get('military_registration_document') or '',
     }
 
-    # COALESCE — не затираємо ручні виправлення.
     string_cols = [c for c in new_military.keys() if c != 'data_verified_on_time']
     set_clause = ', '.join(
         f"{c} = COALESCE(NULLIF({c}, ''), ?)" for c in string_cols
@@ -156,7 +155,6 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         logger.error(f"[promote_apply] military UPDATE: {e}", exc_info=True)
         return False, f"Не вдалося оновити військові дані: {e}"
 
-    # Адреса/телефон/email з PDF — у картку студента.
     student_updates = {}
     if parsed.get('address'):
         student_updates['address_of_residence'] = parsed['address']
@@ -175,7 +173,6 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         except Exception as e:
             logger.warning(f"[promote_apply] students address/contacts update: {e}")
 
-    # Фото — тільки якщо в студента ще немає
     if photo_bytes:
         try:
             current = conn.execute(
@@ -317,7 +314,6 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
         logger.error(f"[promote_update] military UPDATE/INSERT: {e}", exc_info=True)
         return False, f"Не вдалося оновити військові дані: {e}"
 
-    # Адреса/телефон/email — у картку студента.
     student_updates = {}
     if parsed.get('address'):
         student_updates['address_of_residence'] = parsed['address']
@@ -358,25 +354,20 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# Допоміжні функції для затвердження заявок: щоб повторне підтвердження
-# не створювало дублікатів, а військові дані не губилися через legacy-мапінг.
+# Допоміжні функції для затвердження заявок
 # ═══════════════════════════════════════════════════════════════════════
 
 def _pending_has_military_data(row) -> bool:
     """
     Чи є в заявці хоч одне заповнене військове поле (нові або legacy).
-    На відміну від старого `any([...3 legacy...])`, враховує поля «Резерв+»,
-    щоб заявка, заповнена лише через PDF, не вважалася «порожньою».
     `military_data_verified_on_time` — лише чекбокс, не рахуємо як дані.
     """
     fields = (
-        # legacy
         'military_registration_number_drpvr',
         'military_specialty_number',
         'military_issued_vod',
         'military_change_credentials',
         'military_change_reason',
-        # сучасні («Резерв+»)
         'military_registry_number',
         'military_status_badge',
         'military_valid_until',
@@ -396,7 +387,6 @@ def _pending_has_military_data(row) -> bool:
         'military_disability_reason',
         'military_formed_at',
         'military_data_update_date',
-        # спільні
         'military_registration_document',
         'military_rank',
     )
@@ -410,26 +400,16 @@ def _pending_has_military_data(row) -> bool:
 
 
 def _military_payload_from_pending(row) -> dict:
-    """
-    Будує dict {column_in_military_table: value} з полів заявки.
-    Пріоритет: сучасне поле → legacy-поле. Так ми НЕ втрачаємо дані,
-    якщо в заявці заповнено лише нові поля (напр. з «Резерв+»), і
-    зберігаємо legacy-заявки, де старі поля заповнені, а нові — ні.
-    """
+    """Будує dict {column_in_military_table: value} з полів заявки."""
     return {
-        # ── з legacy або нового ──
         'registry_number': row['military_registry_number']
                            or row['military_registration_number_drpvr'],
         'formed_at': row['military_formed_at'] or row['military_issued_vod'],
         'vos_code': row['military_vos_code'] or row['military_specialty_number'],
-
-        # ── спільні з legacy/нових ──
         'military_registration_document': row['military_registration_document'],
         'military_rank': row['military_rank'],
         'change_credentials': row['military_change_credentials'],
         'reason_for_changing_credentials': row['military_change_reason'],
-
-        # ── лише нові («Резерв+») ──
         'status_badge': row['military_status_badge'],
         'valid_until': row['military_valid_until'],
         'registration_category': row['military_registration_category'],
@@ -451,11 +431,7 @@ def _military_payload_from_pending(row) -> dict:
 
 
 def _find_existing_passport(conn, student_id, group_id, document_type, series, number):
-    """
-    Шукає наявний паспорт того самого студента у тій самій групі з тим
-    самим типом/серією і тим самим номером (з урахуванням нормалізації
-    провідних нулів через NORM_PASSPORT).
-    """
+    """Шукає наявний паспорт того самого студента у тій самій групі."""
     return conn.execute("""
         SELECT id FROM passport_documents
         WHERE student_id = ?
@@ -464,15 +440,13 @@ def _find_existing_passport(conn, student_id, group_id, document_type, series, n
           AND NORM_SERIES(series) = NORM_SERIES(?)
           AND NORM_PASSPORT(number, document_type)
               = NORM_PASSPORT(?, document_type)
+        ORDER BY id ASC
         LIMIT 1
     """, (student_id, group_id, document_type, series, number)).fetchone()
 
 
 def _find_existing_education_doc(conn, student_id, group_id, document_type, document_number):
-    """
-    Шукає наявний документ про освіту того самого студента у тій самій
-    групі з тим самим типом і номером (номер порівнюється без пробілів).
-    """
+    """Шукає наявний документ про освіту того самого студента у тій самій групі."""
     return conn.execute("""
         SELECT id FROM education_documents
         WHERE student_id = ?
@@ -490,9 +464,7 @@ def _find_existing_education_doc(conn, student_id, group_id, document_type, docu
 @admin_bp.route('/admin/pending_students')
 @permission_required('manage_pending_students')
 def pending_students():
-    """
-    Список заявок з публічної анкети самореєстрації.
-    """
+    """Список заявок з публічної анкети самореєстрації."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -510,7 +482,6 @@ def pending_students():
             "SELECT COUNT(*) FROM attachments WHERE entity_type='pending_student' AND entity_id=?",
             (r['id'],)
         ).fetchone()[0]
-        # Чи є серед сканів військового обліку саме PDF «Резерв+».
         r['has_military_scan'] = conn.execute(
             "SELECT 1 FROM attachments "
             "WHERE entity_type='pending_student_military' AND entity_id=? "
@@ -557,10 +528,7 @@ def pending_students():
 @admin_bp.route('/admin/pending_students/<int:pending_id>', methods=['GET', 'POST'])
 @permission_required('manage_pending_students')
 def pending_student_review(pending_id):
-    """
-    Перегляд однієї заявки: виправлення, підтвердження (створення
-    студента) або відхилення.
-    """
+    """Перегляд однієї заявки: виправлення, підтвердження або відхилення."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
@@ -586,7 +554,6 @@ def pending_student_review(pending_id):
                 'military_registration_number_drpvr', 'military_registration_document', 'military_issued_vod',
                 'military_specialty_number', 'military_rank', 'military_address',
                 'military_change_credentials', 'military_change_reason',
-                # Нові поля «Резерв+»
                 'military_status_badge', 'military_valid_until', 'military_registration_category',
                 'military_removal_basis', 'military_tck_name', 'military_registry_number',
                 'military_vos_code', 'military_vos_description',
@@ -604,7 +571,6 @@ def pending_student_review(pending_id):
                 values.get('phone'), values.get('phone_backup')
             )
 
-            # ── Паспорт: не зберігаємо "сміттєвий" тип без номера ──
             if not values.get('passport_number'):
                 values['passport_document_type'] = None
                 values['passport_series'] = None
@@ -683,12 +649,9 @@ def pending_student_review(pending_id):
             program_credits_override_raw = (request.form.get('program_credits_override') or '').strip()
             program_credits_override = int(program_credits_override_raw) if program_credits_override_raw else None
 
-            # force_new_student=1 — адмін ЯВНО підтвердив, що це різні люди
-            # з однаковим ПІБ і датою народження (напр. повні тезки).
             force_new_student = request.form.get('force_new_student') == '1'
 
             try:
-                # ── Перевірка: чи студент уже є в базі? ──
                 existing_student = None
                 if not force_new_student:
                     if row['tax_id']:
@@ -718,7 +681,6 @@ def pending_student_review(pending_id):
                 from routes.gender import detect_gender_from_middle_name
 
                 if existing_student:
-                    # ── Студент уже є в базі: реактивуємо enrollment ──
                     student_id = existing_student['id']
                     conn.execute("UPDATE students SET archived = FALSE WHERE id = ?", (student_id,))
 
@@ -737,7 +699,6 @@ def pending_student_review(pending_id):
                         conn=conn,
                     )
                 else:
-                    # ── Новий студент ──
                     gender = detect_gender_from_middle_name(row['middle_name_UA'])
                     cur = conn.execute("""
                         INSERT INTO students (
@@ -757,14 +718,13 @@ def pending_student_review(pending_id):
 
                     add_enrollment(
                         student_id, group_id,
-                        is_primary=True,  # новий студент — перший enrollment стає основним
+                        is_primary=True,
                         license_id=license_id,
                         edebo_code=None,
                         program_credits_override=program_credits_override,
                         conn=conn,
                     )
 
-                # ── Фото ──
                 if row['photo_path']:
                     try:
                         from routes.photo import photo_path_for_student, _ensure_dir
@@ -784,7 +744,6 @@ def pending_student_review(pending_id):
                             f"студенту {student_id}: {e}"
                         )
 
-                # ── Документ про освіту (dedup: не створюємо дубль) ──
                 education_doc_id = None
                 if row['document_type'] or row['document_number']:
                     doc_number = ' '.join(
@@ -835,14 +794,12 @@ def pending_student_review(pending_id):
                         ))
                         education_doc_id = cur_doc.lastrowid
 
-                    # Скани заявки → до документа про освіту
                     conn.execute(
                         "UPDATE attachments SET entity_type='education_document', entity_id=? "
                         "WHERE entity_type='pending_student' AND entity_id=?",
                         (education_doc_id, pending_id)
                     )
 
-                    # Довідка / свідоцтво про визнання
                     if (row['foreign_reference_number'] or row['foreign_reference_institution']
                             or row['recognition_certificate_number'] or row['recognition_issuer']):
                         existing_foreign = conn.execute(
@@ -909,7 +866,6 @@ def pending_student_review(pending_id):
                         (student_id, pending_id)
                     )
 
-                # ── Паспорт (dedup: не створюємо дубль) ──
                 if row['passport_number']:
                     _passport_doc_type = (
                         normalize_passport_type(row['passport_document_type'])
@@ -966,7 +922,6 @@ def pending_student_review(pending_id):
                         (student_id, pending_id)
                     )
 
-                # ── Військові дані (нові + legacy через хелпери) ──
                 has_military_scans = conn.execute(
                     "SELECT 1 FROM attachments "
                     "WHERE entity_type='pending_student_military' AND entity_id=? LIMIT 1",
@@ -1033,7 +988,6 @@ def pending_student_review(pending_id):
                     (current_username(), student_id, pending_id)
                 )
 
-                # Переносимо ПОВНІ військові дані з PDF (якщо є military_id)
                 if military_id:
                     promote_ok, promote_msg = _promote_pending_military_to_student(
                         conn, pending_id, student_id, military_id, current_username()
@@ -1085,7 +1039,6 @@ def pending_student_review(pending_id):
             try:
                 updated_parts = []
 
-                # ── Особисті дані: КОЖНЕ поле окремо ──
                 PERSONAL_FIELD_MAP = [
                     ('last_name_UA',   'last_name_UA',   'Прізвище (укр.)'),
                     ('first_name_UA',  'first_name_UA',  "Ім'я (укр.)"),
@@ -1110,7 +1063,6 @@ def pending_student_review(pending_id):
                     )
                     updated_parts.append('особисті: ' + ', '.join(personal_labels))
 
-                # ── Контакти: КОЖНЕ поле окремо ──
                 from routes.utils import normalize_phone_pair
 
                 update_phone  = bool(request.form.get('update_phone'))
@@ -1170,14 +1122,15 @@ def pending_student_review(pending_id):
 
                 # ── Документ про освіту (dedup + підтримка кількох груп) ──
                 doc_ids_for_scans = []
-                want_add_doc = bool(request.form.get('add_document'))
-                if want_add_doc and (row['document_type'] or row['document_number']):
+                want_apply_doc = bool(
+                    request.form.get('add_document') or request.form.get('update_document')
+                )
+                if want_apply_doc and (row['document_type'] or row['document_number']):
                     doc_number = ' '.join(
                         x for x in [row['document_series'], row['document_number']] if x
                     ) or ''
                     _doc_type = row['document_type'] or ''
 
-                    # Групи з форми (якщо не передано — fallback на основну, стара поведінка)
                     target_group_ids = []
                     for gs in request.form.getlist('target_group_ids_document'):
                         try:
@@ -1215,7 +1168,9 @@ def pending_student_review(pending_id):
                                 row['document_date'] or None,
                                 doc_id,
                             ))
-                            updated_parts.append('документ про освіту (заповнено порожні поля)')
+                            updated_parts.append(
+                                f'документ про освіту (заповнено порожні поля, група ID {_doc_gid})'
+                            )
                         else:
                             cur_doc = conn.execute("""
                                 INSERT INTO education_documents (
@@ -1234,10 +1189,11 @@ def pending_student_review(pending_id):
                                 row['document_date'] or '',
                             ))
                             doc_id = cur_doc.lastrowid
-                            updated_parts.append('документ про освіту (додано як новий)')
+                            updated_parts.append(
+                                f'документ про освіту (додано, група ID {_doc_gid})'
+                            )
                         doc_ids_for_scans.append(doc_id)
 
-                    # Скани → до ПЕРШОГО документа, для решти — фізичні копії
                     if doc_ids_for_scans:
                         conn.execute(
                             "UPDATE attachments SET entity_type='education_document', entity_id=? "
@@ -1281,7 +1237,7 @@ def pending_student_review(pending_id):
 
                 # ── Паспорт (dedup + підтримка кількох груп) ──
                 passport_ids_for_scans = []
-                if request.form.get('add_passport') and row['passport_number']:
+                if (request.form.get('add_passport') or request.form.get('update_passport')) and row['passport_number']:
                     _passport_doc_type = (
                         normalize_passport_type(row['passport_document_type'])
                         or PASSPORT_TYPE_DEFAULT
@@ -1322,7 +1278,9 @@ def pending_student_review(pending_id):
                                 row['passport_valid_until'], row['passport_unique_number'],
                                 passport_id,
                             ))
-                            updated_parts.append('паспортні дані (заповнено порожні поля)')
+                            updated_parts.append(
+                                f'паспортні дані (заповнено порожні поля, група ID {_doc_gid})'
+                            )
                         else:
                             cur_p = conn.execute("""
                                 INSERT INTO passport_documents (
@@ -1336,7 +1294,9 @@ def pending_student_review(pending_id):
                                 row['passport_valid_until'], row['passport_unique_number'],
                             ))
                             passport_id = cur_p.lastrowid
-                            updated_parts.append('паспортні дані (додано як новий)')
+                            updated_parts.append(
+                                f'паспортні дані (додано, група ID {_doc_gid})'
+                            )
                         passport_ids_for_scans.append(passport_id)
 
                     if passport_ids_for_scans:
@@ -1378,7 +1338,7 @@ def pending_student_review(pending_id):
                     (existing_id, pending_id)
                 )
 
-                # ── Військові дані (нові + legacy через хелпери) ──
+                # ── Військові дані ──
                 if request.form.get('add_military') and _pending_has_military_data(row):
                     military_data = _military_payload_from_pending(row)
                     existing_military = conn.execute(
@@ -1497,7 +1457,7 @@ def pending_student_review(pending_id):
     passport_scans = get_attachments(conn, 'pending_student_passport', pending_id)
     military_scans = get_attachments(conn, 'pending_student_military', pending_id)
 
-    # Розширена інформація про наявного студента (якщо це дублікат).
+    # ── Ініціалізація змінних для шаблону (щоб Jinja не падала при existing_student=None) ──
     existing_full = None
     existing_enrollments = []
     existing_has_passport = False
@@ -1506,9 +1466,15 @@ def pending_student_review(pending_id):
     existing_edu_docs = []
     existing_matching_edu_doc = None
     existing_military = None
+    active_enrolls = []
+    education_docs_by_group = {}
+    legacy_edu_docs = []
+    passports_by_group = {}
+    legacy_passport = None
 
     if existing_student:
         sid = existing_student['id']
+
         ex_row = conn.execute("""
             SELECT s.*,
                    g.name AS primary_group_name,
@@ -1562,6 +1528,87 @@ def pending_student_review(pending_id):
             (sid,),
         ).fetchone()
 
+        # ═══════════════════════════════════════════════════════════════
+        #  Дані для блоків «Що вже є в базі» — усередині if existing_student:
+        # ═══════════════════════════════════════════════════════════════
+
+        # 1) Активні enrollments — ПЕРШИМ ділом (до циклів нижче)
+        active_enrolls = [e for e in existing_enrollments if e.get('status') == 'active']
+
+        # Legacy-fallback: студент без enrollment'ів, але з students.group_id
+        if not active_enrolls and existing_full and existing_full.get('group_id'):
+            _grp = conn.execute(
+                "SELECT id, name FROM groups WHERE id = ?",
+                (existing_full['group_id'],),
+            ).fetchone()
+            if _grp:
+                active_enrolls = [{
+                    'group_id': _grp['id'],
+                    'group_name': _grp['name'],
+                    'is_primary': True,
+                    'status': 'active',
+                }]
+
+        # 2) Документи про освіту по кожній активній групі
+        education_docs_by_group = {}
+        for e in active_enrolls:
+            docs = conn.execute("""
+                SELECT id, document_type, document_type_en, document_number,
+                       institution_name, country, completion_date
+                FROM education_documents
+                WHERE student_id = ? AND group_id = ?
+                ORDER BY id DESC
+            """, (sid, e['group_id'])).fetchall()
+            if docs:
+                lst = []
+                for d in docs:
+                    d = dict(d)
+                    d['_matches_request'] = bool(
+                        app_doc_num
+                        and _norm_doc_num(d.get('document_number')) == app_doc_num
+                    )
+                    lst.append(d)
+                education_docs_by_group[e['group_id']] = lst
+
+        # 3) Legacy-документи про освіту (без прив'язки до групи)
+        for d in conn.execute("""
+            SELECT id, document_type, document_number, institution_name,
+                   country, completion_date
+            FROM education_documents
+            WHERE student_id = ? AND group_id IS NULL
+            ORDER BY id DESC
+        """, (sid,)).fetchall():
+            d = dict(d)
+            d['_matches_request'] = bool(
+                app_doc_num
+                and _norm_doc_num(d.get('document_number')) == app_doc_num
+            )
+            legacy_edu_docs.append(d)
+
+        # 4) Паспорти по кожній активній групі
+        for e in active_enrolls:
+            p = conn.execute("""
+                SELECT id, document_type, series, number, issued_by, issue_date,
+                       valid_until, unique_number
+                FROM passport_documents
+                WHERE student_id = ? AND COALESCE(group_id, -1) = ?
+                ORDER BY id DESC LIMIT 1
+            """, (sid, e['group_id'])).fetchone()
+            if p:
+                passports_by_group[e['group_id']] = dict(p)
+
+        # 5) Legacy-паспорт (без прив'язки до групи)
+        p_legacy = conn.execute("""
+            SELECT id, document_type, series, number, issued_by, issue_date,
+                   valid_until, unique_number
+            FROM passport_documents
+            WHERE student_id = ? AND group_id IS NULL
+            ORDER BY id DESC LIMIT 1
+        """, (sid,)).fetchone()
+        if p_legacy:
+            legacy_passport = dict(p_legacy)
+            passports_by_group[None] = legacy_passport
+
     conn.close()
     return render_template(
         'admin_pending_student_review.html',
@@ -1575,6 +1622,11 @@ def pending_student_review(pending_id):
         existing_edu_docs=existing_edu_docs,
         existing_matching_edu_doc=existing_matching_edu_doc,
         existing_military=existing_military,
+        active_enrolls=active_enrolls,
+        education_docs_by_group=education_docs_by_group,
+        legacy_edu_docs=legacy_edu_docs,
+        passports_by_group=passports_by_group,
+        legacy_passport=legacy_passport,
         scans=scans, passport_scans=passport_scans, military_scans=military_scans,
         **passport_template_context(),
     )
@@ -1743,6 +1795,9 @@ def update_request_review(request_id):
         flash("Заявку не знайдено", "error")
         return redirect(url_for('admin.update_requests'))
 
+    # ── ВИПРАВЛЕНО: student_id визначаємо ДО POST-гілки (для GET-запиту теж потрібен) ──
+    student_id = row['student_id']
+
     allowed_fields = json.loads(row['allowed_fields'])
     submitted = json.loads(row['submitted_data']) if row['submitted_data'] else {}
 
@@ -1792,7 +1847,6 @@ def update_request_review(request_id):
             return redirect(url_for('admin.update_requests'))
 
         elif action == 'apply':
-            student_id = row['student_id']
             applied_parts = []
             applied_field_keys = []
 
@@ -1847,10 +1901,25 @@ def update_request_review(request_id):
                 # ── Паспорт (dedup) ──
                 if 'passport' in allowed_fields and submitted.get('passport') and request.form.get('apply_passport'):
                     p = submitted['passport']
-                    _grp_row = conn.execute(
-                        "SELECT group_id FROM students WHERE id = ?", (student_id,)
-                    ).fetchone()
-                    _doc_gid = _grp_row['group_id'] if _grp_row else None
+
+                    _target_gid = request.form.get('passport_target_group_id', type=int)
+                    if not _target_gid:
+                        _grp_row = conn.execute(
+                            "SELECT group_id FROM students WHERE id = ?", (student_id,)
+                        ).fetchone()
+                        _target_gid = _grp_row['group_id'] if _grp_row else None
+
+                    if _target_gid:
+                        _valid = conn.execute("""
+                            SELECT 1 FROM student_enrollments
+                            WHERE student_id = ? AND group_id = ? AND status = 'active'
+                            UNION
+                            SELECT 1 FROM students WHERE id = ? AND group_id = ?
+                        """, (student_id, _target_gid, student_id, _target_gid)).fetchone()
+                        if not _valid:
+                            _target_gid = None
+
+                    _doc_gid = _target_gid
 
                     _p_doc_type = (
                         normalize_passport_type(p.get('document_type'))
@@ -2042,13 +2111,10 @@ def update_request_review(request_id):
                             applied_field_keys.append('education_document_recognition')
 
                 if 'military' in allowed_fields and request.form.get('apply_military'):
-                    # 1) Пробуємо перепарсити PDF «Резерв+» із заявки
                     promote_ok, promote_msg = _promote_update_request_military_to_student(
                         conn, request_id, student_id, current_username()
                     )
                     if not promote_ok:
-                        # 2) Fallback — беремо з форми (старі поля).
-                        #    COALESCE — не затираємо наявні значення.
                         logger.info(f"[apply_update] fallback на форму: {promote_msg}")
                         m = submitted.get('military') or {}
                         existing_military = conn.execute(
@@ -2167,10 +2233,50 @@ def update_request_review(request_id):
     military_scans = get_attachments(conn, 'update_request_military', request_id)
     applied_fields = json.loads(row['applied_fields']) if row['applied_fields'] else []
 
+    # Активні enrollments студента для вибору цільової групи
+    enrollments = conn.execute("""
+        SELECT e.group_id, e.is_primary, g.name AS group_name
+        FROM student_enrollments e
+        JOIN groups g ON g.id = e.group_id
+        WHERE e.student_id = ? AND e.status = 'active'
+        ORDER BY e.is_primary DESC, e.id
+    """, (student_id,)).fetchall()
+    enrollments = [dict(e) for e in enrollments]
+
+    # Legacy-fallback: студент без enrollment'ів
+    # ── ВИПРАВЛЕНО: не перезаписуємо змінну row (це рядок заявки update_requests!) ──
+    if not enrollments:
+        _legacy_row = conn.execute("""
+            SELECT s.group_id, g.name AS group_name
+            FROM students s LEFT JOIN groups g ON g.id = s.group_id
+            WHERE s.id = ? AND s.group_id IS NOT NULL
+        """, (student_id,)).fetchone()
+        if _legacy_row:
+            enrollments = [{
+                'group_id': _legacy_row['group_id'],
+                'group_name': _legacy_row['group_name'],
+                'is_primary': True,
+            }]
+
+    # Найновіший паспорт для КОЖНОЇ групи окремо
+    passports_by_group = {}
+    for e in enrollments:
+        _gid = e['group_id'] or -1
+        p = conn.execute("""
+            SELECT document_type, series, number, issued_by, issue_date, valid_until
+            FROM passport_documents
+            WHERE student_id = ? AND COALESCE(group_id, -1) = ?
+            ORDER BY id DESC LIMIT 1
+        """, (student_id, _gid)).fetchone()
+        if p:
+            passports_by_group[e['group_id']] = dict(p)
+
     conn.close()
     return render_template(
         'admin_update_request_review.html',
         row=row, allowed_fields=allowed_fields, submitted=submitted, applied_fields=applied_fields,
         passport_scans=passport_scans, education_scans=education_scans, military_scans=military_scans,
+        enrollments=enrollments,
+        passports_by_group=passports_by_group,
         **passport_template_context(),
     )
