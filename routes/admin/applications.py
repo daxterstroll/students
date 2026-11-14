@@ -976,29 +976,80 @@ def pending_student_review(pending_id):
                     logger.error(f"Не вдалося перенести фото заявки {pending_id} студенту {existing_id}: {e}")
 
             doc_id_for_scans = None
-            if request.form.get('add_document') and (row['document_type'] or row['document_number']):
-                doc_number = ' '.join(x for x in [row['document_series'], row['document_number']] if x) or ''
-                # Документ привязываем к основной группе студента (в
-                # заявке "обновить наявного студента" нет выбора группы).
+            want_update_doc = bool(request.form.get('update_document'))
+            want_add_doc = bool(request.form.get('add_document'))
+            if (want_update_doc or want_add_doc) and (row['document_type'] or row['document_number']):
+                doc_number = ' '.join(
+                    x for x in [row['document_series'], row['document_number']] if x
+                ) or ''
                 _grp_row = conn.execute(
                     "SELECT group_id FROM students WHERE id = ?", (existing_id,)
                 ).fetchone()
                 _doc_gid = _grp_row['group_id'] if _grp_row else None
 
-                cur_doc = conn.execute("""
-                    INSERT INTO education_documents (
-                        student_id, group_id, document_type, document_type_en, document_number,
-                        institution_name, institution_name_en, country, country_en, completion_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    existing_id, _doc_gid,
-                    row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
-                    row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
-                    row['document_country'] or '', translate_to_en(row['document_country'] or ''),
-                    row['document_date'] or '',
-                ))
-                doc_id_for_scans = cur_doc.lastrowid
-                updated_parts.append('документ про освіту (додано як новий)')
+                def _norm_doc_num(s):
+                    return ''.join(ch for ch in (s or '').upper() if ch.isalnum())
+
+                matched_doc = None
+                # Явно вказаний id існуючого документа з форми
+                explicit_id = request.form.get('update_document_id', type=int)
+                if explicit_id:
+                    matched_doc = conn.execute(
+                        "SELECT id FROM education_documents WHERE id=? AND student_id=?",
+                        (explicit_id, existing_id),
+                    ).fetchone()
+                if matched_doc is None and doc_number:
+                    app_norm = _norm_doc_num(doc_number)
+                    for ed in conn.execute(
+                        "SELECT id, document_number FROM education_documents WHERE student_id=?",
+                        (existing_id,),
+                    ).fetchall():
+                        if _norm_doc_num(ed['document_number']) == app_norm:
+                            matched_doc = ed
+                            break
+
+                if want_update_doc and matched_doc:
+                    conn.execute("""
+                        UPDATE education_documents SET
+                            document_type       = COALESCE(NULLIF(?, ''), document_type),
+                            document_type_en    = COALESCE(NULLIF(?, ''), document_type_en),
+                            document_number     = COALESCE(NULLIF(?, ''), document_number),
+                            institution_name    = COALESCE(NULLIF(?, ''), institution_name),
+                            institution_name_en = COALESCE(NULLIF(?, ''), institution_name_en),
+                            country             = COALESCE(NULLIF(?, ''), country),
+                            country_en          = COALESCE(NULLIF(?, ''), country_en),
+                            completion_date     = COALESCE(NULLIF(?, ''), completion_date),
+                            group_id            = COALESCE(group_id, ?)
+                        WHERE id = ?
+                    """, (
+                        row['document_type'] or '',
+                        translate_to_en(row['document_type'] or '') if row['document_type'] else '',
+                        doc_number,
+                        row['document_institution'] or '',
+                        translate_to_en(row['document_institution'] or '') if row['document_institution'] else '',
+                        row['document_country'] or '',
+                        translate_to_en(row['document_country'] or '') if row['document_country'] else '',
+                        row['document_date'] or '',
+                        _doc_gid,
+                        matched_doc['id'],
+                    ))
+                    doc_id_for_scans = matched_doc['id']
+                    updated_parts.append('документ про освіту (оновлено існуючий)')
+                elif want_add_doc or (want_update_doc and not matched_doc):
+                    cur_doc = conn.execute("""
+                        INSERT INTO education_documents (
+                            student_id, group_id, document_type, document_type_en, document_number,
+                            institution_name, institution_name_en, country, country_en, completion_date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        existing_id, _doc_gid,
+                        row['document_type'] or '', translate_to_en(row['document_type'] or ''), doc_number,
+                        row['document_institution'] or '', translate_to_en(row['document_institution'] or ''),
+                        row['document_country'] or '', translate_to_en(row['document_country'] or ''),
+                        row['document_date'] or '',
+                    ))
+                    doc_id_for_scans = cur_doc.lastrowid
+                    updated_parts.append('документ про освіту (додано як новий)')
 
             if request.form.get('add_reference_recognition') and (
                 row['foreign_reference_number'] or row['foreign_reference_institution']
@@ -1070,7 +1121,9 @@ def pending_student_review(pending_id):
             )
 
             passport_id_for_scans = None
-            if request.form.get('add_passport') and row['passport_number']:
+            want_update_passport = bool(request.form.get('update_passport'))
+            want_add_passport = bool(request.form.get('add_passport'))
+            if row['passport_number'] and (want_update_passport or want_add_passport):
                 _grp_row = conn.execute(
                     "SELECT group_id FROM students WHERE id = ?", (existing_id,)
                 ).fetchone()
@@ -1080,20 +1133,63 @@ def pending_student_review(pending_id):
                     normalize_passport_type(row['passport_document_type'])
                     or PASSPORT_TYPE_DEFAULT
                 )
-                cur_passport = conn.execute("""
-                    INSERT INTO passport_documents (
-                        student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    existing_id, _doc_gid,
-                    _passport_doc_type,
-                    row['passport_series'],
-                    normalize_passport_number(row['passport_number'], _passport_doc_type),
-                    row['passport_issued_by'], row['passport_issue_date'],
-                    row['passport_valid_until'], row['passport_unique_number'],
-                ))
-                passport_id_for_scans = cur_passport.lastrowid
-                updated_parts.append('паспортні дані (додано як новий запис)')
+                _passport_number = normalize_passport_number(
+                    row['passport_number'], _passport_doc_type
+                )
+
+                existing_passport_row = conn.execute(
+                    "SELECT id FROM passport_documents WHERE student_id=? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (existing_id,),
+                ).fetchone()
+
+                # Оновлення існуючого запису — пріоритет над «додати новий»,
+                # якщо адмін явно обрав update_passport.
+                if want_update_passport and existing_passport_row:
+                    # Не затираємо вже збережені значення порожніми з заявки:
+                    # COALESCE(NULLIF(нове, ''), старе) — якщо в заявці
+                    # поле порожнє, лишаємо те, що було в картці.
+                    conn.execute("""
+                        UPDATE passport_documents SET
+                            document_type = COALESCE(NULLIF(?, ''), document_type),
+                            series        = COALESCE(NULLIF(?, ''), series),
+                            number        = COALESCE(NULLIF(?, ''), number),
+                            issued_by     = COALESCE(NULLIF(?, ''), issued_by),
+                            issue_date    = COALESCE(NULLIF(?, ''), issue_date),
+                            valid_until   = COALESCE(NULLIF(?, ''), valid_until),
+                            unique_number = COALESCE(NULLIF(?, ''), unique_number),
+                            group_id      = COALESCE(group_id, ?)
+                        WHERE id = ?
+                    """, (
+                        _passport_doc_type or '',
+                        row['passport_series'] or '',
+                        _passport_number or '',
+                        row['passport_issued_by'] or '',
+                        row['passport_issue_date'] or '',
+                        row['passport_valid_until'] or '',
+                        row['passport_unique_number'] or '',
+                        _doc_gid,
+                        existing_passport_row['id'],
+                    ))
+                    passport_id_for_scans = existing_passport_row['id']
+                    updated_parts.append('паспортні дані (оновлено існуючий запис)')
+                elif want_add_passport or (want_update_passport and not existing_passport_row):
+                    # Немає існуючого — або адмін явно просить «додати новий»
+                    cur_passport = conn.execute("""
+                        INSERT INTO passport_documents (
+                            student_id, group_id, document_type, series, number,
+                            issued_by, issue_date, valid_until, unique_number
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        existing_id, _doc_gid,
+                        _passport_doc_type,
+                        row['passport_series'],
+                        _passport_number,
+                        row['passport_issued_by'], row['passport_issue_date'],
+                        row['passport_valid_until'], row['passport_unique_number'],
+                    ))
+                    passport_id_for_scans = cur_passport.lastrowid
+                    updated_parts.append('паспортні дані (додано як новий запис)')
 
             if passport_id_for_scans:
                 conn.execute(
@@ -1107,52 +1203,181 @@ def pending_student_review(pending_id):
                 (existing_id, pending_id)
             )
 
-            if request.form.get('add_military') and any([
+            # ── Військові дані ──
+            # Чекбокс add_military: оновлюємо порожні поля існуючого запису
+            # (або створюємо новий) усіма полями з заявки — і legacy, і «Резерв+».
+            # Якщо серед сканів є PDF «Резерв+» — після цього ще раз
+            # перепарсимо його через _promote_pending_military_to_student.
+            has_any_military_in_app = any([
                 row['military_registration_number_drpvr'],
                 row['military_registration_document'],
-                row['military_rank']
-            ]):
+                row['military_rank'],
+                row['military_issued_vod'],
+                row['military_specialty_number'],
+                row['military_change_credentials'],
+                row['military_change_reason'],
+                row['military_status_badge'],
+                row['military_valid_until'],
+                row['military_registration_category'],
+                row['military_removal_basis'],
+                row['military_tck_name'],
+                row['military_registry_number'],
+                row['military_vos_code'],
+                row['military_vos_description'],
+                row['military_deferral_type'],
+                row['military_deferral_until'],
+                row['military_police_reason'],
+                row['military_police_date'],
+                row['military_vlk_decision'],
+                row['military_vlk_date'],
+                row['military_disability_group'],
+                row['military_disability_valid_until'],
+                row['military_disability_reason'],
+                row['military_formed_at'],
+                row['military_data_update_date'],
+                row['military_address'],
+            ])
+            has_military_scans = conn.execute(
+                "SELECT 1 FROM attachments "
+                "WHERE entity_type='pending_student_military' AND entity_id=? LIMIT 1",
+                (pending_id,),
+            ).fetchone() is not None
+
+            if request.form.get('add_military') and (has_any_military_in_app or has_military_scans):
                 existing_military = conn.execute(
                     "SELECT id FROM military WHERE student_id=?", (existing_id,)
                 ).fetchone()
+
+                # Значення з заявки (порожні → '' щоб COALESCE не чіпав NULL-логіку)
+                def _v(key):
+                    val = row[key] if key in row.keys() else None
+                    return (val or '') if val is not None else ''
+
+                military_values = {
+                    'registry_number': _v('military_registration_number_drpvr') or _v('military_registry_number'),
+                    'military_registration_document': _v('military_registration_document'),
+                    'formed_at': _v('military_issued_vod') or _v('military_formed_at'),
+                    'vos_code': _v('military_specialty_number') or _v('military_vos_code'),
+                    'military_rank': _v('military_rank'),
+                    'change_credentials': _v('military_change_credentials'),
+                    'reason_for_changing_credentials': _v('military_change_reason'),
+                    'status_badge': _v('military_status_badge'),
+                    'valid_until': _v('military_valid_until'),
+                    'registration_category': _v('military_registration_category'),
+                    'removal_basis': _v('military_removal_basis'),
+                    'tck_name': _v('military_tck_name'),
+                    'vos_description': _v('military_vos_description'),
+                    'deferral_type': _v('military_deferral_type'),
+                    'deferral_until': _v('military_deferral_until'),
+                    'police_reason': _v('military_police_reason'),
+                    'police_date': _v('military_police_date'),
+                    'vlk_decision': _v('military_vlk_decision'),
+                    'vlk_date': _v('military_vlk_date'),
+                    'disability_group': _v('military_disability_group'),
+                    'disability_valid_until': _v('military_disability_valid_until'),
+                    'disability_reason': _v('military_disability_reason'),
+                    'data_update_date': _v('military_data_update_date'),
+                }
+                data_verified = 1 if row['military_data_verified_on_time'] else 0
+
                 if existing_military:
+                    # Непорожні значення з заявки ПЕРЕЗАПИСУЮТЬ картку.
+                    # Порожні з заявки — не чіпають уже збережене
+                    # (COALESCE(NULLIF(нове, ''), старе)).
                     conn.execute("""
-                        UPDATE military SET registry_number=?, military_registration_document=?,
-                                             formed_at=?, vos_code=?, military_rank=?,
-                                             change_credentials=?, reason_for_changing_credentials=?
-                        WHERE id=?
+                        UPDATE military SET
+                            registry_number                 = COALESCE(NULLIF(?, ''), registry_number),
+                            military_registration_document  = COALESCE(NULLIF(?, ''), military_registration_document),
+                            formed_at                       = COALESCE(NULLIF(?, ''), formed_at),
+                            vos_code                        = COALESCE(NULLIF(?, ''), vos_code),
+                            military_rank                   = COALESCE(NULLIF(?, ''), military_rank),
+                            change_credentials              = COALESCE(NULLIF(?, ''), change_credentials),
+                            reason_for_changing_credentials = COALESCE(NULLIF(?, ''), reason_for_changing_credentials),
+                            status_badge                    = COALESCE(NULLIF(?, ''), status_badge),
+                            valid_until                     = COALESCE(NULLIF(?, ''), valid_until),
+                            registration_category           = COALESCE(NULLIF(?, ''), registration_category),
+                            removal_basis                   = COALESCE(NULLIF(?, ''), removal_basis),
+                            tck_name                        = COALESCE(NULLIF(?, ''), tck_name),
+                            vos_description                 = COALESCE(NULLIF(?, ''), vos_description),
+                            deferral_type                   = COALESCE(NULLIF(?, ''), deferral_type),
+                            deferral_until                  = COALESCE(NULLIF(?, ''), deferral_until),
+                            police_reason                   = COALESCE(NULLIF(?, ''), police_reason),
+                            police_date                     = COALESCE(NULLIF(?, ''), police_date),
+                            vlk_decision                    = COALESCE(NULLIF(?, ''), vlk_decision),
+                            vlk_date                        = COALESCE(NULLIF(?, ''), vlk_date),
+                            disability_group                = COALESCE(NULLIF(?, ''), disability_group),
+                            disability_valid_until          = COALESCE(NULLIF(?, ''), disability_valid_until),
+                            disability_reason               = COALESCE(NULLIF(?, ''), disability_reason),
+                            data_update_date                = COALESCE(NULLIF(?, ''), data_update_date),
+                            data_verified_on_time           = CASE
+                                                                WHEN ? = 1 THEN 1
+                                                                ELSE data_verified_on_time
+                                                              END
+                        WHERE id = ?
                     """, (
-                        row['military_registration_number_drpvr'], row['military_registration_document'],
-                        row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                        row['military_change_credentials'], row['military_change_reason'],
-                        existing_military['id']
+                        military_values['registry_number'],
+                        military_values['military_registration_document'],
+                        military_values['formed_at'],
+                        military_values['vos_code'],
+                        military_values['military_rank'],
+                        military_values['change_credentials'],
+                        military_values['reason_for_changing_credentials'],
+                        military_values['status_badge'],
+                        military_values['valid_until'],
+                        military_values['registration_category'],
+                        military_values['removal_basis'],
+                        military_values['tck_name'],
+                        military_values['vos_description'],
+                        military_values['deferral_type'],
+                        military_values['deferral_until'],
+                        military_values['police_reason'],
+                        military_values['police_date'],
+                        military_values['vlk_decision'],
+                        military_values['vlk_date'],
+                        military_values['disability_group'],
+                        military_values['disability_valid_until'],
+                        military_values['disability_reason'],
+                        military_values['data_update_date'],
+                        data_verified,
+                        existing_military['id'],
                     ))
                     military_id_for_scans = existing_military['id']
+                    updated_parts.append('військовий облік (оновлено з заявки)')
                 else:
-                    cur_military = conn.execute("""
-                        INSERT INTO military (
-                            student_id, registry_number, military_registration_document, formed_at,
-                            vos_code, military_rank,
-                            change_credentials, reason_for_changing_credentials
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        existing_id, row['military_registration_number_drpvr'], row['military_registration_document'],
-                        row['military_issued_vod'], row['military_specialty_number'], row['military_rank'],
-                        row['military_change_credentials'], row['military_change_reason'],
-                    ))
+                    cols = ['student_id'] + list(military_values.keys()) + ['data_verified_on_time']
+                    placeholders = ', '.join('?' for _ in cols)
+                    cur_military = conn.execute(
+                        f"INSERT INTO military ({', '.join(cols)}) VALUES ({placeholders})",
+                        [existing_id] + [military_values[c] for c in military_values] + [data_verified],
+                    )
                     military_id_for_scans = cur_military.lastrowid
-                # Адреса — в картку студента, не в military
+                    updated_parts.append('військовий облік (створено запис)')
+
+                # Адреса — в картку студента
                 if row['military_address']:
                     conn.execute(
                         "UPDATE students SET address_of_residence = COALESCE(NULLIF(address_of_residence, ''), ?) WHERE id = ?",
                         (row['military_address'], existing_id),
                     )
-                updated_parts.append('військовий облік')
+
+                # Скани → military
                 conn.execute(
                     "UPDATE attachments SET entity_type='military', entity_id=? "
                     "WHERE entity_type='pending_student_military' AND entity_id=?",
                     (military_id_for_scans, pending_id)
                 )
+
+                # Якщо є PDF «Резерв+» — повний перенос полів з парсера
+                # (перезаписує актуальними значеннями з PDF).
+                promote_ok, promote_msg = _promote_pending_military_to_student(
+                    conn, pending_id, existing_id, military_id_for_scans, current_username()
+                )
+                if promote_ok:
+                    updated_parts.append('військові дані з PDF')
+                else:
+                    # Не критично: форма вже записана; PDF просто не розпізнано
+                    logger.info(f"[update_existing] PDF promote: {promote_msg}")
+
             conn.execute(
                 "UPDATE attachments SET entity_type='student', entity_id=? "
                 "WHERE entity_type='pending_student_military' AND entity_id=?",
@@ -1210,7 +1435,10 @@ def pending_student_review(pending_id):
     existing_full = None
     existing_enrollments = []
     existing_has_passport = False
+    existing_passport = None
     existing_edu_docs_count = 0
+    existing_edu_docs = []
+    existing_matching_edu_doc = None
     existing_military = None
 
     if existing_student:
@@ -1235,15 +1463,41 @@ def pending_student_review(pending_id):
                 f"enrollments для студента {sid}: {_e}"
             )
 
-        existing_has_passport = conn.execute(
-            "SELECT 1 FROM passport_documents WHERE student_id = ? LIMIT 1",
+        existing_passport = conn.execute(
+            "SELECT * FROM passport_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1",
             (sid,),
-        ).fetchone() is not None
+        ).fetchone()
+        existing_has_passport = existing_passport is not None
 
-        existing_edu_docs_count = conn.execute(
-            "SELECT COUNT(*) FROM education_documents WHERE student_id = ?",
-            (sid,),
-        ).fetchone()[0]
+        existing_edu_docs = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM education_documents WHERE student_id = ? ORDER BY id DESC",
+                (sid,),
+            ).fetchall()
+        ]
+        existing_edu_docs_count = len(existing_edu_docs)
+
+        # Підбираємо «той самий» документ за номером (без урахування
+        # пробілів/регістру). Тип може трохи відрізнятися
+        # («повну загальну» vs «повну») — номер важливіший.
+        def _norm_doc_num(s):
+            return ''.join(ch for ch in (s or '').upper() if ch.isalnum())
+
+        app_doc_num = _norm_doc_num(
+            ' '.join(x for x in [row['document_series'], row['document_number']] if x)
+            or (row['document_number'] or '')
+        )
+        existing_matching_edu_doc = None
+        if app_doc_num:
+            for ed in existing_edu_docs:
+                if _norm_doc_num(ed.get('document_number')) == app_doc_num:
+                    existing_matching_edu_doc = ed
+                    break
+        # Якщо номера немає — беремо найсвіжіший документ як кандидата
+        # на оновлення (адмін сам вирішить).
+        if existing_matching_edu_doc is None and existing_edu_docs and (row['document_type'] or row['document_number']):
+            # не авто-матчимо без номера — тільки явний збіг номера
+            pass
 
         existing_military = conn.execute(
             "SELECT * FROM military WHERE student_id = ? LIMIT 1",
@@ -1258,7 +1512,10 @@ def pending_student_review(pending_id):
         existing_full=existing_full,
         existing_enrollments=existing_enrollments,
         existing_has_passport=existing_has_passport,
+        existing_passport=existing_passport,
         existing_edu_docs_count=existing_edu_docs_count,
+        existing_edu_docs=existing_edu_docs,
+        existing_matching_edu_doc=existing_matching_edu_doc,
         existing_military=existing_military,
         scans=scans, passport_scans=passport_scans, military_scans=military_scans,
         **passport_template_context(),

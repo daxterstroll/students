@@ -364,7 +364,9 @@
 {% if row.phone_backup and (row.phone_backup|string|trim) != ((existing_full.phone_backup or '')|string|trim) %}
     {% set _ = contact_diff_rows.append({'form_key': 'phone_backup', 'label': 'Резервний телефон', 'new': row.phone_backup, 'old': existing_full.phone_backup}) %}
 {% endif %}
-{% if row.email and (row.email|string|trim) != ((existing_full.email or '')|string|trim) %}
+{% set _email_new = (row.email or '')|string|trim|lower %}
+{% set _email_old = (existing_full.email or '')|string|trim|lower %}
+{% if row.email and _email_new != _email_old %}
     {% set _ = contact_diff_rows.append({'form_key': 'email', 'label': 'Email', 'new': row.email, 'old': existing_full.email}) %}
 {% endif %}
 
@@ -436,35 +438,266 @@
     {% endif %}
 
     {% if row.document_type or row.document_number %}
-    <div class="form-check mb-2">
-        <input type="checkbox" name="add_document" id="up_document"
-               class="form-check-input">
-        <label for="up_document" class="form-check-label small">
-            <strong>Документ про освіту</strong> як новий запис
-            ({{ row.document_type or '' }}{% if row.document_number %} №{{ row.document_number }}{% endif %})
-        </label>
+    <div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+        <div class="small fw-semibold text-muted mb-2">
+            <i class="bi bi-mortarboard me-1"></i>Документ про освіту із заявки
+            {% if row.document_type %} — {{ row.document_type }}{% endif %}
+            {% if row.document_series or row.document_number %}
+                № {{ row.document_series or '' }}{{ row.document_number or '' }}
+            {% endif %}
+        </div>
+
+        {% if existing_matching_edu_doc %}
+            {% set ed = existing_matching_edu_doc %}
+            <div class="alert alert-warning py-2 px-3 small mb-2">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                У картці вже є документ з <strong>тим самим номером</strong>
+                ({{ ed.document_number }}).
+                Рекомендовано <strong>оновити існуючий</strong>, а не додавати дубль.
+            </div>
+            <div class="small mb-2">
+                <div class="text-muted mb-1">Порівняння:</div>
+                <ul class="mb-2 ps-3">
+                    {% if row.document_type and (row.document_type|string|trim) != (ed.document_type or '')|string|trim %}
+                    <li>
+                        <strong>Тип:</strong>
+                        <span class="text-muted text-decoration-line-through">{{ ed.document_type }}</span>
+                        → <span class="text-success">{{ row.document_type }}</span>
+                    </li>
+                    {% endif %}
+                    {% set app_num = ((row.document_series or '') ~ ' ' ~ (row.document_number or ''))|trim %}
+                    {% if app_num and app_num != (ed.document_number or '')|string|trim %}
+                    <li>
+                        <strong>Номер:</strong>
+                        <span class="text-muted text-decoration-line-through">{{ ed.document_number }}</span>
+                        → <span class="text-success">{{ app_num }}</span>
+                    </li>
+                    {% endif %}
+                    {% if row.document_institution and (row.document_institution|string|trim) != (ed.institution_name or '')|string|trim %}
+                    <li>
+                        <strong>Заклад:</strong>
+                        <span class="text-muted text-decoration-line-through">{{ ed.institution_name }}</span>
+                        → <span class="text-success">{{ row.document_institution }}</span>
+                    </li>
+                    {% endif %}
+                    {% if row.document_country and (row.document_country|string|trim) != (ed.country or '')|string|trim %}
+                    <li>
+                        <strong>Країна:</strong>
+                        <span class="text-muted text-decoration-line-through">{{ ed.country }}</span>
+                        → <span class="text-success">{{ row.document_country }}</span>
+                    </li>
+                    {% endif %}
+                    {% if row.document_date and (row.document_date|string|trim) != (ed.completion_date or '')|string|trim %}
+                    <li>
+                        <strong>Дата:</strong>
+                        <span class="text-muted text-decoration-line-through">{{ ed.completion_date }}</span>
+                        → <span class="text-success">{{ row.document_date }}</span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+            <div class="form-check mb-1">
+                <input type="checkbox" name="update_document" id="up_document_update"
+                       class="form-check-input" checked>
+                <input type="hidden" name="update_document_id" value="{{ ed.id }}">
+                <label for="up_document_update" class="form-check-label small">
+                    <strong>Оновити існуючий документ</strong>
+                    (id {{ ed.id }}, № {{ ed.document_number }})
+                </label>
+            </div>
+            <div class="form-check mb-0">
+                <input type="checkbox" name="add_document" id="up_document_add"
+                       class="form-check-input">
+                <label for="up_document_add" class="form-check-label small text-muted">
+                    Додати <strong>як новий окремий запис</strong>
+                    (лише якщо це справді інший документ)
+                </label>
+            </div>
+        {% elif existing_edu_docs_count %}
+            <div class="small text-muted mb-2">
+                У студента вже є {{ existing_edu_docs_count }} документ(ів) про освіту,
+                але з <em>іншим</em> номером — можна додати новий запис.
+            </div>
+            <div class="form-check mb-0">
+                <input type="checkbox" name="add_document" id="up_document"
+                       class="form-check-input">
+                <label for="up_document" class="form-check-label small">
+                    <strong>Додати документ про освіту</strong> як новий запис
+                </label>
+            </div>
+        {% else %}
+            <div class="form-check mb-0">
+                <input type="checkbox" name="add_document" id="up_document"
+                       class="form-check-input">
+                <label for="up_document" class="form-check-label small">
+                    <strong>Додати документ про освіту</strong>
+                    {% if row.document_type %} ({{ row.document_type }}){% endif %}
+                </label>
+            </div>
+        {% endif %}
     </div>
     {% endif %}
 
     {% if row.passport_number %}
-    <div class="form-check mb-2">
-        <input type="checkbox" name="add_passport" id="up_passport"
-               class="form-check-input">
-        <label for="up_passport" class="form-check-label small">
-            <strong>Паспорт</strong> як новий запис
-            ({{ row.passport_document_type or '' }}{% if row.passport_number %} №{{ row.passport_number }}{% endif %})
-        </label>
+    <div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+        <div class="small fw-semibold text-muted mb-2">
+            <i class="bi bi-person-vcard me-1"></i>Паспортні дані із заявки
+            {% if row.passport_document_type %}{{ row.passport_document_type }}{% endif %}{% if row.passport_number %} №{{ row.passport_number }}{% endif %}
+        </div>
+
+        {% if existing_passport %}
+            {# Порівняння полів існуючого паспорта зі заявкою #}
+            {% set passport_field_defs = [
+                ('document_type', 'passport_document_type', 'Тип документа'),
+                ('series',        'passport_series',        'Серія'),
+                ('number',        'passport_number',        'Номер'),
+                ('issued_by',     'passport_issued_by',     'Ким видано'),
+                ('issue_date',    'passport_issue_date',    'Дата видачі'),
+                ('valid_until',   'passport_valid_until',   'Дійсний до'),
+                ('unique_number', 'passport_unique_number', 'Запис у ЄДДР'),
+            ] %}
+            {% set passport_diff_rows = [] %}
+            {% for db_col, form_key, label in passport_field_defs %}
+                {% set nv = row[form_key] if form_key in row.keys() else '' %}
+                {% set ov = existing_passport[db_col] if db_col in existing_passport.keys() else '' %}
+                {% set nv_s = (nv or '')|string|trim %}
+                {% set ov_s = (ov or '')|string|trim %}
+                {% if nv_s and nv_s != ov_s %}
+                    {% set _ = passport_diff_rows.append({'label': label, 'new': nv_s, 'old': ov_s}) %}
+                {% elif not nv_s and ov_s %}
+                    {# у заявці порожньо, у картці є — показуємо як «залишиться старе» #}
+                    {% set _ = passport_diff_rows.append({'label': label, 'new': '(не змінюється)', 'old': ov_s, 'keep': true}) %}
+                {% endif %}
+            {% endfor %}
+
+            {% if passport_diff_rows %}
+            <div class="small mb-2">
+                <div class="text-muted mb-1">Зміни щодо паспорта в картці студента:</div>
+                <ul class="mb-2 ps-3">
+                {% for p in passport_diff_rows %}
+                    <li>
+                        <strong>{{ p.label }}:</strong>
+                        {% if p.old and not p.get('keep') %}
+                            <span class="text-muted text-decoration-line-through">{{ p.old }}</span> →
+                            <span class="text-success">{{ p.new }}</span>
+                        {% elif p.get('keep') %}
+                            <span class="text-muted">{{ p.old }}</span>
+                            <span class="text-muted small">(у заявці порожньо — не затираємо)</span>
+                        {% else %}
+                            <span class="text-success">{{ p.new }}</span>
+                            <span class="text-muted small">(було порожньо)</span>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% else %}
+            <div class="small text-muted mb-2">
+                Усі заповнені поля паспорта в заявці збігаються з уже збереженим записом.
+                Можна лише прикріпити нові скани, оновивши існуючий запис.
+            </div>
+            {% endif %}
+
+            <div class="form-check mb-1">
+                <input type="checkbox" name="update_passport" id="up_passport_update"
+                       class="form-check-input">
+                <label for="up_passport_update" class="form-check-label small">
+                    <strong>Оновити існуючий паспорт</strong>
+                    — замінити поля в поточному записі та прикріпити скани з заявки
+                </label>
+            </div>
+            <div class="form-check mb-0">
+                <input type="checkbox" name="add_passport" id="up_passport_add"
+                       class="form-check-input">
+                <label for="up_passport_add" class="form-check-label small text-muted">
+                    Додати <strong>як новий окремий запис</strong>
+                    (якщо це інший документ, а не виправлення поточного)
+                </label>
+            </div>
+        {% else %}
+            <div class="form-check mb-0">
+                <input type="checkbox" name="add_passport" id="up_passport"
+                       class="form-check-input">
+                <label for="up_passport" class="form-check-label small">
+                    <strong>Додати паспорт</strong>
+                    {% if row.passport_document_type %}{{ row.passport_document_type }}{% endif %}{% if row.passport_number %} №{{ row.passport_number }}{% endif %}
+                </label>
+            </div>
+        {% endif %}
     </div>
     {% endif %}
 
-    {% if row.military_registration_number_drpvr or row.military_registration_document
-          or row.military_rank or row.military_status_badge or row.military_tck_name %}
-    <div class="form-check mb-2">
-        <input type="checkbox" name="add_military" id="up_military"
-               class="form-check-input">
-        <label for="up_military" class="form-check-label small">
-            <strong>Військові дані</strong> — оновити порожні поля
-        </label>
+    {% set has_military_in_app = row.military_registration_number_drpvr
+        or row.military_registration_document or row.military_rank
+        or row.military_status_badge or row.military_tck_name
+        or row.military_vos_code or row.military_vos_description
+        or row.military_deferral_type or row.military_vlk_decision
+        or row.military_registry_number or row.military_formed_at
+        or military_scans %}
+    {% if has_military_in_app %}
+    <div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+        <div class="small fw-semibold text-muted mb-2">
+            <i class="bi bi-shield me-1"></i>Військові дані із заявки
+        </div>
+
+        {% if existing_military %}
+            {% set mil_defs = [
+                ('status_badge', 'military_status_badge', 'Статус'),
+                ('tck_name', 'military_tck_name', 'ТЦК'),
+                ('military_rank', 'military_rank', 'Звання'),
+                ('registry_number', 'military_registry_number', 'Номер в реєстрі'),
+                ('vos_code', 'military_vos_code', 'ВОС код'),
+                ('vos_description', 'military_vos_description', 'ВОС опис'),
+                ('deferral_type', 'military_deferral_type', 'Відстрочка'),
+                ('deferral_until', 'military_deferral_until', 'Відстрочка до'),
+                ('vlk_decision', 'military_vlk_decision', 'Рішення ВЛК'),
+                ('vlk_date', 'military_vlk_date', 'Дата ВЛК'),
+                ('valid_until', 'military_valid_until', 'Дійсний до'),
+                ('military_registration_document', 'military_registration_document', 'Документ обліку'),
+            ] %}
+            {% set mil_diffs = [] %}
+            {% for db_col, form_key, label in mil_defs %}
+                {% set nv = row[form_key] if form_key in row.keys() else '' %}
+                {% set ov = existing_military[db_col] if db_col in existing_military.keys() else '' %}
+                {% set nv_s = (nv or '')|string|trim %}
+                {% set ov_s = (ov or '')|string|trim %}
+                {% if nv_s and nv_s != ov_s %}
+                    {% set _ = mil_diffs.append({'label': label, 'new': nv_s, 'old': ov_s}) %}
+                {% endif %}
+            {% endfor %}
+            {% if mil_diffs %}
+            <div class="small mb-2">
+                <div class="text-muted mb-1">Поля, які будуть заповнені (лише якщо в картці порожньо):</div>
+                <ul class="mb-2 ps-3">
+                {% for p in mil_diffs %}
+                    <li>
+                        <strong>{{ p.label }}:</strong>
+                        {% if p.old %}
+                            <span class="text-muted text-decoration-line-through">{{ p.old }}</span> →
+                        {% endif %}
+                        <span class="text-success">{{ p.new }}</span>
+                    </li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% else %}
+            <div class="small text-muted mb-2">
+                Текстові поля збігаються або порожні. Можна прикріпити скани / перепарсити PDF «Резерв+».
+            </div>
+            {% endif %}
+        {% else %}
+            <div class="small text-muted mb-2">У студента ще немає запису військового обліку — буде створено новий.</div>
+        {% endif %}
+
+        <div class="form-check mb-0">
+            <input type="checkbox" name="add_military" id="up_military"
+                   class="form-check-input">
+            <label for="up_military" class="form-check-label small">
+                <strong>Військові дані</strong> — застосувати з заявки
+                {% if military_scans %} і прикріпити скани{% endif %}
+                {% if military_scans %} / PDF «Резерв+»{% endif %}
+            </label>
+        </div>
     </div>
     {% endif %}
 
