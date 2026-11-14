@@ -992,6 +992,8 @@ for _col, _type in [
     ('military_formed_at', 'TEXT'),
     ('military_data_verified_on_time', 'INTEGER DEFAULT 0'),
     ('military_data_update_date', 'TEXT'),
+    ('applied_changes', 'TEXT'), 
+    ('manual_edits', 'TEXT'), 
 ]:
     _add_column_if_missing('pending_students', _col, _type)
 

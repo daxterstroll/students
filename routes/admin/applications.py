@@ -472,6 +472,95 @@ def _find_existing_education_doc(conn, student_id, group_id, document_type, docu
         LIMIT 1
     """, (student_id, group_id, document_type or '', document_number or '')).fetchone()
 
+def _load_manual_edits(row) -> list:
+    """Розбирає JSON-поле pending_students.manual_edits."""
+    if 'manual_edits' not in row.keys() or not row['manual_edits']:
+        return []
+    try:
+        data = json.loads(row['manual_edits'])
+    except (ValueError, TypeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
+# Підписи полів заявки — для manual_edits (щоб у «Підтверджені» було видно
+# людську назву, а не key з БД).
+_PENDING_FIELD_LABELS = {
+    'last_name_UA': 'Прізвище (укр.)',
+    'first_name_UA': "Ім'я (укр.)",
+    'middle_name_UA': 'По батькові',
+    'last_name_ENG': 'Прізвище (лат.)',
+    'first_name_ENG': "Ім'я (лат.)",
+    'birth_date': 'Дата народження',
+    'tax_id': 'ІПН',
+    'phone': 'Телефон',
+    'phone_backup': 'Резервний телефон',
+    'email': 'Email',
+    'document_type': 'Документ: тип',
+    'document_series': 'Документ: серія',
+    'document_number': 'Документ: номер',
+    'document_institution': 'Документ: заклад',
+    'document_country': 'Документ: країна',
+    'document_date': 'Документ: дата',
+    'foreign_reference_number': 'Довідка: номер',
+    'foreign_reference_institution': 'Довідка: заклад',
+    'foreign_reference_country': 'Довідка: країна',
+    'foreign_reference_issue_date': 'Довідка: дата',
+    'recognition_certificate_number': 'Свідоцтво: номер',
+    'recognition_issuer': 'Свідоцтво: орган',
+    'recognition_date': 'Свідоцтво: дата',
+    'passport_document_type': 'Паспорт: тип',
+    'passport_series': 'Паспорт: серія',
+    'passport_number': 'Паспорт: номер',
+    'passport_issued_by': 'Паспорт: ким видано',
+    'passport_issue_date': 'Паспорт: дата видачі',
+    'passport_valid_until': 'Паспорт: дійсний до',
+    'passport_unique_number': 'Паспорт: ЄДДР',
+    'military_registration_number_drpvr': 'Військ.: реєстр. номер',
+    'military_registration_document': 'Військ.: документ',
+    'military_issued_vod': 'Військ.: дата документа',
+    'military_specialty_number': 'Військ.: номер ВОС',
+    'military_rank': 'Військ.: звання',
+    'military_address': 'Військ.: адреса',
+    'military_change_credentials': 'Військ.: зміна даних',
+    'military_change_reason': 'Військ.: причина зміни',
+    'military_status_badge': 'Військ.: статус',
+    'military_valid_until': 'Військ.: дійсний до',
+    'military_registration_category': 'Військ.: категорія обліку',
+    'military_removal_basis': 'Військ.: підстава зняття',
+    'military_tck_name': 'Військ.: ТЦК',
+    'military_registry_number': 'Військ.: номер в реєстрі',
+    'military_vos_code': 'Військ.: код ВОС',
+    'military_vos_description': 'Військ.: опис ВОС',
+    'military_deferral_type': 'Військ.: тип відстрочки',
+    'military_deferral_until': 'Військ.: відстрочка до',
+    'military_police_reason': 'Військ.: причина поліції',
+    'military_police_date': 'Військ.: дата поліції',
+    'military_vlk_decision': 'Військ.: постанова ВЛК',
+    'military_vlk_date': 'Військ.: дата ВЛК',
+    'military_disability_group': 'Військ.: група інвалідності',
+    'military_disability_valid_until': 'Військ.: інвалідність до',
+    'military_disability_reason': 'Військ.: причина інвалідності',
+    'military_formed_at': 'Військ.: документ сформовано',
+    'military_data_update_date': 'Військ.: дата уточнення',
+    'military_data_verified_on_time': 'Військ.: дані уточнено вчасно',
+}
+
+def _load_applied_changes(row) -> list:
+    """
+    Розбирає JSON-поле pending_students.applied_changes.
+    Повертає список [{'label','old','new'}, ...] або [].
+    """
+    if 'applied_changes' not in row.keys() or not row['applied_changes']:
+        return []
+    try:
+        data = json.loads(row['applied_changes'])
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return data
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # Заявки на реєстрацію (/apply)
@@ -582,6 +671,12 @@ def pending_student_review(pending_id):
             from routes.utils import normalize_phone_pair
 
             values = {f: (request.form.get(f) or '').strip() or None for f in fields}
+            # ── ЗБІР ПРАВОК АДМІНА (old → new), з накопиченням ──
+            # row — це поточний рядок pending_students із БД (стан ДО збереження).
+            # Якщо адмін редагує ту саму заявку вдруге — зберігаємо ПЕРВІСНЕ old,
+            # а new оновлюємо до актуального, щоб diff відображав:
+            #   «як було подано студентом» → «як стало після всіх правок адміна».
+            values = {f: (request.form.get(f) or '').strip() or None for f in fields}
             values['military_data_verified_on_time'] = 1 if request.form.get('military_data_verified_on_time') else 0
             values['phone'], values['phone_backup'] = normalize_phone_pair(
                 values.get('phone'), values.get('phone_backup')
@@ -596,22 +691,96 @@ def pending_student_review(pending_id):
                 values['passport_unique_number'] = None
             elif values.get('passport_document_type') not in PASSPORT_TYPES_ID_STYLE:
                 values['passport_valid_until'] = None
+            existing_manual = _load_manual_edits(row)
+            accumulated = {
+                item['field']: dict(item)
+                for item in existing_manual
+                if isinstance(item, dict) and 'field' in item
+            }
 
-            update_fields = [f for f in fields] + ['military_data_verified_on_time']
-            update_values = [values[f] for f in fields] + [values['military_data_verified_on_time']]
+            diff_fields = list(fields) + ['military_data_verified_on_time']
+            # military_data_verified_on_time не входить у fields, але це теж редаговане
+            # поле — додаємо окремо, щоб зміна галочки потрапляла в manual_edits.
+            diff_fields = list(fields) + ['military_data_verified_on_time']
+
+            for f in diff_fields:
+                if f not in row.keys():
+                    continue
+                old_val = row[f]
+                new_val = values.get(f)
+
+                if f == 'military_data_verified_on_time':
+                    old_s = 'так' if int(old_val or 0) else 'ні'
+                    new_s = 'так' if int(new_val or 0) else 'ні'
+                else:
+                    old_s = str(old_val or '').strip()
+                    new_s = str(new_val or '').strip()
+
+                if old_s == new_s:
+                    continue
+
+                if f in accumulated:
+                    accumulated[f]['new'] = new_s
+                else:
+                    accumulated[f] = {
+                        'field': f,
+                        'label': _PENDING_FIELD_LABELS.get(f, f),
+                        'old': old_s,
+                        'new': new_s,
+                    }
+                old_val = row[f]
+                new_val = values.get(f)
+
+                if f == 'military_data_verified_on_time':
+                    old_s = 'так' if int(old_val or 0) else 'ні'
+                    new_s = 'так' if int(new_val or 0) else 'ні'
+                else:
+                    old_s = str(old_val or '').strip()
+                    new_s = str(new_val or '').strip()
+
+                if old_s == new_s:
+                    continue
+
+                if f in accumulated:
+                    accumulated[f]['new'] = new_s
+                else:
+                    accumulated[f] = {
+                        'field': f,
+                        'label': _PENDING_FIELD_LABELS.get(f, f),
+                        'old': old_s,
+                        'new': new_s,
+                    }
+
+            # Прибираємо записи, де old == new (адмін змінив туди й назад)
+            cleaned_manual = [
+                item for item in accumulated.values()
+                if item['old'] != item['new']
+            ]
+            manual_edits_json = (
+                json.dumps(cleaned_manual, ensure_ascii=False)
+                if cleaned_manual else None
+            )
 
             if not values['last_name_UA'] or not values['first_name_UA'] or not values['birth_date']:
                 flash("Прізвище, ім'я і дата народження обов'язкові", "error")
             else:
+                update_fields = [f for f in fields] + ['military_data_verified_on_time']
+                update_values = [values[f] for f in fields] + [values['military_data_verified_on_time']]
+
                 set_clause = ", ".join(f"{k}=?" for k in update_fields)
                 conn.execute(
-                    f"UPDATE pending_students SET {set_clause} WHERE id=?",
-                    update_values + [pending_id]
+                    f"UPDATE pending_students SET {set_clause}, manual_edits=? WHERE id=?",
+                    update_values + [manual_edits_json, pending_id]
                 )
                 conn.commit()
                 flash("Зміни збережено", "success")
             conn.close()
             return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
+            
+            
+            
+            
+            
 
         elif action == 'reject':
             note = (request.form.get('review_note') or '').strip() or None
@@ -667,8 +836,14 @@ def pending_student_review(pending_id):
 
             force_new_student = request.form.get('force_new_student') == '1'
 
+            # ── Змінні, які заповнюються під час обробки й потім ідуть у diff ──
+            applied_changes = []
+            existing_student = None
+            education_doc_id = None
+            passport_id = None
+            military_id = None
+
             try:
-                existing_student = None
                 if not force_new_student:
                     if row['tax_id']:
                         existing_student = conn.execute(
@@ -741,6 +916,25 @@ def pending_student_review(pending_id):
                         conn=conn,
                     )
 
+                # ── Назва групи для diff ──
+                _grp = conn.execute(
+                    "SELECT name FROM groups WHERE id = ?", (group_id,)
+                ).fetchone()
+                group_label = _grp['name'] if _grp else f"#{group_id}"
+
+                if existing_student:
+                    applied_changes.append({
+                        'label': 'Навчання',
+                        'old': '',
+                        'new': f'додано в групу «{group_label}»',
+                    })
+                else:
+                    applied_changes.append({
+                        'label': 'Студент',
+                        'old': '',
+                        'new': f'створено нового студента (ID {student_id})',
+                    })
+
                 if row['photo_path']:
                     try:
                         from routes.photo import photo_path_for_student, _ensure_dir
@@ -754,13 +948,17 @@ def pending_student_review(pending_id):
                                 "UPDATE students SET photo=? WHERE id=?",
                                 (f"uploads/photos/student_{student_id}.jpg", student_id)
                             )
+                            applied_changes.append({
+                                'label': 'Фото',
+                                'old': '',
+                                'new': 'перенесено із заявки',
+                            })
                     except Exception as e:
                         logger.error(
                             f"Не вдалося перенести фото заявки {pending_id} "
                             f"студенту {student_id}: {e}"
                         )
 
-                education_doc_id = None
                 if row['document_type'] or row['document_number']:
                     doc_number = ' '.join(
                         x for x in [row['document_series'], row['document_number']] if x
@@ -809,6 +1007,14 @@ def pending_student_review(pending_id):
                             row['document_date'] or '',
                         ))
                         education_doc_id = cur_doc.lastrowid
+
+                    applied_changes.append({
+                        'label': 'Документ про освіту',
+                        'old': '',
+                        'new': (
+                            f'тип: {_doc_type or "—"}, № {doc_number or "—"}'
+                        ),
+                    })
 
                     conn.execute(
                         "UPDATE attachments SET entity_type='education_document', entity_id=? "
@@ -926,6 +1132,12 @@ def pending_student_review(pending_id):
                         ))
                         passport_id = cur_passport.lastrowid
 
+                    applied_changes.append({
+                        'label': 'Паспорт',
+                        'old': '',
+                        'new': f'тип: {_passport_doc_type}, № {_passport_number}',
+                    })
+
                     conn.execute(
                         "UPDATE attachments SET entity_type='passport_document', entity_id=? "
                         "WHERE entity_type='pending_student_passport' AND entity_id=?",
@@ -944,7 +1156,6 @@ def pending_student_review(pending_id):
                     (pending_id,)
                 ).fetchone() is not None
 
-                military_id = None
                 if has_military_scans or _pending_has_military_data(row):
                     military_data = _military_payload_from_pending(row)
                     existing_military = conn.execute(
@@ -986,6 +1197,51 @@ def pending_student_review(pending_id):
                             (row['military_address'], student_id),
                         )
 
+                    # ── Diff по кожному воєнному полю (тільки для заповнених у заявці) ──
+                    _mil_labels_for_diff = {
+                        'status_badge': 'Статус',
+                        'registration_category': 'Категорія обліку',
+                        'valid_until': 'Дійсний до',
+                        'removal_basis': 'Підстава зняття',
+                        'tck_name': 'ТЦК',
+                        'military_rank': 'Військове звання',
+                        'registry_number': 'Номер у реєстрі',
+                        'vos_code': 'Код ВОС',
+                        'vos_description': 'Опис ВОС',
+                        'deferral_type': 'Тип відстрочки',
+                        'deferral_until': 'Відстрочка до',
+                        'vlk_decision': 'Постанова ВЛК',
+                        'vlk_date': 'Дата ВЛК',
+                        'disability_group': 'Група інвалідності',
+                        'disability_valid_until': 'Інвалідність до',
+                        'disability_reason': 'Причина інвалідності',
+                        'police_reason': 'Причина поліції',
+                        'police_date': 'Дата поліції',
+                        'formed_at': 'Документ сформовано',
+                        'data_update_date': 'Дата уточнення',
+                        'military_registration_document': 'Документ військ. обліку',
+                        'change_credentials': 'Зміна даних',
+                        'reason_for_changing_credentials': 'Причина зміни',
+                    }
+
+                    for _col, _label in _mil_labels_for_diff.items():
+                        _new = (military_data.get(_col) or '').strip()
+                        if not _new:
+                            continue
+                        _old = ''
+                        if existing_military:
+                            _old_row = conn.execute(
+                                f"SELECT {_col} AS v FROM military WHERE id = ?",
+                                (existing_military['id'],),
+                            ).fetchone()
+                            _old = (_old_row['v'] if _old_row else '') or ''
+                        if str(_old).strip() != _new:
+                            applied_changes.append({
+                                'label': f'Військ.: {_label}',
+                                'old': str(_old),
+                                'new': _new,
+                            })
+
                     conn.execute(
                         "UPDATE attachments SET entity_type='military', entity_id=? "
                         "WHERE entity_type='pending_student_military' AND entity_id=?",
@@ -1000,8 +1256,14 @@ def pending_student_review(pending_id):
 
                 conn.execute(
                     "UPDATE pending_students SET status='approved', reviewed_by=?, "
-                    "reviewed_at=datetime('now','localtime'), resulting_student_id=? WHERE id=?",
-                    (current_username(), student_id, pending_id)
+                    "reviewed_at=datetime('now','localtime'), resulting_student_id=?, "
+                    "applied_changes=? WHERE id=?",
+                    (
+                        current_username(),
+                        student_id,
+                        json.dumps(applied_changes, ensure_ascii=False) if applied_changes else None,
+                        pending_id,
+                    ),
                 )
 
                 if military_id:
@@ -1052,6 +1314,14 @@ def pending_student_review(pending_id):
                 return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
             existing_id = int(existing_id)
 
+            # Поточні значення студента (для diff old → new)
+            _old_row = conn.execute(
+                "SELECT * FROM students WHERE id = ?", (existing_id,)
+            ).fetchone()
+            existing_full_for_diff = dict(_old_row) if _old_row else {}
+
+            applied_changes = []
+
             try:
                 updated_parts = []
 
@@ -1078,6 +1348,18 @@ def pending_student_review(pending_id):
                         list(personal_updates.values()) + [existing_id],
                     )
                     updated_parts.append('особисті: ' + ', '.join(personal_labels))
+
+                    for form_key, db_col, label in PERSONAL_FIELD_MAP:
+                        if db_col not in personal_updates:
+                            continue
+                        old_val = existing_full_for_diff.get(db_col) or ''
+                        new_val = personal_updates[db_col] or ''
+                        if str(old_val) != str(new_val):
+                            applied_changes.append({
+                                'label': label,
+                                'old': str(old_val),
+                                'new': str(new_val),
+                            })
 
                 from routes.utils import normalize_phone_pair
 
@@ -1116,6 +1398,20 @@ def pending_student_review(pending_id):
                     )
                     updated_parts.append('контакти: ' + ', '.join(contacts_updates.keys()))
 
+                    contacts_labels = {
+                        'phone': 'Телефон',
+                        'phone_backup': 'Резервний телефон',
+                        'email': 'Email',
+                    }
+                    for col, new_val in contacts_updates.items():
+                        old_val = existing_full_for_diff.get(col) or ''
+                        if str(old_val) != str(new_val or ''):
+                            applied_changes.append({
+                                'label': contacts_labels.get(col, col),
+                                'old': str(old_val),
+                                'new': str(new_val or ''),
+                            })
+
                 if request.form.get('update_photo') and row['photo_path']:
                     try:
                         from routes.photo import photo_path_for_student, _ensure_dir
@@ -1130,6 +1426,12 @@ def pending_student_review(pending_id):
                                 (f"uploads/photos/student_{existing_id}.jpg", existing_id)
                             )
                             updated_parts.append('фото')
+                            had_photo = bool(existing_full_for_diff.get('photo'))
+                            applied_changes.append({
+                                'label': 'Фото',
+                                'old': 'старе фото' if had_photo else '— порожньо —',
+                                'new': 'фото із заявки',
+                            })
                     except Exception as e:
                         logger.error(
                             f"Не вдалося перенести фото заявки {pending_id} "
@@ -1211,6 +1513,11 @@ def pending_student_review(pending_id):
                             updated_parts.append(
                                 f'документ про освіту (оновлено, група ID {_doc_gid})'
                             )
+                            applied_changes.append({
+                                'label': 'Документ про освіту',
+                                'old': '',
+                                'new': f'оновлено (група ID {_doc_gid}, тип: {_doc_type or "—"}, № {doc_number or "—"})',
+                            })
                         else:
                             cur_doc = conn.execute("""
                                 INSERT INTO education_documents (
@@ -1232,6 +1539,11 @@ def pending_student_review(pending_id):
                             updated_parts.append(
                                 f'документ про освіту (додано, група ID {_doc_gid})'
                             )
+                            applied_changes.append({
+                                'label': 'Документ про освіту',
+                                'old': '',
+                                'new': f'додано (група ID {_doc_gid}, тип: {_doc_type or "—"}, № {doc_number or "—"})',
+                            })
                         doc_ids_for_scans.append(doc_id)
 
                     if doc_ids_for_scans:
@@ -1334,6 +1646,11 @@ def pending_student_review(pending_id):
                             updated_parts.append(
                                 f'паспортні дані (заповнено порожні поля, група ID {_doc_gid})'
                             )
+                            applied_changes.append({
+                                'label': 'Паспорт',
+                                'old': '',
+                                'new': f'заповнено порожні поля (група ID {_doc_gid})',
+                            })
                         else:
                             cur_p = conn.execute("""
                                 INSERT INTO passport_documents (
@@ -1350,6 +1667,11 @@ def pending_student_review(pending_id):
                             updated_parts.append(
                                 f'паспортні дані (додано, група ID {_doc_gid})'
                             )
+                            applied_changes.append({
+                                'label': 'Паспорт',
+                                'old': '',
+                                'new': f'додано (група ID {_doc_gid}, тип: {_passport_doc_type}, № {_passport_number})',
+                            })
                         passport_ids_for_scans.append(passport_id)
 
                     if passport_ids_for_scans:
@@ -1433,19 +1755,17 @@ def pending_student_review(pending_id):
                             (row['military_address'], existing_id),
                         )
                     updated_parts.append('військовий облік')
+                    applied_changes.append({
+                        'label': 'Військові дані',
+                        'old': '',
+                        'new': 'додано/оновлено з заявки',
+                    })
                     conn.execute(
                         "UPDATE attachments SET entity_type='military', entity_id=? "
                         "WHERE entity_type='pending_student_military' AND entity_id=?",
                         (military_id_for_scans, pending_id)
                     )
                 # ── Скани військового обліку, що залишились неприкріпленими ──
-                # Якщо add_military уже переніс файли в entity_type='military'
-                # вище — тут файлів із pending_student_military уже немає,
-                # блок нічого не робить. Якщо add_military НЕ був позначений
-                # (або _pending_has_military_data(row)=False, напр. у заявці
-                # лише PDF-скан без текстових полів) — кріпимо скани до
-                # military студента (запис створюємо, якщо його ще немає),
-                # щоб вони не «повисали» в картці під «Інші файли».
                 has_pending_mil_scans = conn.execute(
                     "SELECT 1 FROM attachments "
                     "WHERE entity_type='pending_student_military' AND entity_id=? LIMIT 1",
@@ -1468,6 +1788,11 @@ def pending_student_review(pending_id):
                         (target_mil_id, pending_id),
                     )
                     updated_parts.append('скани військового обліку')
+                    applied_changes.append({
+                        'label': 'Скани військового обліку',
+                        'old': '',
+                        'new': 'перенесено в картку студента',
+                    })
 
                 if not updated_parts:
                     conn.rollback()
@@ -1477,8 +1802,14 @@ def pending_student_review(pending_id):
 
                 conn.execute(
                     "UPDATE pending_students SET status='approved', reviewed_by=?, "
-                    "reviewed_at=datetime('now','localtime'), resulting_student_id=? WHERE id=?",
-                    (current_username(), existing_id, pending_id)
+                    "reviewed_at=datetime('now','localtime'), resulting_student_id=?, "
+                    "applied_changes=? WHERE id=?",
+                    (
+                        current_username(),
+                        existing_id,
+                        json.dumps(applied_changes, ensure_ascii=False) if applied_changes else None,
+                        pending_id,
+                    ),
                 )
                 conn.commit()
 
@@ -1687,11 +2018,16 @@ def pending_student_review(pending_id):
             legacy_passport = dict(p_legacy)
             passports_by_group[None] = legacy_passport
 
+    # ── Застосовані зміни (для підтверджених/відхилених заявок) ──
+    applied_changes = _load_applied_changes(row)
+    manual_edits = _load_manual_edits(row)
+
     conn.close()
     return render_template(
         'admin_pending_student_review.html',
         row=row, groups=groups, licenses=licenses,
         existing_student=existing_student,
+        manual_edits=manual_edits,
         existing_full=existing_full,
         existing_enrollments=existing_enrollments,
         existing_has_passport=existing_has_passport,
@@ -1706,6 +2042,7 @@ def pending_student_review(pending_id):
         passports_by_group=passports_by_group,
         legacy_passport=legacy_passport,
         scans=scans, passport_scans=passport_scans, military_scans=military_scans,
+        applied_changes=applied_changes,
         **passport_template_context(),
     )
 

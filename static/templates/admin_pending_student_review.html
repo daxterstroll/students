@@ -123,6 +123,263 @@
     </div>
 </div>
 
+
+
+
+{% if row.status != 'new' %}
+
+{# ═══════════════════════════════════════════════════════════════
+   1. ДАНІ ІЗ ЗАЯВКИ (те, що студент подавав)
+   ═══════════════════════════════════════════════════════════════ #}
+<div class="card mb-3">
+    <div class="card-header bg-primary-subtle">
+        <strong><i class="bi bi-file-earmark-text me-2"></i>Дані із заявки</strong>
+        <span class="badge bg-secondary ms-2">подано {{ row.created_at }}</span>
+    </div>
+    <div class="card-body">
+        <div class="row g-3 small">
+
+            <div class="col-md-4">
+                <div class="text-muted">Прізвище (укр.)</div>
+                <div class="fw-semibold">{{ row.last_name_UA or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Ім'я (укр.)</div>
+                <div class="fw-semibold">{{ row.first_name_UA or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">По батькові (укр.)</div>
+                <div>{{ row.middle_name_UA or '—' }}</div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="text-muted">Прізвище (лат.)</div>
+                <div>{{ row.last_name_ENG or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Ім'я (лат.)</div>
+                <div>{{ row.first_name_ENG or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Дата народження</div>
+                <div class="font-monospace">{{ row.birth_date or '—' }}</div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="text-muted">ІПН</div>
+                <div class="font-monospace">{{ row.tax_id or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Телефон</div>
+                <div>{{ row.phone or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Резервний телефон</div>
+                <div>{{ row.phone_backup or '—' }}</div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="text-muted">Email</div>
+                <div>{{ row.email or '—' }}</div>
+            </div>
+
+            {% if row.document_type or row.document_number %}
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12">
+                <strong><i class="bi bi-mortarboard me-1"></i>Документ про освіту</strong>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Тип</div>
+                <div>{{ row.document_type or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Серія / номер</div>
+                <div class="font-monospace">
+                    {{ (row.document_series ~ ' ' if row.document_series else '') ~ (row.document_number or '') or '—' }}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Заклад</div>
+                <div>{{ row.document_institution or '—' }}</div>
+            </div>
+            {% endif %}
+
+            {% if row.passport_number %}
+            <div class="col-12"><hr class="my-1"></div>
+            <div class="col-12">
+                <strong><i class="bi bi-person-vcard me-1"></i>Паспорт</strong>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Тип</div>
+                <div>{{ row.passport_document_type or '—' }}</div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Серія / номер</div>
+                <div class="font-monospace">
+                    {{ (row.passport_series ~ ' ' if row.passport_series else '') ~ (row.passport_number or '') }}
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="text-muted">Ким видано</div>
+                <div>{{ row.passport_issued_by or '—' }}</div>
+            </div>
+            {% endif %}
+
+{# ── Військовий облік — показуємо ВСІ заповнені поля ── #}
+{% set _mil_field_labels = [
+    ('military_status_badge', 'Статус'),
+    ('military_registration_category', 'Категорія обліку'),
+    ('military_valid_until', 'Дійсний до'),
+    ('military_removal_basis', 'Підстава зняття'),
+    ('military_tck_name', 'ТЦК та СП'),
+    ('military_rank', 'Військове звання'),
+    ('military_registry_number', 'Номер у реєстрі «Оберіг»'),
+    ('military_registration_number_drpvr', 'Реєстр. номер ДРПВР'),
+    ('military_vos_code', 'Код ВОС'),
+    ('military_specialty_number', 'Номер ВОС (старе)'),
+    ('military_vos_description', 'Опис ВОС'),
+    ('military_deferral_type', 'Тип відстрочки'),
+    ('military_deferral_until', 'Відстрочка до'),
+    ('military_vlk_decision', 'Постанова ВЛК'),
+    ('military_vlk_date', 'Дата ВЛК'),
+    ('military_disability_group', 'Група інвалідності'),
+    ('military_disability_valid_until', 'Інвалідність дійсна до'),
+    ('military_disability_reason', 'Причина інвалідності'),
+    ('military_police_reason', 'Причина звернення до поліції'),
+    ('military_police_date', 'Дата звернення до поліції'),
+    ('military_registration_document', 'Документ військ. обліку'),
+    ('military_issued_vod', 'Дата видачі документа'),
+    ('military_formed_at', 'Документ сформовано'),
+    ('military_data_update_date', 'Дата уточнення даних'),
+    ('military_change_credentials', 'Зміна облікових даних'),
+    ('military_change_reason', 'Причина зміни даних'),
+    ('military_address', 'Адреса реєстрації/проживання'),
+] %}
+
+{% set _mil_has_any = false %}
+{% for _f, _l in _mil_field_labels %}
+    {% if row[_f] %}{% set _mil_has_any = true %}{% endif %}
+{% endfor %}
+{% if row.military_data_verified_on_time %}
+    {% set _mil_has_any = true %}
+{% endif %}
+
+{% if _mil_has_any %}
+<div class="col-12"><hr class="my-1"></div>
+<div class="col-12">
+    <strong><i class="bi bi-shield me-1"></i>Військовий облік</strong>
+</div>
+{% for _f, _l in _mil_field_labels %}
+    {% if row[_f] %}
+    <div class="col-md-6">
+        <div class="text-muted">{{ _l }}</div>
+        <div class="{% if 'vos_code' in _f or 'registry' in _f or 'date' in _f %}font-monospace{% endif %}"
+             style="white-space:pre-wrap; word-break:break-word;">
+            {{ row[_f] }}
+        </div>
+    </div>
+    {% endif %}
+{% endfor %}
+{% if row.military_data_verified_on_time %}
+<div class="col-md-6">
+    <div class="text-muted">Дані уточнено вчасно</div>
+    <div><span class="badge bg-success-subtle text-success-emphasis">так</span></div>
+</div>
+{% endif %}
+{% endif %}
+
+        </div>
+    </div>
+</div>
+
+{# ═══════════════════════════════════════════════════════════════
+   1.5. ПРАВКИ АДМІНІСТРАТОРА (що ви виправили в заявці)
+   ═══════════════════════════════════════════════════════════════ #}
+{% if manual_edits %}
+<div class="card mb-3 border-warning">
+    <div class="card-header bg-warning-subtle">
+        <strong><i class="bi bi-pencil-square me-2"></i>Правки адміністратора до заявки</strong>
+        <span class="badge bg-warning text-dark ms-2">{{ manual_edits|length }}</span>
+        <span class="text-muted small ms-2">
+            — внесено вручну перед підтвердженням
+        </span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:30%;">Поле</th>
+                    <th style="width:35%;">Було в заявці (студент)</th>
+                    <th style="width:35%;">Стало (виправив адмін)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ch in manual_edits %}
+                <tr>
+                    <td class="fw-semibold small">{{ ch.label }}</td>
+                    <td class="text-muted small">
+                        {% if ch.old %}
+                        <span style="white-space:pre-wrap; word-break:break-word;">{{ ch.old }}</span>
+                        {% else %}
+                        <span class="text-muted fst-italic">— порожньо —</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-warning-emphasis small">
+                        {% if ch.new %}
+                        <span style="white-space:pre-wrap; word-break:break-word;">{{ ch.new }}</span>
+                        {% else %}
+                        <span class="text-muted fst-italic">— очищено —</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{# ═══════════════════════════════════════════════════════════════
+   2. ЩО БУЛО ЗАСТОСОВАНО (old → new)
+   ═══════════════════════════════════════════════════════════════ #}
+{% if applied_changes %}
+<div class="card mb-3 border-success">
+    <div class="card-header bg-success-subtle">
+        <strong><i class="bi bi-arrow-left-right me-2"></i>Що було застосовано</strong>
+        <span class="badge bg-success ms-2">{{ applied_changes|length }}</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm mb-0 align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:30%;">Поле</th>
+                    <th style="width:35%;">Було</th>
+                    <th style="width:35%;">Стало</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ch in applied_changes %}
+                <tr>
+                    <td class="fw-semibold small">{{ ch.label }}</td>
+                    <td class="text-danger small">
+                        {% if ch.old %}<span style="white-space:pre-wrap; word-break:break-word;">{{ ch.old }}</span>
+                        {% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                    </td>
+                    <td class="text-success small">
+                        {% if ch.new %}<span style="white-space:pre-wrap; word-break:break-word;">{{ ch.new }}</span>
+                        {% else %}<span class="text-muted fst-italic">—</span>{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% endif %}  {# row.status != 'new' #}
+
+
 {# ═══════════════════════════════════════════════════════════════════════
    БЛОК «ДУБЛІКАТ» — показується лише якщо в базі вже є схожий студент
    ═══════════════════════════════════════════════════════════════════════ #}
