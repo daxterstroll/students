@@ -1374,18 +1374,6 @@
                                     Документи про освіту відсутні
                                 </div>
                             {% endif %}
-
-                            {% if student_attachments %}
-                            <div class="border rounded-3 p-4 mt-3">
-                                <h5><i class="bi bi-paperclip"></i> Інші файли</h5>
-                                <div class="small text-muted mb-2">Без прив'язки до конкретного документа.</div>
-                                {% for a in student_attachments %}
-                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                                    <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-                                </a>
-                                {% endfor %}
-                            </div>
-                            {% endif %}
                         </div>
                     </div>
                 </div>
@@ -1480,6 +1468,42 @@
                         </div>
                     </div>
                 </div>
+
+							{% if student_attachments %}
+							<div class="border rounded-3 p-4 mt-3">
+								<h5><i class="bi bi-paperclip"></i> Інші файли</h5>
+								<div class="small text-muted mb-2">Без прив'язки до конкретного документа.</div>
+								{% for a in student_attachments %}
+								<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+									<a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+										<i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
+									</a>
+									{% if has_perm('manage_students') and reattach_options %}
+									<form method="POST"
+										  action="{{ url_for('students.reattach_attachment', student_id=student.id, attachment_id=a.id) }}"
+										  class="d-flex gap-2 align-items-center flex-wrap m-0"
+										  onsubmit="return confirm('Прив\'язати «{{ a.original_name or a.file_path }}» до обраного документа?');">
+										<select name="target_type" class="form-select form-select-sm" required style="width:auto;">
+											<option value="">— тип —</option>
+											<option value="education_document">Документ про освіту</option>
+											<option value="passport_document">Паспорт</option>
+											<option value="military">Військовий облік</option>
+										</select>
+										<select name="target_id" class="form-select form-select-sm" required style="width:auto; max-width:340px;">
+											<option value="">— оберіть документ —</option>
+											{% for opt in reattach_options %}
+											<option value="{{ opt.id }}" data-type="{{ opt.type }}">{{ opt.label }}</option>
+											{% endfor %}
+										</select>
+										<button type="submit" class="btn btn-sm btn-primary">
+											<i class="bi bi-link-45deg me-1"></i>Прив'язати
+										</button>
+									</form>
+									{% endif %}
+								</div>
+								{% endfor %}
+							</div>
+							{% endif %}
 
             </div>
         </div>
@@ -1930,6 +1954,27 @@
         </div>
     </div>
 </div>
+
+<script>
+document.querySelectorAll('select[name="target_type"]').forEach(function (typeSelect) {
+    var idSelect = typeSelect.parentElement.querySelector('select[name="target_id"]');
+    if (!idSelect) return;
+    function filterOptions() {
+        var t = typeSelect.value;
+        var first = true;
+        Array.from(idSelect.options).forEach(function (opt) {
+            if (!opt.value) return;
+            var match = !t || opt.dataset.type === t;
+            opt.hidden = !match;
+            opt.disabled = !match;
+            if (match && first) { idSelect.value = opt.value; first = false; }
+        });
+        if (!t) idSelect.value = '';
+    }
+    typeSelect.addEventListener('change', filterOptions);
+    filterOptions();
+});
+</script>
 
 
 {% endblock %}

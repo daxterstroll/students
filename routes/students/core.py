@@ -1003,6 +1003,27 @@ def student_details(student_id):
         ORDER BY start_year DESC, name COLLATE UKRAINIAN
     """).fetchall()
     
+    # Варіанти для селектора «Прив'язати до…» в блоці «Інші файли»
+    reattach_options = []
+    for d in education_docs:
+        reattach_options.append({
+            'type': 'education_document',
+            'id': d['id'],
+            'label': f"Документ про освіту: {d.get('document_type') or '—'} №{d.get('document_number') or '—'}",
+        })
+    for p in passport_docs:
+        reattach_options.append({
+            'type': 'passport_document',
+            'id': p['id'],
+            'label': f"Паспорт: {p.get('document_type') or '—'} №{(p.get('series') or '') + (p.get('number') or '')}",
+        })
+    if military_dict:
+        reattach_options.append({
+            'type': 'military',
+            'id': military_dict['id'],
+            'label': f"Військовий облік (запис ID {military_dict['id']})",
+        })   
+    
     # ── Ліцензії для випадаючого списку на картці студента ──
     licenses_available = conn.execute(
         "SELECT id, short_name_ua, name_ua FROM institution_licenses "
@@ -1029,6 +1050,7 @@ def student_details(student_id):
         coursework_data=coursework_data,
         attestation_data=attestation_data,
         education_docs=education_docs,
+        reattach_options=reattach_options,
         student_attachments=student_attachments,
         passport_docs=passport_docs,
         study_periods=study_periods,
@@ -2837,3 +2859,80 @@ def transfer_student_group(student_id):
         logger.error(f'transfer_student_group failed (student={student_id}): {e}', exc_info=True)
         flash(f'Помилка: {e}', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
+        
+@students_bp.route('/students/<int:student_id>/attachments/<int:attachment_id>/reattach', methods=['POST'])
+@permission_required('manage_students')
+def reattach_attachment(student_id, attachment_id):
+    """
+    Переприв'язує «осиротілий» файл (entity_type='student') до
+    конкретного документа студента: документ про освіту, паспорт
+    або військовий облік.
+    """
+    target_type = (request.form.get('target_type') or '').strip()
+    target_id = request.form.get('target_id', type=int)
+
+    if target_type not in ('education_document', 'passport_document', 'military'):
+        flash('Оберіть тип документа', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+    if not target_id:
+        flash('Оберіть конкретний документ', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn = get_db()
+    try:
+        att = conn.execute(
+            "SELECT id, file_path, original_name, entity_type, entity_id "
+            "FROM attachments WHERE id = ?", (attachment_id,)
+        ).fetchone()
+        if not att:
+            flash('Файл не знайдено', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+        if att['entity_type'] != 'student' or att['entity_id'] != student_id:
+            flash('Цей файл не належить до «Інших файлів» цього студента', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        # Перевіряємо, що цільовий документ належить цьому студентові
+        if target_type == 'education_document':
+            valid = conn.execute(
+                "SELECT 1 FROM education_documents WHERE id = ? AND student_id = ?",
+                (target_id, student_id)
+            ).fetchone()
+        elif target_type == 'passport_document':
+            valid = conn.execute(
+                "SELECT 1 FROM passport_documents WHERE id = ? AND student_id = ?",
+                (target_id, student_id)
+            ).fetchone()
+        else:  # military
+            valid = conn.execute(
+                "SELECT 1 FROM military WHERE id = ? AND student_id = ?",
+                (target_id, student_id)
+            ).fetchone()
+        if not valid:
+            flash('Обраний документ не належить цьому студентові', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
+
+        conn.execute(
+            "UPDATE attachments SET entity_type = ?, entity_id = ? WHERE id = ?",
+            (target_type, target_id, attachment_id)
+        )
+        conn.commit()
+
+        labels = {
+            'education_document': 'документа про освіту',
+            'passport_document': 'паспортних даних',
+            'military': 'військового обліку',
+        }
+        log_action(
+            current_username(),
+            f"прив'язав файл «{att['original_name'] or att['file_path']}» "
+            f"до {labels[target_type]} (id={target_id}) студента ID {student_id}",
+        )
+        flash(f"Файл прив'язано до {labels[target_type]}", 'success')
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"reattach_attachment failed: {e}", exc_info=True)
+        flash(f"Помилка: {e}", 'error')
+    finally:
+        conn.close()
+
+    return redirect(url_for('students.student_details', student_id=student_id))

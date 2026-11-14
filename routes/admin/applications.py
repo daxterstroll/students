@@ -128,7 +128,7 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
 
     string_cols = [c for c in new_military.keys() if c != 'data_verified_on_time']
     set_clause = ', '.join(
-        f"{c} = COALESCE(NULLIF({c}, ''), ?)" for c in string_cols
+        f"{c} = COALESCE(NULLIF(?, ''), {c})" for c in string_cols
     )
     verified_value = 1 if parsed.get('data_verified_on_time') else 0
     try:
@@ -285,7 +285,7 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
     try:
         if military_row:
             set_clause = ', '.join(
-                f"{c} = COALESCE(NULLIF({c}, ''), ?)" for c in cols
+                f"{c} = COALESCE(NULLIF(?, ''), {c})" for c in cols
             )
             conn.execute(
                 f"""
@@ -349,6 +349,22 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
                 conn.execute("UPDATE students SET photo=? WHERE id=?", (new_rel, student_id))
         except Exception as e:
             logger.warning(f"[promote_update] photo: {e}")
+    
+    # ── Переприв'язуємо скани (в т.ч. цей PDF) до military студента, ──
+    # щоб вони не «зникали» разом із заявкою після застосування.
+    try:
+        pending_atts = conn.execute(
+            "SELECT id FROM attachments "
+            "WHERE entity_type='update_request_military' AND entity_id=?",
+            (request_id,)
+        ).fetchall()
+        for att in pending_atts:
+            conn.execute(
+                "UPDATE attachments SET entity_type='military', entity_id=? WHERE id=?",
+                (military_id, att['id'])
+            )
+    except Exception as e:
+        logger.warning(f"[promote_update] reattach scans: {e}")
 
     return True, "Військові дані з PDF перенесено"
 
@@ -759,12 +775,12 @@ def pending_student_review(pending_id):
                         education_doc_id = existing_doc['id']
                         conn.execute("""
                             UPDATE education_documents SET
-                                document_type_en    = COALESCE(NULLIF(document_type_en, ''), ?),
-                                institution_name    = COALESCE(NULLIF(institution_name, ''), ?),
-                                institution_name_en = COALESCE(NULLIF(institution_name_en, ''), ?),
-                                country             = COALESCE(NULLIF(country, ''), ?),
-                                country_en          = COALESCE(NULLIF(country_en, ''), ?),
-                                completion_date     = COALESCE(NULLIF(completion_date, ''), ?)
+                                document_type_en    = COALESCE(NULLIF(?, ''), document_type_en),
+                                institution_name    = COALESCE(NULLIF(?, ''), institution_name),
+                                institution_name_en = COALESCE(NULLIF(?, ''), institution_name_en),
+                                country             = COALESCE(NULLIF(?, ''), country),
+                                country_en          = COALESCE(NULLIF(?, ''), country_en),
+                                completion_date     = COALESCE(NULLIF(?, ''), completion_date)
                             WHERE id = ?
                         """, (
                             translate_to_en(_doc_type) or None,
@@ -940,7 +956,7 @@ def pending_student_review(pending_id):
                             k for k in military_data if k != 'data_verified_on_time'
                         ]
                         set_clause = ', '.join(
-                            f"{k} = COALESCE(NULLIF({k}, ''), ?)" for k in string_keys
+                            f"{k} = COALESCE(NULLIF(?, ''), {k})" for k in string_keys
                         )
                         conn.execute(f"""
                             UPDATE military SET
@@ -1148,16 +1164,40 @@ def pending_student_review(pending_id):
                         existing_doc = _find_existing_education_doc(
                             conn, existing_id, _doc_gid, _doc_type, doc_number
                         )
+
+                        # Fallback: тип в заявці може бути іншою
+                        # формулюванням того самого документа (напр.
+                        # "Атестат про повну середню освіту" ↔ "Атестат
+                        # про повну загальну середню освіту"). Якщо за
+                        # парою (тип + номер) не знайшли, але за САМИМ
+                        # номером у цій групі є РІВНО ОДИН документ —
+                        # оновлюємо його, а не створюємо дубль.
+                        if not existing_doc and doc_number:
+                            _by_number = conn.execute("""
+                                SELECT id FROM education_documents
+                                WHERE student_id = ?
+                                  AND COALESCE(group_id, -1) = COALESCE(?, -1)
+                                  AND NORM_DOC_NUM(document_number) = NORM_DOC_NUM(?)
+                            """, (existing_id, _doc_gid, doc_number)).fetchall()
+                            if len(_by_number) == 1:
+                                existing_doc = _by_number[0]
+                                logger.info(
+                                    f"[update_existing] document type mismatch, "
+                                    f"fallback by number: doc id={existing_doc['id']}, "
+                                    f"request type={_doc_type!r}, "
+                                    f"db type={dict(_by_number[0]).get('document_type')!r}"
+                                )
+
                         if existing_doc:
                             doc_id = existing_doc['id']
                             conn.execute("""
                                 UPDATE education_documents SET
-                                    document_type_en    = COALESCE(NULLIF(document_type_en, ''), ?),
-                                    institution_name    = COALESCE(NULLIF(institution_name, ''), ?),
-                                    institution_name_en = COALESCE(NULLIF(institution_name_en, ''), ?),
-                                    country             = COALESCE(NULLIF(country, ''), ?),
-                                    country_en          = COALESCE(NULLIF(country_en, ''), ?),
-                                    completion_date     = COALESCE(NULLIF(completion_date, ''), ?)
+                                    document_type_en    = COALESCE(NULLIF(?, ''), document_type_en),
+                                    institution_name    = COALESCE(NULLIF(?, ''), institution_name),
+                                    institution_name_en = COALESCE(NULLIF(?, ''), institution_name_en),
+                                    country             = COALESCE(NULLIF(?, ''), country),
+                                    country_en          = COALESCE(NULLIF(?, ''), country_en),
+                                    completion_date     = COALESCE(NULLIF(?, ''), completion_date)
                                 WHERE id = ?
                             """, (
                                 translate_to_en(_doc_type) or None,
@@ -1169,7 +1209,7 @@ def pending_student_review(pending_id):
                                 doc_id,
                             ))
                             updated_parts.append(
-                                f'документ про освіту (заповнено порожні поля, група ID {_doc_gid})'
+                                f'документ про освіту (оновлено, група ID {_doc_gid})'
                             )
                         else:
                             cur_doc = conn.execute("""
@@ -1264,6 +1304,19 @@ def pending_student_review(pending_id):
                             conn, existing_id, _doc_gid,
                             _passport_doc_type, row['passport_series'], _passport_number,
                         )
+
+                        # Fallback по номеру (тип в заявці — синоним типу в БД)
+                        if not existing_p and _passport_number:
+                            _by_number = conn.execute("""
+                                SELECT id FROM passport_documents
+                                WHERE student_id = ?
+                                  AND COALESCE(group_id, -1) = COALESCE(?, -1)
+                                  AND NORM_PASSPORT(number, document_type)
+                                      = NORM_PASSPORT(?, document_type)
+                            """, (existing_id, _doc_gid, _passport_number)).fetchall()
+                            if len(_by_number) == 1:
+                                existing_p = _by_number[0]
+
                         if existing_p:
                             passport_id = existing_p['id']
                             conn.execute("""
@@ -1350,7 +1403,7 @@ def pending_student_review(pending_id):
                             k for k in military_data if k != 'data_verified_on_time'
                         ]
                         set_clause = ', '.join(
-                            f"{k} = COALESCE(NULLIF({k}, ''), ?)" for k in string_keys
+                            f"{k} = COALESCE(NULLIF(?, ''), {k})" for k in string_keys
                         )
                         conn.execute(f"""
                             UPDATE military SET
@@ -1385,11 +1438,36 @@ def pending_student_review(pending_id):
                         "WHERE entity_type='pending_student_military' AND entity_id=?",
                         (military_id_for_scans, pending_id)
                     )
-                conn.execute(
-                    "UPDATE attachments SET entity_type='student', entity_id=? "
-                    "WHERE entity_type='pending_student_military' AND entity_id=?",
-                    (existing_id, pending_id)
-                )
+                # ── Скани військового обліку, що залишились неприкріпленими ──
+                # Якщо add_military уже переніс файли в entity_type='military'
+                # вище — тут файлів із pending_student_military уже немає,
+                # блок нічого не робить. Якщо add_military НЕ був позначений
+                # (або _pending_has_military_data(row)=False, напр. у заявці
+                # лише PDF-скан без текстових полів) — кріпимо скани до
+                # military студента (запис створюємо, якщо його ще немає),
+                # щоб вони не «повисали» в картці під «Інші файли».
+                has_pending_mil_scans = conn.execute(
+                    "SELECT 1 FROM attachments "
+                    "WHERE entity_type='pending_student_military' AND entity_id=? LIMIT 1",
+                    (pending_id,),
+                ).fetchone() is not None
+
+                if has_pending_mil_scans:
+                    mil_row = conn.execute(
+                        "SELECT id FROM military WHERE student_id = ?", (existing_id,)
+                    ).fetchone()
+                    if mil_row:
+                        target_mil_id = mil_row['id']
+                    else:
+                        target_mil_id = conn.execute(
+                            "INSERT INTO military (student_id) VALUES (?)", (existing_id,)
+                        ).lastrowid
+                    conn.execute(
+                        "UPDATE attachments SET entity_type='military', entity_id=? "
+                        "WHERE entity_type='pending_student_military' AND entity_id=?",
+                        (target_mil_id, pending_id),
+                    )
+                    updated_parts.append('скани військового обліку')
 
                 if not updated_parts:
                     conn.rollback()
@@ -1985,17 +2063,26 @@ def update_request_review(request_id):
                         conn, student_id, _doc_gid,
                         d.get('document_type') or '', document_number,
                     )
+                    if not existing_d and document_number:
+                        _by_number = conn.execute("""
+                            SELECT id FROM education_documents
+                            WHERE student_id = ?
+                              AND COALESCE(group_id, -1) = COALESCE(?, -1)
+                              AND NORM_DOC_NUM(document_number) = NORM_DOC_NUM(?)
+                        """, (student_id, _doc_gid, document_number)).fetchall()
+                        if len(_by_number) == 1:
+                            existing_d = _by_number[0]
 
                     if existing_d:
                         education_doc_id = existing_d['id']
                         conn.execute("""
                             UPDATE education_documents SET
-                                document_type_en    = COALESCE(NULLIF(document_type_en, ''), ?),
-                                institution_name    = COALESCE(NULLIF(institution_name, ''), ?),
-                                institution_name_en = COALESCE(NULLIF(institution_name_en, ''), ?),
-                                country             = COALESCE(NULLIF(country, ''), ?),
-                                country_en          = COALESCE(NULLIF(country_en, ''), ?),
-                                completion_date     = COALESCE(NULLIF(completion_date, ''), ?)
+                                document_type_en    = COALESCE(NULLIF(?, ''), document_type_en),
+                                institution_name    = COALESCE(NULLIF(?, ''), institution_name),
+                                institution_name_en = COALESCE(NULLIF(?, ''), institution_name_en),
+                                country             = COALESCE(NULLIF(?, ''), country),
+                                country_en          = COALESCE(NULLIF(?, ''), country_en),
+                                completion_date     = COALESCE(NULLIF(?, ''), completion_date)
                             WHERE id = ?
                         """, (
                             translate_to_en(d.get('document_type') or '') or None,
@@ -2155,7 +2242,7 @@ def update_request_review(request_id):
                             military_id = existing_military['id']
                             if updates:
                                 set_clause = ', '.join(
-                                    f"{k} = COALESCE(NULLIF({k}, ''), ?)" for k in updates
+                                    f"{k} = COALESCE(NULLIF(?, ''), {k})" for k in updates
                                 )
                                 conn.execute(
                                     f"UPDATE military SET {set_clause} WHERE id=?",
