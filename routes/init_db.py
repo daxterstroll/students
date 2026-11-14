@@ -1773,6 +1773,45 @@ try:
 except Exception as e:
     print(f"⚠️ Не вдалося нормалізувати паспортні номери: {e}")
 
+# ── 4.7. Нормалізація серій паспортів (Latin → Cyrillic, upper) ──
+try:
+    from routes.passport_types import normalize_passport_series
+    conn.create_function(
+        "NORM_SERIES", 1,
+        lambda s: (normalize_passport_series(s) or '')
+    )
+    cur.execute("""
+        UPDATE passport_documents
+        SET series = NORM_SERIES(series)
+        WHERE series IS NOT NULL AND series != ''
+          AND series != NORM_SERIES(series)
+    """)
+    if cur.rowcount:
+        print(f"➕ passport_documents: нормалізовано {cur.rowcount} серій "
+              f"(Latin → Cyrillic, верхній регістр)")
+except Exception as e:
+    print(f"⚠️ Не вдалося нормалізувати серії паспортів: {e}")
+
+
+# ── 4.8. Нормалізація літерних частин номерів документів про освіту ──
+try:
+    from routes.passport_types import normalize_doc_number_letters
+    conn.create_function(
+        "NORM_DOC_NUM", 1,
+        lambda s: (normalize_doc_number_letters(s) or '')
+    )
+    cur.execute("""
+        UPDATE education_documents
+        SET document_number = NORM_DOC_NUM(document_number)
+        WHERE document_number IS NOT NULL AND document_number != ''
+          AND document_number != NORM_DOC_NUM(document_number)
+    """)
+    if cur.rowcount:
+        print(f"➕ education_documents: нормалізовано {cur.rowcount} номерів "
+              f"(Latin → Cyrillic, без пробілів)")
+except Exception as e:
+    print(f"⚠️ Не вдалося нормалізувати номери документів про освіту: {e}")
+
 # ═══════════════════════════════════════════════════════════════════════
 # 5. ФІНАЛ
 # ═══════════════════════════════════════════════════════════════════════

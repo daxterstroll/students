@@ -313,7 +313,7 @@ def update_info(token):
             passport_doc_type = f('passport_document_type') if f('passport_document_type') in PASSPORT_TYPES else None
             submitted['passport'] = {
                 'document_type': passport_doc_type,
-                'series': f('passport_series'),
+                'series': normalize_passport_series(f('passport_series')),
                 'number': normalize_passport_number(
                     f('passport_number'), passport_doc_type,
                 ),

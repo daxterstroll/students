@@ -747,7 +747,7 @@ def manage_passport_documents():
                         issued_by=?, issue_date=?, valid_until=?, unique_number=?
                     WHERE id=?
                 """, (
-                    student_id, doc_group_id, document_type, request.form.get('series') or None,
+                    student_id, doc_group_id, document_type, normalize_passport_series(request.form.get('series')) or None,
                     normalize_passport_number(request.form.get('number'), document_type),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
@@ -793,7 +793,8 @@ def manage_passport_documents():
                         student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    student_id, doc_group_id, document_type, request.form.get('series') or None,
+                    student_id, doc_group_id, document_type,
+                    normalize_passport_series(request.form.get('series')) or None,
                     normalize_passport_number(request.form.get('number'), document_type),
                     request.form.get('issued_by') or None, request.form.get('issue_date') or None,
                     valid_until, request.form.get('unique_number') or None,
@@ -1012,7 +1013,7 @@ def _build_passport_import_preview(filepath, conn):
 def _build_passport_row_preview(i, row, conn):
     fio = row[0] if len(row) > 0 else None
     document_type = str(row[1]).strip() if len(row) > 1 and row[1] else None
-    series = str(row[2]).strip() if len(row) > 2 and row[2] not in (None, '') else None
+    series = normalize_passport_series(str(row[2])) if len(row) > 2 and row[2] not in (None, '') else None
     number = str(row[3]).strip() if len(row) > 3 and row[3] not in (None, '') else None
     issued_by = str(row[4]).strip() if len(row) > 4 and row[4] not in (None, '') else None
     issue_date = _excel_date_to_ua(row[5]) if len(row) > 5 else None
@@ -1302,7 +1303,8 @@ def import_passport_commit(token):
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     item['student_id'], target_group_id,
-                    item['document_type'], item['series'],
+                    item['document_type'],
+                    normalize_passport_series(item['series']),
                     normalize_passport_number(item['number'], item['document_type']),
                     item['issued_by'], item['issue_date'],
                     item['valid_until'], item['unique_number'],

@@ -404,7 +404,7 @@ def apply():
         passport_valid_until = None
         passport_unique_number_val = None
     else:
-        passport_series_val = f('passport_series')
+        passport_series_val = normalize_passport_series(f('passport_series'))
         passport_number_val = normalize_passport_number(
             f('passport_number'), passport_document_type,
         )

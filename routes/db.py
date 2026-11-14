@@ -131,6 +131,9 @@ def get_db():
     # NORM_PASSPORT() — нормалізує номер паспорта для SQL-порівнянь.
     # Потрібна, щоб `WHERE number = ?` не вважав "39628" і "039628"
     # різними паспортами (Excel втрачає провідні нулі).
+    # NORM_PASSPORT() — нормалізує номер паспорта для SQL-порівнянь.
+    # Потрібна, щоб `WHERE number = ?` не вважав "39628" і "039628"
+    # різними паспортами (Excel втрачає провідні нулі).
     try:
         from routes.passport_types import normalize_passport_number
         conn.create_function(
@@ -138,7 +141,30 @@ def get_db():
             lambda n, t: (normalize_passport_number(n, t) or '')
         )
     except Exception as _e:
-        logger.warning(f"Не вдалося зареєструвати SQL-функцію NORM_PASSPORT: {_e}")
+        logger.warning(
+            f"Не вдалося зареєструвати SQL-функцію NORM_PASSPORT: {_e}"
+        )
+
+    # NORM_SERIES() / NORM_DOC_NUM() — нормалізація «схожих» літер
+    # (латинська K vs кирилична К, латинська B vs кирилична В) у серії
+    # паспорта й у номері документа про освіту, щоб уникати дублікатів
+    # через неправильну розкладку клавіатури при введенні.
+    try:
+        from routes.passport_types import (
+            normalize_passport_series, normalize_doc_number_letters,
+        )
+        conn.create_function(
+            "NORM_SERIES", 1,
+            lambda s: (normalize_passport_series(s) or '')
+        )
+        conn.create_function(
+            "NORM_DOC_NUM", 1,
+            lambda s: (normalize_doc_number_letters(s) or '')
+        )
+    except Exception as _e:
+        logger.warning(
+            f"Не вдалося зареєструвати SQL-функції NORM_SERIES/NORM_DOC_NUM: {_e}"
+        )
     # WAL замість типового rollback journal - дозволяє читачам не
     # блокуватись, поки триває запис (і навпаки), що критично важливо
     # під час одночасних запитів на багатопотоковому сервері (waitress).

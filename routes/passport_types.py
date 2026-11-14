@@ -123,3 +123,49 @@ def normalize_passport_number(number, document_type):
     if len(s) < target_len:
         return s.zfill(target_len)
     return s
+    
+# ── Латинські літери, які ВІЗУАЛЬНО збігаються з кириличними ──
+# Використовується для нормалізації серії паспорта й літерних
+# частин номерів документів, щоб «KЛ» (латинська K) і «КЛ»
+# (кирилична К) вважалися одним і тим самим.
+_LATIN_TO_CYRILLIC_LOOKALIKE = {
+    'A': 'А', 'B': 'В', 'C': 'С', 'E': 'Е', 'H': 'Н',
+    'I': 'І', 'K': 'К', 'M': 'М', 'O': 'О', 'P': 'Р',
+    'T': 'Т', 'X': 'Х', 'Y': 'У',
+}
+
+
+def normalize_passport_series(series):
+    """
+    Нормалізує серію паспорта до канонічного вигляду:
+      - верхній регістр;
+      - латинські літери-двійники → кириличні (K→К, B→В, H→Н тощо);
+      - пробіли та дефіси видаляються.
+
+    Українські серії паспортів завжди складаються з кириличних літер,
+    але користувачі часто вводять їх у латинській розкладці («KЛ» замість
+    «КЛ»). Без нормалізації такі серії не знаходяться при дедуплікації
+    й створюють дублікат.
+    """
+    if not series:
+        return series
+    s = str(series).strip().upper()
+    s = ''.join(_LATIN_TO_CYRILLIC_LOOKALIKE.get(ch, ch) for ch in s)
+    return s.replace(' ', '').replace('-', '')
+
+
+def normalize_doc_number_letters(number):
+    """
+    Для дедуплікації номерів документів про освіту (де серія «ВК»
+    є частиною `document_number`, або номер може містити літери):
+      - верхній регістр;
+      - латинські літери-двійники → кириличні;
+      - пробіли та роздільники видаляються.
+
+    Використовується як Python-функція для SQL NORM_DOC_NUM().
+    """
+    if not number:
+        return ''
+    s = str(number).strip().upper()
+    s = ''.join(_LATIN_TO_CYRILLIC_LOOKALIKE.get(ch, ch) for ch in s)
+    return ''.join(ch for ch in s if ch.isalnum())
