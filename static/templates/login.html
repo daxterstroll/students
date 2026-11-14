@@ -38,8 +38,6 @@ html,body{
   align-items:center;
   justify-content:center;
   padding:2rem 1.25rem;
-  background:
-    radial-gradient(ellipse at 50% 0%, var(--ink-2) 0%, var(--ink) 60%);
 }
 
 /* ambient lamp glow */
@@ -390,6 +388,10 @@ html,body{
     transition:none !important;
   }
 }
+  #xmas-tree-canvas,
+  #new-year-snow-canvas {
+    z-index: 1 !important;
+  }
 </style>
 </head>
 <body>
@@ -483,5 +485,14 @@ html,body{
     btn.disabled = true;
   });
 </script>
+
+
+
+<!-- ❄️ Снігопад -->
+<script defer src="{{ url_for('static', filename='js/new_year_snow.js') }}"></script>
+
+<!-- 🎄 ASCII-ялинка -->
+<script defer src="{{ url_for('static', filename='js/christmas_tree.js') }}"></script>
+
 </body>
 </html>
