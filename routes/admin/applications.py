@@ -1159,8 +1159,11 @@ def pending_student_review(pending_id):
                 if has_military_scans or _pending_has_military_data(row):
                     military_data = _military_payload_from_pending(row)
                     existing_military = conn.execute(
-                        "SELECT id FROM military WHERE student_id = ?", (student_id,)
+                        "SELECT * FROM military WHERE student_id = ?", (student_id,)
                     ).fetchone()
+
+                    # ── ЗНІМОК старих значень ДО UPDATE ──
+                    old_military = dict(existing_military) if existing_military else {}
 
                     if existing_military:
                         string_keys = [
@@ -1228,17 +1231,13 @@ def pending_student_review(pending_id):
                         _new = (military_data.get(_col) or '').strip()
                         if not _new:
                             continue
-                        _old = ''
-                        if existing_military:
-                            _old_row = conn.execute(
-                                f"SELECT {_col} AS v FROM military WHERE id = ?",
-                                (existing_military['id'],),
-                            ).fetchone()
-                            _old = (_old_row['v'] if _old_row else '') or ''
-                        if str(_old).strip() != _new:
+
+                        _old = (old_military.get(_col) or '').strip()
+
+                        if _old != _new:
                             applied_changes.append({
                                 'label': f'Військ.: {_label}',
-                                'old': str(_old),
+                                'old': _old,
                                 'new': _new,
                             })
 
@@ -1717,8 +1716,12 @@ def pending_student_review(pending_id):
                 if request.form.get('add_military') and _pending_has_military_data(row):
                     military_data = _military_payload_from_pending(row)
                     existing_military = conn.execute(
-                        "SELECT id FROM military WHERE student_id=?", (existing_id,)
+                        "SELECT * FROM military WHERE student_id=?", (existing_id,)
                     ).fetchone()
+
+                    # Запам'ятовуємо «старі» значення ДО UPDATE — інакше після нього
+                    # вже не буде з чим порівнювати для diff
+                    old_military = dict(existing_military) if existing_military else {}
 
                     if existing_military:
                         string_keys = [
@@ -1749,17 +1752,56 @@ def pending_student_review(pending_id):
                         military_id_for_scans = cur_military.lastrowid
 
                     if row['military_address']:
-                        conn.execute(
-                            "UPDATE students SET address_of_residence = "
-                            "COALESCE(NULLIF(address_of_residence, ''), ?) WHERE id = ?",
-                            (row['military_address'], existing_id),
-                        )
+                        _old_addr = (existing_full_for_diff.get('address_of_residence') or '').strip()
+                        _new_addr = row['military_address'].strip()
+                        if _old_addr != _new_addr:
+                            applied_changes.append({
+                                'label': 'Адреса',
+                                'old': _old_addr,
+                                'new': _new_addr,
+                            })
                     updated_parts.append('військовий облік')
-                    applied_changes.append({
-                        'label': 'Військові дані',
-                        'old': '',
-                        'new': 'додано/оновлено з заявки',
-                    })
+
+                    # ── Per-field diff для військових даних ──
+                    # Копія мапи з гілки approve — щоб у «Що було застосовано» для
+                    # update_existing бачити «поле: було → стало», а не один загальний рядок
+                    _mil_labels_for_diff = {
+                        'status_badge': 'Статус',
+                        'registration_category': 'Категорія обліку',
+                        'valid_until': 'Дійсний до',
+                        'removal_basis': 'Підстава зняття',
+                        'tck_name': 'ТЦК',
+                        'military_rank': 'Військове звання',
+                        'registry_number': 'Номер у реєстрі',
+                        'vos_code': 'Код ВОС',
+                        'vos_description': 'Опис ВОС',
+                        'deferral_type': 'Тип відстрочки',
+                        'deferral_until': 'Відстрочка до',
+                        'vlk_decision': 'Постанова ВЛК',
+                        'vlk_date': 'Дата ВЛК',
+                        'disability_group': 'Група інвалідності',
+                        'disability_valid_until': 'Інвалідність до',
+                        'disability_reason': 'Причина інвалідності',
+                        'police_reason': 'Причина поліції',
+                        'police_date': 'Дата поліції',
+                        'formed_at': 'Документ сформовано',
+                        'data_update_date': 'Дата уточнення',
+                        'military_registration_document': 'Документ військ. обліку',
+                        'change_credentials': 'Зміна даних',
+                        'reason_for_changing_credentials': 'Причина зміни',
+                    }
+
+                    for _col, _label in _mil_labels_for_diff.items():
+                        _new = (military_data.get(_col) or '').strip()
+                        if not _new:
+                            continue
+                        _old = (old_military.get(_col) or '').strip()
+                        if _old != _new:
+                            applied_changes.append({
+                                'label': f'Військ.: {_label}',
+                                'old': _old,
+                                'new': _new,
+                            })
                     conn.execute(
                         "UPDATE attachments SET entity_type='military', entity_id=? "
                         "WHERE entity_type='pending_student_military' AND entity_id=?",

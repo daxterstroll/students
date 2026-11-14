@@ -29,6 +29,7 @@ from routes.config import DEEPL_API_KEY
 from routes.passport_types import (
     PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE, PASSPORT_TYPE_DEFAULT,
     normalize_passport_type, normalize_passport_number,
+    normalize_passport_series,          # ← додати цей рядок
     passport_template_context,
 )
 from routes.enrollments_service import ensure_enrollments_table
