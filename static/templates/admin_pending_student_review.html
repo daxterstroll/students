@@ -447,6 +447,30 @@
             {% endif %}
         </div>
 
+{% set active_enrolls = existing_enrollments|selectattr('status', 'equalto', 'active')|list %}
+{% if active_enrolls|length > 1 %}
+<div class="mt-2 mb-2 p-2 rounded" style="background: var(--paper); border: 1px dashed var(--brass-semi);">
+    <div class="small fw-semibold text-muted mb-1">
+        <i class="bi bi-signpost-split me-1"></i>
+        До яких груп прив'язати документ:
+        <a href="#" class="ms-1 small js-doc-select-all">усі</a> /
+        <a href="#" class="small js-doc-select-none">жодної</a>
+    </div>
+    {% for e in active_enrolls %}
+    <div class="form-check form-check-inline">
+        <input type="checkbox" name="target_group_ids_document"
+               value="{{ e.group_id }}" id="doc_grp_{{ e.group_id }}"
+               class="form-check-input js-doc-group-cb"
+               {% if e.is_primary %}checked{% endif %}>
+        <label for="doc_grp_{{ e.group_id }}" class="form-check-label small">
+            {{ e.group_name }}
+            {% if e.is_primary %}<span class="badge bg-primary" style="font-size:.6rem;">основна</span>{% endif %}
+        </label>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
         {% if existing_matching_edu_doc %}
             {% set ed = existing_matching_edu_doc %}
             <div class="alert alert-warning py-2 px-3 small mb-2">
@@ -544,6 +568,30 @@
             <i class="bi bi-person-vcard me-1"></i>Паспортні дані із заявки
             {% if row.passport_document_type %}{{ row.passport_document_type }}{% endif %}{% if row.passport_number %} №{{ row.passport_number }}{% endif %}
         </div>
+
+{% set active_enrolls_p = existing_enrollments|selectattr('status', 'equalto', 'active')|list %}
+{% if active_enrolls_p|length > 1 %}
+<div class="mt-2 mb-2 p-2 rounded" style="background: var(--paper); border: 1px dashed var(--brass-semi);">
+    <div class="small fw-semibold text-muted mb-1">
+        <i class="bi bi-signpost-split me-1"></i>
+        До яких груп прив'язати паспорт:
+        <a href="#" class="ms-1 small js-pass-select-all">усі</a> /
+        <a href="#" class="small js-pass-select-none">жодної</a>
+    </div>
+    {% for e in active_enrolls_p %}
+    <div class="form-check form-check-inline">
+        <input type="checkbox" name="target_group_ids_passport"
+               value="{{ e.group_id }}" id="pass_grp_{{ e.group_id }}"
+               class="form-check-input js-pass-group-cb"
+               {% if e.is_primary %}checked{% endif %}>
+        <label for="pass_grp_{{ e.group_id }}" class="form-check-label small">
+            {{ e.group_name }}
+            {% if e.is_primary %}<span class="badge bg-primary" style="font-size:.6rem;">основна</span>{% endif %}
+        </label>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
 
         {% if existing_passport %}
             {# Порівняння полів існуючого паспорта зі заявкою #}
@@ -1341,5 +1389,22 @@
         background: var(--paper-2);
     }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    function bind(triggerSel, cbSel, state) {
+        document.querySelectorAll(triggerSel).forEach(function (link) {
+            link.addEventListener('click', function (e) {
+                e.preventDefault();
+                document.querySelectorAll(cbSel).forEach(function (cb) { cb.checked = state; });
+            });
+        });
+    }
+    bind('.js-doc-select-all',  '.js-doc-group-cb',  true);
+    bind('.js-doc-select-none', '.js-doc-group-cb',  false);
+    bind('.js-pass-select-all', '.js-pass-group-cb', true);
+    bind('.js-pass-select-none', '.js-pass-group-cb', false);
+});
+</script>
 
 {% endblock %}

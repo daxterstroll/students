@@ -1168,144 +1168,120 @@ def pending_student_review(pending_id):
                             f"студенту {existing_id}: {e}"
                         )
 
-                # ── Документ про освіту (dedup: UPDATE якщо знайдено) ──
-                doc_id_for_scans = None
+                # ── Документ про освіту (dedup + підтримка кількох груп) ──
+                doc_ids_for_scans = []
                 want_add_doc = bool(request.form.get('add_document'))
                 if want_add_doc and (row['document_type'] or row['document_number']):
                     doc_number = ' '.join(
                         x for x in [row['document_series'], row['document_number']] if x
                     ) or ''
-                    _grp_row = conn.execute(
-                        "SELECT group_id FROM students WHERE id = ?", (existing_id,)
-                    ).fetchone()
-                    _doc_gid = _grp_row['group_id'] if _grp_row else None
                     _doc_type = row['document_type'] or ''
 
-                    existing_doc = _find_existing_education_doc(
-                        conn, existing_id, _doc_gid, _doc_type, doc_number
-                    )
-
-                    if existing_doc:
-                        doc_id_for_scans = existing_doc['id']
-                        conn.execute("""
-                            UPDATE education_documents SET
-                                document_type_en    = COALESCE(NULLIF(document_type_en, ''), ?),
-                                institution_name    = COALESCE(NULLIF(institution_name, ''), ?),
-                                institution_name_en = COALESCE(NULLIF(institution_name_en, ''), ?),
-                                country             = COALESCE(NULLIF(country, ''), ?),
-                                country_en          = COALESCE(NULLIF(country_en, ''), ?),
-                                completion_date     = COALESCE(NULLIF(completion_date, ''), ?)
-                            WHERE id = ?
-                        """, (
-                            translate_to_en(_doc_type) or None,
-                            row['document_institution'] or None,
-                            translate_to_en(row['document_institution'] or '') or None,
-                            row['document_country'] or None,
-                            translate_to_en(row['document_country'] or '') or None,
-                            row['document_date'] or None,
-                            doc_id_for_scans,
-                        ))
-                        updated_parts.append('документ про освіту (заповнено порожні поля)')
-                    else:
-                        cur_doc = conn.execute("""
-                            INSERT INTO education_documents (
-                                student_id, group_id, document_type, document_type_en,
-                                document_number, institution_name, institution_name_en,
-                                country, country_en, completion_date
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            existing_id, _doc_gid,
-                            _doc_type,
-                            translate_to_en(_doc_type),
-                            doc_number,
-                            row['document_institution'] or '',
-                            translate_to_en(row['document_institution'] or ''),
-                            row['document_country'] or '',
-                            translate_to_en(row['document_country'] or ''),
-                            row['document_date'] or '',
-                        ))
-                        doc_id_for_scans = cur_doc.lastrowid
-                        updated_parts.append('документ про освіту (додано як новий)')
-
-                if request.form.get('add_reference_recognition') and (
-                    row['foreign_reference_number'] or row['foreign_reference_institution']
-                    or row['recognition_certificate_number'] or row['recognition_issuer']
-                ):
-                    target_doc_id = doc_id_for_scans
-                    if target_doc_id is None:
-                        existing_doc = conn.execute(
-                            "SELECT id FROM education_documents WHERE student_id=? "
-                            "ORDER BY id DESC LIMIT 1",
-                            (existing_id,)
+                    # Групи з форми (якщо не передано — fallback на основну, стара поведінка)
+                    target_group_ids = []
+                    for gs in request.form.getlist('target_group_ids_document'):
+                        try:
+                            target_group_ids.append(int(gs))
+                        except (ValueError, TypeError):
+                            pass
+                    if not target_group_ids:
+                        _grp_row = conn.execute(
+                            "SELECT group_id FROM students WHERE id = ?", (existing_id,)
                         ).fetchone()
-                        target_doc_id = existing_doc[0] if existing_doc else None
+                        _gid = _grp_row['group_id'] if _grp_row else None
+                        target_group_ids = [_gid] if _gid else [None]
 
-                    if target_doc_id is None:
-                        flash("Немає жодного документа про освіту студента, "
-                              "до якого можна додати довідку/свідоцтво.", "error")
-                    else:
-                        existing_foreign = conn.execute(
-                            "SELECT id FROM foreign_education_docs WHERE education_doc_id=?",
-                            (target_doc_id,)
-                        ).fetchone()
-                        ref_institution_en = translate_to_en(row['foreign_reference_institution']) if row['foreign_reference_institution'] else None
-                        ref_country_en = translate_to_en(row['foreign_reference_country']) if row['foreign_reference_country'] else None
-                        rec_issuer_en = translate_to_en(row['recognition_issuer']) if row['recognition_issuer'] else None
-
-                        if existing_foreign:
+                    for _doc_gid in target_group_ids:
+                        existing_doc = _find_existing_education_doc(
+                            conn, existing_id, _doc_gid, _doc_type, doc_number
+                        )
+                        if existing_doc:
+                            doc_id = existing_doc['id']
                             conn.execute("""
-                                UPDATE foreign_education_docs SET
-                                    reference_number               = COALESCE(?, reference_number),
-                                    reference_institution          = COALESCE(?, reference_institution),
-                                    reference_institution_en       = COALESCE(?, reference_institution_en),
-                                    reference_country              = COALESCE(?, reference_country),
-                                    reference_country_en           = COALESCE(?, reference_country_en),
-                                    reference_issue_date           = COALESCE(?, reference_issue_date),
-                                    recognition_certificate_number = COALESCE(?, recognition_certificate_number),
-                                    recognition_issuer             = COALESCE(?, recognition_issuer),
-                                    recognition_issuer_en          = COALESCE(?, recognition_issuer_en),
-                                    recognition_date               = COALESCE(?, recognition_date)
-                                WHERE education_doc_id=?
+                                UPDATE education_documents SET
+                                    document_type_en    = COALESCE(NULLIF(document_type_en, ''), ?),
+                                    institution_name    = COALESCE(NULLIF(institution_name, ''), ?),
+                                    institution_name_en = COALESCE(NULLIF(institution_name_en, ''), ?),
+                                    country             = COALESCE(NULLIF(country, ''), ?),
+                                    country_en          = COALESCE(NULLIF(country_en, ''), ?),
+                                    completion_date     = COALESCE(NULLIF(completion_date, ''), ?)
+                                WHERE id = ?
                             """, (
-                                row['foreign_reference_number'], row['foreign_reference_institution'], ref_institution_en,
-                                row['foreign_reference_country'], ref_country_en, row['foreign_reference_issue_date'],
-                                row['recognition_certificate_number'], row['recognition_issuer'], rec_issuer_en,
-                                row['recognition_date'], target_doc_id,
+                                translate_to_en(_doc_type) or None,
+                                row['document_institution'] or None,
+                                translate_to_en(row['document_institution'] or '') or None,
+                                row['document_country'] or None,
+                                translate_to_en(row['document_country'] or '') or None,
+                                row['document_date'] or None,
+                                doc_id,
                             ))
+                            updated_parts.append('документ про освіту (заповнено порожні поля)')
                         else:
-                            conn.execute("""
-                                INSERT INTO foreign_education_docs (
-                                    education_doc_id, reference_number, reference_institution, reference_institution_en,
-                                    reference_country, reference_country_en, reference_issue_date,
-                                    recognition_certificate_number, recognition_issuer, recognition_issuer_en, recognition_date
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            cur_doc = conn.execute("""
+                                INSERT INTO education_documents (
+                                    student_id, group_id, document_type, document_type_en,
+                                    document_number, institution_name, institution_name_en,
+                                    country, country_en, completion_date
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """, (
-                                target_doc_id, row['foreign_reference_number'], row['foreign_reference_institution'], ref_institution_en,
-                                row['foreign_reference_country'], ref_country_en, row['foreign_reference_issue_date'],
-                                row['recognition_certificate_number'], row['recognition_issuer'], rec_issuer_en, row['recognition_date'],
+                                existing_id, _doc_gid,
+                                _doc_type, translate_to_en(_doc_type),
+                                doc_number,
+                                row['document_institution'] or '',
+                                translate_to_en(row['document_institution'] or ''),
+                                row['document_country'] or '',
+                                translate_to_en(row['document_country'] or ''),
+                                row['document_date'] or '',
                             ))
-                        updated_parts.append('академічна довідка/свідоцтво про визнання')
+                            doc_id = cur_doc.lastrowid
+                            updated_parts.append('документ про освіту (додано як новий)')
+                        doc_ids_for_scans.append(doc_id)
 
-                if doc_id_for_scans:
-                    conn.execute(
-                        "UPDATE attachments SET entity_type='education_document', entity_id=? "
-                        "WHERE entity_type='pending_student' AND entity_id=?",
-                        (doc_id_for_scans, pending_id)
-                    )
+                    # Скани → до ПЕРШОГО документа, для решти — фізичні копії
+                    if doc_ids_for_scans:
+                        conn.execute(
+                            "UPDATE attachments SET entity_type='education_document', entity_id=? "
+                            "WHERE entity_type='pending_student' AND entity_id=?",
+                            (doc_ids_for_scans[0], pending_id)
+                        )
+                        if len(doc_ids_for_scans) > 1:
+                            import shutil as _shutil, uuid as _uuid_scan
+                            src_atts = conn.execute(
+                                "SELECT file_path, original_name, uploaded_by FROM attachments "
+                                "WHERE entity_type='education_document' AND entity_id=?",
+                                (doc_ids_for_scans[0],)
+                            ).fetchall()
+                            for extra_doc_id in doc_ids_for_scans[1:]:
+                                for att in src_atts:
+                                    src_rel = att['file_path']
+                                    src_abs = os.path.join('static', src_rel)
+                                    if not os.path.exists(src_abs):
+                                        continue
+                                    ext = os.path.splitext(src_rel)[1]
+                                    dir_path = os.path.dirname(src_rel)
+                                    new_rel = f"{dir_path}/{_uuid_scan.uuid4().hex}{ext}"
+                                    try:
+                                        _shutil.copy2(src_abs, os.path.join('static', new_rel))
+                                        conn.execute(
+                                            "INSERT INTO attachments "
+                                            "(entity_type, entity_id, file_path, original_name, uploaded_by) "
+                                            "VALUES ('education_document', ?, ?, ?, ?)",
+                                            (extra_doc_id, new_rel, att['original_name'], att['uploaded_by'])
+                                        )
+                                    except Exception as _e:
+                                        logger.warning(
+                                            f"Не вдалося скопіювати скан для документа {extra_doc_id}: {_e}"
+                                        )
+
                 conn.execute(
                     "UPDATE attachments SET entity_type='student', entity_id=? "
                     "WHERE entity_type='pending_student' AND entity_id=?",
                     (existing_id, pending_id)
                 )
 
-                # ── Паспорт (dedup) ──
-                passport_id_for_scans = None
+                # ── Паспорт (dedup + підтримка кількох груп) ──
+                passport_ids_for_scans = []
                 if request.form.get('add_passport') and row['passport_number']:
-                    _grp_row = conn.execute(
-                        "SELECT group_id FROM students WHERE id = ?", (existing_id,)
-                    ).fetchone()
-                    _doc_gid = _grp_row['group_id'] if _grp_row else None
-
                     _passport_doc_type = (
                         normalize_passport_type(row['passport_document_type'])
                         or PASSPORT_TYPE_DEFAULT
@@ -1314,47 +1290,88 @@ def pending_student_review(pending_id):
                         row['passport_number'], _passport_doc_type
                     )
 
-                    existing_passport = _find_existing_passport(
-                        conn, existing_id, _doc_gid,
-                        _passport_doc_type, row['passport_series'], _passport_number,
-                    )
+                    target_group_ids = []
+                    for gs in request.form.getlist('target_group_ids_passport'):
+                        try:
+                            target_group_ids.append(int(gs))
+                        except (ValueError, TypeError):
+                            pass
+                    if not target_group_ids:
+                        _grp_row = conn.execute(
+                            "SELECT group_id FROM students WHERE id = ?", (existing_id,)
+                        ).fetchone()
+                        _gid = _grp_row['group_id'] if _grp_row else None
+                        target_group_ids = [_gid] if _gid else [None]
 
-                    if existing_passport:
-                        passport_id_for_scans = existing_passport['id']
-                        conn.execute("""
-                            UPDATE passport_documents SET
-                                issued_by     = COALESCE(NULLIF(issued_by, ''), ?),
-                                issue_date    = COALESCE(NULLIF(issue_date, ''), ?),
-                                valid_until   = COALESCE(NULLIF(valid_until, ''), ?),
-                                unique_number = COALESCE(NULLIF(unique_number, ''), ?)
-                            WHERE id = ?
-                        """, (
-                            row['passport_issued_by'], row['passport_issue_date'],
-                            row['passport_valid_until'], row['passport_unique_number'],
-                            passport_id_for_scans,
-                        ))
-                        updated_parts.append('паспортні дані (заповнено порожні поля)')
-                    else:
-                        cur_passport = conn.execute("""
-                            INSERT INTO passport_documents (
-                                student_id, group_id, document_type, series, number,
-                                issued_by, issue_date, valid_until, unique_number
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, (
-                            existing_id, _doc_gid, _passport_doc_type,
-                            row['passport_series'], _passport_number,
-                            row['passport_issued_by'], row['passport_issue_date'],
-                            row['passport_valid_until'], row['passport_unique_number'],
-                        ))
-                        passport_id_for_scans = cur_passport.lastrowid
-                        updated_parts.append('паспортні дані (додано як новий запис)')
+                    for _doc_gid in target_group_ids:
+                        existing_p = _find_existing_passport(
+                            conn, existing_id, _doc_gid,
+                            _passport_doc_type, row['passport_series'], _passport_number,
+                        )
+                        if existing_p:
+                            passport_id = existing_p['id']
+                            conn.execute("""
+                                UPDATE passport_documents SET
+                                    issued_by     = COALESCE(NULLIF(issued_by, ''), ?),
+                                    issue_date    = COALESCE(NULLIF(issue_date, ''), ?),
+                                    valid_until   = COALESCE(NULLIF(valid_until, ''), ?),
+                                    unique_number = COALESCE(NULLIF(unique_number, ''), ?)
+                                WHERE id = ?
+                            """, (
+                                row['passport_issued_by'], row['passport_issue_date'],
+                                row['passport_valid_until'], row['passport_unique_number'],
+                                passport_id,
+                            ))
+                            updated_parts.append('паспортні дані (заповнено порожні поля)')
+                        else:
+                            cur_p = conn.execute("""
+                                INSERT INTO passport_documents (
+                                    student_id, group_id, document_type, series, number,
+                                    issued_by, issue_date, valid_until, unique_number
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, (
+                                existing_id, _doc_gid, _passport_doc_type,
+                                row['passport_series'], _passport_number,
+                                row['passport_issued_by'], row['passport_issue_date'],
+                                row['passport_valid_until'], row['passport_unique_number'],
+                            ))
+                            passport_id = cur_p.lastrowid
+                            updated_parts.append('паспортні дані (додано як новий)')
+                        passport_ids_for_scans.append(passport_id)
 
-                if passport_id_for_scans:
-                    conn.execute(
-                        "UPDATE attachments SET entity_type='passport_document', entity_id=? "
-                        "WHERE entity_type='pending_student_passport' AND entity_id=?",
-                        (passport_id_for_scans, pending_id)
-                    )
+                    if passport_ids_for_scans:
+                        conn.execute(
+                            "UPDATE attachments SET entity_type='passport_document', entity_id=? "
+                            "WHERE entity_type='pending_student_passport' AND entity_id=?",
+                            (passport_ids_for_scans[0], pending_id)
+                        )
+                        if len(passport_ids_for_scans) > 1:
+                            import shutil as _shutil, uuid as _uuid_scan
+                            src_atts = conn.execute(
+                                "SELECT file_path, original_name, uploaded_by FROM attachments "
+                                "WHERE entity_type='passport_document' AND entity_id=?",
+                                (passport_ids_for_scans[0],)
+                            ).fetchall()
+                            for extra_id in passport_ids_for_scans[1:]:
+                                for att in src_atts:
+                                    src_rel = att['file_path']
+                                    src_abs = os.path.join('static', src_rel)
+                                    if not os.path.exists(src_abs):
+                                        continue
+                                    ext = os.path.splitext(src_rel)[1]
+                                    dir_path = os.path.dirname(src_rel)
+                                    new_rel = f"{dir_path}/{_uuid_scan.uuid4().hex}{ext}"
+                                    try:
+                                        _shutil.copy2(src_abs, os.path.join('static', new_rel))
+                                        conn.execute(
+                                            "INSERT INTO attachments "
+                                            "(entity_type, entity_id, file_path, original_name, uploaded_by) "
+                                            "VALUES ('passport_document', ?, ?, ?, ?)",
+                                            (extra_id, new_rel, att['original_name'], att['uploaded_by'])
+                                        )
+                                    except Exception as _e:
+                                        logger.warning(f"Не вдалося скопіювати скан паспорта: {_e}")
+
                 conn.execute(
                     "UPDATE attachments SET entity_type='student', entity_id=? "
                     "WHERE entity_type='pending_student_passport' AND entity_id=?",
