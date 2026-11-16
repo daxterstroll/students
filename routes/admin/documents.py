@@ -185,16 +185,42 @@ def manage_education_documents():
         key=lambda x: (x[1]['group_name'] or '').lower(),
     )
 
-    # Перевіряємо doc_id для студента
     student_doc_id = None
     if student:
-        for gid, gdata in documents_by_group.items():
-            for doc in gdata['docs']:
-                if doc['student_id'] == student['id']:
+        want_doc_id = request.args.get('doc_id', type=int)
+        want_group_id = request.args.get('group_id', type=int)
+
+        student_docs = [
+            doc
+            for gdata in documents_by_group.values()
+            for doc in gdata['docs']
+            if doc['student_id'] == student['id']
+        ]
+
+        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
+            # Явно вказаний документ — відкриваємо його
+            student_doc_id = want_doc_id
+        elif want_group_id is not None:
+            # Конкретна група: тільки її документ, БЕЗ fallback на іншу групу
+            for doc in student_docs:
+                if doc.get('doc_group_id') == want_group_id:
                     student_doc_id = doc['doc_id']
                     break
-            if student_doc_id:
-                break
+            # немає документа цієї групи → student_doc_id лишається None
+            # (модалка не відкриється — зручно для «Додати для цієї групи»)
+        else:
+            # Лише student_id: основна група, інакше перший
+            primary_gid = next(
+                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
+                student.get('group_id'),
+            )
+            if primary_gid is not None:
+                for doc in student_docs:
+                    if doc.get('doc_group_id') == primary_gid:
+                        student_doc_id = doc['doc_id']
+                        break
+            if student_doc_id is None and student_docs:
+                student_doc_id = student_docs[0]['doc_id']
 
     # ====================== POST ======================
     if request.method == 'POST':
@@ -657,13 +683,40 @@ def manage_passport_documents():
     
     student_doc_id = None
     if student:
-        for gid, gdata in documents_by_group.items():
-            for doc in gdata['docs']:
-                if doc['student_id'] == student['id']:
+        want_doc_id = request.args.get('doc_id', type=int)
+        want_group_id = request.args.get('group_id', type=int)
+
+        student_docs = [
+            doc
+            for gdata in documents_by_group.values()
+            for doc in gdata['docs']
+            if doc['student_id'] == student['id']
+        ]
+
+        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
+            # Явно вказаний документ — відкриваємо його
+            student_doc_id = want_doc_id
+        elif want_group_id is not None:
+            # Конкретна група: тільки її документ, БЕЗ fallback на іншу групу
+            for doc in student_docs:
+                if doc.get('doc_group_id') == want_group_id:
                     student_doc_id = doc['doc_id']
                     break
-            if student_doc_id:
-                break
+            # немає документа цієї групи → student_doc_id лишається None
+            # (модалка не відкриється — зручно для «Додати для цієї групи»)
+        else:
+            # Лише student_id: основна група, інакше перший
+            primary_gid = next(
+                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
+                student.get('group_id'),
+            )
+            if primary_gid is not None:
+                for doc in student_docs:
+                    if doc.get('doc_group_id') == primary_gid:
+                        student_doc_id = doc['doc_id']
+                        break
+            if student_doc_id is None and student_docs:
+                student_doc_id = student_docs[0]['doc_id']
 
     # ====================== POST ======================
     if request.method == 'POST':

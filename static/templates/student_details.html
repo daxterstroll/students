@@ -475,14 +475,6 @@
                     </h2>
                     <div id="passportCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-							{% if has_perm('manage_passport_documents') %}
-							<div class="d-flex justify-content-end mb-3">
-								<a href="{{ url_for('admin.manage_passport_documents', student_id=student.id) }}" class="btn btn-sm btn-primary">
-									<i class="bi bi-pencil me-1"></i>Керувати паспортними даними
-								</a>
-							</div>
-							{% endif %}
-
                             {% if groups_data %}
                                 {% if groups_data|length > 1 %}
                                 <ul class="nav nav-tabs mb-3" role="tablist">
@@ -507,6 +499,19 @@
                                         {% if g.passport_docs %}
                                             {% set _newest = g.passport_docs[0] %}
                                             {% set _others = g.passport_docs[1:] %}
+											
+							{% if has_perm('manage_passport_documents') %}
+							<div class="d-flex justify-content-end mb-2">
+								<a href="{{ url_for('admin.manage_passport_documents',
+													student_id=student.id,
+													doc_id=_newest.id,
+													group_id=g.group_id) }}"
+								   class="btn btn-sm btn-outline-primary">
+									<i class="bi bi-pencil me-1"></i>Редагувати паспорт
+									<span class="text-muted">({{ g.short_group_name }})</span>
+								</a>
+							</div>
+							{% endif %}
 
                                             {# Актуальний (найновіший) паспорт — розгорнуто #}
                                             <div class="border rounded-3 p-4 mb-3">
@@ -585,6 +590,16 @@
                                             </div>
                                             {% endif %}
                                         {% else %}
+										
+																	{% if has_perm('manage_passport_documents') %}
+							<ringt><a href="{{ url_for('admin.manage_passport_documents',
+												student_id=student.id,
+												group_id=g.group_id) }}"
+							   class="btn btn-sm btn-primary mt-2">
+								<i class="bi bi-plus-circle me-1"></i>Додати паспорт для цієї групи
+							</a></right>
+							{% endif %}
+							
                                             <div class="p-4 text-center text-muted">
                                                 <i class="bi bi-person-vcard fs-4 d-block mb-2"></i>
                                                 Для цієї групи паспортних даних ще не додано
@@ -1218,14 +1233,6 @@
                     </h2>
                     <div id="educationDocsCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-							{% if has_perm('manage_education_documents') %}
-							<div class="d-flex justify-content-end mb-3">
-								<a href="{{ url_for('admin.manage_education_documents', student_id=student.id) }}"
-								   class="btn btn-sm btn-primary">
-									<i class="bi bi-pencil me-1"></i>Керувати документами
-								</a>
-							</div>
-							{% endif %}
 
                             {% if groups_data %}
                                 {% if groups_data|length > 1 %}
@@ -1252,6 +1259,20 @@
                                         {% if g.education_docs %}
                                             {% for doc in g.education_docs %}
                                             <div class="border rounded-3 p-4 mb-3">
+											
+																		{% if has_perm('manage_education_documents') %}
+							<div class="d-flex justify-content-end mb-2">
+								<a href="{{ url_for('admin.manage_education_documents',
+													student_id=student.id,
+													doc_id=doc.id,
+													group_id=g.group_id) }}"
+								   class="btn btn-sm btn-outline-primary">
+									<i class="bi bi-pencil me-1"></i>Редагувати документ
+									<span class="text-muted">({{ g.short_group_name }})</span>
+								</a>
+							</div>
+							{% endif %}
+											
                                                 <h5 class="d-flex align-items-center justify-content-between">
                                                     <span>{{ doc.document_type | default('Документ', true) }}</span>
                                                     {% if not doc.group_id %}
@@ -1364,6 +1385,14 @@
                                                 <i class="bi bi-file-earmark-x fs-4 d-block mb-2"></i>
                                                 Для цієї групи документів про освіту ще не додано
                                             </div>
+											{% if has_perm('manage_education_documents') %}
+											<a href="{{ url_for('admin.manage_education_documents',
+																student_id=student.id,
+																group_id=g.group_id) }}"
+											   class="btn btn-sm btn-primary mt-2">
+												<i class="bi bi-plus-circle me-1"></i>Додати документ для цієї групи
+											</a>
+											{% endif %}
                                         {% endif %}
                                     </div>
                                     {% endfor %}
