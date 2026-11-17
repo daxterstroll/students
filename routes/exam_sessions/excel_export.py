@@ -231,7 +231,10 @@ def _fill_header(ws, sheet: dict):
     except Exception:
         pass
 
-    teacher = _get(sheet, 'teacher_name') or ''
+    teacher_short = _get(sheet, 'teacher_short')
+    teacher_name = _get(sheet, 'teacher_name') or ''
+    teacher_full = _get(sheet, 'teacher_full')
+    teacher = (teacher_short or teacher_name or teacher_full or '').strip()
     _set(ws, 15, 1, f'Викладач                                                   {teacher}', f13)
     try:
         ws.merge_cells('A15:G15')
@@ -273,7 +276,11 @@ def _write_students(ws, sheet: dict, students: list, start: int = 19) -> int:
     f12 = Font(name=_FONT, size=12)
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     left = Alignment(horizontal='left', vertical='center')
-    teacher = _get(sheet, 'teacher_name') or ''
+    teacher_short = _get(sheet, 'teacher_short')
+    teacher_name = _get(sheet, 'teacher_name') or ''
+    teacher_full = _get(sheet, 'teacher_full')
+    from routes.gen_docx import _format_teacher_short
+    teacher_sign = _format_teacher_short(teacher_full or teacher_short or teacher_name)
     control = _get(sheet, 'control_form') or 'Екзамен'
 
     n = len(students)
@@ -291,7 +298,7 @@ def _write_students(ws, sheet: dict, students: list, start: int = 19) -> int:
         nat = _get(st, 'national_grade') or _national_from_points(points, control)
         code = _get(st, 'edebo_code') or ''
         name = _get(st, 'full_name') or ''
-        sign = _get(st, 'teacher_sign') or teacher
+        sign = _get(st, 'teacher_sign') or teacher_sign
 
         _set(ws, r, 1, i + 1, f11, center, _thin)
         _set(ws, r, 2, name, f11, left, _thin)

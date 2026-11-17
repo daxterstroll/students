@@ -593,7 +593,7 @@ def sheet_new(session_id):
         lic_raw = request.form.get('license_id')
         license_id = int(lic_raw) if lic_raw and lic_raw.isdigit() else None
 
-        # Snapshot teacher_name из картотеки
+        # Snapshot teacher_name из картотеки (скорочене ім'я)
         teacher_name = None
         if teacher_ref_id:
             t = conn.execute(
@@ -601,10 +601,7 @@ def sheet_new(session_id):
                 (teacher_ref_id,),
             ).fetchone()
             if t:
-                from routes.gen_docx import _format_teacher_short
-                teacher_name = _format_teacher_short(
-                    t['short_name'] or t['full_name']
-                )
+                teacher_name = (t['short_name'] or t['full_name'] or '').strip()
 
         if entity_kind not in ('subject', 'practice', 'coursework', 'attestation'):
             entity_kind = 'subject'
@@ -706,10 +703,7 @@ def sheet_detail(sheet_id):
                     (teacher_ref_id,),
                 ).fetchone()
                 if t:
-                    from routes.gen_docx import _format_teacher_short
-                    teacher_name = _format_teacher_short(
-                        t['short_name'] or t['full_name']
-                    )
+                    teacher_name = (t['short_name'] or t['full_name'] or '').strip()
 
             fields = {
                 'discipline_name': (request.form.get('discipline_name') or '').strip(),
@@ -1511,7 +1505,7 @@ def session_copy(session_id):
                     (sh['teacher_ref_id'],),
                 ).fetchone()
                 if t:
-                    teacher_name = _format_teacher_short(t['short_name'] or t['full_name'])
+                    teacher_name = (t['short_name'] or t['full_name'] or '').strip()
 
             cur = conn.execute("""
                 INSERT INTO session_sheets (

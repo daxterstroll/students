@@ -733,12 +733,21 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
 
 # ── Відомість сесії (той самий стек що gen_doc: DocxTemplate) ──────
 
-def _vidomist_template_path():
+def _vidomist_template_path(is_fulltime=False):
+    filename = 'vidomist_sheet_denna.docx' if is_fulltime else 'vidomist_sheet.docx'
     candidates = [
+        os.path.join('static', 'templates', 'word', filename),
+        os.path.join(os.path.dirname(__file__), '..', 'static', 'templates', 'word', filename),
+    ]
+    for p in candidates:
+        ap = os.path.abspath(p)
+        if os.path.isfile(ap):
+            return ap
+    fallback = [
         os.path.join('static', 'templates', 'word', 'vidomist_sheet.docx'),
         os.path.join(os.path.dirname(__file__), '..', 'static', 'templates', 'word', 'vidomist_sheet.docx'),
     ]
-    for p in candidates:
+    for p in fallback:
         ap = os.path.abspath(p)
         if os.path.isfile(ap):
             return ap
@@ -839,51 +848,79 @@ def _is_fulltime_form(study_form) -> bool:
 
 def _format_teacher_short(full_or_short: str) -> str:
     """
-    Приводить ПІБ викладача до формату «Гущак О. О.» для колонки «Підпис викладача».
+    Приводить ПІБ викладача («ПІБ (повне)» з картотеки) до скороченого формату
+    «Гушак О. О.» для колонки «Підпис викладача».
     Прибирає наукові ступені/посади (к.ф.-м.н., доц., проф. тощо).
     """
     if not full_or_short:
         return ''
     s = str(full_or_short).strip()
     import re as _re
-    # Вже короткий формат
-    if _re.match(r'^[А-ЯІЇЄҐA-Z][а-яіїєґa-z\'’\-]+\s+[А-ЯІЇЄҐA-Z]\.\s*[А-ЯІЇЄҐA-Z]\.?$', s):
-        return s if s.endswith('.') else (s + '.' if not s.endswith('.') else s)
-    # Розбити і прибрати титули
-    raw_parts = _re.split(r'[\s,]+', s)
+    # Якщо вже скорочений формат «Прізвище І. П.» або «Прізвище І.П.»
+    m = _re.match(r'^([А-ЯІЇЄҐA-Z][а-яіїєґa-z\'’\-]+)\s+([А-ЯІЇЄҐA-Z])\.\s*([А-ЯІЇЄҐA-Z])\.?$', s)
+    if m:
+        return f"{m.group(1)} {m.group(2)}. {m.group(3)}."
+
+    degree_re = _re.compile(r'^[кд]\.[а-яіїєґ\.\-]*н\.?$', _re.I)
     skip = {
-        'к.ф.-м.н', 'к.т.н', 'к.е.н', 'к.п.н', 'к.і.н', 'к.ю.н',
-        'д.ф.-м.н', 'д.т.н', 'д.е.н', 'д.п.н',
-        'доц', 'доц.', 'проф', 'проф.', 'ст', 'ст.', 'викл', 'викл.',
-        'асист', 'асист.', 'ст.викл', 'ст.викл.',
+        'доц', 'доц.', 'доцент', 'проф', 'проф.', 'професор',
+        'ст', 'ст.', 'викл', 'викл.', 'ст.викл', 'ст.викл.',
+        'асист', 'асист.', 'асистент', 'phd', 'ph.d', 'ph.d.'
     }
+
+    raw_parts = _re.split(r'[\s,]+', s)
     clean = []
     for p in raw_parts:
-        pl = p.lower().rstrip('.')
-        if not p:
+        p_strip = p.strip(' ,;')
+        if not p_strip:
             continue
-        if pl in skip or pl.startswith('к.') or pl.startswith('д.'):
+        pl = p_strip.lower().rstrip('.')
+        if pl in skip or degree_re.match(p_strip):
             continue
-        clean.append(p)
+        clean.append(p_strip)
+    if not clean:
+        return s
     if len(clean) >= 3:
-        return f"{clean[0]} {clean[1][0]}. {clean[2][0]}."
+        return f"{clean[0]} {clean[1][0].upper()}. {clean[2][0].upper()}."
     if len(clean) == 2:
-        # Може бути вже «Гущак О.» або «Гущак Олександр»
-        second = clean[1]
-        if len(second) <= 2 or second.endswith('.'):
-            return f"{clean[0]} {second.rstrip('.')}."
-        return f"{clean[0]} {second[0]}."
-    return s
+        m2 = _re.match(r'^([А-ЯІЇЄҐA-Z])\.?\s*([А-ЯІЇЄҐA-Z])\.?$', clean[1])
+        if m2:
+            return f"{clean[0]} {m2.group(1)}. {m2.group(2)}."
+        return f"{clean[0]} {clean[1][0].upper()}."
+    return clean[0]
 
 
 def _vidomist_build_context(sheet, students):
     """Контекст для DocxTemplate — ті самі ключі що {{ }} у шаблоні."""
     sheet = dict(sheet) if not isinstance(sheet, dict) else sheet
     control = sheet.get('control_form') or 'Екзамен'
+    teacher_short = sheet.get('teacher_short')
+    teacher_full = sheet.get('teacher_full')
     teacher_raw = sheet.get('teacher_name') or ''
-    # Пріоритет: teacher_short з JOIN, інакше teacher_name → короткий формат
+    teacher_ref_id = sheet.get('teacher_ref_id')
+
+    # Якщо teacher_short або teacher_full не підтягнуті через JOIN, довантажуємо з картотеки teachers
+    if teacher_ref_id and (not teacher_short or not teacher_full):
+        try:
+            from routes.db import get_db
+            _conn = get_db()
+            _t = _conn.execute(
+                "SELECT short_name, full_name FROM teachers WHERE id = ?",
+                (teacher_ref_id,)
+            ).fetchone()
+            _conn.close()
+            if _t:
+                teacher_short = teacher_short or _t['short_name']
+                teacher_full = teacher_full or _t['full_name']
+        except Exception:
+            pass
+
+    # У шапці «Викладач ...»: "Скорочене ім'я" з картотеки (напр. «к.т.н., Гущак О.М.»)
+    teacher_header = (teacher_short or teacher_raw or teacher_full or '').strip()
+
+    # У колонці таблиці «Підпис викладача»: скорочується з «ПІБ (повне)» (напр. «Гушак О. О.»)
     teacher_sign = _format_teacher_short(
-        sheet.get('teacher_short') or teacher_raw
+        teacher_full or teacher_short or teacher_raw
     )
     form = sheet.get('study_form') or ''
     is_fulltime = _is_fulltime_form(form)
@@ -953,7 +990,7 @@ def _vidomist_build_context(sheet, students):
         'semester': str(sheet.get('semester') or ''),
         'control_form': (control or '').lower(),
         'hours_credits': sheet.get('hours_credits') or '',
-        'teacher_name': teacher_sign or teacher_raw,
+        'teacher_name': teacher_header,
         'teacher_sign': teacher_sign,
         'is_fulltime': is_fulltime,
         'total_label': 'Кількість балів за 100 бальною' if is_fulltime else 'Підсумкова оцінка',
@@ -985,7 +1022,7 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
     """
     Як insert_subjects_table: після render дописати рядки студентів.
     Шукає таблицю з «Прізвище» / «№» у шапці; клонує останній (зразок) рядок.
-    Для денної форми (is_fulltime=True) не заповнює mid/current/exam колонки.
+    Підтримує як окремий 7-колонковий шаблон (денна форма), так і 10-колонковий (заочна).
     """
     from copy import deepcopy
 
@@ -1003,7 +1040,7 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
     header_rows = 1
     if len(table.rows) >= 2:
         head2 = ' '.join((c.text or '') for c in table.rows[1].cells).lower()
-        if any(x in head2 for x in ('міжсесій', 'поточн', 'іспит', 'ects', 'підсумков', 'нац')):
+        if any(x in head2 for x in ('міжсесій', 'поточн', 'іспит', 'ects', 'підсумков', 'нац', '100 баль')):
             header_rows = 2
 
     sample_idx = header_rows if len(table.rows) > header_rows else max(0, header_rows - 1)
@@ -1026,35 +1063,18 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
                     return i
         return None
 
-        roles = {
+    roles = {
         'n': find('№', 'з\\п', 'з/п') if find('№', 'з\\п', 'з/п') is not None else 0,
         'name': find('прізвище', 'піб', 'студент'),
         'edebo': find('індив', 'план'),
-        'mid': None if is_fulltime else find('міжсесій'),
-        'current': None if is_fulltime else find('поточн'),
-        'exam': None if is_fulltime else find('іспит', 'залік'),
-        'total': find('підсумков', '100 баль', 'кількість балів'),
+        'mid': find('міжсесій'),
+        'current': find('поточн'),
+        'exam': find('іспит', 'залік'),
+        'total': find('100 баль', 'кількість балів', 'підсумков'),
         'national': find('нац', 'національ'),
         'ects': find('ects'),
         'sign': find('підпис'),
     }
-
-    # Для денної форми перейменовуємо заголовок «Підсумкова оцінка» → «Кількість балів за 100 бальною»
-    if is_fulltime and roles.get('total') is not None:
-        total_idx = roles['total']
-        for ri in range(min(header_rows, len(table.rows))):
-            cell = table.rows[ri].cells[total_idx] if total_idx < len(table.rows[ri].cells) else None
-            if cell is None:
-                continue
-            tx = (cell.text or '').strip().lower()
-            if 'підсумков' in tx or 'оцінка' in tx:
-                if cell.paragraphs and cell.paragraphs[0].runs:
-                    cell.paragraphs[0].runs[0].text = 'Кількість балів за 100 бальною'
-                    for r in cell.paragraphs[0].runs[1:]:
-                        r.text = ''
-                elif cell.paragraphs:
-                    cell.paragraphs[0].add_run('Кількість балів за 100 бальною')
-
 
     tbl = table._tbl
     while len(table.rows) > header_rows:
@@ -1070,10 +1090,12 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
         p = cell.paragraphs[0]
         if p.runs:
             p.runs[0].text = text
+            p.runs[0].font.name = 'Times New Roman'
             for r in p.runs[1:]:
                 r.text = ''
         else:
-            p.add_run(text)
+            r = p.add_run(text)
+            r.font.name = 'Times New Roman'
 
     for s in students_rows:
         tbl.append(deepcopy(sample_tr))
@@ -1092,13 +1114,17 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
 
 def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Система'):
     """Відомість сесії — DocxTemplate.render + дописування рядків таблиці."""
+    sheet_dict = dict(sheet) if not isinstance(sheet, dict) else sheet
+    form = sheet_dict.get('study_form') or ''
+    is_fulltime = _is_fulltime_form(form)
+
     if template is None:
-        template = _vidomist_template_path()
+        template = _vidomist_template_path(is_fulltime=is_fulltime)
     if not os.path.exists(template):
         global_logger.error(f"Шаблон відомості не знайдено: {template}")
         raise FileNotFoundError(f"Шаблон відомості не знайдено: {template}")
 
-    context, rows = _vidomist_build_context(sheet, students)
+    context, rows = _vidomist_build_context(sheet_dict, students)
 
     try:
         doc = DocxTemplate(template)
