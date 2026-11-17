@@ -691,6 +691,7 @@
         {% endif %}
     {% endwith %}
 
+    {% set is_fulltime = (sheet.study_form or '')|lower in ['денна', 'denna', 'очна', 'full-time', 'full'] %}
     <form method="POST">
         <div class="card">
 
@@ -704,10 +705,12 @@
                             {% if sheet.entity_kind in ('attestation', 'coursework') %}
                             <th class="left">Тема роботи</th>
                             {% endif %}
+                            {% if not is_fulltime %}
                             <th class="col-grade">Міжсес.</th>
                             <th class="col-grade">Поточні</th>
                             <th class="col-grade">Іспит</th>
-                            <th class="col-grade">Підсумок</th>
+                            {% endif %}
+                            <th class="col-grade">{% if is_fulltime %}Бали (100){% else %}Підсумок{% endif %}</th>
                             <th class="col-result">Результат</th>
                         </tr>
                     </thead>
@@ -736,6 +739,7 @@
                             {% endif %}
 
                             {% if not readonly %}
+                            {% if not is_fulltime %}
                             <td class="col-grade">
                                 <input type="number" min="0" max="100" class="grade-input grade-mid"
                                        name="points_mid_{{ st.student_id }}"
@@ -754,6 +758,7 @@
                                        value="{{ st.points_exam if st.points_exam is not none else '' }}"
                                        inputmode="numeric" placeholder="—">
                             </td>
+                            {% endif %}
                             <td class="col-grade cell-total">
                                 <input type="number" min="0" max="100" class="grade-input grade-total total-input"
                                        name="points_{{ st.student_id }}"
@@ -781,6 +786,7 @@
 
                             {% else %}
                             {# ── Read-only (затверджено) ── #}
+                            {% if not is_fulltime %}
                             <td class="col-grade" style="text-align:center;">
                                 {{ st.points_mid if st.points_mid is not none else '—' }}
                             </td>
@@ -790,6 +796,7 @@
                             <td class="col-grade" style="text-align:center;">
                                 {{ st.points_exam if st.points_exam is not none else '—' }}
                             </td>
+                            {% endif %}
                             <td class="col-grade cell-total" style="text-align:center; font-weight: 800;">
                                 {{ st.points if st.points is not none else '—' }}
                             </td>
@@ -854,6 +861,7 @@
                     {% endif %}
 
                     {% if not readonly %}
+                    {% if not is_fulltime %}
                     <div class="grade-card__row">
                         <label class="grade-card__label">Міжсесійний</label>
                         <input type="number" min="0" max="100" class="grade-card__input grade-mid-mobile"
@@ -875,8 +883,9 @@
                                value="{{ st.points_exam if st.points_exam is not none else '' }}"
                                inputmode="numeric" placeholder="—">
                     </div>
+                    {% endif %}
                     <div class="grade-card__row">
-                        <label class="grade-card__label"><strong>Підсумок</strong></label>
+                        <label class="grade-card__label"><strong>{% if is_fulltime %}Бали (100){% else %}Підсумок{% endif %}</strong></label>
                         <input type="number" min="0" max="100" class="grade-card__input grade-total-mobile"
                                name="points_{{ st.student_id }}"
                                value="{{ st.points if st.points is not none else '' }}"
@@ -904,6 +913,7 @@
                     </div>
 
                     {% else %}
+                    {% if not is_fulltime %}
                     <div class="grade-card__row">
                         <span class="grade-card__label">Міжсесійний</span>
                         <span class="grade-card__readonly">{{ st.points_mid if st.points_mid is not none else '—' }}</span>
@@ -916,8 +926,9 @@
                         <span class="grade-card__label">Іспит</span>
                         <span class="grade-card__readonly">{{ st.points_exam if st.points_exam is not none else '—' }}</span>
                     </div>
+                    {% endif %}
                     <div class="grade-card__row">
-                        <span class="grade-card__label"><strong>Підсумок</strong></span>
+                        <span class="grade-card__label"><strong>{% if is_fulltime %}Бали (100){% else %}Підсумок{% endif %}</strong></span>
                         <span class="grade-card__readonly"><strong>{{ st.points if st.points is not none else '—' }}</strong></span>
                     </div>
 

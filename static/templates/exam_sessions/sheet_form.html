@@ -72,9 +72,9 @@
         <input type="text" name="statement_number" class="form-control" placeholder="26">
       </div>
       <div class="col-md-6 mb-3">
-        <label class="form-label">Ліцензія</label>
-        <select name="license_id" class="form-select">
-          <option value="">— без ліцензії / не вказано —</option>
+        <label class="form-label">Ліцензія *</label>
+        <select name="license_id" class="form-select" required>
+          <option value="">— оберіть ліцензію —</option>
           {% for l in licenses %}
           <option value="{{ l.id }}">{{ l.name }}</option>
           {% endfor %}

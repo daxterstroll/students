@@ -31,6 +31,7 @@
 {% set progress_pct = (graded_students / total_students * 100)|round(0)|int if total_students > 0 else 0 %}
 
 <div class="container py-4">
+{% set is_fulltime = (sheet.study_form or '')|lower in ['денна', 'denna', 'очна', 'full-time', 'full'] %}
   {{ ui.page_header('bi-file-earmark-text', sheet.discipline_name,
      sheet.session_name ~ ' · ' ~ sheet.group_name ~ ' · ' ~ (sheet.license_name or 'без ліцензії')) }}
 <div class="d-flex flex-wrap gap-2 mb-3">
@@ -356,14 +357,16 @@
               {% if sheet.entity_kind in ('attestation', 'coursework') %}
               <th rowspan="2">Тема роботи</th>
               {% endif %}
-              <th colspan="6" class="text-center">Оцінка</th>
+              <th colspan="{{ 3 if is_fulltime else 6 }}" class="text-center">Оцінка</th>
               <th rowspan="2">Підпис викладача</th>
             </tr>
             <tr>
+              {% if not is_fulltime %}
               <th style="width:5.5rem" class="small">Міжсесійний контроль</th>
               <th style="width:5.5rem" class="small">Поточні бали</th>
               <th style="width:5.5rem" class="small">Іспит / Залік</th>
-              <th style="width:5.5rem" class="small">Підсумкова</th>
+              {% endif %}
+              <th style="width:5.5rem" class="small">{% if is_fulltime %}Кількість балів за 100 бальною{% else %}Підсумкова{% endif %}</th>
               <th style="width:6rem" class="small">Нац. шкала</th>
               <th style="width:3.5rem" class="small">ECTS</th>
             </tr>
@@ -383,19 +386,23 @@
               </td>
               {% endif %}
               {% if sheet.status != 'locked' %}
+              {% if not is_fulltime %}
               <td><input type="number" min="0" max="100" class="form-control form-control-sm"
                          name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
               <td><input type="number" min="0" max="100" class="form-control form-control-sm"
                          name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
               <td><input type="number" min="0" max="100" class="form-control form-control-sm"
                          name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
+              {% endif %}
               <td><input type="number" min="0" max="100" class="form-control form-control-sm"
                          name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"
-                         title="Або введіть підсумок напряму, або заповніть 3 компоненти зліва (тоді підсумок = сума)"></td>
+                         title="{% if is_fulltime %}Кількість балів за 100-бальною шкалою{% else %}Або введіть підсумок напряму, або заповніть 3 компоненти зліва (тоді підсумок = сума){% endif %}"></td>
               {% else %}
+              {% if not is_fulltime %}
               <td>{{ st.points_mid if st.points_mid is not none else '—' }}</td>
               <td>{{ st.points_current if st.points_current is not none else '—' }}</td>
               <td>{{ st.points_exam if st.points_exam is not none else '—' }}</td>
+              {% endif %}
               <td>{{ st.points if st.points is not none else '—' }}</td>
               {% endif %}
               <td class="small">{{ st.national_grade or '—' }}</td>

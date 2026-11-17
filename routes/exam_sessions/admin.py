@@ -601,7 +601,10 @@ def sheet_new(session_id):
                 (teacher_ref_id,),
             ).fetchone()
             if t:
-                teacher_name = t['short_name'] or t['full_name']
+                from routes.gen_docx import _format_teacher_short
+                teacher_name = _format_teacher_short(
+                    t['short_name'] or t['full_name']
+                )
 
         if entity_kind not in ('subject', 'practice', 'coursework', 'attestation'):
             entity_kind = 'subject'
@@ -612,6 +615,8 @@ def sheet_new(session_id):
             flash('Вкажіть назву дисципліни', 'error')
         elif not teacher_ref_id:
             flash('Оберіть викладача з картотеки', 'error')
+        elif not license_id:
+            flash('Оберіть ліцензію — вона обовʼязкова', 'error')
         else:
             cur = conn.execute("""
                 INSERT INTO session_sheets (
@@ -701,7 +706,10 @@ def sheet_detail(sheet_id):
                     (teacher_ref_id,),
                 ).fetchone()
                 if t:
-                    teacher_name = t['short_name'] or t['full_name']
+                    from routes.gen_docx import _format_teacher_short
+                    teacher_name = _format_teacher_short(
+                        t['short_name'] or t['full_name']
+                    )
 
             fields = {
                 'discipline_name': (request.form.get('discipline_name') or '').strip(),
@@ -1250,11 +1258,13 @@ def sheet_excel(sheet_id):
                g.name AS group_name, g.course, g.study_form, g.specialty,
                g.degree_level, g.knowledge_area, g.specialty_code,
                g.institution_name_and_status,
-               l.short_name_ua AS license_name
+               l.short_name_ua AS license_name,
+               t.short_name AS teacher_short, t.full_name AS teacher_full
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
+        LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         WHERE ss.id = ?
     """, (sheet_id,)).fetchone()
     if not sheet or not user_can_access_group(conn, session, sheet['group_id']):
@@ -1284,11 +1294,13 @@ def sheet_word(sheet_id):
                g.name AS group_name, g.course, g.study_form, g.specialty,
                g.degree_level, g.knowledge_area, g.specialty_code,
                g.institution_name_and_status,
-               l.short_name_ua AS license_name
+               l.short_name_ua AS license_name,
+               t.short_name AS teacher_short, t.full_name AS teacher_full
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
+        LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         WHERE ss.id = ?
     """, (sheet_id,)).fetchone()
     if not sheet or not user_can_access_group(conn, session, sheet['group_id']):
@@ -1428,3 +1440,144 @@ def _unlink_grades_from_plan(conn, sheet_id, linked_kind, linked_target_id,
         removed = cur.rowcount or 0
 
     return removed
+
+
+# ═══════════════════════════════════════════════════════════════════
+# КОПІЮВАННЯ СЕСІЇ ДЛЯ ІНШОЇ ГРУПИ
+# ═══════════════════════════════════════════════════════════════════
+
+@exam_sessions_bp.route('/admin/exam-sessions/<int:session_id>/copy', methods=['GET', 'POST'])
+@permission_required('manage_exam_sessions')
+def session_copy(session_id):
+    """
+    Копія сесії + відомостей для іншої групи.
+    Можна копіювати список студентів і (за бажанням) оцінки.
+    Після копіювання — редірект на нову сесію для редагування.
+    """
+    conn = _conn()
+    es = conn.execute("""
+        SELECT es.*, g.name AS group_name, g.course, g.study_form
+        FROM exam_sessions es
+        JOIN groups g ON g.id = es.group_id
+        WHERE es.id = ?
+    """, (session_id,)).fetchone()
+    if not es or not user_can_access_group(conn, session, es['group_id']):
+        conn.close()
+        flash('Сесію не знайдено', 'error')
+        return redirect(url_for('exam_sessions.sessions_list'))
+    es = dict(es)
+
+    if request.method == 'POST':
+        new_group_id = request.form.get('group_id', type=int)
+        copy_students = request.form.get('copy_students') == '1'
+        copy_grades = request.form.get('copy_grades') == '1'
+        new_name = (request.form.get('name') or '').strip() or f"{es.get('name') or 'Сесія'} (копія)"
+
+        if not new_group_id:
+            flash('Оберіть групу', 'error')
+            conn.close()
+            return redirect(url_for('exam_sessions.session_copy', session_id=session_id))
+
+        if not user_can_access_group(conn, session, new_group_id):
+            flash('Немає доступу до цієї групи', 'error')
+            conn.close()
+            return redirect(url_for('exam_sessions.session_copy', session_id=session_id))
+
+        cur = conn.execute("""
+            INSERT INTO exam_sessions (name, group_id, academic_year, semester, status, created_by)
+            VALUES (?, ?, ?, ?, 'draft', ?)
+        """, (new_name, new_group_id, es.get('academic_year'), es.get('semester'), current_username()))
+        new_session_id = cur.lastrowid
+
+        sheets = [dict(r) for r in conn.execute(
+            "SELECT * FROM session_sheets WHERE session_id = ?", (session_id,)
+        ).fetchall()]
+
+        from routes.gen_docx import _format_teacher_short
+
+        for sh in sheets:
+            license_id = sh.get('license_id')
+            if not license_id:
+                lic = licenses_present_in_group(conn, new_group_id)
+                license_id = lic[0]['id'] if lic else None
+            if not license_id:
+                # без ліцензії не створюємо відомість
+                continue
+
+            teacher_name = sh.get('teacher_name')
+            if sh.get('teacher_ref_id'):
+                t = conn.execute(
+                    "SELECT full_name, short_name FROM teachers WHERE id = ?",
+                    (sh['teacher_ref_id'],),
+                ).fetchone()
+                if t:
+                    teacher_name = _format_teacher_short(t['short_name'] or t['full_name'])
+
+            cur = conn.execute("""
+                INSERT INTO session_sheets (
+                    session_id, discipline_name, work_topic, entity_kind,
+                    control_form, hours_credits, teacher_name, teacher_ref_id,
+                    exam_date, statement_number, license_id, status, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+            """, (
+                new_session_id, sh.get('discipline_name'), sh.get('work_topic'),
+                sh.get('entity_kind') or 'subject', sh.get('control_form') or 'Залік',
+                sh.get('hours_credits'), teacher_name, sh.get('teacher_ref_id'),
+                sh.get('exam_date'), sh.get('statement_number'), license_id,
+                current_username(),
+            ))
+            new_sheet_id = cur.lastrowid
+
+            if copy_students:
+                n = populate_sheet_students(conn, new_sheet_id, new_group_id, license_id)
+                if copy_grades and n:
+                    old_students = conn.execute(
+                        "SELECT * FROM session_sheet_students WHERE sheet_id = ?",
+                        (sh['id'],)
+                    ).fetchall()
+                    old_by_name = {r['full_name']: dict(r) for r in old_students}
+                    new_students = conn.execute(
+                        "SELECT id, full_name FROM session_sheet_students WHERE sheet_id = ?",
+                        (new_sheet_id,)
+                    ).fetchall()
+                    for ns in new_students:
+                        src = old_by_name.get(ns['full_name'])
+                        if not src:
+                            continue
+                        conn.execute("""
+                            UPDATE session_sheet_students SET
+                                points_mid=?, points_current=?, points_exam=?,
+                                points=?, national_grade=?, ects=?, work_topic=?
+                            WHERE id=?
+                        """, (
+                            src.get('points_mid'), src.get('points_current'),
+                            src.get('points_exam'), src.get('points'),
+                            src.get('national_grade'), src.get('ects'),
+                            src.get('work_topic'), ns['id'],
+                        ))
+
+        log_history(
+            conn,
+            entity_type='session', entity_id=new_session_id,
+            session_id=new_session_id, action='create',
+            field_name='copy_from', new_value=str(session_id),
+            details={'source_session_id': session_id, 'sheets_copied': len(sheets)},
+        )
+        conn.commit()
+        log_action(
+            current_username(),
+            f"скопіював сесію #{session_id} → #{new_session_id} "
+            f"(група {new_group_id}, відомостей: {len(sheets)})",
+        )
+        conn.close()
+        flash('Сесію скопійовано. Можна редагувати відомості.', 'success')
+        return redirect(url_for('exam_sessions.session_detail', session_id=new_session_id))
+
+    groups = allowed_groups_for_user(conn, session)
+    # прибрати поточну групу зі списку (опційно залишити)
+    groups = [g for g in groups if g['id'] != es['group_id']]
+    conn.close()
+    return render_template(
+        'exam_sessions/session_copy.html',
+        es=es, groups=groups,
+    )

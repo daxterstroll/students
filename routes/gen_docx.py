@@ -830,11 +830,63 @@ def _fmt_exam_date_ua(iso_date_str):
         return s
     return f"{day} {name} {year}"
 
+
+def _is_fulltime_form(study_form) -> bool:
+    """True якщо форма навчання — денна."""
+    s = (study_form or '').strip().lower()
+    return s in ('денна', 'denna', 'full-time', 'full', 'очна')
+
+
+def _format_teacher_short(full_or_short: str) -> str:
+    """
+    Приводить ПІБ викладача до формату «Гущак О. О.» для колонки «Підпис викладача».
+    Прибирає наукові ступені/посади (к.ф.-м.н., доц., проф. тощо).
+    """
+    if not full_or_short:
+        return ''
+    s = str(full_or_short).strip()
+    import re as _re
+    # Вже короткий формат
+    if _re.match(r'^[А-ЯІЇЄҐA-Z][а-яіїєґa-z\'’\-]+\s+[А-ЯІЇЄҐA-Z]\.\s*[А-ЯІЇЄҐA-Z]\.?$', s):
+        return s if s.endswith('.') else (s + '.' if not s.endswith('.') else s)
+    # Розбити і прибрати титули
+    raw_parts = _re.split(r'[\s,]+', s)
+    skip = {
+        'к.ф.-м.н', 'к.т.н', 'к.е.н', 'к.п.н', 'к.і.н', 'к.ю.н',
+        'д.ф.-м.н', 'д.т.н', 'д.е.н', 'д.п.н',
+        'доц', 'доц.', 'проф', 'проф.', 'ст', 'ст.', 'викл', 'викл.',
+        'асист', 'асист.', 'ст.викл', 'ст.викл.',
+    }
+    clean = []
+    for p in raw_parts:
+        pl = p.lower().rstrip('.')
+        if not p:
+            continue
+        if pl in skip or pl.startswith('к.') or pl.startswith('д.'):
+            continue
+        clean.append(p)
+    if len(clean) >= 3:
+        return f"{clean[0]} {clean[1][0]}. {clean[2][0]}."
+    if len(clean) == 2:
+        # Може бути вже «Гущак О.» або «Гущак Олександр»
+        second = clean[1]
+        if len(second) <= 2 or second.endswith('.'):
+            return f"{clean[0]} {second.rstrip('.')}."
+        return f"{clean[0]} {second[0]}."
+    return s
+
+
 def _vidomist_build_context(sheet, students):
     """Контекст для DocxTemplate — ті самі ключі що {{ }} у шаблоні."""
     sheet = dict(sheet) if not isinstance(sheet, dict) else sheet
     control = sheet.get('control_form') or 'Екзамен'
-    teacher = sheet.get('teacher_name') or ''
+    teacher_raw = sheet.get('teacher_name') or ''
+    # Пріоритет: teacher_short з JOIN, інакше teacher_name → короткий формат
+    teacher_sign = _format_teacher_short(
+        sheet.get('teacher_short') or teacher_raw
+    )
+    form = sheet.get('study_form') or ''
+    is_fulltime = _is_fulltime_form(form)
 
     rows = []
     for i, st in enumerate(students or []):
@@ -853,13 +905,13 @@ def _vidomist_build_context(sheet, students):
             'full_name': st.get('full_name') or '',
             'edebo_code': st.get('edebo_code') or '',
             'work_topic': st.get('work_topic') or '',
-            'points_mid': _v(st.get('points_mid')),
-            'points_current': _v(st.get('points_current')),
-            'points_exam': _v(st.get('points_exam')),
+            'points_mid': '' if is_fulltime else _v(st.get('points_mid')),
+            'points_current': '' if is_fulltime else _v(st.get('points_current')),
+            'points_exam': '' if is_fulltime else _v(st.get('points_exam')),
             'points': _v(pts),
             'national_grade': nat or '',
             'ects': ects or '',
-            'teacher_sign': st.get('teacher_sign') or teacher or '',
+            'teacher_sign': st.get('teacher_sign') or teacher_sign,
         })
 
     buckets = {k: 0 for k in ('A', 'B', 'C', 'D', 'E', 'FX', 'F', 'absent')}
@@ -873,7 +925,7 @@ def _vidomist_build_context(sheet, students):
     quality = buckets['A'] + buckets['B'] + buckets['C']
     absolute = quality + buckets['D'] + buckets['E']
 
-    form = sheet.get('study_form') or ''
+    # form / is_fulltime вже визначені вище
     num = sheet.get('statement_number') or ''
     inst = (sheet.get('institution_name_and_status') or
             'ПВНЗ „Європейський університет“\nЛьвівська філія')
@@ -901,7 +953,10 @@ def _vidomist_build_context(sheet, students):
         'semester': str(sheet.get('semester') or ''),
         'control_form': (control or '').lower(),
         'hours_credits': sheet.get('hours_credits') or '',
-        'teacher_name': teacher,
+        'teacher_name': teacher_sign or teacher_raw,
+        'teacher_sign': teacher_sign,
+        'is_fulltime': is_fulltime,
+        'total_label': 'Кількість балів за 100 бальною' if is_fulltime else 'Підсумкова оцінка',
         'license_name': sheet.get('license_name') or None,
         'students': rows,
         'stats_a_label': 'А (90-100)', 'stats_a_count': str(buckets['A']),
@@ -926,10 +981,11 @@ def _vidomist_build_context(sheet, students):
     return ctx, rows
 
 
-def _vidomist_fill_students_table(doc, students_rows):
+def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
     """
     Як insert_subjects_table: після render дописати рядки студентів.
     Шукає таблицю з «Прізвище» / «№» у шапці; клонує останній (зразок) рядок.
+    Для денної форми (is_fulltime=True) не заповнює mid/current/exam колонки.
     """
     from copy import deepcopy
 
@@ -970,18 +1026,35 @@ def _vidomist_fill_students_table(doc, students_rows):
                     return i
         return None
 
-    roles = {
+        roles = {
         'n': find('№', 'з\\п', 'з/п') if find('№', 'з\\п', 'з/п') is not None else 0,
         'name': find('прізвище', 'піб', 'студент'),
         'edebo': find('індив', 'план'),
-        'mid': find('міжсесій'),
-        'current': find('поточн'),
-        'exam': find('іспит', 'залік'),
-        'total': find('підсумков', '100 баль'),
+        'mid': None if is_fulltime else find('міжсесій'),
+        'current': None if is_fulltime else find('поточн'),
+        'exam': None if is_fulltime else find('іспит', 'залік'),
+        'total': find('підсумков', '100 баль', 'кількість балів'),
         'national': find('нац', 'національ'),
         'ects': find('ects'),
         'sign': find('підпис'),
     }
+
+    # Для денної форми перейменовуємо заголовок «Підсумкова оцінка» → «Кількість балів за 100 бальною»
+    if is_fulltime and roles.get('total') is not None:
+        total_idx = roles['total']
+        for ri in range(min(header_rows, len(table.rows))):
+            cell = table.rows[ri].cells[total_idx] if total_idx < len(table.rows[ri].cells) else None
+            if cell is None:
+                continue
+            tx = (cell.text or '').strip().lower()
+            if 'підсумков' in tx or 'оцінка' in tx:
+                if cell.paragraphs and cell.paragraphs[0].runs:
+                    cell.paragraphs[0].runs[0].text = 'Кількість балів за 100 бальною'
+                    for r in cell.paragraphs[0].runs[1:]:
+                        r.text = ''
+                elif cell.paragraphs:
+                    cell.paragraphs[0].add_run('Кількість балів за 100 бальною')
+
 
     tbl = table._tbl
     while len(table.rows) > header_rows:
@@ -1040,7 +1113,7 @@ def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Си
         raise
 
     try:
-        _vidomist_fill_students_table(doc, rows)
+        _vidomist_fill_students_table(doc, rows, is_fulltime=bool(context.get('is_fulltime')))
     except Exception as e:
         global_logger.warning(f"Відомість: заповнення таблиці студентів: {e}")
 
