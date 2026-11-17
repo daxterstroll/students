@@ -1,5 +1,5 @@
 """
-routes/exam_sessions
+routes.exam_sessions
 ====================
 Сесійні відомості (окремий контур від subjects/grades).
 
@@ -20,3 +20,8 @@ from . import admin  # noqa: E402, F401
 from . import public  # noqa: E402, F401
 from . import transfer  # noqa: E402, F401
 from . import history  # noqa: E402, F401
+
+# Keep the existing route and response behavior, but use form-specific
+# workbooks while preserving each supplied template's formatting.
+from .excel_form_export import build_statement_xlsx as _build_statement_xlsx  # noqa: E402
+admin.build_statement_xlsx = _build_statement_xlsx
