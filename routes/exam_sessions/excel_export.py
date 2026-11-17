@@ -90,8 +90,8 @@ def _semester_word(sem) -> str:
         return str(sem or '')
 
 
-def _ects_formula(row: int, col_letter: str = 'E') -> str:
-    e = f'{col_letter}{row}'
+def _ects_formula(row: int) -> str:
+    e = f'E{row}'
     return (
         f'=IF({e}="","",IF({e}<35,"F",IF({e}<60,"FX",'
         f'IF({e}<=63,"E",IF({e}<=73,"D",IF({e}<=81,"C",'
