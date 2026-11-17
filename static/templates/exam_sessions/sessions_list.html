@@ -49,9 +49,6 @@
     <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-outline-info btn-sm">
       <i class="bi bi-person-badge me-1"></i>Картотека викладачів
     </a>
-	<a href="{{ url_for('exam_sessions.session_copy', session_id=es.id) }}" class="btn btn-sm btn-outline-secondary">
-  <i class="bi bi-copy"></i> Копіювати
-</a>
     <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}" class="btn btn-outline-info btn-sm">
       <i class="bi bi-graph-up-arrow me-1"></i>Статистика
     </a>
@@ -94,6 +91,9 @@
             <td class="text-end">
               <a class="btn btn-sm btn-outline-primary"
                  href="{{ url_for('exam_sessions.session_detail', session_id=r.id) }}">Відкрити</a>
+			<a href="{{ url_for('exam_sessions.session_copy', session_id=r.id) }}" class="btn btn-sm btn-outline-secondary">
+				<i class="bi bi-copy"></i> Копіювати
+			</a>
             </td>
           </tr>
           {% endfor %}
