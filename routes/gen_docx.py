@@ -1223,6 +1223,29 @@ def _ensure_sectpr(document):
     body.append(sectPr)
 
 
+def _short_national_grade(nat):
+    """Скорочення національної оцінки для компактного відображення в зведеній таблиці."""
+    if not nat:
+        return ''
+    s = str(nat).strip()
+    if '/' in s:
+        s = s.split('/')[0].strip()
+    low = s.lower()
+    if 'відмінно' in low:
+        return 'відм.'
+    if 'добре' in low:
+        return 'добре'
+    if 'задовільно' in low and 'не' not in low:
+        return 'задов.'
+    if 'незадовільно' in low:
+        return 'незад.'
+    if 'зараховано' in low and 'не' not in low:
+        return 'зар.'
+    if 'незараховано' in low:
+        return 'незар.'
+    return s[:6]
+
+
 def _vidomist_insert_summary_table(document, sheets, order, names, grades):
     """Вставляє зведену таблицю замість маркера `<<<GRADES_TABLE>>>`
     (або перед словом «декан», якщо маркера немає).
@@ -1232,12 +1255,26 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
       - <w:sectPr> — рівно ОДИН і він — ОСТАННІЙ елемент <w:body>
         (Word цього вимагає строго, LibreOffice прощає).
     """
-    from docx.shared import Pt
+    from docx.shared import Pt, Cm
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.section import WD_ORIENT
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
 
     _ensure_sectpr(document)
+
+    # Гарантуємо альбомну сторінку A4 з полями 1.0 см
+    for s in document.sections:
+        try:
+            s.orientation = WD_ORIENT.LANDSCAPE
+            s.page_width = Cm(29.7)
+            s.page_height = Cm(21.0)
+            s.left_margin = Cm(1.0)
+            s.right_margin = Cm(1.0)
+            s.top_margin = Cm(1.0)
+            s.bottom_margin = Cm(1.0)
+        except Exception:
+            pass
 
     MARKERS = ('<<<GRADES_TABLE>>>', '{{ grades_table }}')
     marker = None
@@ -1256,15 +1293,60 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
     order = order or []
     n_disc = len(sheets)
     cols = max(3, 2 + n_disc * 3 + 1)
+    avg_col = 2 + n_disc * 3 if n_disc > 0 else 2
 
-    def set_text(cell, text, bold=False, size=8, left=False):
-        cell.text = ''
-        p = cell.paragraphs[0]
-        run = p.add_run('' if text is None else str(text))
-        run.font.name = 'Times New Roman'
-        run.font.size = Pt(size)
-        run.bold = bold
-        p.alignment = WD_ALIGN_PARAGRAPH.LEFT if left else WD_ALIGN_PARAGRAPH.CENTER
+    # Розрахунок ширин колонок під робочу ширину сторінки (A4 landscape ~15704 dxa)
+    W_TOTAL = 15704
+    w_num = 450
+    w_avg = 700 if n_disc > 0 else 0
+    w_avail = W_TOTAL - w_num - w_avg
+
+    if n_disc == 0:
+        w_name = w_avail
+        col_widths = [w_num, w_name, 700]
+    else:
+        if n_disc <= 3:
+            w_name = 3800
+        elif n_disc <= 5:
+            w_name = 3200
+        elif n_disc <= 7:
+            w_name = 2700
+        elif n_disc <= 9:
+            w_name = 2300
+        else:
+            w_name = 2000
+
+        w_disc_total = w_avail - w_name
+        n_subcols = 3 * n_disc
+        w_sub_base = int(w_disc_total / n_subcols)
+        rem = w_disc_total - (w_sub_base * n_subcols)
+
+        col_widths = [w_num, w_name]
+        for i in range(n_disc):
+            for j in range(3):
+                extra = 1 if (i * 3 + j) < rem else 0
+                col_widths.append(w_sub_base + extra)
+        col_widths.append(w_avg)
+
+    # Розміри шрифтів залежно від кількості предметів
+    if n_disc >= 8:
+        disc_font_size = 6.5
+        sub_font_size = 6.0
+        data_font_size = 6.5
+        name_font_size = 7.5
+        hdr_font_size = 7.0
+    elif n_disc >= 5:
+        disc_font_size = 7.0
+        sub_font_size = 6.5
+        data_font_size = 7.0
+        name_font_size = 8.0
+        hdr_font_size = 7.5
+    else:
+        disc_font_size = 7.5
+        sub_font_size = 7.0
+        data_font_size = 7.5
+        name_font_size = 8.5
+        hdr_font_size = 8.0
 
     table = document.add_table(rows=2 + len(order), cols=cols)
     try:
@@ -1272,42 +1354,157 @@ def _vidomist_insert_summary_table(document, sheets, order, names, grades):
     except Exception:
         pass
 
-    set_text(table.rows[0].cells[0], '№', bold=True)
-    set_text(table.rows[0].cells[1], "Прізвище, ім'я та по батькові", bold=True)
+    # Властивості таблиці: фіксована ширина, центр, компактні внутрішні поля комірок
+    tblPr = table._tbl.tblPr
+    tblW = tblPr.find(qn('w:tblW'))
+    if tblW is None:
+        tblW = OxmlElement('w:tblW')
+        tblPr.append(tblW)
+    tblW.set(qn('w:w'), str(W_TOTAL))
+    tblW.set(qn('w:type'), 'dxa')
+
+    tblLayout = tblPr.find(qn('w:tblLayout'))
+    if tblLayout is None:
+        tblLayout = OxmlElement('w:tblLayout')
+        tblPr.append(tblLayout)
+    tblLayout.set(qn('w:type'), 'fixed')
+
+    jc = tblPr.find(qn('w:jc'))
+    if jc is None:
+        jc = OxmlElement('w:jc')
+        tblPr.append(jc)
+    jc.set(qn('w:val'), 'center')
+
+    tblCellMar = tblPr.find(qn('w:tblCellMar'))
+    if tblCellMar is None:
+        tblCellMar = OxmlElement('w:tblCellMar')
+        tblPr.append(tblCellMar)
+    tblCellMar.clear()
+    for side, val in [('top', '30'), ('bottom', '30'), ('left', '35'), ('right', '35')]:
+        m = OxmlElement(f'w:{side}')
+        m.set(qn('w:w'), val)
+        m.set(qn('w:type'), 'dxa')
+        tblCellMar.append(m)
+
+    # Оновлення сітки колонок таблиці (w:tblGrid)
+    tblGrid = table._tbl.tblGrid
+    tblGrid.clear()
+    for w in col_widths:
+        col_elem = OxmlElement('w:gridCol')
+        col_elem.set(qn('w:w'), str(w))
+        tblGrid.append(col_elem)
+
+    def set_cell(cell, text, bold=False, size=7.5, align=WD_ALIGN_PARAGRAPH.CENTER, width_dxa=None, fill_hex=None):
+        cell.text = ''
+        p = cell.paragraphs[0]
+        p.alignment = align
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(0)
+        p.paragraph_format.line_spacing = 1.0
+        if text is not None and text != '':
+            run = p.add_run(str(text))
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(size)
+            run.bold = bold
+
+        tcPr = cell._tc.get_or_add_tcPr()
+        vAlign = tcPr.find(qn('w:vAlign'))
+        if vAlign is None:
+            vAlign = OxmlElement('w:vAlign')
+            tcPr.append(vAlign)
+        vAlign.set(qn('w:val'), 'center')
+
+        if width_dxa:
+            tcW = tcPr.find(qn('w:tcW'))
+            if tcW is None:
+                tcW = OxmlElement('w:tcW')
+                tcPr.append(tcW)
+            tcW.set(qn('w:w'), str(width_dxa))
+            tcW.set(qn('w:type'), 'dxa')
+
+        if fill_hex:
+            shd = tcPr.find(qn('w:shd'))
+            if shd is None:
+                shd = OxmlElement('w:shd')
+                tcPr.append(shd)
+            shd.set(qn('w:val'), 'clear')
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:fill'), fill_hex)
+
+    def mark_row_header(row):
+        trPr = row._tr.get_or_add_trPr()
+        if trPr.find(qn('w:tblHeader')) is None:
+            trPr.append(OxmlElement('w:tblHeader'))
+        if trPr.find(qn('w:cantSplit')) is None:
+            trPr.append(OxmlElement('w:cantSplit'))
+
+    def mark_row_cant_split(row):
+        trPr = row._tr.get_or_add_trPr()
+        if trPr.find(qn('w:cantSplit')) is None:
+            trPr.append(OxmlElement('w:cantSplit'))
+
+    HDR_FILL = 'F2F2F2'
+
+    # Об'єднання комірок заголовка (рядок 0 та 1)
+    # 1) № (вертикально рядки 0 і 1)
+    c_num = table.cell(0, 0).merge(table.cell(1, 0))
+    set_cell(c_num, '№', bold=True, size=hdr_font_size, width_dxa=w_num, fill_hex=HDR_FILL)
+
+    # 2) ПІБ (вертикально рядки 0 і 1)
+    c_name = table.cell(0, 1).merge(table.cell(1, 1))
+    set_cell(c_name, "Прізвище, ім'я\nпо батькові", bold=True, size=hdr_font_size, width_dxa=w_name, fill_hex=HDR_FILL)
+
+    # 3) Дисципліни (рядок 0: об'єднання 3 колонок; рядок 1: нац, бали, ECTS)
     for i, sh in enumerate(sheets):
         base = 2 + i * 3
-        title = (sh.get('discipline_name') or '')[:40]
-        ctrl = sh.get('control_form') or ''
-        set_text(table.rows[0].cells[base], f'{title} ({ctrl})', bold=True, size=7)
-        set_text(table.rows[0].cells[base + 1], '', bold=True, size=7)
-        set_text(table.rows[0].cells[base + 2], '', bold=True, size=7)
-        for j, h in enumerate(['нац.', 'бали', 'ECTS']):
-            set_text(table.rows[1].cells[base + j], h, bold=True, size=7)
-    avg_col = 2 + n_disc * 3
-    set_text(table.rows[0].cells[avg_col], 'Середній бал', bold=True, size=8)
-    set_text(table.rows[1].cells[0], '', size=7)
-    set_text(table.rows[1].cells[1], '', size=7)
-    set_text(table.rows[1].cells[avg_col], 'бали', bold=True, size=7)
+        c_disc = table.cell(0, base).merge(table.cell(0, base + 2))
+        title = (sh.get('discipline_name') or '').strip()
+        ctrl = (sh.get('control_form') or '').strip()
+        disc_text = f"{title}\n({ctrl})" if ctrl else title
+        w_disc_hdr = col_widths[base] + col_widths[base + 1] + col_widths[base + 2]
+        set_cell(c_disc, disc_text, bold=True, size=disc_font_size, width_dxa=w_disc_hdr, fill_hex=HDR_FILL)
 
+        set_cell(table.cell(1, base), 'нац.', bold=True, size=sub_font_size, width_dxa=col_widths[base], fill_hex=HDR_FILL)
+        set_cell(table.cell(1, base + 1), 'бали', bold=True, size=sub_font_size, width_dxa=col_widths[base + 1], fill_hex=HDR_FILL)
+        set_cell(table.cell(1, base + 2), 'ECTS', bold=True, size=sub_font_size, width_dxa=col_widths[base + 2], fill_hex=HDR_FILL)
+
+    # 4) Середній бал (вертикально рядки 0 і 1)
+    if n_disc > 0:
+        c_avg = table.cell(0, avg_col).merge(table.cell(1, avg_col))
+        set_cell(c_avg, "Сер.\nбал", bold=True, size=hdr_font_size, width_dxa=w_avg, fill_hex=HDR_FILL)
+
+    mark_row_header(table.rows[0])
+    mark_row_header(table.rows[1])
+
+    # Заповнення рядків студентів
     for ri, sid in enumerate(order):
         row = table.rows[ri + 2]
-        set_text(row.cells[0], ri + 1, size=8)
-        set_text(row.cells[1], names.get(sid, ''), size=8, left=True)
+        mark_row_cant_split(row)
+
+        set_cell(row.cells[0], ri + 1, size=data_font_size, width_dxa=w_num)
+        set_cell(row.cells[1], names.get(sid, ''), size=name_font_size, align=WD_ALIGN_PARAGRAPH.LEFT, width_dxa=w_name)
+
         pts_list = []
         for i, sh in enumerate(sheets):
             base = 2 + i * 3
             g = (grades.get(sid) or {}).get(sh['id']) or {}
-            set_text(row.cells[base], g.get('national_grade') or '', size=7)
+            nat_short = _short_national_grade(g.get('national_grade'))
             pts = g.get('points')
-            set_text(row.cells[base + 1], '' if pts is None else pts, size=8)
-            set_text(row.cells[base + 2], g.get('ects') or '', size=8)
+            ects = g.get('ects') or ''
+
+            set_cell(row.cells[base], nat_short, size=data_font_size, width_dxa=col_widths[base])
+            set_cell(row.cells[base + 1], '' if pts is None else pts, size=data_font_size, width_dxa=col_widths[base + 1])
+            set_cell(row.cells[base + 2], ects, size=data_font_size, width_dxa=col_widths[base + 2])
+
             if pts is not None and pts != '':
                 try:
                     pts_list.append(float(pts))
                 except (TypeError, ValueError):
                     pass
-        avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
-        set_text(row.cells[avg_col], avg, bold=True, size=8)
+
+        if n_disc > 0:
+            avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
+            set_cell(row.cells[avg_col], avg, bold=True, size=data_font_size, width_dxa=w_avg)
 
     # ── Переміщення таблиці на місце маркера ──
     if marker is not None:
@@ -1388,10 +1585,14 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
                 order.append(sid_key)
                 names[sid_key] = _g(st, 'full_name') or ''
                 grades[sid_key] = {}
+            pts = _g(st, 'points')
+            ctrl = sh.get('control_form')
+            nat = _g(st, 'national_grade') or _vidomist_national(pts, ctrl)
+            ects = _g(st, 'ects') or _vidomist_ects(pts)
             grades[sid_key][sh['id']] = {
-                'national_grade': _g(st, 'national_grade') or '',
-                'points': _g(st, 'points'),
-                'ects': _g(st, 'ects') or '',
+                'national_grade': nat or '',
+                'points': pts,
+                'ects': ects or '',
             }
 
     form = session_meta.get('study_form') or ''

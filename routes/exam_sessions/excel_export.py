@@ -36,6 +36,27 @@ def _find_template():
     return None
 
 
+def _fmt_exam_date_ua(iso_date_str):
+    """YYYY-MM-DD → «15 грудня 2026». Якщо не ISO — повернути як є."""
+    if not iso_date_str:
+        return ''
+    s = str(iso_date_str).strip()
+    import re as _re
+    m = _re.match(r'^(\d{4})-(\d{2})-(\d{2})$', s)
+    if not m:
+        return s
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    months_ua = {
+        1: 'січня', 2: 'лютого', 3: 'березня', 4: 'квітня',
+        5: 'травня', 6: 'червня', 7: 'липня', 8: 'серпня',
+        9: 'вересня', 10: 'жовтня', 11: 'листопада', 12: 'грудня',
+    }
+    name = months_ua.get(month)
+    if not name:
+        return s
+    return f"{day} {name} {year}"
+
+
 def _get(row, key, default=None):
     if row is None:
         return default
@@ -69,8 +90,8 @@ def _semester_word(sem) -> str:
         return str(sem or '')
 
 
-def _ects_formula(row: int) -> str:
-    e = f'E{row}'
+def _ects_formula(row: int, col_letter: str = 'E') -> str:
+    e = f'{col_letter}{row}'
     return (
         f'=IF({e}="","",IF({e}<35,"F",IF({e}<60,"FX",'
         f'IF({e}<=63,"E",IF({e}<=73,"D",IF({e}<=81,"C",'
@@ -117,22 +138,13 @@ def _unmerge_from_row(ws, from_row: int):
 
 def _set(ws, row, col, value, font=None, align=None, border=None, keep_style=True):
     cell = ws.cell(row=row, column=col)
-    prev_font = cell.font
-    prev_align = cell.alignment
-    prev_border = cell.border
     cell.value = value
     if font is not None:
         cell.font = font
-    elif keep_style and prev_font is not None:
-        cell.font = prev_font
     if align is not None:
         cell.alignment = align
-    elif keep_style and prev_align is not None:
-        cell.alignment = prev_align
     if border is not None:
         cell.border = border
-    elif keep_style and prev_border is not None:
-        cell.border = prev_border
     return cell
 
 
