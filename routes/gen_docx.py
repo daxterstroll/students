@@ -965,7 +965,7 @@ def _vidomist_build_context(sheet, students):
     # form / is_fulltime вже визначені вище
     num = sheet.get('statement_number') or ''
     inst = (sheet.get('institution_name_and_status') or
-            'ПВНЗ „Європейський університет“\nЛьвівська філія')
+            'ПВНЗ „Європейський університет“')
     if '  ' in inst and '\n' not in inst and 'філія' in inst.lower():
         import re
         m = re.match(r'^(.*університет[^\"]*[\"“]?)\s+(Львівська\s+філія)\s*$', inst, re.I)
@@ -1598,7 +1598,7 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
     form = session_meta.get('study_form') or ''
     ctx = {
         'institution': session_meta.get('institution_name_and_status')
-            or 'ПВНЗ „Європейський університет“\nЛьвівська філія',
+            or 'ПВНЗ „Європейський університет“',
         'group_name': session_meta.get('group_name') or '',
         'course': _vidomist_roman(session_meta.get('course')),
         'study_form': form,

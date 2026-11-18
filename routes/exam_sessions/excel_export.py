@@ -157,7 +157,7 @@ def _fill_header(ws, sheet: dict):
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
     inst = _get(sheet, 'institution_name_and_status') or \
-        'ПВНЗ „Європейський університет“                                                 Львівська філія'
+        'ПВНЗ „Європейський університет“'
     _set(ws, 1, 1, inst, f_title, center)
     try:
         ws.merge_cells('A1:G1')
@@ -681,7 +681,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
 
       ┌──────────────────────────────────────────────────────────────┐
       │                   ВІДОМІСТЬ <назва сесії>                     │
-      │ ПВНЗ «Європейський університет», Львівська філія              │
+      │ ПВНЗ «Європейський університет»,                             │
       │ Група: … | Курс: … | Форма: … | Ступінь: …                   │
       │ Спеціальність: …                                             │
       │ Навчальний рік: … | Семестр: …                                │
@@ -780,7 +780,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
 
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
     inst = (session_meta.get('institution_name_and_status')
-            or 'ПВНЗ «Європейський університет», Львівська філія')
+            or 'ПВНЗ «Європейський університет»')
     inst = inst.replace('\n', ', ')
     put(r, 1, inst, f_body, left)
     r += 1
