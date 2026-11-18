@@ -1,3 +1,4 @@
+
 {# Підключення: {% include 'student_enrollments_section.html' %}
    Потрібні змінні: student, enrollments, all_groups, licenses_available #}
 
@@ -415,21 +416,45 @@
                         <input type="text" name="reason" id="endReason" class="form-control"
                                placeholder="напр. за власним бажанням">
                     </div>
-                    <hr>
-                    <h6 class="text-muted small text-uppercase mb-3">Реквізити наказу</h6>
-                    <div class="row g-3">
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
-                            <input type="text" name="order_number" class="form-control form-control-sm" required>
+
+                    {% if session.get('is_admin') %}
+                    <div class="alert alert-warning small mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input js-bypass-order" type="checkbox"
+                                   name="bypass_order" value="1" id="bypassEndEnrollment">
+                            <label class="form-check-label" for="bypassEndEnrollment">
+                                <i class="bi bi-exclamation-triangle-fill me-1"></i>
+                                <strong>Виконати без наказу</strong>
+                                (виправлення помилки — тільки для адміна)
+                            </label>
                         </div>
-                        <div class="col-6">
-                            <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
-                            <input type="text" name="order_date" class="form-control form-control-sm"
-                                   placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                        <div class="mt-2 js-correction-reason-wrap" style="display:none;">
+                            <label class="form-label small fw-semibold">Причина корекції <span class="text-danger">*</span></label>
+                            <input type="text" name="correction_reason"
+                                   class="form-control form-control-sm js-correction-reason"
+                                   placeholder="напр. студента помилково зараховано не в ту групу">
+                            <div class="form-text">Дію буде зафіксовано в журналі як «КОРЕКЦІЯ (без наказу)».</div>
                         </div>
-                        <div class="col-12">
-                            <label class="form-label small fw-semibold">Скан наказу</label>
-                            <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    {% endif %}
+
+                    <div class="js-order-fields">
+                        <hr>
+                        <h6 class="text-muted small text-uppercase mb-3">Реквізити наказу</h6>
+                        <div class="row g-3">
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Номер <span class="text-danger">*</span></label>
+                                <input type="text" name="order_number" class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label small fw-semibold">Дата <span class="text-danger">*</span></label>
+                                <input type="text" name="order_date" class="form-control form-control-sm"
+                                       placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small fw-semibold">Скан наказу</label>
+                                <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -764,6 +789,14 @@ document.addEventListener('DOMContentLoaded', function () {
             const hint = document.getElementById('endEnrollmentHintText');
             const reasonWrap = document.getElementById('endReasonWrap');
             const reasonInput = document.getElementById('endReason');
+            const submitBtn = document.getElementById('endSubmitBtn');
+
+            // Скидаємо галочку «без наказу», щоб не тягнути стан з попереднього відкриття
+            const bypassCb = form.querySelector('.js-bypass-order');
+            if (bypassCb && bypassCb.checked) {
+                bypassCb.checked = false;
+                bypassCb.dispatchEvent(new Event('change'));
+            }
 
             if (actionType === 'graduate') {
                 title.innerHTML = '<i class="bi bi-mortarboard me-2"></i>Оформити випуск з групи';
@@ -775,9 +808,14 @@ document.addEventListener('DOMContentLoaded', function () {
             } else if (actionType === 'expel') {
                 title.innerHTML = '<i class="bi bi-person-x me-2"></i>Відрахувати з групи';
                 hint.textContent = 'Буде створено наказ про відрахування, навчання в групі «'
-                    + groupName + '» — завершено зі статусом «Відраховано».';
+                    + groupName + '» — завершено зі статусом «Відраховано». '
+                    + 'Якщо студента зарахували помилково — увімкніть «Виконати без наказу».';
                 reasonWrap.style.display = '';
                 reasonInput.required = true;
+            }
+
+            if (submitBtn) {
+                submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Оформити наказ';
             }
 
             new bootstrap.Modal(document.getElementById('endEnrollmentModal')).show();
@@ -851,6 +889,24 @@ document.addEventListener('DOMContentLoaded', function () {
                 });
                 if (reasonWrap) reasonWrap.style.display = '';
                 if (reasonInput) reasonInput.setAttribute('required', 'required');
+
+                // У модалці випуску/відрахування: при корекції «причина відрахування»
+                // не обов'язкова — достатньо причини корекції.
+                if (form.id === 'endEnrollmentForm') {
+                    const endReason = form.querySelector('#endReason');
+                    const endReasonWrap = form.querySelector('#endReasonWrap');
+                    const submitBtn = form.querySelector('#endSubmitBtn');
+                    if (endReason) {
+                        endReason.dataset.wasRequired = endReason.hasAttribute('required') ? '1' : '0';
+                        endReason.removeAttribute('required');
+                    }
+                    if (endReasonWrap && endReasonWrap.style.display !== 'none') {
+                        endReasonWrap.dataset.wasVisible = '1';
+                    }
+                    if (submitBtn) {
+                        submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Виконати без наказу';
+                    }
+                }
             } else {
                 if (orderBlock) orderBlock.style.display = '';
                 orderInputs.forEach(el => {
@@ -862,6 +918,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (reasonInput) {
                     reasonInput.removeAttribute('required');
                     reasonInput.value = '';
+                }
+
+                if (form.id === 'endEnrollmentForm') {
+                    const endReason = form.querySelector('#endReason');
+                    const endActionType = form.querySelector('#endActionType');
+                    const submitBtn = form.querySelector('#endSubmitBtn');
+                    // Повертаємо required лише для відрахування
+                    if (endReason && endActionType && endActionType.value === 'expel') {
+                        endReason.setAttribute('required', 'required');
+                    }
+                    if (submitBtn) {
+                        submitBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Оформити наказ';
+                    }
                 }
             }
         });

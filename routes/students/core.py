@@ -2332,8 +2332,11 @@ def enrollment_action(student_id, group_id):
             return redirect(url_for('students.student_details', student_id=student_id))
 
     if action_type == 'expel' and not reason:
-        flash('Вкажіть причину відрахування', 'error')
-        return redirect(url_for('students.student_details', student_id=student_id))
+        if bypass_order and correction_reason:
+            reason = correction_reason  # корекція помилки — достатньо причини корекції
+        else:
+            flash('Вкажіть причину відрахування', 'error')
+            return redirect(url_for('students.student_details', student_id=student_id))
 
     scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
 
