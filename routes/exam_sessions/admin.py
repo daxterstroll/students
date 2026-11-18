@@ -590,7 +590,8 @@ def sheet_new(session_id):
         teacher_ref_id = request.form.get('teacher_ref_id', type=int) or None
         exam_date = _format_exam_date_ua(request.form.get('exam_date') or '')
         statement_number = (request.form.get('statement_number') or '').strip() or None
-        lic_raw = request.form.get('license_id')
+        lic_raw = (request.form.get('license_id') or '').strip()
+        create_for_all = (lic_raw == 'all')
         license_id = int(lic_raw) if lic_raw and lic_raw.isdigit() else None
 
         # Snapshot teacher_name из картотеки (скорочене ім'я)
@@ -612,49 +613,74 @@ def sheet_new(session_id):
             flash('Вкажіть назву дисципліни', 'error')
         elif not teacher_ref_id:
             flash('Оберіть викладача з картотеки', 'error')
-        elif not license_id:
+        elif not create_for_all and not license_id:
             flash('Оберіть ліцензію — вона обовʼязкова', 'error')
+        elif create_for_all and not licenses:
+            flash('У цій групі немає студентів із призначеною ліцензією', 'error')
         else:
-            cur = conn.execute("""
-                INSERT INTO session_sheets (
+            target_license_ids = [l['id'] for l in licenses] if create_for_all else [license_id]
+            created_sheet_ids = []
+            total_students = 0
+            for lid in target_license_ids:
+                cur = conn.execute("""
+                    INSERT INTO session_sheets (
+                        session_id, discipline_name, work_topic, entity_kind, control_form,
+                        hours_credits, teacher_name, teacher_ref_id, exam_date, statement_number,
+                        license_id, status, created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+                """, (
                     session_id, discipline_name, work_topic, entity_kind, control_form,
                     hours_credits, teacher_name, teacher_ref_id, exam_date, statement_number,
-                    license_id, status, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
-            """, (
-                session_id, discipline_name, work_topic, entity_kind, control_form,
-                hours_credits, teacher_name, teacher_ref_id, exam_date, statement_number,
-                license_id, current_username(),
-            ))
-            sheet_id = cur.lastrowid
-            n = populate_sheet_students(conn, sheet_id, es['group_id'], license_id)
-            log_history(
-                conn,
-                entity_type='sheet', entity_id=sheet_id,
-                session_id=session_id, sheet_id=sheet_id,
-                action='create',
-                details={
-                    'discipline_name': discipline_name,
-                    'entity_kind': entity_kind,
-                    'control_form': control_form,
-                    'license_id': license_id,
-                    'teacher_ref_id': teacher_ref_id,
-                    'students_count': n,
-                },
-            )
+                    lid, current_username(),
+                ))
+                sheet_id = cur.lastrowid
+                n = populate_sheet_students(conn, sheet_id, es['group_id'], lid)
+                total_students += n
+                created_sheet_ids.append(sheet_id)
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=sheet_id,
+                    session_id=session_id, sheet_id=sheet_id,
+                    action='create',
+                    details={
+                        'discipline_name': discipline_name,
+                        'entity_kind': entity_kind,
+                        'control_form': control_form,
+                        'license_id': lid,
+                        'teacher_ref_id': teacher_ref_id,
+                        'students_count': n,
+                        'created_for_all_licenses': create_for_all,
+                    },
+                )
             conn.commit()
-            log_action(
-                current_username(),
-                f"створив відомість #{sheet_id} «{discipline_name}» у сесії #{session_id} "
-                f"({n} студ., викладач: {teacher_name})",
-            )
-            conn.close()
-            flash(
-                f'Відомість створено. Студентів у списку: {n}. '
-                f'Відомість автоматично з\'явилась у викладача в кабінеті.',
-                'success',
-            )
-            return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+            if len(created_sheet_ids) == 1:
+                sid = created_sheet_ids[0]
+                log_action(
+                    current_username(),
+                    f"створив відомість #{sid} «{discipline_name}» у сесії #{session_id} "
+                    f"({total_students} студ., викладач: {teacher_name})",
+                )
+                conn.close()
+                flash(
+                    f'Відомість створено. Студентів у списку: {total_students}. '
+                    f'Відомість автоматично з\'явилась у викладача в кабінеті.',
+                    'success',
+                )
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sid))
+            else:
+                log_action(
+                    current_username(),
+                    f"створив {len(created_sheet_ids)} відомостей для всіх ліцензій «{discipline_name}» "
+                    f"у сесії #{session_id} ({total_students} студ., викладач: {teacher_name})",
+                )
+                conn.close()
+                flash(
+                    f'Створено відомостей для всіх ліцензій: {len(created_sheet_ids)} '
+                    f'(студентів загалом: {total_students}). '
+                    f'Відомості автоматично з\'явились у викладача в кабінеті.',
+                    'success',
+                )
+                return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
 
     teachers = conn.execute(
         "SELECT id, full_name, short_name, department FROM teachers "
@@ -694,6 +720,75 @@ def sheet_detail(sheet_id):
     if request.method == 'POST':
         action = request.form.get('action')
 
+        if action == 'copy_sheet':
+            teacher_name = sheet.get('teacher_name')
+            if sheet.get('teacher_ref_id'):
+                t = conn.execute(
+                    "SELECT full_name, short_name FROM teachers WHERE id = ?",
+                    (sheet['teacher_ref_id'],),
+                ).fetchone()
+                if t:
+                    teacher_name = (t['short_name'] or t['full_name'] or '').strip()
+
+            target_license_id = request.form.get('license_id', type=int) or sheet.get('license_id')
+
+            cur = conn.execute("""
+                INSERT INTO session_sheets (
+                    session_id, discipline_name, work_topic, entity_kind, control_form,
+                    hours_credits, teacher_name, teacher_ref_id, exam_date, statement_number,
+                    license_id, status, created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+            """, (
+                sheet['session_id'],
+                sheet['discipline_name'],
+                sheet.get('work_topic'),
+                sheet.get('entity_kind') or 'subject',
+                sheet.get('control_form') or 'Залік',
+                sheet.get('hours_credits'),
+                teacher_name,
+                sheet.get('teacher_ref_id'),
+                sheet.get('exam_date'),
+                sheet.get('statement_number'),
+                target_license_id,
+                current_username(),
+            ))
+            new_sheet_id = cur.lastrowid
+            n_copied = populate_sheet_students(conn, new_sheet_id, sheet['group_id'], target_license_id)
+
+            log_history(
+                conn,
+                entity_type='sheet', entity_id=new_sheet_id,
+                session_id=sheet['session_id'], sheet_id=new_sheet_id,
+                action='create', field_name='copy_from', new_value=str(sheet_id),
+                details={
+                    'source_sheet_id': sheet_id,
+                    'discipline_name': sheet['discipline_name'],
+                    'license_id': target_license_id,
+                    'students_count': n_copied,
+                },
+            )
+            conn.commit()
+            log_action(
+                current_username(),
+                f"скопіював відомість #{sheet_id} → #{new_sheet_id} "
+                f"«{sheet['discipline_name']}» у сесії #{sheet['session_id']} "
+                f"(студентів: {n_copied})",
+            )
+            conn.close()
+            if target_license_id != sheet.get('license_id'):
+                flash(
+                    f'Відомість скопійовано (#{new_sheet_id}) з новою ліцензією '
+                    f'(студентів: {n_copied}).',
+                    'success',
+                )
+            else:
+                flash(
+                    f'Відомість скопійовано (#{new_sheet_id}). Оберіть потрібну ліцензію '
+                    f'у «Метадані відомості» та натисніть «Зберегти метадані».',
+                    'success',
+                )
+            return redirect(url_for('exam_sessions.sheet_detail', sheet_id=new_sheet_id))
+
         if action == 'save_meta' and sheet['status'] not in ('locked',):
             teacher_ref_id = request.form.get('teacher_ref_id', type=int) or sheet['teacher_ref_id']
             teacher_name = sheet['teacher_name']
@@ -705,6 +800,14 @@ def sheet_detail(sheet_id):
                 if t:
                     teacher_name = (t['short_name'] or t['full_name'] or '').strip()
 
+            new_license_id = request.form.get('license_id', type=int)
+            if new_license_id is None:
+                new_license_id = sheet.get('license_id')
+
+            if new_license_id != sheet.get('license_id') and sheet.get('linked_entity_id'):
+                flash('Ліцензію не змінено: відомість уже перенесена в навчальний план.', 'warning')
+                new_license_id = sheet.get('license_id')
+
             fields = {
                 'discipline_name': (request.form.get('discipline_name') or '').strip(),
                 'work_topic': (request.form.get('work_topic') or '').strip() or None,
@@ -715,6 +818,7 @@ def sheet_detail(sheet_id):
                 'teacher_ref_id': teacher_ref_id,
                 'exam_date': _format_exam_date_ua(request.form.get('exam_date') or ''),
                 'statement_number': (request.form.get('statement_number') or '').strip() or None,
+                'license_id': new_license_id,
             }
 
             if fields['discipline_name']:
@@ -723,18 +827,20 @@ def sheet_detail(sheet_id):
                     for f, v in fields.items()
                     if sheet.get(f) != v
                 }
+                license_changed = 'license_id' in changes
 
                 conn.execute("""
                     UPDATE session_sheets SET
                         discipline_name=?, work_topic=?, entity_kind=?, control_form=?,
                         hours_credits=?, teacher_name=?, teacher_ref_id=?,
-                        exam_date=?, statement_number=?
+                        exam_date=?, statement_number=?, license_id=?
                     WHERE id=?
                 """, (
                     fields['discipline_name'], fields['work_topic'],
                     fields['entity_kind'], fields['control_form'],
                     fields['hours_credits'], fields['teacher_name'], fields['teacher_ref_id'],
-                    fields['exam_date'], fields['statement_number'], sheet_id,
+                    fields['exam_date'], fields['statement_number'], fields['license_id'],
+                    sheet_id,
                 ))
 
                 for field, (old, new) in changes.items():
@@ -745,8 +851,24 @@ def sheet_detail(sheet_id):
                         action='update', field_name=field,
                         old_value=old, new_value=new,
                     )
-                conn.commit()
-                flash('Метадані збережено', 'success')
+
+                if license_changed:
+                    n_students = populate_sheet_students(
+                        conn, sheet_id, sheet['group_id'], fields['license_id']
+                    )
+                    conn.commit()
+                    log_action(
+                        current_username(),
+                        f"змінив ліцензію відомості #{sheet_id} "
+                        f"({sheet.get('license_id')} → {fields['license_id']}, студентів: {n_students})",
+                    )
+                    flash(
+                        f'Метадані збережено. Ліцензію змінено — список студентів оновлено ({n_students}).',
+                        'success',
+                    )
+                else:
+                    conn.commit()
+                    flash('Метадані збережено', 'success')
             else:
                 flash("Назва дисципліни обов'язкова", 'error')
             conn.close()
@@ -1067,6 +1189,17 @@ def sheet_detail(sheet_id):
         "WHERE is_active = 1 OR id = ? ORDER BY full_name COLLATE UKRAINIAN",
         (sheet['teacher_ref_id'],),
     ).fetchall()
+    group_licenses = licenses_present_in_group(conn, sheet['group_id'])
+    group_license_ids = {l['id'] for l in group_licenses}
+    all_active_licenses = [
+        dict(r) for r in conn.execute(
+            "SELECT id, COALESCE(short_name_ua, name_ua, '—') AS name "
+            "FROM institution_licenses WHERE is_active = 1 OR id = ? "
+            "ORDER BY name COLLATE UKRAINIAN",
+            (sheet.get('license_id'),),
+        ).fetchall()
+    ]
+    other_licenses = [l for l in all_active_licenses if l['id'] not in group_license_ids]
     conn.close()
 
     sheet['exam_date_iso'] = _to_iso_date(sheet.get('exam_date'))
@@ -1075,6 +1208,7 @@ def sheet_detail(sheet_id):
         'exam_sessions/sheet_detail.html',
         sheet=sheet, students=students, teacher_link=teacher_link,
         can_transfer=can_transfer, teachers=teachers,
+        group_licenses=group_licenses, other_licenses=other_licenses,
     )
 
 

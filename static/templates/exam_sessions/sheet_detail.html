@@ -43,6 +43,13 @@
     <i class="bi bi-clock-history me-1"></i> Історія змін
   </a>
   {% endif %}
+  <form method="post" class="d-inline">
+    <input type="hidden" name="action" value="copy_sheet">
+    <button type="submit" class="btn btn-sm btn-outline-secondary"
+            title="Створити копію цієї відомості в поточній сесії (для іншої ліцензії)">
+      <i class="bi bi-copy me-1"></i> Копіювати відомість
+    </button>
+  </form>
   <div class="ms-auto d-flex flex-wrap gap-2">
     {% if sheet.linked_entity_id %}
       {% if has_perm('manage_exam_sessions') %}
@@ -176,6 +183,38 @@
               <input class="form-control form-control-sm" name="statement_number"
                      value="{{ sheet.statement_number or '' }}"
                      {% if sheet.status == 'locked' %}readonly{% endif %}>
+            </div>
+
+            <div class="mb-3">
+              <label class="form-label small mb-1">Ліцензія</label>
+              <select name="license_id" class="form-select form-select-sm"
+                      {% if sheet.status == 'locked' or sheet.linked_entity_id %}disabled{% endif %}>
+                {% if group_licenses %}
+                <optgroup label="Ліцензії студентів цієї групи">
+                  {% for l in group_licenses %}
+                  <option value="{{ l.id }}" {% if sheet.license_id == l.id %}selected{% endif %}>
+                    {{ l.name }}
+                  </option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+                {% if other_licenses %}
+                <optgroup label="Інші активні ліцензії">
+                  {% for l in other_licenses %}
+                  <option value="{{ l.id }}" {% if sheet.license_id == l.id %}selected{% endif %}>
+                    {{ l.name }}
+                  </option>
+                  {% endfor %}
+                </optgroup>
+                {% endif %}
+              </select>
+              <div class="form-text small">
+                {% if sheet.linked_entity_id %}
+                  Ліцензію заблоковано, бо відомість уже перенесено в навчальний план.
+                {% else %}
+                  При зміні ліцензії список студентів автоматично оновиться під обрану ліцензію.
+                {% endif %}
+              </div>
             </div>
 
             {% if sheet.status != 'locked' %}

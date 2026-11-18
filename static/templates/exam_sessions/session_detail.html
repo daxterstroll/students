@@ -178,9 +178,17 @@
                 {{ sheet_status_ua.get(s.status, s.status) }}
               </span>
             </td>
-            <td class="text-end">
+            <td class="text-end text-nowrap">
               <a class="btn btn-sm btn-outline-primary"
                  href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
+              <form method="post" class="d-inline"
+                    action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">
+                <input type="hidden" name="action" value="copy_sheet">
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        title="Копіювати відомість у цій сесії (щоб змінити ліцензію)">
+                  <i class="bi bi-copy me-1"></i>Копіювати
+                </button>
+              </form>
               {% if has_perm('delete_exam_sessions') and not s.linked_entity_id %}
               <form method="post" class="d-inline"
                     action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"

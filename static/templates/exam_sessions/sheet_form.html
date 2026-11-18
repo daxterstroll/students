@@ -75,11 +75,22 @@
         <label class="form-label">Ліцензія *</label>
         <select name="license_id" class="form-select" required>
           <option value="">— оберіть ліцензію —</option>
+          {% if licenses|length > 1 %}
+          <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
+            Усі ліцензії групи (створити для кожної, {{ licenses|length }})
+          </option>
+          {% elif licenses|length == 1 %}
+          <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
+            Усі ліцензії групи ({{ licenses|length }})
+          </option>
+          {% endif %}
           {% for l in licenses %}
-          <option value="{{ l.id }}">{{ l.name }}</option>
+          <option value="{{ l.id }}" {% if request.form.get('license_id') == (l.id|string) %}selected{% endif %}>{{ l.name }}</option>
           {% endfor %}
         </select>
-        <div class="form-text">Студенти з різними ліцензіями — окремі відомості.</div>
+        <div class="form-text">
+          Студенти з різними ліцензіями — окремі відомості. Оберіть конкретну ліцензію або «Усі ліцензії групи».
+        </div>
       </div>
     </div>
 
