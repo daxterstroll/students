@@ -1,3 +1,4 @@
+
 {% extends "layout.html" %}
 {% import '_macros.html' as ui %}
 {% block title %}Заявка на реєстрацію{% endblock %}
@@ -1207,15 +1208,15 @@
                     </div>
                 </div>
 
-                {# ═══ ВАРІАНТ 3: ВІДХИЛИТИ ЯК ДУБЛІКАТ ═══ #}
+                {# ═══ ВАРІАНТ 3: ВІДХИЛИТИ ЗАЯВКУ ═══ #}
                 <div class="col-lg-6">
                     <div class="action-card">
                         <div class="action-card__header">
                             <i class="bi bi-x-circle text-danger fs-4 flex-shrink-0"></i>
                             <div>
-                                <div class="action-card__title">Відхилити як дублікат</div>
+                                <div class="action-card__title">Відхилити заявку</div>
                                 <div class="action-card__hint">
-                                    Повторна заявка — відхилити без змін у базі.
+                                    Відхилити без змін у базі (дублікат, помилкова заявка, неповні дані тощо).
                                 </div>
                             </div>
                         </div>
@@ -1223,7 +1224,7 @@
                             <form method="post">
                                 <input type="hidden" name="action" value="reject">
                                 <textarea name="review_note" class="form-control form-control-sm mb-2" rows="2"
-                                          placeholder="Примітка (необов'язково) — напр. «дублікат заявки ID {{ existing_full['id'] }}»"></textarea>
+                                          placeholder="Примітка (необов'язково) — напр. «дублікат», «помилкова заявка», «неповні дані»"></textarea>
                                 <button type="submit" class="btn btn-sm btn-outline-danger w-100"
                                         onclick="return confirm('Відхилити цю заявку?');">
                                     <i class="bi bi-x-circle me-1"></i> Відхилити
@@ -1341,6 +1342,30 @@
             </div>
             <button type="submit" class="btn btn-success mt-3">
                 <i class="bi bi-check-circle me-1"></i> Підтвердити і створити студента
+            </button>
+        </form>
+    </div>
+</div>
+
+{# Відхилення заявки — доступне і без збігу зі студентом у базі #}
+<div class="card mb-4 border-danger">
+    <div class="card-header bg-danger-subtle py-2">
+        <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-x-circle text-danger"></i>
+            <strong>Відхилити заявку</strong>
+        </div>
+    </div>
+    <div class="card-body">
+        <p class="small text-muted mb-2">
+            Якщо заявка помилкова, неповна або не підлягає зарахуванню — відхиліть її без створення студента.
+        </p>
+        <form method="post">
+            <input type="hidden" name="action" value="reject">
+            <textarea name="review_note" class="form-control form-control-sm mb-2" rows="2"
+                      placeholder="Примітка (необов'язково) — напр. «помилкова заявка», «неповні дані», «відмова абітурієнта»"></textarea>
+            <button type="submit" class="btn btn-sm btn-outline-danger"
+                    onclick="return confirm('Відхилити цю заявку?');">
+                <i class="bi bi-x-circle me-1"></i> Відхилити заявку
             </button>
         </form>
     </div>
