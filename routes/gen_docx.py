@@ -993,6 +993,8 @@ def _vidomist_build_context(sheet, students):
         'teacher_name': teacher_header,
         'teacher_sign': teacher_sign,
         'is_fulltime': is_fulltime,
+        'entity_kind': sheet.get('entity_kind') or '',
+        'include_topic': (sheet.get('entity_kind') or '').strip() == 'attestation',
         'total_label': 'Кількість балів за 100 бальною' if is_fulltime else 'Підсумкова оцінка',
         'license_name': sheet.get('license_name') or None,
         'students': rows,
@@ -1018,11 +1020,227 @@ def _vidomist_build_context(sheet, students):
     return ctx, rows
 
 
-def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
+def _vidomist_insert_topic_column(table, after_grid_col, header_rows=2, title='Тема роботи'):
+    """
+    Вставляє нову колонку (за замовчуванням «Тема роботи») у таблицю відомості
+    одразу після колонки з індексом `after_grid_col` (№ індив. навч. плану),
+    пропорційно стискаючи ширини інших колонок, щоб таблиця не виходила за поля.
+    Коректно обробляє gridSpan, vMerge та tblGrid/tcW.
+    """
+    from copy import deepcopy
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tbl = table._tbl
+    tblGrid = tbl.tblGrid
+    if tblGrid is None:
+        return
+
+    gridCols = tblGrid.findall(qn('w:gridCol'))
+    if not gridCols or after_grid_col < 0 or after_grid_col >= len(gridCols):
+        return
+
+    widths = []
+    for gc in gridCols:
+        try:
+            widths.append(int(gc.get(qn('w:w')) or 1200))
+        except (TypeError, ValueError):
+            widths.append(1200)
+
+    total_w = sum(widths)
+    if total_w <= 0:
+        total_w = 1200 * len(widths)
+        widths = [1200] * len(widths)
+
+    topic_w = min(2400, max(1500, int(round(total_w * 0.17))))
+    reducible = [max(0, w - (400 if i == 0 else 550)) for i, w in enumerate(widths)]
+    total_reducible = sum(reducible)
+
+    shrunk = list(widths)
+    if total_reducible > 0:
+        take = min(topic_w, total_reducible)
+        taken = 0
+        for i, red in enumerate(reducible):
+            if red <= 0:
+                continue
+            delta = int(round(take * (red / total_reducible)))
+            delta = min(delta, red, take - taken)
+            shrunk[i] -= delta
+            taken += delta
+        rem = take - taken
+        if rem > 0:
+            order_idx = sorted(range(len(widths)), key=lambda i: shrunk[i] - (400 if i == 0 else 550), reverse=True)
+            for i in order_idx:
+                if rem <= 0:
+                    break
+                avail = shrunk[i] - (400 if i == 0 else 550)
+                if avail > 0:
+                    step = min(avail, rem)
+                    shrunk[i] -= step
+                    rem -= step
+
+    for gc, w in zip(gridCols, shrunk):
+        gc.set(qn('w:w'), str(w))
+
+    new_gc = OxmlElement('w:gridCol')
+    new_gc.set(qn('w:w'), str(topic_w))
+    gridCols[after_grid_col].addnext(new_gc)
+
+    new_widths = shrunk[:after_grid_col + 1] + [topic_w] + shrunk[after_grid_col + 1:]
+
+    def _set_tc_width(tc, w_val):
+        tcPr = tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            tcPr = OxmlElement('w:tcPr')
+            tc.insert(0, tcPr)
+        tcW = tcPr.find(qn('w:tcW'))
+        if tcW is None:
+            tcW = OxmlElement('w:tcW')
+            tcPr.insert(0, tcW)
+        tcW.set(qn('w:w'), str(w_val))
+        tcW.set(qn('w:type'), 'dxa')
+
+    def _get_span(tc):
+        tcPr = tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            return 1
+        gs = tcPr.find(qn('w:gridSpan'))
+        if gs is None:
+            return 1
+        try:
+            return max(1, int(gs.get(qn('w:val')) or 1))
+        except (TypeError, ValueError):
+            return 1
+
+    def _set_span(tc, val):
+        tcPr = tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            tcPr = OxmlElement('w:tcPr')
+            tc.insert(0, tcPr)
+        gs = tcPr.find(qn('w:gridSpan'))
+        if val <= 1:
+            if gs is not None:
+                tcPr.remove(gs)
+        else:
+            if gs is None:
+                gs = OxmlElement('w:gridSpan')
+                tcPr.append(gs)
+            gs.set(qn('w:val'), str(val))
+
+    def _prepare_new_tc(ref_tc, row_idx):
+        new_tc = deepcopy(ref_tc)
+        tcPr = new_tc.find(qn('w:tcPr'))
+        if tcPr is None:
+            tcPr = OxmlElement('w:tcPr')
+            new_tc.insert(0, tcPr)
+
+        for tag in ('w:gridSpan', 'w:noWrap', 'w:vMerge'):
+            el = tcPr.find(qn(tag))
+            if el is not None:
+                tcPr.remove(el)
+
+        if row_idx == 0 and header_rows > 1:
+            vm = OxmlElement('w:vMerge')
+            vm.set(qn('w:val'), 'restart')
+            tcPr.append(vm)
+        elif 0 < row_idx < header_rows:
+            vm = OxmlElement('w:vMerge')
+            tcPr.append(vm)
+
+        _set_tc_width(new_tc, topic_w)
+
+        ps = new_tc.findall(qn('w:p'))
+        if not ps:
+            p = OxmlElement('w:p')
+            new_tc.append(p)
+        else:
+            p = ps[0]
+            for extra_p in ps[1:]:
+                new_tc.remove(extra_p)
+
+        runs = p.findall(qn('w:r'))
+        if row_idx == 0:
+            if runs:
+                first_r = runs[0]
+                for extra_r in runs[1:]:
+                    p.remove(extra_r)
+                for child in list(first_r):
+                    if child.tag != qn('w:rPr'):
+                        first_r.remove(child)
+                t_el = OxmlElement('w:t')
+                t_el.text = title
+                first_r.append(t_el)
+            else:
+                r = OxmlElement('w:r')
+                rPr = OxmlElement('w:rPr')
+                rFonts = OxmlElement('w:rFonts')
+                rFonts.set(qn('w:ascii'), 'Times New Roman')
+                rFonts.set(qn('w:hAnsi'), 'Times New Roman')
+                rFonts.set(qn('w:cs'), 'Times New Roman')
+                rPr.append(rFonts)
+                rPr.append(OxmlElement('w:b'))
+                r.append(rPr)
+                t_el = OxmlElement('w:t')
+                t_el.text = title
+                r.append(t_el)
+                p.append(r)
+        elif row_idx < header_rows:
+            for r in runs:
+                p.remove(r)
+        else:
+            pPr = p.find(qn('w:pPr'))
+            if pPr is None:
+                pPr = OxmlElement('w:pPr')
+                p.insert(0, pPr)
+            jc = pPr.find(qn('w:jc'))
+            if jc is None:
+                jc = OxmlElement('w:jc')
+                pPr.append(jc)
+            jc.set(qn('w:val'), 'left')
+
+            if runs:
+                first_r = runs[0]
+                for extra_r in runs[1:]:
+                    p.remove(extra_r)
+                for child in list(first_r):
+                    if child.tag != qn('w:rPr'):
+                        first_r.remove(child)
+                t_el = OxmlElement('w:t')
+                t_el.text = ''
+                first_r.append(t_el)
+
+        return new_tc
+
+    for ri, row in enumerate(table.rows):
+        tcs = row._tr.findall(qn('w:tc'))
+        old_g = 0
+        new_g = 0
+        for tc in tcs:
+            span = _get_span(tc)
+            if old_g + span - 1 == after_grid_col:
+                _set_tc_width(tc, sum(new_widths[new_g:new_g + span]))
+                new_tc = _prepare_new_tc(tc, ri)
+                tc.addnext(new_tc)
+                new_g += span + 1
+                old_g += span
+            elif old_g <= after_grid_col < old_g + span - 1:
+                _set_span(tc, span + 1)
+                _set_tc_width(tc, sum(new_widths[new_g:new_g + span + 1]))
+                new_g += span + 1
+                old_g += span
+            else:
+                _set_tc_width(tc, sum(new_widths[new_g:new_g + span]))
+                new_g += span
+                old_g += span
+
+
+def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False, include_topic=False):
     """
     Як insert_subjects_table: після render дописати рядки студентів.
     Шукає таблицю з «Прізвище» / «№» у шапці; клонує останній (зразок) рядок.
     Підтримує як окремий 7-колонковий шаблон (денна форма), так і 10-колонковий (заочна).
+    Якщо `include_topic=True` (тип «Атестація»), додає колонку «Тема роботи» одразу після
+    «№ індив. навч. плану» (якщо її ще немає у шаблоні) і заповнює її з `work_topic`.
     """
     from copy import deepcopy
 
@@ -1043,18 +1261,20 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
         if any(x in head2 for x in ('міжсесій', 'поточн', 'іспит', 'ects', 'підсумков', 'нац', '100 баль')):
             header_rows = 2
 
-    sample_idx = header_rows if len(table.rows) > header_rows else max(0, header_rows - 1)
-    sample_tr = deepcopy(table.rows[sample_idx]._tr)
-    n_grid = len(table.rows[sample_idx].cells)
+    def _collect_header_texts():
+        s_idx = header_rows if len(table.rows) > header_rows else max(0, header_rows - 1)
+        cols_cnt = len(table.rows[s_idx].cells)
+        res = [''] * cols_cnt
+        for ri in range(min(header_rows, len(table.rows))):
+            for i, c in enumerate(table.rows[ri].cells):
+                if i >= cols_cnt:
+                    break
+                tx = (c.text or '').strip().lower().replace('\n', ' ')
+                if tx:
+                    res[i] = (res[i] + ' ' + tx).strip() if res[i] else tx
+        return s_idx, res
 
-    texts = [''] * n_grid
-    for ri in range(min(header_rows, len(table.rows))):
-        for i, c in enumerate(table.rows[ri].cells):
-            if i >= n_grid:
-                break
-            tx = (c.text or '').strip().lower().replace('\n', ' ')
-            if tx:
-                texts[i] = (texts[i] + ' ' + tx).strip() if texts[i] else tx
+    sample_idx, texts = _collect_header_texts()
 
     def find(*needles):
         for i, tx in enumerate(texts):
@@ -1063,10 +1283,20 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
                     return i
         return None
 
+    if include_topic and find('тема') is None:
+        edebo_col = find('індив', 'план')
+        name_col = find('прізвище', 'піб', 'студент')
+        after_col = edebo_col if edebo_col is not None else (name_col if name_col is not None else 1)
+        _vidomist_insert_topic_column(table, after_col, header_rows=header_rows, title='Тема роботи')
+        sample_idx, texts = _collect_header_texts()
+
+    sample_tr = deepcopy(table.rows[sample_idx]._tr)
+
     roles = {
         'n': find('№', 'з\\п', 'з/п') if find('№', 'з\\п', 'з/п') is not None else 0,
         'name': find('прізвище', 'піб', 'студент'),
         'edebo': find('індив', 'план'),
+        'topic': find('тема') if include_topic else None,
         'mid': find('міжсесій'),
         'current': find('поточн'),
         'exam': find('іспит', 'залік'),
@@ -1103,6 +1333,7 @@ def _vidomist_fill_students_table(doc, students_rows, is_fulltime=False):
         write_cell(row, roles.get('n'), s.get('n'))
         write_cell(row, roles.get('name'), s.get('full_name'))
         write_cell(row, roles.get('edebo'), s.get('edebo_code'))
+        write_cell(row, roles.get('topic'), s.get('work_topic'))
         write_cell(row, roles.get('mid'), s.get('points_mid'))
         write_cell(row, roles.get('current'), s.get('points_current'))
         write_cell(row, roles.get('exam'), s.get('points_exam'))
@@ -1117,6 +1348,7 @@ def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Си
     sheet_dict = dict(sheet) if not isinstance(sheet, dict) else sheet
     form = sheet_dict.get('study_form') or ''
     is_fulltime = _is_fulltime_form(form)
+    include_topic = (sheet_dict.get('entity_kind') or '').strip() == 'attestation'
 
     if template is None:
         template = _vidomist_template_path(is_fulltime=is_fulltime)
@@ -1139,7 +1371,12 @@ def gen_vidomist_sheet(sheet, students, template=None, out=None, user_name='Си
         raise
 
     try:
-        _vidomist_fill_students_table(doc, rows, is_fulltime=bool(context.get('is_fulltime')))
+        _vidomist_fill_students_table(
+            doc,
+            rows,
+            is_fulltime=bool(context.get('is_fulltime')),
+            include_topic=include_topic,
+        )
     except Exception as e:
         global_logger.warning(f"Відомість: заповнення таблиці студентів: {e}")
 
