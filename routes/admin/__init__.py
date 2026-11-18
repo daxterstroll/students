@@ -33,19 +33,12 @@ from flask import Blueprint
 
 admin_bp = Blueprint('admin', __name__)
 
-# Публічно (без імпорту зі students.py/public_apply.py тощо) - те, чим
-# користуються кілька підмодулів одразу, живе тут, щоб не плодити
-# дублікатів. Усе решта - вузькоспеціалізоване для одного підмодуля -
-# лишається безпосередньо в ньому.
-
 
 def allowed_file(filename):
     """Перевіряє, чи має файл дозволене розширення (.xlsx) для імпорту."""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'xlsx'
 
 
-# Реєстрація маршрутів кожного підмодуля на спільному admin_bp.
-# Порядок значення не має - кожен файл лише додає @admin_bp.route(...).
 from . import catalogs
 from . import groups_courses
 from . import subjects
@@ -56,3 +49,4 @@ from . import templates_and_export
 from . import enrollment_orders  # noqa: F401
 from . import orders_registry  # noqa: F401
 from . import custom_export  # noqa: F401
+from . import pending_cancel  # noqa: F401
