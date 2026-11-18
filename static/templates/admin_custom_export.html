@@ -1,3 +1,4 @@
+
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Кастомний експорт даних{% endblock %}
@@ -237,43 +238,57 @@
                             <input type="number" class="form-control form-control-sm" name="start_year_to"
                                    value="{{ form.get('start_year_to', '') }}" min="2000" max="2100" placeholder="до">
                         </div>
-                        <div class="col-6">
+                        <div class="col-12">
                             <label class="form-label small d-flex align-items-center gap-1">
-                                Ліцензія
+                                Ліцензія (можна кілька)
                                 <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
-                                   title="Ліцензія конкретного enrollment'а (student_enrollments.license_id). Якщо у студента паралельне навчання під різними ліцензіями — він з'явиться в обох фільтрах. Для legacy-записів без enrollment'а — fallback на students.license_id."></i>
+                                   title="Ліцензія enrollment'а (student_enrollments.license_id). Якщо обрано кілька — підійде будь-яка з них (OR). Порожній вибір = усі ліцензії. Для legacy без enrollment — students.license_id."></i>
                             </label>
-                            <select class="form-select form-select-sm" name="license_id">
-                                <option value="">Усі</option>
+                            {% set selected_licenses = form.getlist('license_id') %}
+                            <select class="form-select form-select-sm" name="license_id" multiple
+                                    size="4"
+                                    id="licenseMultiSelect"
+                                    style="min-height: 5.5rem;">
                                 {% for l in choices.licenses %}
-                                <option value="{{ l.id }}" {% if form.get('license_id')|int == l.id %}selected{% endif %}>
+                                <option value="{{ l.id }}"
+                                    {% if (l.id|string) in selected_licenses or (form.get('license_id')|string == l.id|string and not selected_licenses) %}selected{% endif %}>
                                     {{ l.short_name_ua or l.name_ua }}
                                 </option>
                                 {% endfor %}
                             </select>
+                            <div class="form-text">
+                                Ctrl/⌘+клік — кілька ліцензій. Нічого не обрано = усі.
+                                <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="clearLicenses">скинути</button>
+                            </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label small d-flex align-items-center gap-1">
                                 Статус навчання (можна кілька)
                                 <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
-                                   title="Статус enrollment'а: «Активне» — навчається; «Випущено»/«Відраховано»/«Заморожено» — завершене навчання; «Без enrollment» — студент без жодного запису про навчання."></i>
+                                   title="Статус enrollment'а: «Активне» — навчається; «Випущено»/«Відраховано»/«Заморожено» — завершене; «Без enrollment» — немає запису про навчання. За замовчуванням лише «Активне»."></i>
                             </label>
-                            <div class="d-flex flex-wrap gap-2">
+                            <div class="d-flex flex-wrap gap-2 align-items-center">
                                 {% for s, label in [
                                     ('active', 'Активне'),
                                     ('graduated', 'Випущено'),
                                     ('expelled', 'Відраховано'),
                                     ('frozen', 'Заморожено'),
+                                    ('completed', 'Завершено'),
+                                    ('transferred', 'Переведено'),
                                     ('none', 'Без enrollment'),
                                 ] %}
                                 <div class="form-check form-check-inline">
-                                    <input class="form-check-input" type="checkbox"
+                                    <input class="form-check-input js-status-cb" type="checkbox"
                                            name="enrollment_status" value="{{ s }}"
                                            id="status_{{ s }}"
                                            {% if s in (form.getlist('enrollment_status') or ['active']) %}checked{% endif %}>
                                     <label class="form-check-label small" for="status_{{ s }}">{{ label }}</label>
                                 </div>
                                 {% endfor %}
+                                <button type="button" class="btn btn-outline-secondary btn-sm py-0" id="selectAllStatuses"
+                                        title="Відмітити всі статуси">
+                                    Усі статуси
+                                </button>
                             </div>
                         </div>
                         <div class="col-12">
@@ -295,13 +310,22 @@
                 <div class="ce-form-section">
                     <h6><i class="bi bi-check2-square me-1"></i>Наявність даних</h6>
                     <div class="row g-2">
+                        <div class="col-12">
+                            <div class="alert alert-light border small mb-2 py-2">
+                                <i class="bi bi-info-circle me-1"></i>
+                                За замовчуванням у вибірку <strong>не</strong> потрапляють архівні та заморожені.
+                                Статус «Заморожено» або перемикач «Включити заморожених» достатній для заморожених
+                                (їх часто позначено ще й як архівні — це більше не блокує).
+                                Повний пул: усі статуси (кнопка «Усі статуси») + обидва перемикачі, або «Узяти всіх».
+                            </div>
+                        </div>
                         <div class="col-6">
                             <label class="form-label small">Архівні студенти</label>
                             <div class="form-check form-switch mt-1">
                                 <input class="form-check-input" type="checkbox" name="include_archived" value="1"
                                        id="includeArchived"
                                        {% if form.get('include_archived') == '1' %}checked{% endif %}>
-                                <label class="form-check-label small" for="includeArchived">Включити</label>
+                                <label class="form-check-label small" for="includeArchived">Включити архівних</label>
                             </div>
                         </div>
                         <div class="col-6">
@@ -310,8 +334,14 @@
                                 <input class="form-check-input" type="checkbox" name="include_frozen" value="1"
                                        id="includeFrozen"
                                        {% if form.get('include_frozen') == '1' %}checked{% endif %}>
-                                <label class="form-check-label small" for="includeFrozen">Включити</label>
+                                <label class="form-check-label small" for="includeFrozen">Включити заморожених</label>
                             </div>
+                        </div>
+                        <div class="col-12">
+                            <button type="button" class="btn btn-outline-primary btn-sm" id="btnSelectEveryone"
+                                    title="Усі статуси + архів + заморожені">
+                                <i class="bi bi-people-fill me-1"></i>Узяти всіх (повний пул)
+                            </button>
                         </div>
                         <div class="col-6">
                             <label class="form-label small">Паспорт</label>
@@ -466,18 +496,21 @@
         </div>
 
         {# ── Панель дій ── #}
-        <div class="ce-sticky-actions d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <div>
-                <button type="button" class="btn btn-outline-secondary" id="btnPreview">
-                    <i class="bi bi-calculator me-1"></i>Порахувати записи
-                </button>
-                <span class="ce-counter-pill ms-2" id="countPill" style="display:none;"></span>
-            </div>
-            <div class="d-flex gap-2">
-                <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Скасувати</a>
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-download me-1"></i>Завантажити
-                </button>
+        <div class="ce-sticky-actions">
+            <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
+                <div style="max-width: 42rem;">
+                    <button type="button" class="btn btn-outline-secondary" id="btnPreview">
+                        <i class="bi bi-calculator me-1"></i>Порахувати записи
+                    </button>
+                    <span class="ce-counter-pill ms-2" id="countPill" style="display:none;"></span>
+                    <div class="small text-muted mt-1" id="countHint" style="display:none;"></div>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">Скасувати</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-download me-1"></i>Завантажити
+                    </button>
+                </div>
             </div>
         </div>
     </form>
@@ -555,7 +588,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── Підрахунок ──
     document.getElementById('btnPreview').addEventListener('click', function () {
         const pill = document.getElementById('countPill');
+        const hint = document.getElementById('countHint');
         pill.style.display = '';
+        hint.style.display = 'none';
         pill.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Рахуємо…';
 
         const fd = new FormData(form);
@@ -573,15 +608,83 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(function (data) {
             if (data.error) {
                 pill.innerHTML = '<i class="bi bi-x-circle text-danger me-1"></i>' + data.error;
+                hint.style.display = 'none';
                 return;
             }
-            pill.innerHTML = '<i class="bi bi-people me-1"></i>Знайдено: <strong>'
-                + data.count + '</strong> з ' + data.total;
+            // count — після фільтрів; total — пул до фільтрів (залежить від режиму рядків)
+            pill.innerHTML = '<i class="bi bi-people me-1"></i>У вибірці: <strong>'
+                + data.count + '</strong> <span class="text-muted fw-normal">з пулу '
+                + data.total + '</span>';
+
+            const parts = [];
+            parts.push(
+                data.mode === 'enrollment'
+                    ? 'Пул = усі enrollment\'и студентів'
+                    : 'Пул = по одному запису на студента (основна група)'
+            );
+            parts.push('статус: ' + (data.status || '—'));
+            parts.push(data.include_archived ? 'архів увімкнено' : 'архів виключено');
+            parts.push(data.include_frozen ? 'заморожені увімкнено' : 'заморожені виключено');
+            if (data.license_count) {
+                parts.push('ліцензій обрано: ' + data.license_count);
+            }
+            if (data.gap && data.excluded_by_status && data.excluded_by_status.length) {
+                const excl = data.excluded_by_status.map(function (x) {
+                    return (x.label || x.status) + ' ×' + x.count;
+                }).join(', ');
+                parts.push('відсіяно (статус у БД серед них): ' + excl
+                    + '. Увага: відсів може бути й через архів/інші фільтри, не лише через статус.');
+            } else if (data.count < data.total) {
+                parts.push(
+                    'Різниця ' + (data.total - data.count)
+                    + ' — перевірте інші фільтри (вік, група, ліцензія, наявність даних) '
+                    + 'або натисніть «Узяти всіх».'
+                );
+            }
+            hint.style.display = '';
+            hint.textContent = parts.join(' · ');
         })
         .catch(function () {
             pill.innerHTML = '<i class="bi bi-x-circle text-danger me-1"></i>Помилка';
+            hint.style.display = 'none';
         });
     });
+
+    // ── Скинути вибір ліцензій ──
+    const clearLicBtn = document.getElementById('clearLicenses');
+    if (clearLicBtn) {
+        clearLicBtn.addEventListener('click', function () {
+            const sel = document.getElementById('licenseMultiSelect');
+            if (!sel) return;
+            Array.from(sel.options).forEach(function (o) { o.selected = false; });
+        });
+    }
+
+    // ── Усі статуси навчання ──
+    const allStatusBtn = document.getElementById('selectAllStatuses');
+    if (allStatusBtn) {
+        allStatusBtn.addEventListener('click', function () {
+            document.querySelectorAll('.js-status-cb').forEach(function (cb) {
+                cb.checked = true;
+            });
+        });
+    }
+
+    // ── Повний пул: усі статуси + архів + заморожені ──
+    const everyoneBtn = document.getElementById('btnSelectEveryone');
+    if (everyoneBtn) {
+        everyoneBtn.addEventListener('click', function () {
+            document.querySelectorAll('.js-status-cb').forEach(function (cb) {
+                cb.checked = true;
+            });
+            const arch = document.getElementById('includeArchived');
+            const froz = document.getElementById('includeFrozen');
+            if (arch) arch.checked = true;
+            if (froz) froz.checked = true;
+            // Автоматично перерахувати
+            document.getElementById('btnPreview').click();
+        });
+    }
 });
 </script>
 

@@ -1,3 +1,4 @@
+
 """
 routes/admin/custom_export.py
 ==============================
@@ -69,6 +70,19 @@ def _join_non_empty(parts, sep=' '):
 
 def _yes_no(v):
     return 'так' if v else 'ні'
+
+
+# Коди статусів enrollment у БД → підпис українською (експорт / UI).
+ENROLLMENT_STATUS_UA = {
+    'active': 'Активне',
+    'graduated': 'Випущено',
+    'expelled': 'Відраховано',
+    'frozen': 'Заморожено',
+    'completed': 'Завершено',
+    'transferred': 'Переведено',
+}
+# Усі відомі коди + «none» (немає enrollment) — для «повного» набору фільтра.
+KNOWN_ENROLLMENT_STATUSES = set(ENROLLMENT_STATUS_UA.keys()) | {'none'}
 
 
 def _get_int(form, key):
@@ -395,7 +409,13 @@ def _build_record(student, enrollment, ref, today):
         'specialty_code': group.get('specialty_code') or '',
         'program_credits': group.get('program_credits') or '',
         'program_credits_override': e.get('program_credits_override') or '',
-        'enrollment_status': e.get('status') or '',
+        # enrollment_status — українською для експорту;
+        # _enrollment_status — сирий код з БД для фільтрації.
+        'enrollment_status': (
+            ENROLLMENT_STATUS_UA.get(e.get('status') or '', e.get('status') or '')
+            if e else ''
+        ),
+        '_enrollment_status': (e.get('status') or '') if e else '',
         'is_primary': _yes_no(e.get('is_primary')),
 
         # Ліцензія
@@ -501,6 +521,22 @@ def _build_records(conn, mode, include_no_enrollment):
 # ═══════════════════════════════════════════════════════════════════════
 
 def _extract_filters(form):
+    # Ліцензії: підтримуємо і list (multi-select), і legacy single license_id.
+    raw_licenses = _get_list(form, 'license_id')
+    license_ids = []
+    for v in raw_licenses:
+        try:
+            license_ids.append(int(v))
+        except (ValueError, TypeError):
+            continue
+
+    # Статус: якщо на формі нічого не відмічено — лишаємо дефолт «active»
+    # (як і раніше). Щоб узяти ВСІ статуси, користувач має відмітити всі
+    # чекбокси або натиснути «Усі студенти» (див. шаблон).
+    status_list = _get_list(form, 'enrollment_status')
+    if not status_list:
+        status_list = ['active']
+
     return {
         'min_age': _get_int(form, 'min_age'),
         'max_age': _get_int(form, 'max_age'),
@@ -510,10 +546,10 @@ def _extract_filters(form):
         'study_form': (form.get('study_form') or '').strip(),
         'course': _get_int(form, 'course'),
         'specialty_code': (form.get('specialty_code') or '').strip(),
-        'license_id': _get_int(form, 'license_id'),
+        'license_ids': license_ids,
         'start_year_from': _get_int(form, 'start_year_from'),
         'start_year_to': _get_int(form, 'start_year_to'),
-        'enrollment_status': _get_list(form, 'enrollment_status') or ['active'],
+        'enrollment_status': status_list,
         'is_reduced': (form.get('is_reduced') or '').strip(),
         'include_archived': form.get('include_archived') == '1',
         'include_frozen': form.get('include_frozen') == '1',
@@ -555,12 +591,18 @@ def _matches(record, filters):
     if filters['specialty_code'] and record.get('specialty_code') != filters['specialty_code']:
         return False
 
-    if filters['license_id']:
+    if filters.get('license_ids'):
         # Перевіряємо за ID ліцензії конкретного enrollment'а (або
         # students.license_id для legacy-записів без enrollment'а).
         # record['license_id'] заповнюється в _build_record() з
         # e.license_id (пріоритет) або s.license_id (fallback).
-        if record.get('license_id') != filters['license_id']:
+        # Кілька обраних ліцензій — OR: підходить будь-яка з них.
+        rec_lic = record.get('license_id')
+        try:
+            rec_lic = int(rec_lic) if rec_lic not in (None, '') else None
+        except (ValueError, TypeError):
+            rec_lic = None
+        if rec_lic not in filters['license_ids']:
             return False
 
     if filters['start_year_from'] is not None:
@@ -576,18 +618,35 @@ def _matches(record, filters):
         except (ValueError, TypeError):
             return False
 
-    # Статус навчання
-    if filters['enrollment_status']:
-        if record.get('enrollment_status') and record['enrollment_status'] not in filters['enrollment_status']:
-            return False
-        if not record.get('enrollment_status') and 'none' not in filters['enrollment_status']:
-            return False
+    # Статус навчання (порівнюємо з сирим кодом з БД)
+    selected = set(filters.get('enrollment_status') or [])
+    raw_status = (record.get('_enrollment_status') or '').strip()
+    if selected:
+        if selected >= KNOWN_ENROLLMENT_STATUSES:
+            pass  # повний набір — не фільтруємо за статусом
+        else:
+            if not raw_status:
+                if 'none' not in selected:
+                    return False
+            elif raw_status not in selected:
+                return False
 
     # Архів / заморозка
-    if not filters['include_archived'] and record.get('_archived'):
+    # Замороження часто ставить students.archived = TRUE (немає active
+    # enrollment). Тому «включити заморожених» / статус «Заморожено»
+    # мають перекривати відсікання за архівом — інакше заморожений
+    # студент ніколи не потрапить у вибірку без «Включити архівних».
+    is_frozen_rec = bool(record.get('_frozen')) or (raw_status == 'frozen')
+    frozen_wanted = bool(filters.get('include_frozen')) or ('frozen' in selected)
+
+    if is_frozen_rec and not frozen_wanted:
         return False
-    if not filters['include_frozen'] and record.get('_frozen'):
-        return False
+
+    if record.get('_archived') and not filters.get('include_archived'):
+        if is_frozen_rec and frozen_wanted:
+            pass  # архів як побічний ефект заморозки — не відсікаємо
+        else:
+            return False
 
     if filters['is_reduced'] == 'yes' and not record.get('_is_reduced'):
         return False
@@ -867,7 +926,45 @@ def custom_export_preview():
         records = _build_records(conn, mode, include_no)
         filtered = _apply_filters(records, filters, post_filter=post_filter)
 
-        return {'count': len(filtered), 'total': len(records)}
+        # Пояснення чисел для UI:
+        #   count  — після ВСІХ фільтрів (статус, архів, ліцензія, вік…).
+        #   total  — «пул» до фільтрів: усі студенти/enrollment'и, зібрані
+        #            у _build_records (залежить від mode та include_no_enrollment).
+        # За замовчуванням status=active і без архіву/заморожених, тому
+        # count часто менший за total.
+        status_text = ', '.join(
+            ENROLLMENT_STATUS_UA.get(s, s) for s in filters.get('enrollment_status') or []
+        ) or '—'
+
+        # Діагностика: серед відсіяних — які сирі статуси з БД
+        from collections import Counter
+        filtered_ids = {id(r) for r in filtered}
+        excluded_status_counts = Counter()
+        for r in records:
+            if id(r) in filtered_ids:
+                continue
+            st = (r.get('_enrollment_status') or '').strip() or 'none'
+            excluded_status_counts[st] += 1
+        excluded_by_status = [
+            {
+                'status': st,
+                'label': ENROLLMENT_STATUS_UA.get(st, st),
+                'count': n,
+            }
+            for st, n in excluded_status_counts.most_common(10)
+        ]
+
+        return {
+            'count': len(filtered),
+            'total': len(records),
+            'mode': mode,
+            'status': status_text,
+            'include_archived': bool(filters.get('include_archived')),
+            'include_frozen': bool(filters.get('include_frozen')),
+            'license_count': len(filters.get('license_ids') or []),
+            'excluded_by_status': excluded_by_status,
+            'gap': len(records) - len(filtered),
+        }
     except Exception as e:
         logger.error(f"custom_export preview error: {e}", exc_info=True)
         return {'error': str(e)}, 500
