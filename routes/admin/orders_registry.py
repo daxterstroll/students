@@ -64,6 +64,12 @@ CREATE_ORDER_LINKS = [
         'icon': 'bi-mortarboard',
         'type': 'graduation',
     },
+    {
+        'endpoint': 'admin.renewal_students',
+        'label': 'ПОНОВЛЕННЯ (додати студентів)',
+        'icon': 'bi-arrow-repeat',
+        'type': 'license_transfer',
+    },
 ]
 
 def _get_group_field_for_order_type(order_type):

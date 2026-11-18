@@ -31,7 +31,7 @@ from routes.utils import save_multiple_attachments
 ORDER_TYPE_LABELS = {
     'enrollment':           'Зарахування',
     'course_transfer':      'Переведення на курс',
-    'license_transfer':     'Переведення між ліцензіями',
+    'license_transfer':     'ПОНОВЛЕННЯ',
     'group_transfer':       'Переведення з групи в групу',
     'study_form_transfer':  'Зміна форми навчання',
     'name_change':          'Зміна ПІБ',
@@ -110,10 +110,26 @@ def format_payload(conn, order_type: str, payload: dict) -> str:
                 return f'#{lid}'
             return row['short_name_ua'] or row['name_ua']
 
-        return (
+        lic_text = (
             f"ліцензія {_lic_name(payload.get('previous_license_id'))} → "
             f"{_lic_name(payload.get('new_license_id'))}"
         )
+        prefix_parts = []
+        if payload.get('was_expelled'):
+            prefix_parts.append('поновлення після відрахування')
+        gid = payload.get('group_id')
+        if gid:
+            g_row = conn.execute(
+                "SELECT name, start_year, study_form FROM groups WHERE id = ?",
+                (gid,),
+            ).fetchone()
+            if g_row:
+                prefix_parts.append(f'група {g_row["name"]} ({g_row["start_year"]}, {g_row["study_form"]})')
+            else:
+                prefix_parts.append(f'група #{gid}')
+        if prefix_parts:
+            return '; '.join(prefix_parts) + f'; {lic_text}'
+        return lic_text
 
     if order_type == 'enrollment' and payload.get('group_id'):
         row = conn.execute(
@@ -646,6 +662,248 @@ def count_students_without_enrollment(
             """
         ).fetchall()
         return sum(1 for r in rows if r[0] not in enrolled)
+    finally:
+        if own_conn:
+            conn.close()
+
+
+def _parse_order_date_ymd(od: Optional[str]) -> str:
+    """Нормалізує дату наказу (DD.MM.YYYY, DD/MM/YYYY або YYYY-MM-DD) у YYYYMMDD."""
+    raw = (od or '').strip()
+    if not raw:
+        return ''
+    if '-' in raw:
+        parts = raw.split('-')
+        if len(parts) == 3 and len(parts[0]) == 4:
+            return parts[0] + parts[1].zfill(2) + parts[2].zfill(2)
+    parts = raw.replace('/', '.').split('.')
+    if len(parts) == 3 and len(parts[2]) == 4:
+        return parts[2] + parts[1].zfill(2) + parts[0].zfill(2)
+    return raw
+
+
+def get_renewal_eligible_students(
+    *,
+    include_graduated: bool = False,
+    conn=None,
+) -> list[dict]:
+    """
+    Повертає студентів, доступних для сторінки «ПОНОВЛЕННЯ (додати N студентів)»:
+      1) студент НЕ має жодного активного наказу про зарахування (`order_type='enrollment'`),
+         АБО останній активний наказ студента — про відрахування (`order_type='expulsion'`);
+      2) І при цьому останній активний наказ студента НЕ є «ПОНОВЛЕННЯ» (`order_type='license_transfer'`).
+
+    Кожен запис містить поточну (активну) групу й ліцензію, попередню групу
+    (якщо був відрахований), інформацію про останній наказ і причину потрапляння.
+    """
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db()
+    try:
+        enrollment_ids = get_enrollment_student_ids(conn=conn)
+
+        # Останній активний студентський наказ для кожного студента
+        latest_order_by_student: dict[int, dict] = {}
+        order_rows = conn.execute(
+            """
+            SELECT oi.entity_id AS student_id,
+                   o.id AS order_id,
+                   o.order_type,
+                   o.order_number,
+                   o.order_date,
+                   oi.payload
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.status = 'active'
+              AND oi.entity_type = 'student'
+            """
+        ).fetchall()
+        for r in order_rows:
+            sid = int(r['student_id'])
+            key = (_parse_order_date_ymd(r['order_date']), int(r['order_id']))
+            prev = latest_order_by_student.get(sid)
+            if prev is None or key > prev['_sort_key']:
+                latest_order_by_student[sid] = {
+                    'order_id': r['order_id'],
+                    'order_type': r['order_type'],
+                    'type_label': ORDER_TYPE_LABELS.get(r['order_type'], r['order_type']),
+                    'order_number': r['order_number'],
+                    'order_date': r['order_date'],
+                    'payload': _payload_loads(r['payload']),
+                    '_sort_key': key,
+                }
+
+        # Активні enrollments (джерело істини поточної групи та ліцензії)
+        active_enr_by_student: dict[int, list[dict]] = {}
+        for r in conn.execute(
+            """
+            SELECT e.student_id, e.group_id, e.is_primary, e.license_id,
+                   g.name AS group_name,
+                   il.short_name_ua AS license_short_name,
+                   il.name_ua AS license_full_name
+            FROM student_enrollments e
+            JOIN groups g ON g.id = e.group_id
+            LEFT JOIN institution_licenses il ON il.id = e.license_id
+            WHERE e.status = 'active'
+            ORDER BY e.is_primary DESC, e.id
+            """
+        ).fetchall():
+            active_enr_by_student.setdefault(int(r['student_id']), []).append(dict(r))
+
+        # Попередня група з закритого enrollment або статусу graduated
+        last_expelled_group_by_student: dict[int, dict] = {}
+        graduated_students: set[int] = set()
+        for r in conn.execute(
+            """
+            SELECT e.student_id, e.group_id, e.status, g.name AS group_name
+            FROM student_enrollments e
+            LEFT JOIN groups g ON g.id = e.group_id
+            WHERE e.status IN ('expelled', 'graduated')
+            ORDER BY e.id DESC
+            """
+        ).fetchall():
+            sid = int(r['student_id'])
+            if r['status'] == 'graduated':
+                graduated_students.add(sid)
+            if r['status'] == 'expelled' and sid not in last_expelled_group_by_student:
+                last_expelled_group_by_student[sid] = {
+                    'group_id': r['group_id'],
+                    'group_name': r['group_name'],
+                }
+
+        students_rows = conn.execute(
+            """
+            SELECT s.id,
+                   s.last_name_UA,
+                   s.first_name_UA,
+                   s.middle_name_UA,
+                   s.birth_date,
+                   s.group_id AS legacy_group_id,
+                   s.license_id AS legacy_license_id,
+                   COALESCE(s.archived, 0) AS archived,
+                   lg.name AS legacy_group_name,
+                   lil.short_name_ua AS legacy_license_short,
+                   lil.name_ua AS legacy_license_full
+            FROM students s
+            LEFT JOIN groups lg ON lg.id = s.group_id
+            LEFT JOIN institution_licenses lil ON lil.id = s.license_id
+            """
+        ).fetchall()
+
+        result: list[dict] = []
+        for s in students_rows:
+            sid = int(s['id'])
+            has_enrollment_order = sid in enrollment_ids
+            latest = latest_order_by_student.get(sid)
+            latest_is_expulsion = bool(latest and latest['order_type'] == 'expulsion')
+            latest_is_renewal = bool(latest and latest['order_type'] == 'license_transfer')
+
+            # Якщо останній активний наказ студента — ПОНОВЛЕННЯ,
+            # він не повинен потрапляти до списку повторно.
+            if latest_is_renewal:
+                continue
+
+            # Випущені студенти (без відрахування після випуску) за замовчуванням ховаємо
+            is_graduated = (
+                not latest_is_expulsion
+                and (
+                    (latest and latest['order_type'] == 'graduation')
+                    or (bool(s['archived']) and sid in graduated_students)
+                )
+            )
+            if is_graduated and not include_graduated:
+                continue
+
+            if has_enrollment_order and not latest_is_expulsion:
+                continue
+
+            active_enrs = active_enr_by_student.get(sid, [])
+            primary_enr = active_enrs[0] if active_enrs else None
+            is_archived = bool(s['archived'])
+
+            # Активна група / ліцензія (у відрахованих або архівних — немає активної групи/ліцензії)
+            if primary_enr:
+                cur_group_id = primary_enr['group_id']
+                cur_group_name = primary_enr['group_name']
+                cur_license_id = primary_enr['license_id'] or (
+                    None if is_archived else s['legacy_license_id']
+                )
+                cur_license_name = (
+                    primary_enr['license_short_name']
+                    or primary_enr['license_full_name']
+                    or (None if is_archived else (s['legacy_license_short'] or s['legacy_license_full']))
+                )
+            elif not is_archived and not latest_is_expulsion:
+                cur_group_id = s['legacy_group_id']
+                cur_group_name = s['legacy_group_name']
+                cur_license_id = s['legacy_license_id']
+                cur_license_name = s['legacy_license_short'] or s['legacy_license_full']
+            else:
+                cur_group_id = None
+                cur_group_name = None
+                cur_license_id = None
+                cur_license_name = None
+
+            # Попередня група (для підказки при поновленні відрахованого)
+            prev_group_id = None
+            prev_group_name = None
+            if cur_group_id is None:
+                if latest_is_expulsion and latest['payload'].get('previous_group_id'):
+                    prev_gid = latest['payload'].get('previous_group_id')
+                    g_row = conn.execute(
+                        "SELECT id, name FROM groups WHERE id = ?", (prev_gid,)
+                    ).fetchone()
+                    if g_row:
+                        prev_group_id = g_row['id']
+                        prev_group_name = g_row['name']
+                if prev_group_id is None and sid in last_expelled_group_by_student:
+                    prev_group_id = last_expelled_group_by_student[sid]['group_id']
+                    prev_group_name = last_expelled_group_by_student[sid]['group_name']
+
+            full_name = ' '.join(
+                x for x in (s['last_name_UA'], s['first_name_UA'], s['middle_name_UA'] or '') if x
+            )
+
+            if latest_is_expulsion and not has_enrollment_order:
+                reason_code = 'both'
+                reason_label = 'Відрахований (і без наказу про зарахування)'
+            elif latest_is_expulsion:
+                reason_code = 'expelled'
+                reason_label = 'Останній наказ — відрахування'
+            else:
+                reason_code = 'no_enrollment'
+                reason_label = 'Немає наказу про зарахування'
+
+            latest_clean = None
+            if latest:
+                latest_clean = {k: v for k, v in latest.items() if k != '_sort_key'}
+
+            result.append({
+                'id': sid,
+                'full_name': full_name,
+                'last_name_UA': s['last_name_UA'] or '',
+                'first_name_UA': s['first_name_UA'] or '',
+                'birth_date': s['birth_date'],
+                'archived': is_archived,
+                'has_enrollment_order': has_enrollment_order,
+                'latest_is_expulsion': latest_is_expulsion,
+                'latest_order': latest_clean,
+                'reason_code': reason_code,
+                'reason_label': reason_label,
+                'current_group_id': cur_group_id,
+                'current_group_name': cur_group_name,
+                'current_license_id': cur_license_id,
+                'current_license_name': cur_license_name,
+                'previous_group_id': prev_group_id,
+                'previous_group_name': prev_group_name,
+            })
+
+        result.sort(key=lambda r: (
+            (r['last_name_UA'] or '').lower(),
+            (r['first_name_UA'] or '').lower(),
+            r['id'],
+        ))
+        return result
     finally:
         if own_conn:
             conn.close()

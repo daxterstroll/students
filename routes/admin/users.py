@@ -1,4 +1,3 @@
-
 """
 routes/admin/users.py
 ======================
@@ -76,7 +75,7 @@ PERMISSION_DEFINITIONS = [
 
     # ─── Ліцензії ───────────────────────────────────────────────
     ('manage_licenses',             'Ліцензії закладу',                          'licenses'),
-    ('manage_license_transfer',     'Переведення між ліцензіями',                'licenses'),
+    ('manage_license_transfer',     'ПОНОВЛЕННЯ',                                'licenses'),
     ('license_report',              'Звіт по ліцензіях',                         'licenses'),
 
     # ─── Військовий облік ───────────────────────────────────────

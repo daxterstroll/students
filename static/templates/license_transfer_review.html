@@ -1,28 +1,32 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
-{% block title %}Перевести між ліцензіями: перевірка{% endblock %}
+{% block title %}ПОНОВЛЕННЯ: перевірка{% endblock %}
 {% block main_class %}py-3{% endblock %} 
 {% block content %}
 <div class="container py-4">
 
-    {{ ui.page_header('bi-award', 'Перевірка перед переведенням', 'Ліцензія призначення: ' ~ (target_license.short_name_ua or target_license.name_ua)) }}
+    {{ ui.page_header('bi-award', 'Перевірка перед оформленням (ПОНОВЛЕННЯ)', 'Ліцензія призначення: ' ~ (target_license.short_name_ua or target_license.name_ua)) }}
 
 	{% if transfer_scope == 'enrollments_in_groups' %}
 	<div class="alert alert-info small mb-3">
 		<i class="bi bi-info-circle me-1"></i>
-		Переводимо <strong>лише навчання у вибраних групах</strong>.
+		Оновлюємо <strong>лише навчання у вибраних групах</strong>.
 		Якщо в студента є інші активні групи — їхні ліцензії не зміняться.
 	</div>
 	{% else %}
 	<div class="alert alert-light border small mb-3">
 		<i class="bi bi-info-circle me-1"></i>
-		Переводимо <strong>усі активні навчання</strong> обраних студентів.
+		Оновлюємо <strong>усі активні навчання</strong> обраних студентів.
 	</div>
 	{% endif %}
 
     <form method="POST" action="{{ url_for('admin.license_transfer_confirm') }}" enctype="multipart/form-data"
-          onsubmit="return confirm('Перевести {{ students|length }} студент(ів) на ліцензію «{{ target_license.short_name_ua or target_license.name_ua }}»?');">
+          onsubmit="return confirm('Оформити ПОНОВЛЕННЯ для {{ students|length }} студент(ів) на ліцензію «{{ target_license.short_name_ua or target_license.name_ua }}»?');">
         <input type="hidden" name="target_license_id" value="{{ target_license.id }}">
+        <input type="hidden" name="transfer_scope" value="{{ transfer_scope }}">
+        {% for gid in group_ids %}
+        <input type="hidden" name="group_ids" value="{{ gid }}">
+        {% endfor %}
         {% for s in students %}
         <input type="hidden" name="student_ids" value="{{ s.id }}">
         {% endfor %}
@@ -49,7 +53,7 @@
 
         <div class="card mb-3">
             <div class="card-body">
-                <h6 class="section-title">Наказ про переведення між ліцензіями</h6>
+                <h6 class="section-title">Наказ «ПОНОВЛЕННЯ»</h6>
                 <div class="row g-3">
                     <div class="col-md-4">
                         <label class="form-label">Номер наказу</label>
@@ -61,13 +65,13 @@
                     </div>
                     <div class="col-md-4">
                         <label class="form-label">Скан-копія наказу</label>
-                        <input type="file" name="scan_file" class="form-control">
+                        <input type="file" name="scan_files" class="form-control" multiple>
                     </div>
                 </div>
             </div>
         </div>
 
-        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити переведення</button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-circle me-2"></i>Оформити «ПОНОВЛЕННЯ»</button>
         <a href="{{ url_for('admin.license_transfer') }}" class="btn btn-outline-secondary">Скасувати</a>
     </form>
 

@@ -1,0 +1,487 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}ПОНОВЛЕННЯ — додавання студентів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex gap-2">
+            <a href="{{ url_for('admin.manage_licenses') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i> До ліцензій
+            </a>
+            <a href="{{ url_for('admin.orders_list', type='license_transfer') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-journal-text me-1"></i> Накази «ПОНОВЛЕННЯ»
+            </a>
+        </div>
+        <a href="{{ url_for('admin.license_transfer') }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-arrow-left-right me-1"></i> Загальна зміна ліцензії (за групами)
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-arrow-repeat',
+        'ПОНОВЛЕННЯ: додавання студентів',
+        'Оберіть N студентів без наказу про зарахування або з останнім наказом про відрахування (крім тих, у кого останній наказ уже «ПОНОВЛЕННЯ»)'
+    ) }}
+
+    <div class="row g-3 mb-3">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold">{{ stats.total }}</div>
+                    <div class="small text-muted">доступних студентів</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-warning">{{ stats.no_enrollment }}</div>
+                    <div class="small text-muted">без наказу про зарахування</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold text-danger">{{ stats.expelled }}</div>
+                    <div class="small text-muted">останній наказ — відрахування</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center renewal-selected-card">
+                <div class="card-body py-3">
+                    <div class="fs-4 fw-bold renewal-selected-count" id="selectedCounterTop">0</div>
+                    <div class="small text-muted">обрано до наказу</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if candidates %}
+    <form method="POST" action="{{ url_for('admin.renewal_students_confirm') }}" enctype="multipart/form-data" id="renewalForm">
+
+        {# ── Панель фільтрів і масових дій ── #}
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Пошук студента чи групи</label>
+                        <input type="text" id="studentFilter" class="form-control form-control-sm"
+                               placeholder="ПІБ, група або ліцензія...">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Підстава включення</label>
+                        <select id="reasonFilter" class="form-select form-select-sm">
+                            <option value="all">Усі доступні ({{ stats.total }})</option>
+                            <option value="expelled">Останній наказ — відрахування ({{ stats.expelled }})</option>
+                            <option value="no_enrollment">Немає наказу про зарахування ({{ stats.no_enrollment }})</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small mb-1">Швидке призначення ліцензії обраним</label>
+                        <div class="input-group input-group-sm">
+                            <select id="bulkLicenseSelect" class="form-select">
+                                <option value="">— обрати для всіх позначених —</option>
+                                {% for l in licenses %}
+                                <option value="{{ l.id }}">{{ l.short_name_ua or l.name_ua }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="btn btn-outline-primary" id="btnApplyBulkLicense">
+                                Застосувати
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mt-3 pt-2 border-top">
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnSelectVisible">
+                            Обрати видимих
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btnClearSelection">
+                            Зняти вибір
+                        </button>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="toggleGraduated"
+                               {% if include_graduated %}checked{% endif %}
+                               onchange="window.location='{{ url_for('admin.renewal_students') }}' + (this.checked ? '?include_graduated=1' : '')">
+                        <label class="form-check-label small" for="toggleGraduated">
+                            Показувати також випущених без наказу про зарахування
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Таблиця кандидатів з індивідуальним вибором групи та ліцензії ── #}
+        <div class="card mb-3">
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 60vh;">
+                    <table class="table table-hover table-sm align-middle mb-0" id="renewalTable">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th class="text-center" style="width:40px;">
+                                    <input type="checkbox" class="form-check-input" id="checkAllVisible"
+                                           title="Обрати / зняти видимих">
+                                </th>
+                                <th>Студент</th>
+                                <th>Статус / Останній наказ</th>
+                                <th style="min-width:210px;">Група (поточна / призначити)</th>
+                                <th style="min-width:150px;">Наявна ліцензія</th>
+                                <th style="min-width:230px;">Обрати / змінити ліцензію</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for s in candidates %}
+                            {% set search_str = (s.full_name ~ ' ' ~ (s.current_group_name or '') ~ ' ' ~ (s.previous_group_name or '') ~ ' ' ~ (s.current_license_name or '')) | lower %}
+                            <tr class="candidate-row"
+                                data-sid="{{ s.id }}"
+                                data-search="{{ search_str }}"
+                                data-expelled="{{ '1' if s.latest_is_expulsion else '0' }}"
+                                data-noenroll="{{ '1' if not s.has_enrollment_order else '0' }}">
+                                <td class="text-center">
+                                    <input type="checkbox" name="student_ids" value="{{ s.id }}"
+                                           class="form-check-input js-student-check" data-sid="{{ s.id }}">
+                                </td>
+                                <td>
+                                    <a href="{{ url_for('students.student_details', student_id=s.id) }}"
+                                       class="fw-semibold text-decoration-none">{{ s.full_name }}</a>
+                                    {% if s.birth_date %}
+                                    <div class="small text-muted font-monospace">{{ s.birth_date }}</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if s.latest_is_expulsion %}
+                                    <span class="badge bg-danger-subtle text-danger-emphasis">
+                                        Останній наказ — відрахування
+                                    </span>
+                                    {% endif %}
+                                    {% if not s.has_enrollment_order %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis">
+                                        Без наказу про зарахування
+                                    </span>
+                                    {% endif %}
+                                    {% if s.latest_order %}
+                                    <div class="small text-muted mt-1">
+                                        {{ s.latest_order.type_label }} №{{ s.latest_order.order_number }} від {{ s.latest_order.order_date }}
+                                    </div>
+                                    {% else %}
+                                    <div class="small text-muted mt-1">Наказів немає</div>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if s.current_group_name %}
+                                    <div class="small text-muted mb-1">
+                                        Поточна: <strong>{{ s.current_group_name }}</strong>
+                                    </div>
+                                    {% elif s.previous_group_name %}
+                                    <div class="small text-muted mb-1">
+                                        Немає групи (до відрах.: {{ s.previous_group_name }})
+                                    </div>
+                                    {% else %}
+                                    <div class="small text-muted mb-1">Немає групи</div>
+                                    {% endif %}
+
+                                    {% set pre_gid = s.current_group_id or s.previous_group_id %}
+                                    <select name="group_id_{{ s.id }}" class="form-select form-select-sm js-group-select"
+                                            data-sid="{{ s.id }}">
+                                        <option value="">— оберіть групу —</option>
+                                        {% for g in groups %}
+                                        <option value="{{ g.id }}" {% if pre_gid == g.id %}selected{% endif %}>
+                                            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td>
+                                    {% if s.current_license_name %}
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">
+                                        {{ s.current_license_name }}
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted small">— немає —</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <select name="license_id_{{ s.id }}" class="form-select form-select-sm js-license-select"
+                                            data-sid="{{ s.id }}" data-original="{{ s.current_license_id or '' }}">
+                                        <option value="">— оберіть ліцензію —</option>
+                                        {% for l in licenses %}
+                                        <option value="{{ l.id }}" {% if s.current_license_id == l.id %}selected{% endif %}>
+                                            {{ l.short_name_ua or l.name_ua }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <div class="small renewal-change-hint mt-1 js-change-hint d-none">
+                                        <i class="bi bi-arrow-left-right me-1"></i>ліцензію буде змінено
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        {# ── Реквізити наказу ── #}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="section-title mb-3">Наказ «ПОНОВЛЕННЯ»</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Номер наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_number" class="form-control form-control-sm"
+                               placeholder="напр. 102-п" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Дата наказу <span class="text-danger">*</span></label>
+                        <input type="text" name="order_date" class="form-control form-control-sm"
+                               placeholder="ДД.ММ.РРРР" required pattern="\d{2}\.\d{2}\.\d{4}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Скан наказу</label>
+                        <input type="file" name="scan_files" class="form-control form-control-sm" multiple>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold">Примітка</label>
+                        <input type="text" name="notes" class="form-control form-control-sm"
+                               placeholder="необов'язково">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <a href="{{ url_for('admin.manage_licenses') }}" class="btn btn-outline-secondary">Скасувати</a>
+            <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                <i class="bi bi-check-circle me-2"></i>
+                Оформити «ПОНОВЛЕННЯ» (<span id="selectedCounterBtn">0</span>)
+            </button>
+        </div>
+    </form>
+    {% else %}
+    {{ ui.empty_state(
+        'bi-check-circle',
+        'Немає студентів, які відповідають умовам вибору',
+        'Усі активні студенти вже мають наказ про зарахування та не мають відрахування як останнього наказу.'
+    ) }}
+    {% endif %}
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('renewalForm');
+    if (!form) return;
+
+    const studentFilter = document.getElementById('studentFilter');
+    const reasonFilter = document.getElementById('reasonFilter');
+    const checkAllVisible = document.getElementById('checkAllVisible');
+    const btnSelectVisible = document.getElementById('btnSelectVisible');
+    const btnClearSelection = document.getElementById('btnClearSelection');
+    const bulkLicenseSelect = document.getElementById('bulkLicenseSelect');
+    const btnApplyBulkLicense = document.getElementById('btnApplyBulkLicense');
+    const submitBtn = document.getElementById('submitBtn');
+    const counterTop = document.getElementById('selectedCounterTop');
+    const counterBtn = document.getElementById('selectedCounterBtn');
+
+    function syncCounters() {
+        const checked = document.querySelectorAll('.js-student-check:checked').length;
+        if (counterTop) counterTop.textContent = checked;
+        if (counterBtn) counterBtn.textContent = checked;
+        if (submitBtn) submitBtn.disabled = checked === 0;
+
+        document.querySelectorAll('.candidate-row').forEach(function (row) {
+            const cb = row.querySelector('.js-student-check');
+            row.classList.toggle('renewal-row-selected', Boolean(cb && cb.checked));
+        });
+    }
+
+    function applyFilters() {
+        const q = (studentFilter.value || '').trim().toLowerCase();
+        const r = reasonFilter.value || 'all';
+        document.querySelectorAll('.candidate-row').forEach(function (row) {
+            const matchText = !q || (row.dataset.search || '').includes(q);
+            let matchReason = true;
+            if (r === 'expelled') matchReason = row.dataset.expelled === '1';
+            if (r === 'no_enrollment') matchReason = row.dataset.noenroll === '1';
+            row.style.display = (matchText && matchReason) ? '' : 'none';
+        });
+    }
+
+    if (studentFilter) studentFilter.addEventListener('input', applyFilters);
+    if (reasonFilter) reasonFilter.addEventListener('change', applyFilters);
+
+    document.querySelectorAll('.js-student-check').forEach(function (cb) {
+        cb.addEventListener('change', syncCounters);
+    });
+
+    document.querySelectorAll('.js-license-select').forEach(function (sel) {
+        sel.addEventListener('change', function () {
+            const row = sel.closest('.candidate-row');
+            const hint = row ? row.querySelector('.js-change-hint') : null;
+            const orig = sel.dataset.original || '';
+            if (hint) {
+                hint.classList.toggle('d-none', !(orig && sel.value && sel.value !== orig));
+            }
+            // Автоматично позначаємо рядок, якщо користувач явно змінив ліцензію
+            if (sel.value && sel.value !== orig) {
+                const cb = row ? row.querySelector('.js-student-check') : null;
+                if (cb && !cb.checked) {
+                    cb.checked = true;
+                    syncCounters();
+                }
+            }
+        });
+    });
+
+    function setVisibleChecked(val) {
+        document.querySelectorAll('.candidate-row').forEach(function (row) {
+            if (row.style.display === 'none') return;
+            const cb = row.querySelector('.js-student-check');
+            if (cb) cb.checked = val;
+        });
+        syncCounters();
+    }
+
+    if (checkAllVisible) {
+        checkAllVisible.addEventListener('change', function () {
+            setVisibleChecked(this.checked);
+        });
+    }
+    if (btnSelectVisible) btnSelectVisible.addEventListener('click', function () { setVisibleChecked(true); });
+    if (btnClearSelection) btnClearSelection.addEventListener('click', function () {
+        document.querySelectorAll('.js-student-check').forEach(function (cb) { cb.checked = false; });
+        if (checkAllVisible) checkAllVisible.checked = false;
+        syncCounters();
+    });
+
+    if (btnApplyBulkLicense) {
+        btnApplyBulkLicense.addEventListener('click', function () {
+            const val = bulkLicenseSelect.value;
+            if (!val) return;
+            document.querySelectorAll('.js-student-check:checked').forEach(function (cb) {
+                const row = cb.closest('.candidate-row');
+                const sel = row ? row.querySelector('.js-license-select') : null;
+                if (sel) {
+                    sel.value = val;
+                    sel.dispatchEvent(new Event('change'));
+                }
+            });
+        });
+    }
+
+    form.addEventListener('submit', function (e) {
+        const checked = Array.from(document.querySelectorAll('.js-student-check:checked'));
+        if (!checked.length) {
+            e.preventDefault();
+            alert('Оберіть хоча б одного студента.');
+            return;
+        }
+        for (const cb of checked) {
+            const row = cb.closest('.candidate-row');
+            const nameEl = row.querySelector('a.fw-semibold');
+            const name = nameEl ? nameEl.textContent.trim() : ('#' + cb.value);
+            const gSel = row.querySelector('.js-group-select');
+            const lSel = row.querySelector('.js-license-select');
+            if (!gSel || !gSel.value) {
+                e.preventDefault();
+                alert('Оберіть групу для студента: ' + name);
+                if (gSel) gSel.focus();
+                return;
+            }
+            if (!lSel || !lSel.value) {
+                e.preventDefault();
+                alert('Оберіть ліцензію для студента: ' + name);
+                if (lSel) lSel.focus();
+                return;
+            }
+        }
+    });
+
+    syncCounters();
+});
+</script>
+
+<style>
+    /* Картка лічильника та підказка зміни ліцензії в стилі сайту (світла / темна тема) */
+    .renewal-selected-card {
+        border-color: var(--brass-semi, rgba(200, 162, 74, .45));
+    }
+    .renewal-selected-count,
+    .renewal-change-hint {
+        color: var(--brass, #c8a24a);
+    }
+    html[data-theme="dark"] .renewal-selected-count,
+    html[data-theme="dark"] .renewal-change-hint {
+        color: var(--brass-lt, #e3c87a);
+    }
+
+    /* Фіксована шапка таблиці при прокрутці */
+    #renewalTable thead.sticky-top {
+        z-index: 2;
+    }
+    html[data-theme="dark"] #renewalTable thead.table-light > tr > th {
+        background-color: var(--surface, #1e2936);
+        color: var(--brass-lt, #e3c87a);
+        border-bottom-color: var(--line, rgba(231, 226, 214, .14));
+    }
+
+    /* Чекбокси вибору студентів у золотистій палітрі */
+    #renewalTable .form-check-input:checked {
+        background-color: var(--brass, #c8a24a);
+        border-color: var(--brass, #c8a24a);
+    }
+    #renewalTable .form-check-input:focus {
+        border-color: var(--brass, #c8a24a);
+        box-shadow: 0 0 0 0.2rem var(--brass-soft, rgba(200, 162, 74, .18));
+    }
+
+    /* Вибраний рядок — світла тема (замість стандартного синього Bootstrap .table-primary) */
+    #renewalTable tbody tr.candidate-row.renewal-row-selected {
+        --bs-table-bg: rgba(200, 162, 74, .12);
+        --bs-table-accent-bg: rgba(200, 162, 74, .12);
+        --bs-table-hover-bg: rgba(200, 162, 74, .19);
+        --bs-table-color: var(--ink-text, #1b1f24);
+    }
+    #renewalTable tbody tr.candidate-row.renewal-row-selected > td {
+        background-color: rgba(200, 162, 74, .12) !important;
+        color: var(--ink-text, #1b1f24);
+        border-bottom-color: rgba(200, 162, 74, .30);
+    }
+    #renewalTable tbody tr.candidate-row.renewal-row-selected:hover > td {
+        background-color: rgba(200, 162, 74, .19) !important;
+    }
+    #renewalTable tbody tr.candidate-row.renewal-row-selected > td:first-child {
+        box-shadow: inset 3px 0 0 var(--brass, #c8a24a);
+    }
+
+    /* Вибраний рядок — темна тема */
+    html[data-theme="dark"] #renewalTable tbody tr.candidate-row.renewal-row-selected {
+        --bs-table-bg: rgba(200, 162, 74, .14);
+        --bs-table-accent-bg: rgba(200, 162, 74, .14);
+        --bs-table-hover-bg: rgba(200, 162, 74, .21);
+        --bs-table-color: var(--ink-text, #e7e2d6);
+    }
+    html[data-theme="dark"] #renewalTable tbody tr.candidate-row.renewal-row-selected > td {
+        background-color: rgba(200, 162, 74, .14) !important;
+        color: var(--ink-text, #e7e2d6) !important;
+        border-bottom-color: rgba(200, 162, 74, .32) !important;
+    }
+    html[data-theme="dark"] #renewalTable tbody tr.candidate-row.renewal-row-selected:hover > td {
+        background-color: rgba(200, 162, 74, .21) !important;
+    }
+    html[data-theme="dark"] #renewalTable tbody tr.candidate-row.renewal-row-selected > td:first-child {
+        box-shadow: inset 3px 0 0 var(--brass-lt, #e3c87a);
+    }
+    html[data-theme="dark"] #renewalTable tbody tr.candidate-row.renewal-row-selected .form-select {
+        background-color: var(--paper, #12181f);
+        border-color: rgba(200, 162, 74, .38);
+    }
+</style>
+{% endblock %}

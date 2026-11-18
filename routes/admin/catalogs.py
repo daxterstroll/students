@@ -2,7 +2,7 @@
 routes/admin/catalogs.py
 ========================
 Довідники: спеціальності, ступені, освітні програми, назви
-кваліфікацій, акредитації, ліцензії (+ переведення між ліцензіями,
+кваліфікацій, акредитації, ліцензії (+ ПОНОВЛЕННЯ / зміна ліцензій,
 звіт по ліцензіях), дипломи, масове призначення періодів навчання.
 
 ПІСЛЯ ПЕРЕХОДУ НА ENROLLMENT-BASED ЛІЦЕНЗІЇ:
@@ -977,19 +977,261 @@ def license_transfer_confirm():
         conn.rollback()
         conn.close()
         logger.error(f"license_transfer_confirm: {e}", exc_info=True)
-        flash(f'Помилка переведення: {e}', 'error')
+        flash(f'Помилка оформлення ПОНОВЛЕННЯ: {e}', 'error')
         return redirect(url_for('admin.license_transfer'))
 
     conn.close()
 
     log_action(
         current_username(),
-        f'переведення між ліцензіями №{order_number} від {order_date}',
+        f'ПОНОВЛЕННЯ №{order_number} від {order_date}',
         details=f'scope={transfer_scope}, студентів={len(student_ids)}, '
                 f'enrollment\'ів={updated_count}, order_id={order_id}',
     )
     flash(
-        f'Переведено. Змінено {updated_count} навчань у {len(student_ids)} студентів.',
+        f'Оформлено ПОНОВЛЕННЯ. Оновлено {updated_count} навчань у {len(student_ids)} студентів.',
+        'success',
+    )
+    return redirect(url_for('admin.order_detail', order_id=order_id))
+
+
+@admin_bp.route('/admin/renewal_students', methods=['GET'])
+@permission_required('manage_license_transfer')
+def renewal_students():
+    """Окрема сторінка «ПОНОВЛЕННЯ» для додавання N студентів:
+      - без наказу про зарахування (order_type='enrollment') взагалі, АБО
+      - з останнім активним наказом про відрахування (order_type='expulsion').
+    Для кожного студента можна індивідуально обрати або змінити ліцензію
+    (та групу, якщо студент був відрахований).
+    """
+    from routes.orders_service import get_renewal_eligible_students, orders_tables_ready
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash('Таблиці наказів не створені. Запустіть migrate_orders.py', 'error')
+        return redirect(url_for('admin.manage_licenses'))
+
+    include_graduated = request.args.get('include_graduated') == '1'
+    candidates = get_renewal_eligible_students(
+        include_graduated=include_graduated, conn=conn,
+    )
+
+    licenses = conn.execute(
+        "SELECT id, name_ua, short_name_ua, is_base FROM institution_licenses "
+        "WHERE is_active = 1 ORDER BY is_base DESC, id"
+    ).fetchall()
+
+    groups_raw = conn.execute(
+        "SELECT id, name, start_year, study_form FROM groups "
+        "WHERE COALESCE(archived, 0) = 0 ORDER BY start_year DESC, name COLLATE UKRAINIAN"
+    ).fetchall()
+    groups = sort_ukrainian([dict(g) for g in groups_raw], lambda g: g['name'])
+
+    conn.close()
+
+    stats = {
+        'total': len(candidates),
+        'expelled': sum(1 for c in candidates if c['latest_is_expulsion']),
+        'no_enrollment': sum(1 for c in candidates if not c['has_enrollment_order']),
+    }
+
+    return render_template(
+        'renewal_students.html',
+        candidates=candidates,
+        licenses=[dict(l) for l in licenses],
+        groups=groups,
+        stats=stats,
+        include_graduated=include_graduated,
+    )
+
+
+@admin_bp.route('/admin/renewal_students/confirm', methods=['POST'])
+@permission_required('manage_license_transfer')
+def renewal_students_confirm():
+    """Фіксує поновлення / індивідуальний вибір ліцензії для N обраних студентів
+    і створює єдиний наказ типу 'license_transfer' («ПОНОВЛЕННЯ»).
+    """
+    from routes.orders_service import (
+        create_order,
+        get_renewal_eligible_students,
+        orders_tables_ready,
+    )
+    from routes.enrollments_service import (
+        add_enrollment,
+        set_primary_enrollment,
+        update_enrollment_license,
+    )
+
+    student_ids = []
+    seen_sids = set()
+    for raw in request.form.getlist('student_ids'):
+        try:
+            sid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if sid not in seen_sids:
+            seen_sids.add(sid)
+            student_ids.append(sid)
+
+    order_number = (request.form.get('order_number') or '').strip()
+    order_date_raw = (request.form.get('order_date') or '').strip()
+    notes = (request.form.get('notes') or '').strip() or None
+
+    # Нормалізуємо YYYY-MM-DD (якщо браузер передав ISO) у ДД.ММ.РРРР
+    order_date = order_date_raw
+    if '-' in order_date_raw:
+        parts = order_date_raw.split('-')
+        if len(parts) == 3 and len(parts[0]) == 4:
+            order_date = f"{parts[2].zfill(2)}.{parts[1].zfill(2)}.{parts[0]}"
+
+    if not student_ids:
+        flash('Оберіть хоча б одного студента.', 'warning')
+        return redirect(url_for('admin.renewal_students'))
+
+    if not order_number or not order_date:
+        flash('Вкажіть номер і дату наказу.', 'error')
+        return redirect(url_for('admin.renewal_students'))
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    if not orders_tables_ready(conn=conn):
+        conn.close()
+        flash('Таблиці наказів не створені.', 'error')
+        return redirect(url_for('admin.renewal_students'))
+
+    try:
+        eligible_map = {
+            c['id']: c
+            for c in get_renewal_eligible_students(include_graduated=True, conn=conn)
+        }
+        valid_licenses = {
+            r['id']
+            for r in conn.execute("SELECT id FROM institution_licenses").fetchall()
+        }
+        valid_groups = {
+            r['id']
+            for r in conn.execute(
+                "SELECT id FROM groups WHERE COALESCE(archived, 0) = 0"
+            ).fetchall()
+        }
+
+        plan = []
+        for sid in student_ids:
+            cand = eligible_map.get(sid)
+            if not cand:
+                raise ValueError(f"Студент ID {sid} не відповідає умовам ПОНОВЛЕННЯ.")
+
+            chosen_license_id = request.form.get(f'license_id_{sid}', type=int)
+            chosen_group_id = request.form.get(f'group_id_{sid}', type=int) or cand['current_group_id']
+
+            if not chosen_license_id or chosen_license_id not in valid_licenses:
+                raise ValueError(f"Для «{cand['full_name']}» не обрано ліцензію.")
+            if not chosen_group_id or chosen_group_id not in valid_groups:
+                raise ValueError(f"Для «{cand['full_name']}» не обрано групу.")
+
+            prev_license_id = None if cand['latest_is_expulsion'] or cand['archived'] else cand['current_license_id']
+            plan.append({
+                'student_id': sid,
+                'full_name': cand['full_name'],
+                'group_id': chosen_group_id,
+                'previous_license_id': prev_license_id,
+                'new_license_id': chosen_license_id,
+                'was_expelled': cand['latest_is_expulsion'],
+            })
+
+        items = [
+            {
+                'entity_type': 'student',
+                'entity_id': row['student_id'],
+                'payload': {
+                    'previous_license_id': row['previous_license_id'],
+                    'new_license_id': row['new_license_id'],
+                    'group_id': row['group_id'],
+                    'was_expelled': row['was_expelled'],
+                },
+            }
+            for row in plan
+        ]
+
+        scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
+        order_id = create_order(
+            'license_transfer',
+            order_number,
+            order_date,
+            items,
+            created_by=current_username(),
+            title=f'ПОНОВЛЕННЯ №{order_number}',
+            notes=notes,
+            files=scan_files or None,
+            upload_subdir='orders',
+            conn=conn,
+        )
+
+        for row in plan:
+            sid = row['student_id']
+            gid = row['group_id']
+            lid = row['new_license_id']
+
+            active_in_group = conn.execute(
+                """
+                SELECT id, is_primary FROM student_enrollments
+                WHERE student_id = ? AND group_id = ? AND status = 'active'
+                """,
+                (sid, gid),
+            ).fetchone()
+
+            if active_in_group:
+                ok, msg = update_enrollment_license(sid, gid, lid, conn=conn)
+                if not ok:
+                    raise ValueError(f"{row['full_name']}: {msg}")
+                has_primary = conn.execute(
+                    "SELECT 1 FROM student_enrollments "
+                    "WHERE student_id = ? AND is_primary = 1 AND status = 'active'",
+                    (sid,),
+                ).fetchone()
+                if not has_primary:
+                    set_primary_enrollment(sid, gid, conn=conn)
+                conn.execute(
+                    "UPDATE students SET archived = FALSE WHERE id = ? AND archived = TRUE",
+                    (sid,),
+                )
+            else:
+                has_other_active = conn.execute(
+                    "SELECT 1 FROM student_enrollments WHERE student_id = ? AND status = 'active'",
+                    (sid,),
+                ).fetchone()
+                ok, msg = add_enrollment(
+                    sid,
+                    gid,
+                    is_primary=not bool(has_other_active),
+                    license_id=lid,
+                    order_id=order_id,
+                    conn=conn,
+                )
+                if not ok:
+                    raise ValueError(f"{row['full_name']}: {msg}")
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        logger.error(f"renewal_students_confirm: {e}", exc_info=True)
+        flash(f'Помилка оформлення ПОНОВЛЕННЯ: {e}', 'error')
+        return redirect(url_for('admin.renewal_students'))
+
+    conn.close()
+
+    log_action(
+        current_username(),
+        f'ПОНОВЛЕННЯ (масове додавання) №{order_number} від {order_date}',
+        details=f'студентів={len(plan)}, order_id={order_id}',
+    )
+    flash(
+        f'Оформлено наказ «ПОНОВЛЕННЯ» №{order_number} для {len(plan)} студент(ів).',
         'success',
     )
     return redirect(url_for('admin.order_detail', order_id=order_id))

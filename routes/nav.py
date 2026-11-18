@@ -113,6 +113,8 @@ NAV_SECTIONS = [
              'icon': 'bi-file-earmark-plus',     'label': 'Наказ про зарахування'},
             {'perm': 'manage_expulsion',         'url': 'admin.expulsion',
              'icon': 'bi-person-x',              'label': 'Наказ про відрахування'},
+            {'perm': 'manage_license_transfer',  'url': 'admin.renewal_students',
+             'icon': 'bi-arrow-repeat',          'label': 'ПОНОВЛЕННЯ (студенти)'},
             {'divider': True},
             {'perm': 'import_education_docs',     'url': 'admin.import_docs_preview',
              'icon': 'bi-file-earmark-arrow-up',  'label': 'Імпорт документів освіти (Excel)'},
