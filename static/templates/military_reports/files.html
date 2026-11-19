@@ -1,0 +1,533 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Файли «Резерв+» — Військовий облік{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i> До дашборду
+        </a>
+        <div class="d-flex flex-wrap gap-2">
+            {% if need_contact_rows %}
+            <button type="button" id="btnCopyContacts" class="btn btn-sm btn-outline-primary"
+                    title="Скопіювати список контактів студентів, яким потрібно надіслати або оновити файл">
+                <i class="bi bi-clipboard-check me-1"></i>
+                Копіювати контакти ({{ need_contact_rows|length }})
+            </button>
+            {% endif %}
+            <a href="{{ url_for('military_reports.military_files_download_pack',
+                                 month=selected_ym,
+                                 search=search or None,
+                                 group_id=group_id,
+                                 study_form=study_form or None,
+                                 category=category_filter or None,
+                                 show_all_licenses=('1' if show_all_licenses else None),
+                                 include_frozen=('1' if include_frozen else None),
+                                 pdf_only=('1' if pdf_only else None)) }}"
+               class="btn btn-sm btn-success {% if not ready_rows %}disabled{% endif %}"
+               {% if not ready_rows %}aria-disabled="true"{% endif %}>
+                <i class="bi bi-file-earmark-zip me-1"></i>
+                Завантажити пак за {{ selected_ym_label }} ({{ ready_rows|length }})
+            </a>
+        </div>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-zip',
+        'Військово-облікові файли («Резерв+»)',
+        'Помісячні ZIP-паки з іменами ПІБ, контроль відсутніх та не оновлених файлів'
+    ) }}
+
+    {# ── Швидкі паки по місяцях, де є файли ── #}
+    {% set non_empty_months = month_options | selectattr('count', 'gt', 0) | list %}
+    {% if non_empty_months %}
+    <div class="card mb-3">
+        <div class="card-body py-2 px-3">
+            <div class="d-flex align-items-center flex-wrap gap-2">
+                <span class="small fw-semibold text-muted me-1">
+                    <i class="bi bi-calendar3 me-1"></i>Паки по місяцях:
+                </span>
+                {% for m in non_empty_months[:12] %}
+                <div class="btn-group btn-group-sm" role="group">
+                    <a href="{{ url_for('military_reports.military_files',
+                                         month=m.ym,
+                                         tab=active_tab,
+                                         search=search or None,
+                                         group_id=group_id,
+                                         study_form=study_form or None,
+                                         category=category_filter or None,
+                                         show_all_licenses=('1' if show_all_licenses else None),
+                                         include_frozen=('1' if include_frozen else None),
+                                         pdf_only=('1' if pdf_only else None)) }}"
+                       class="btn {% if m.ym == selected_ym %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                        {{ m.label }}
+                        <span class="badge {% if m.ym == selected_ym %}bg-light text-dark{% else %}bg-secondary{% endif %} ms-1">
+                            {{ m.count }}
+                        </span>
+                    </a>
+                    <a href="{{ url_for('military_reports.military_files_download_pack',
+                                         month=m.ym,
+                                         search=search or None,
+                                         group_id=group_id,
+                                         study_form=study_form or None,
+                                         category=category_filter or None,
+                                         show_all_licenses=('1' if show_all_licenses else None),
+                                         include_frozen=('1' if include_frozen else None),
+                                         pdf_only=('1' if pdf_only else None)) }}"
+                       class="btn {% if m.ym == selected_ym %}btn-success{% else %}btn-outline-success{% endif %}"
+                       title="Завантажити ZIP-пак за {{ m.label }}">
+                        <i class="bi bi-download"></i>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Фільтри ── #}
+    <div class="card mb-3">
+        <div class="card-body py-3">
+            <form method="GET" class="row g-2 align-items-end">
+                <input type="hidden" name="tab" value="{{ active_tab }}">
+
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Місяць звіту</label>
+                    <select name="month" class="form-select form-select-sm" onchange="this.form.submit()">
+                        {% for m in month_options %}
+                        <option value="{{ m.ym }}" {% if m.ym == selected_ym %}selected{% endif %}>
+                            {{ m.label }}{% if m.count %} ({{ m.count }}){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Пошук (ПІБ / телефон / email)</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="search" class="form-control"
+                               placeholder="Прізвище, телефон…" value="{{ search }}">
+                        <button type="submit" class="btn btn-outline-secondary">
+                            <i class="bi bi-search"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Група</label>
+                    <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі групи</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}" {% if g.id == group_id %}selected{% endif %}>
+                            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Форма навчання</label>
+                    <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі форми</option>
+                        {% for sf in study_form_options %}
+                        <option value="{{ sf }}" {% if sf == study_form %}selected{% endif %}>{{ sf }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Категорія</label>
+                    <select name="category" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі категорії</option>
+                        {% for ckey, (clab, _) in category_labels.items() %}
+                        <option value="{{ ckey }}" {% if ckey == category_filter %}selected{% endif %}>{{ clab }}</option>
+                        {% endfor %}
+                        <option value="other" {% if category_filter == 'other' %}selected{% endif %}>Без категорії / запису</option>
+                    </select>
+                </div>
+
+                <div class="col-12 d-flex align-items-center flex-wrap gap-3 pt-1">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="pdf_only" value="1"
+                               id="pdfOnlyCheck" {% if pdf_only %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="pdfOnlyCheck">
+                            <i class="bi bi-file-earmark-pdf text-danger"></i>
+                            Тільки PDF («Резерв+»)
+                        </label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
+                               id="showAllLicensesFiles" {% if show_all_licenses %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="showAllLicensesFiles">
+                            <i class="bi bi-star text-warning"></i>
+                            Показати всі ліцензії
+                            <span class="text-muted">(зараз: {{ base_license_label }})</span>
+                        </label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="include_frozen" value="1"
+                               id="includeFrozenFiles" {% if include_frozen %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="includeFrozenFiles">
+                            <i class="bi bi-snow text-info"></i> Показати заморожених
+                        </label>
+                    </div>
+                    <a href="{{ url_for('military_reports.military_files', month=selected_ym, tab=active_tab) }}"
+                       class="btn btn-sm btn-outline-secondary ms-auto">
+                        <i class="bi bi-x-circle me-1"></i> Скинути фільтри
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {# ── Статистика вибраного місяця ── #}
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3">
+            <div class="card text-center border-success h-100">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-success">{{ ready_rows|length }}</div>
+                    <div class="small text-muted">Згенеровано за {{ selected_ym_label }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center border-warning h-100">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-warning">{{ outdated_rows|length }}</div>
+                    <div class="small text-muted">Ще не оновили у цьому місяці</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center border-danger h-100">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-danger">{{ missing_rows|length }}</div>
+                    <div class="small text-muted">Не вистачає файлу взагалі</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="card text-center border-primary h-100">
+                <div class="card-body py-3">
+                    <div class="fs-3 fw-bold text-primary">{{ need_contact_rows|length }}</div>
+                    <div class="small text-muted">Потребують контакту</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Вкладки ── #}
+    {% set common_params = {
+        'month': selected_ym,
+        'search': search or None,
+        'group_id': group_id,
+        'study_form': study_form or None,
+        'category': category_filter or None,
+        'show_all_licenses': ('1' if show_all_licenses else None),
+        'include_frozen': ('1' if include_frozen else None),
+        'pdf_only': ('1' if pdf_only else None),
+    } %}
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'need' %}active{% endif %}"
+               href="{{ url_for('military_reports.military_files', tab='need', **common_params) }}">
+                <i class="bi bi-telephone-outbound me-1"></i>
+                Потребують файлу / оновлення
+                <span class="badge bg-danger ms-1">{{ need_contact_rows|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'outdated' %}active{% endif %}"
+               href="{{ url_for('military_reports.military_files', tab='outdated', **common_params) }}">
+                <i class="bi bi-clock-history me-1"></i>
+                Не оновили у місяці
+                <span class="badge bg-warning text-dark ms-1">{{ outdated_rows|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'missing' %}active{% endif %}"
+               href="{{ url_for('military_reports.military_files', tab='missing', **common_params) }}">
+                <i class="bi bi-file-earmark-x me-1"></i>
+                Без файлу взагалі
+                <span class="badge bg-secondary ms-1">{{ missing_rows|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'ready' %}active{% endif %}"
+               href="{{ url_for('military_reports.military_files', tab='ready', **common_params) }}">
+                <i class="bi bi-file-earmark-check me-1"></i>
+                Готові до паку ({{ selected_ym_label }})
+                <span class="badge bg-success ms-1">{{ ready_rows|length }}</span>
+            </a>
+        </li>
+    </ul>
+
+    {# ── Таблиця: Потребують файлу / Не оновили / Без файлу ── #}
+    {% if active_tab in ('need', 'outdated', 'missing') %}
+        {% set display_rows = (
+            need_contact_rows if active_tab == 'need'
+            else (outdated_rows if active_tab == 'outdated' else missing_rows)
+        ) %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    {% if active_tab == 'need' %}
+                        <strong>Студенти, у яких відсутній або не оновлений файл за {{ selected_ym_label }}</strong>
+                    {% elif active_tab == 'outdated' %}
+                        <strong>Не оновили файл «Резерв+» у {{ selected_ym_label }}</strong>
+                    {% else %}
+                        <strong>Студенти без жодного військово-облікового файлу</strong>
+                    {% endif %}
+                </span>
+                <span class="badge bg-secondary">{{ display_rows|length }} осіб</span>
+            </div>
+            <div class="card-body p-0">
+                {% if display_rows %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center" style="width:45px;">№</th>
+                                <th>ПІБ / Група</th>
+                                <th>Категорія</th>
+                                <th>Стан файлу</th>
+                                <th>Як зв'язатися</th>
+                                <th class="text-end" style="width:120px;">Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in display_rows %}
+                            <tr class="js-contact-row"
+                                data-name="{{ r.full_name }}"
+                                data-phone="{{ r.phone or r.phone_backup }}"
+                                data-email="{{ r.email }}">
+                                <td class="text-center font-monospace">{{ loop.index }}</td>
+                                <td>
+                                    <a href="{{ url_for('students.student_details', student_id=r.id) }}"
+                                       class="fw-semibold text-decoration-none">
+                                        {{ r.full_name }}
+                                    </a>
+                                    {% if r.frozen_id %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis ms-1">
+                                        <i class="bi bi-snow"></i> заморожений
+                                    </span>
+                                    {% endif %}
+                                    <div class="small text-muted">
+                                        {{ r.group_name or 'Без групи' }}
+                                        {% if r.study_form %} · {{ r.study_form }}{% endif %}
+                                    </div>
+                                </td>
+                                <td class="small">{{ r.category_label }}</td>
+                                <td class="small">
+                                    {% if r.file_status == 'missing' %}
+                                        <span class="badge bg-danger-subtle text-danger-emphasis">
+                                            <i class="bi bi-x-circle me-1"></i>Не вистачає файлу
+                                        </span>
+                                        {% if not r.has_military %}
+                                        <div class="text-muted mt-1" style="font-size:.75rem;">
+                                            немає картки військового обліку
+                                        </div>
+                                        {% elif r.formed_at %}
+                                        <div class="text-muted mt-1" style="font-size:.75rem;">
+                                            дата у картці: {{ r.formed_at }} (сам файл не прикріплено)
+                                        </div>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="badge bg-warning-subtle text-warning-emphasis">
+                                            <i class="bi bi-clock me-1"></i>Не оновлено за {{ selected_ym_label }}
+                                        </span>
+                                        {% if r.latest_file %}
+                                        <div class="text-muted mt-1" style="font-size:.75rem;">
+                                            Останній:
+                                            <a href="{{ url_for('static', filename=r.latest_file.file_path) }}"
+                                               target="_blank" class="text-decoration-none">
+                                                {{ r.latest_ym_label or r.latest_file.date_display or 'файл' }}
+                                            </a>
+                                            {% if r.latest_file.date_display %}
+                                                ({{ r.latest_file.date_display }})
+                                            {% endif %}
+                                        </div>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td class="small">
+                                    {% if r.phone %}
+                                    <div class="d-flex align-items-center gap-1">
+                                        <i class="bi bi-telephone text-success"></i>
+                                        <a href="tel:{{ r.phone }}" class="text-decoration-none font-monospace">{{ r.phone }}</a>
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-muted js-copy-val"
+                                                data-copy="{{ r.phone }}" title="Копіювати телефон">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                    {% endif %}
+                                    {% if r.phone_backup %}
+                                    <div class="d-flex align-items-center gap-1 text-muted">
+                                        <i class="bi bi-telephone-plus"></i>
+                                        <a href="tel:{{ r.phone_backup }}" class="text-decoration-none font-monospace">{{ r.phone_backup }}</a>
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-muted js-copy-val"
+                                                data-copy="{{ r.phone_backup }}" title="Копіювати додатковий телефон">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                    {% endif %}
+                                    {% if r.email %}
+                                    <div class="d-flex align-items-center gap-1">
+                                        <i class="bi bi-envelope text-primary"></i>
+                                        <a href="mailto:{{ r.email }}" class="text-decoration-none">{{ r.email }}</a>
+                                        <button type="button" class="btn btn-link btn-sm p-0 text-muted js-copy-val"
+                                                data-copy="{{ r.email }}" title="Копіювати email">
+                                            <i class="bi bi-clipboard"></i>
+                                        </button>
+                                    </div>
+                                    {% endif %}
+                                    {% if not r.phone and not r.phone_backup and not r.email %}
+                                    <span class="text-muted">Контакти не вказані</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <a href="{{ url_for('students.military_data', student_id=r.id) }}"
+                                       class="btn btn-sm btn-outline-primary"
+                                       title="Відкрити військові дані та завантажити файл">
+                                        <i class="bi bi-upload me-1"></i>Файл
+                                    </a>
+                                    <a href="{{ url_for('students.student_details', student_id=r.id) }}"
+                                       class="btn btn-sm btn-outline-secondary"
+                                       title="Картка студента">
+                                        <i class="bi bi-person"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-5 text-center text-muted">
+                    <i class="bi bi-check-circle-fill fs-1 text-success d-block mb-2"></i>
+                    У всіх студентів є актуальний файл за {{ selected_ym_label }}.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
+    {# ── Таблиця: Готові до паку ── #}
+    {% if active_tab == 'ready' %}
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span>
+                    <strong>Файли за {{ selected_ym_label }} (у ZIP-архіві називатимуться за ПІБ)</strong>
+                </span>
+                <span class="badge bg-success">{{ ready_rows|length }} студентів</span>
+            </div>
+            <div class="card-body p-0">
+                {% if ready_rows %}
+                <div class="table-responsive">
+                    <table class="table table-hover table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="text-center" style="width:45px;">№</th>
+                                <th>ПІБ (ім'я файлу в паку)</th>
+                                <th>Група / Форма</th>
+                                <th>Категорія</th>
+                                <th>Дата формування / завантаження</th>
+                                <th>Файли</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in ready_rows %}
+                            <tr>
+                                <td class="text-center font-monospace">{{ loop.index }}</td>
+                                <td>
+                                    <a href="{{ url_for('students.military_data', student_id=r.id) }}"
+                                       class="fw-semibold text-decoration-none">
+                                        {{ r.full_name }}
+                                    </a>
+                                </td>
+                                <td class="small">
+                                    {{ r.group_name or '—' }}
+                                    {% if r.study_form %} · {{ r.study_form }}{% endif %}
+                                </td>
+                                <td class="small">{{ r.category_label }}</td>
+                                <td class="small font-monospace">
+                                    {% set first_f = r.in_month_files[0] %}
+                                    {{ first_f.date_display or first_f.uploaded_at or '—' }}
+                                    {% if first_f.date_source == 'formed' %}
+                                        <span class="badge bg-info-subtle text-info-emphasis ms-1">Сформовано</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">Завантажено</span>
+                                    {% endif %}
+                                </td>
+                                <td class="small">
+                                    {% for f in r.in_month_files %}
+                                    <a href="{{ url_for('static', filename=f.file_path) }}"
+                                       target="_blank"
+                                       class="badge bg-success-subtle text-success-emphasis text-decoration-none me-1">
+                                        <i class="bi {% if f.is_pdf %}bi-file-earmark-pdf{% else %}bi-file-earmark-image{% endif %} me-1"></i>
+                                        {{ r.full_name }}{{ '.pdf' if f.is_pdf else '' }}
+                                    </a>
+                                    {% endfor %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-5 text-center text-muted">
+                    <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                    За {{ selected_ym_label }} ще немає згенерованих або завантажених файлів «Резерв+».
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.js-copy-val').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            const val = btn.dataset.copy || '';
+            if (!val) return;
+            navigator.clipboard?.writeText(val).then(function () {
+                const icon = btn.querySelector('i');
+                if (icon) {
+                    icon.className = 'bi bi-check2 text-success';
+                    setTimeout(function () { icon.className = 'bi bi-clipboard'; }, 1200);
+                }
+            });
+        });
+    });
+
+    const copyAllBtn = document.getElementById('btnCopyContacts');
+    if (copyAllBtn) {
+        copyAllBtn.addEventListener('click', function () {
+            const lines = [];
+            document.querySelectorAll('.js-contact-row').forEach(function (row) {
+                const name = row.dataset.name || '';
+                const phone = row.dataset.phone || '';
+                const email = row.dataset.email || '';
+                const parts = [name];
+                if (phone) parts.push(phone);
+                if (email) parts.push(email);
+                lines.push(parts.join(' — '));
+            });
+            if (!lines.length) return;
+            navigator.clipboard?.writeText(lines.join('\n')).then(function () {
+                const orig = copyAllBtn.innerHTML;
+                copyAllBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Скопійовано!';
+                setTimeout(function () { copyAllBtn.innerHTML = orig; }, 1600);
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

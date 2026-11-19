@@ -23,13 +23,20 @@ routes/military_reports.py
 Категорія не визначена (None) → потрапляє в «Проблемні»
 """
 
+import io
+import os
+import re
 import sqlite3
 import hashlib
+import zipfile
 from datetime import date
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session
+from flask import (
+    Blueprint, render_template, redirect, url_for,
+    flash, request, jsonify, session, send_file,
+)
 from routes.db import get_db
-from routes.utils import log_action, permission_required, logger
+from routes.utils import log_action, permission_required, logger, PROJECT_ROOT
 from routes.helpers import current_username
 from routes.orders_service import (
     get_enrollment_student_ids,
@@ -2902,4 +2909,527 @@ def dodatok_4_export(student_id):
         as_attachment=True,
         download_name=filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Військово-облікові файли «Резерв+» (помісячні паки та контроль оновлень)
+# ═══════════════════════════════════════════════════════════════════════
+
+_MONTH_NAMES_UA = {
+    1: 'Січень',
+    2: 'Лютий',
+    3: 'Березень',
+    4: 'Квітень',
+    5: 'Травень',
+    6: 'Червень',
+    7: 'Липень',
+    8: 'Серпень',
+    9: 'Вересень',
+    10: 'Жовтень',
+    11: 'Листопад',
+    12: 'Грудень',
+}
+
+
+def _format_ym_label_ua(ym: str) -> str:
+    """'2026-10' → 'Жовтень 2026'."""
+    if not ym or '-' not in ym:
+        return ym or '—'
+    try:
+        y_s, m_s = ym.split('-', 1)
+        m_name = _MONTH_NAMES_UA.get(int(m_s), m_s)
+        return f"{m_name} {int(y_s)}"
+    except (ValueError, TypeError):
+        return ym
+
+
+def _parse_ym_and_sort_key(raw_val: str):
+    """
+    Розбирає дату/час формату 'DD.MM.YYYY HH:MM', 'DD.MM.YYYY',
+    'DD/MM/YYYY...', 'YYYY-MM-DD HH:MM:SS' або 'YYYY-MM-DD'.
+    Повертає ('YYYY-MM', 'YYYY-MM-DD HH:MM:SS') або (None, '').
+    """
+    if not raw_val:
+        return None, ''
+    s = str(raw_val).strip()
+    if not s:
+        return None, ''
+
+    # DD.MM.YYYY [HH:MM[:SS]] або DD/MM/YYYY
+    m = re.match(r'^(\d{1,2})[./](\d{1,2})[./](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?', s)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        hh = int(m.group(4) or 0)
+        mm = int(m.group(5) or 0)
+        ss = int(m.group(6) or 0)
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y:04d}-{mo:02d}", f"{y:04d}-{mo:02d}-{d:02d} {hh:02d}:{mm:02d}:{ss:02d}"
+
+    # YYYY-MM-DD [HH:MM[:SS]]
+    m = re.match(r'^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?', s)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        hh = int(m.group(4) or 0)
+        mm = int(m.group(5) or 0)
+        ss = int(m.group(6) or 0)
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y:04d}-{mo:02d}", f"{y:04d}-{mo:02d}-{d:02d} {hh:02d}:{mm:02d}:{ss:02d}"
+
+    return None, ''
+
+
+def _sanitize_zip_filename(name: str) -> str:
+    """Очищає ПІБ для безпечної назви файлу в архіві."""
+    cleaned = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', '_', (name or '').strip())
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(' .')
+    return cleaned
+
+
+def _resolve_attachment_disk_path(rel_path: str):
+    """Повертає абсолютний шлях у static/ або None при некоректному шляху."""
+    if not rel_path:
+        return None
+    static_root = os.path.abspath(os.path.join(PROJECT_ROOT, 'static'))
+    clean_rel = str(rel_path).replace('\\', '/').lstrip('/')
+    if clean_rel.startswith('static/'):
+        clean_rel = clean_rel[len('static/'):]
+    candidate = os.path.abspath(os.path.join(static_root, clean_rel))
+    if candidate != static_root and not candidate.startswith(static_root + os.sep):
+        return None
+    return candidate
+
+
+def _recent_months_list(count: int = 12):
+    """Останні count календарних місяців ['YYYY-MM', ...] включно з поточним."""
+    today = date.today()
+    y, m = today.year, today.month
+    out = []
+    for _ in range(count):
+        out.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m = 12
+            y -= 1
+    return out
+
+
+def _collect_military_files_overview(
+    conn,
+    *,
+    selected_ym: str,
+    search: str = '',
+    group_id=None,
+    study_form: str = '',
+    category_filter: str = '',
+    show_all_licenses: bool = False,
+    include_frozen: bool = False,
+    pdf_only: bool = False,
+):
+    """
+    Збирає дані про військово-облікові файли («Резерв+») для сторінки контролю
+    та завантаження помісячних ZIP-паків.
+    """
+    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    enrollment_licenses = _load_enrollment_licenses(conn)
+
+    students = conn.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+               s.birth_date, s.gender, s.license_id,
+               s.phone, s.phone_backup, s.email, s.address_of_residence,
+               m.id AS military_id, m.status_badge, m.military_rank,
+               m.category_override, m.tck_name, m.vos_code, m.note_18,
+               m.formed_at, m.military_registration_document,
+               g.id AS group_id, g.name AS group_name,
+               g.study_form AS study_form,
+               fz.id AS frozen_id, fz.reason AS frozen_reason
+        FROM students s
+        LEFT JOIN military m ON m.student_id = s.id
+        LEFT JOIN groups g ON s.group_id = g.id
+        LEFT JOIN frozen_students fz
+               ON fz.student_id = s.id AND fz.resolved_at IS NULL
+        WHERE COALESCE(s.archived, 0) = 0
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN,
+                 s.first_name_UA COLLATE UKRAINIAN
+    """).fetchall()
+
+    att_rows = conn.execute("""
+        SELECT id, entity_id, file_path, original_name, uploaded_at, uploaded_by
+        FROM attachments
+        WHERE entity_type = 'military'
+        ORDER BY id ASC
+    """).fetchall()
+    atts_by_mil = {}
+    for a in att_rows:
+        atts_by_mil.setdefault(a['entity_id'], []).append(dict(a))
+
+    ready_rows = []
+    missing_rows = []
+    outdated_rows = []
+    month_student_counts = {}
+
+    for s in students:
+        if not show_all_licenses:
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
+                continue
+
+        if s['frozen_id'] and not include_frozen:
+            continue
+
+        if _is_woman_without_military(
+            s['gender'], s['military_id'], s['status_badge'],
+            s['military_rank'], s['vos_code'], s['tck_name']
+        ):
+            continue
+
+        status = s['status_badge'] or ''
+        if status in EXCLUDED_STATUSES:
+            continue
+        if s['note_18'] in NOTE_18_EXCLUDES_FROM_DODATOK_5:
+            continue
+
+        cat = _detect_category(
+            s['military_rank'], status, s['gender'],
+            s['category_override'], s['note_18']
+        ) if s['military_id'] else None
+
+        if group_id and s['group_id'] != group_id:
+            continue
+        if study_form and (s['study_form'] or '') != study_form:
+            continue
+        if category_filter:
+            if category_filter == 'other':
+                if cat is not None:
+                    continue
+            elif cat != category_filter:
+                continue
+
+        full_name = ' '.join(
+            x for x in (s['last_name_UA'], s['first_name_UA'], s['middle_name_UA'] or '') if x
+        ).strip()
+
+        if search:
+            haystack = ' '.join([
+                full_name,
+                s['phone'] or '',
+                s['phone_backup'] or '',
+                s['email'] or '',
+                s['group_name'] or '',
+            ]).lower()
+            if not all(w in haystack for w in search.lower().split()):
+                continue
+
+        formed_ym, formed_sort = _parse_ym_and_sort_key(s['formed_at'])
+
+        raw_atts = atts_by_mil.get(s['military_id'], []) if s['military_id'] else []
+        if pdf_only:
+            filtered_atts = [
+                a for a in raw_atts
+                if (a.get('file_path') or '').lower().endswith('.pdf')
+            ]
+        else:
+            filtered_atts = list(raw_atts)
+
+        # Визначаємо, який файл є найновішим PDF (або найновішим файлом),
+        # щоб пов'язати з ним дату «Сформовано» (military.formed_at).
+        latest_doc_att_id = None
+        pdf_atts = [
+            a for a in filtered_atts
+            if (a.get('file_path') or '').lower().endswith('.pdf')
+        ]
+        if pdf_atts:
+            latest_doc_att_id = pdf_atts[-1]['id']
+        elif filtered_atts:
+            latest_doc_att_id = filtered_atts[-1]['id']
+
+        processed_atts = []
+        files_by_month = {}
+        for a in filtered_atts:
+            up_ym, up_sort = _parse_ym_and_sort_key(a.get('uploaded_at'))
+            is_latest_doc = (a['id'] == latest_doc_att_id)
+            if is_latest_doc and formed_ym:
+                eff_ym = formed_ym
+                eff_sort = formed_sort or up_sort
+                date_display = (s['formed_at'] or '').strip()
+                date_source = 'formed'
+            else:
+                eff_ym = up_ym
+                eff_sort = up_sort
+                date_display = (a.get('uploaded_at') or '').strip()
+                date_source = 'uploaded'
+
+            disk_path = _resolve_attachment_disk_path(a.get('file_path') or '')
+            exists_on_disk = bool(disk_path and os.path.exists(disk_path))
+            is_pdf = (a.get('file_path') or '').lower().endswith('.pdf')
+            att_info = {
+                'id': a['id'],
+                'file_path': a.get('file_path') or '',
+                'disk_path': disk_path,
+                'exists_on_disk': exists_on_disk,
+                'original_name': a.get('original_name') or os.path.basename(a.get('file_path') or 'file'),
+                'uploaded_at': a.get('uploaded_at') or '',
+                'effective_ym': eff_ym,
+                'effective_sort': eff_sort,
+                'date_display': date_display,
+                'date_source': date_source,
+                'is_pdf': is_pdf,
+            }
+            processed_atts.append(att_info)
+            if eff_ym and exists_on_disk:
+                files_by_month.setdefault(eff_ym, []).append(att_info)
+
+        # Підраховуємо помісячну статистику по існуючих файлах
+        for ym_key, m_files in files_by_month.items():
+            if m_files:
+                month_student_counts[ym_key] = month_student_counts.get(ym_key, 0) + 1
+
+        existing_atts = [a for a in processed_atts if a['exists_on_disk']]
+        in_month_files = files_by_month.get(selected_ym, [])
+
+        latest_att = max(
+            existing_atts,
+            key=lambda a: (a['effective_sort'], a['id']),
+            default=None,
+        )
+
+        row_data = {
+            'id': s['id'],
+            'full_name': full_name,
+            'group_id': s['group_id'],
+            'group_name': s['group_name'] or '',
+            'study_form': s['study_form'] or '',
+            'category': cat,
+            'category_label': CATEGORY_LABELS[cat][0] if cat in CATEGORY_LABELS else 'Не визначена',
+            'has_military': bool(s['military_id']),
+            'frozen_id': s['frozen_id'],
+            'frozen_reason': s['frozen_reason'] or '',
+            'phone': (s['phone'] or '').strip(),
+            'phone_backup': (s['phone_backup'] or '').strip(),
+            'email': (s['email'] or '').strip(),
+            'address': (s['address_of_residence'] or '').strip(),
+            'formed_at': (s['formed_at'] or '').strip(),
+            'formed_ym': formed_ym,
+            'in_month_files': in_month_files,
+            'all_files_count': len(existing_atts),
+            'latest_file': latest_att,
+            'latest_ym': latest_att['effective_ym'] if latest_att else formed_ym,
+            'latest_ym_label': (
+                _format_ym_label_ua(latest_att['effective_ym'])
+                if latest_att and latest_att['effective_ym']
+                else (_format_ym_label_ua(formed_ym) if formed_ym else '')
+            ),
+        }
+
+        if in_month_files:
+            row_data['file_status'] = 'ready'
+            ready_rows.append(row_data)
+        elif not existing_atts:
+            row_data['file_status'] = 'missing'
+            missing_rows.append(row_data)
+        else:
+            row_data['file_status'] = 'outdated'
+            outdated_rows.append(row_data)
+
+    # Доступні місяці: останні 12 місяців + всі місяці з наявними файлами
+    all_yms = sorted(
+        set(_recent_months_list(12)) | set(month_student_counts.keys()) | ({selected_ym} if selected_ym else set()),
+        reverse=True,
+    )
+    month_options = [
+        {
+            'ym': ym,
+            'label': _format_ym_label_ua(ym),
+            'count': month_student_counts.get(ym, 0),
+        }
+        for ym in all_yms
+    ]
+
+    need_contact_rows = outdated_rows + missing_rows
+    need_contact_rows.sort(key=lambda r: r['full_name'].lower())
+
+    return {
+        'ready_rows': ready_rows,
+        'missing_rows': missing_rows,
+        'outdated_rows': outdated_rows,
+        'need_contact_rows': need_contact_rows,
+        'month_options': month_options,
+        'month_student_counts': month_student_counts,
+        'base_license_label': base_license_short or base_license_name or '—',
+    }
+
+
+@military_reports_bp.route('/admin/military_reports/files')
+@permission_required('manage_military_reports')
+def military_files():
+    """
+    Сторінка контролю військово-облікових файлів («Резерв+»):
+      - Завантаження помісячного ZIP-паку з файлами, названими ПІБ студентів
+      - Списки студентів без файлу та тих, хто ще не оновив файл у вибраному місяці
+      - Контакти для зв'язку зі студентами (телефон, резервний телефон, email)
+    """
+    today_ym = date.today().strftime('%Y-%m')
+    selected_ym = (request.args.get('month') or today_ym).strip()
+    if not re.match(r'^\d{4}-\d{2}$', selected_ym):
+        selected_ym = today_ym
+
+    search = (request.args.get('search') or '').strip()
+    group_id = request.args.get('group_id', type=int)
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = ''
+    category_filter = (request.args.get('category') or '').strip()
+    if category_filter not in ('officers', 'rank', 'women', 'conscripts', 'other'):
+        category_filter = ''
+    show_all_licenses = request.args.get('show_all_licenses') == '1'
+    include_frozen = request.args.get('include_frozen') == '1'
+    pdf_only = request.args.get('pdf_only') == '1'
+    active_tab = (request.args.get('tab') or 'need').strip()
+    if active_tab not in ('need', 'missing', 'outdated', 'ready'):
+        active_tab = 'need'
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+
+    groups = conn.execute("""
+        SELECT id, name, start_year, study_form
+        FROM groups WHERE archived = FALSE
+        ORDER BY name COLLATE UKRAINIAN
+    """).fetchall()
+
+    overview = _collect_military_files_overview(
+        conn,
+        selected_ym=selected_ym,
+        search=search,
+        group_id=group_id,
+        study_form=study_form,
+        category_filter=category_filter,
+        show_all_licenses=show_all_licenses,
+        include_frozen=include_frozen,
+        pdf_only=pdf_only,
+    )
+    conn.close()
+
+    return render_template(
+        'military_reports/files.html',
+        selected_ym=selected_ym,
+        selected_ym_label=_format_ym_label_ua(selected_ym),
+        today_ym=today_ym,
+        active_tab=active_tab,
+        search=search,
+        group_id=group_id,
+        study_form=study_form,
+        study_form_options=STUDY_FORM_OPTIONS,
+        category_filter=category_filter,
+        category_labels=CATEGORY_LABELS,
+        show_all_licenses=show_all_licenses,
+        include_frozen=include_frozen,
+        pdf_only=pdf_only,
+        groups=groups,
+        **overview,
+    )
+
+
+@military_reports_bp.route('/admin/military_reports/files/download_pack')
+@permission_required('manage_military_reports')
+def military_files_download_pack():
+    """
+    Формує і віддає ZIP-архів файлів «Резерв+» за вибраний місяць.
+    Кожен файл усередині архіву називається ПІБ студента (напр. «Іваненко Іван Іванович.pdf»).
+    """
+    today_ym = date.today().strftime('%Y-%m')
+    selected_ym = (request.args.get('month') or today_ym).strip()
+    if not re.match(r'^\d{4}-\d{2}$', selected_ym):
+        selected_ym = today_ym
+
+    search = (request.args.get('search') or '').strip()
+    group_id = request.args.get('group_id', type=int)
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = ''
+    category_filter = (request.args.get('category') or '').strip()
+    if category_filter not in ('officers', 'rank', 'women', 'conscripts', 'other'):
+        category_filter = ''
+    show_all_licenses = request.args.get('show_all_licenses') == '1'
+    include_frozen = request.args.get('include_frozen') == '1'
+    pdf_only = request.args.get('pdf_only') == '1'
+
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    overview = _collect_military_files_overview(
+        conn,
+        selected_ym=selected_ym,
+        search=search,
+        group_id=group_id,
+        study_form=study_form,
+        category_filter=category_filter,
+        show_all_licenses=show_all_licenses,
+        include_frozen=include_frozen,
+        pdf_only=pdf_only,
+    )
+    conn.close()
+
+    ready_rows = overview['ready_rows']
+    if not ready_rows:
+        flash(
+            f"За {_format_ym_label_ua(selected_ym)} немає військово-облікових файлів для завантаження.",
+            "warning",
+        )
+        return redirect(url_for(
+            'military_reports.military_files',
+            month=selected_ym,
+            search=search or None,
+            group_id=group_id,
+            study_form=study_form or None,
+            category=category_filter or None,
+            show_all_licenses='1' if show_all_licenses else None,
+            include_frozen='1' if include_frozen else None,
+            pdf_only='1' if pdf_only else None,
+        ))
+
+    buf = io.BytesIO()
+    used_arcnames = set()
+    files_written = 0
+    # Рахуємо повтори ПІБ серед студентів, щоб тезки не перезаписали один одного
+    name_counts = {}
+    for r in ready_rows:
+        base_name = _sanitize_zip_filename(r['full_name']) or f"Студент_{r['id']}"
+        name_counts[base_name] = name_counts.get(base_name, 0) + 1
+
+    with zipfile.ZipFile(buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for r in ready_rows:
+            base_name = _sanitize_zip_filename(r['full_name']) or f"Студент_{r['id']}"
+            if name_counts.get(base_name, 0) > 1:
+                base_name = f"{base_name} (ID {r['id']})"
+
+            student_files = [a for a in r['in_month_files'] if a['exists_on_disk']]
+            for idx, att in enumerate(student_files, start=1):
+                ext = os.path.splitext(att['file_path'])[1].lower() or '.pdf'
+                arcname = f"{base_name}{ext}" if idx == 1 else f"{base_name} ({idx}){ext}"
+                suffix_n = 2
+                while arcname.lower() in used_arcnames:
+                    arcname = f"{base_name} ({suffix_n}){ext}"
+                    suffix_n += 1
+                used_arcnames.add(arcname.lower())
+                zf.write(att['disk_path'], arcname=arcname)
+                files_written += 1
+
+    if files_written == 0:
+        flash(
+            f"Файли за {_format_ym_label_ua(selected_ym)} відсутні на диску.",
+            "warning",
+        )
+        return redirect(url_for('military_reports.military_files', month=selected_ym))
+
+    buf.seek(0)
+    log_action(
+        current_username(),
+        f"завантажив пак файлів «Резерв+» за {_format_ym_label_ua(selected_ym)}: "
+        f"{len(ready_rows)} студ., {files_written} файл(ів)",
+    )
+    zip_filename = f"Резерв_плюс_{selected_ym}.zip"
+    return send_file(
+        buf,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=zip_filename,
     )
