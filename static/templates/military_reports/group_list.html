@@ -85,7 +85,7 @@
                 <input type="hidden" name="report_mode" id="hiddenReportMode" value="{{ report_mode }}">
                 <input type="hidden" name="report_date" id="hiddenReportDate" value="{{ report_date_custom }}">
 
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small mb-1">Пошук по ПІБ</label>
                     <div class="input-group input-group-sm">
                         <input type="text" name="search" class="form-control"
@@ -108,7 +108,17 @@
                     </select>
                 </div>
 
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Форма навчання</label>
+                    <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Всі форми</option>
+                        {% for sf in study_form_options %}
+                        <option value="{{ sf }}" {% if sf == study_form %}selected{% endif %}>{{ sf }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-2">
                     <label class="form-label small mb-1">ТЦК</label>
                     <select name="tck" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="">Всі ТЦК</option>
@@ -310,14 +320,14 @@
         <div class="card-footer d-flex flex-column align-items-center gap-2 py-3">
             {% set prev_url = url_for('military_reports.group_list', category=category,
                                        page=page-1, per_page=per_page, search=search,
-                                       group_id=group_id, tck=tck_filter,
+                                       group_id=group_id, study_form=study_form, tck=tck_filter,
                                        include_frozen=('1' if include_frozen else '0'),
                                        include_dismissed=('1' if include_dismissed else '0'),
                                        show_all_licenses=('1' if show_all_licenses else '0'),
                                        report_mode=report_mode, report_date=report_date_custom) %}
             {% set next_url = url_for('military_reports.group_list', category=category,
                                        page=page+1, per_page=per_page, search=search,
-                                       group_id=group_id, tck=tck_filter,
+                                       group_id=group_id, study_form=study_form, tck=tck_filter,
                                        include_frozen=('1' if include_frozen else '0'),
                                        include_dismissed=('1' if include_dismissed else '0'),
                                        show_all_licenses=('1' if show_all_licenses else '0'),
@@ -335,6 +345,7 @@
 
                 <form method="GET" class="d-flex align-items-center gap-1">
                     {% for k, v in {'search': search, 'group_id': group_id or '',
+                                    'study_form': study_form,
                                     'tck': tck_filter, 'per_page': per_page,
                                     'report_mode': report_mode,
                                     'report_date': report_date_custom,
@@ -694,11 +705,15 @@ document.addEventListener('DOMContentLoaded', function () {
             params.set('show_all_licenses', '1');
         }
 		
-		const tckSelect = document.querySelector('select[name="tck"]');
+        const tckSelect = document.querySelector('select[name="tck"]');
         if (tckSelect && tckSelect.value) {
             params.set('tck', tckSelect.value);
         }
-		
+        const studyFormSelect = document.querySelector('select[name="study_form"]');
+        if (studyFormSelect && studyFormSelect.value) {
+            params.set('study_form', studyFormSelect.value);
+        }
+
         window.location.href = btnExport.dataset.exportUrl + '?' + params.toString();
     });
 });

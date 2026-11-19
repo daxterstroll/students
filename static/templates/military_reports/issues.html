@@ -44,7 +44,7 @@
                 </div>
 
                 <div class="row g-2 align-items-end pt-3 border-top">
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                         <label class="form-label small mb-1">Пошук по ПІБ</label>
                         <div class="input-group input-group-sm">
                             <input type="text" name="search" class="form-control"
@@ -55,7 +55,7 @@
                         </div>
                     </div>
 
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <label class="form-label small mb-1">Група</label>
                         <select name="group_id" class="form-select form-select-sm"
                                 onchange="this.form.submit()">
@@ -69,6 +69,17 @@
                     </div>
 
                     <div class="col-md-3">
+                        <label class="form-label small mb-1">Форма навчання</label>
+                        <select name="study_form" class="form-select form-select-sm"
+                                onchange="this.form.submit()">
+                            <option value="">Всі форми</option>
+                            {% for sf in study_form_options %}
+                            <option value="{{ sf }}" {% if sf == study_form %}selected{% endif %}>{{ sf }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-md-2">
                         <label class="form-label small mb-1">На сторінці</label>
                         <select name="per_page" class="form-select form-select-sm"
                                 onchange="this.form.submit()">
@@ -217,6 +228,7 @@
             {% set base_params = {
                 'search': search,
                 'group_id': group_id or '',
+                'study_form': study_form,
                 'per_page': per_page,
                 'include_frozen': '1' if include_frozen else '',
             } %}

@@ -119,7 +119,7 @@ DODATOK_5_WIDTHS = [
     14,  # 14 Спец. облік
     14,  # 15 Служба
     16,  # 16 Моб. розпорядження
-    18,  # 17 Посада
+    30,  # 17 Посада, реквізити акта про прийняття/звільнення (наказ про зарахування/поновлення)
     18,  # 18 Повідомлення
     10,  # 19 Філія
     20,  # 20 Примітка
@@ -221,7 +221,7 @@ def _write_dodatok_5_row(ws, row_num, data):
         '',                                   # 14 Спец. облік
         '',                                   # 15 Служба
         '',                                   # 16 Моб. розпорядження
-        '',                                   # 17 Посада
+        data.get('enrollment_order') or '',   # 17 Посада / наказ про зарахування або поновлення
         '',                                   # 18 Повідомлення
         data.get('license_short') or '',      # 19 Філія
         data.get('note_18') or '',            # 20 Примітка
@@ -251,7 +251,7 @@ def generate_dodatok_5_xlsx(category, report_date, rows, base_license_label=''):
     :param rows: список dict з полями:
         full_name, birth_date, tax_id, status_badge, military_rank,
         registry_number, vos, military_document, passport, address,
-        tck_name, deferral, note_18, change_credentials,
+        tck_name, deferral, enrollment_order, note_18, change_credentials,
         reason_for_change, license_short, enrolled_note, expelled_note
     :param base_license_label: коротка назва базової ліцензії (для шапки)
     :return: BytesIO з .xlsx

@@ -249,6 +249,93 @@ def _load_enrollment_dates(conn):
     return result
 
 
+def _load_enrollment_or_renewal_orders(conn, report_date=None):
+    """
+    student_id → текст наказу про зарахування або поновлення для 17 графи Додатка 5.
+    Береться активний наказ типу 'enrollment' або 'license_transfer' (ПОНОВЛЕННЯ)
+    з order_items (entity_type='student') або student_enrollments.order_id.
+    Якщо є кілька наказів — береться найактуальніший (спочатку <= report_date,
+    інакше найновіший активний наказ студента).
+    """
+    if not orders_tables_ready(conn=conn):
+        return {}
+
+    candidates = {}
+
+    def _add(sid, order_id, order_type, order_number, order_date):
+        if sid is None or not order_number:
+            return
+        sid = int(sid)
+        p_date = _parse_order_date_to_date(order_date)
+        candidates.setdefault(sid, {})[int(order_id)] = (
+            p_date,
+            int(order_id),
+            order_type,
+            (order_number or '').strip(),
+            (order_date or '').strip(),
+        )
+
+    rows = conn.execute("""
+        SELECT oi.entity_id AS student_id,
+               o.id AS order_id,
+               o.order_type,
+               o.order_number,
+               o.order_date
+        FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id
+        WHERE o.status = 'active'
+          AND o.order_type IN ('enrollment', 'license_transfer')
+          AND oi.entity_type = 'student'
+    """).fetchall()
+    for r in rows:
+        _add(r['student_id'], r['order_id'], r['order_type'], r['order_number'], r['order_date'])
+
+    enr_rows = conn.execute("""
+        SELECT e.student_id,
+               o.id AS order_id,
+               o.order_type,
+               o.order_number,
+               o.order_date
+        FROM student_enrollments e
+        JOIN orders o ON o.id = e.order_id
+        WHERE e.status = 'active'
+          AND o.status = 'active'
+          AND o.order_type IN ('enrollment', 'license_transfer')
+    """).fetchall()
+    for r in enr_rows:
+        _add(r['student_id'], r['order_id'], r['order_type'], r['order_number'], r['order_date'])
+
+    result = {}
+    for sid, order_map in candidates.items():
+        items = list(order_map.values())
+        if report_date is not None:
+            eligible = [it for it in items if it[0] is not None and it[0] <= report_date]
+            pool = eligible if eligible else items
+        else:
+            pool = items
+        best = max(pool, key=lambda it: (it[0] or date.min, it[1]))
+        p_date, _oid, otype, num, raw_date = best
+        date_str = _format_date_ua(p_date) if p_date is not None else raw_date
+        prefix = 'Наказ про поновлення' if otype == 'license_transfer' else 'Наказ про зарахування'
+        if date_str:
+            result[sid] = f"{prefix} №{num} від {date_str}"
+        else:
+            result[sid] = f"{prefix} №{num}"
+    return result
+
+
+STUDY_FORM_OPTIONS = ('Денна', 'Заочна', 'Дистанційна')
+
+
+def _empty_study_form_counts():
+    return {'Денна': 0, 'Заочна': 0, 'Дистанційна': 0, 'other': 0}
+
+
+def _bump_study_form(bucket, study_form):
+    key = study_form if study_form in STUDY_FORM_OPTIONS else 'other'
+    bucket[key] += 1
+
+
 def _was_enrolled_as_of(report_date, group_start_year, enrollment_date):
     """
     Чи студент уже мав бути на навчанні станом на report_date.
@@ -510,9 +597,11 @@ def dashboard():
         SELECT s.id, s.gender, s.dismissed_at, s.license_id,
                m.id AS military_id, m.status_badge, m.military_rank,
                m.category_override, m.tck_name, m.vos_code, m.note_18,
+               g.study_form AS study_form,
                fz.id AS frozen_id
         FROM students s
         LEFT JOIN military m ON m.student_id = s.id
+        LEFT JOIN groups g ON s.group_id = g.id
         LEFT JOIN frozen_students fz
                ON fz.student_id = s.id AND fz.resolved_at IS NULL
         WHERE COALESCE(s.archived, 0) = 0
@@ -528,6 +617,13 @@ def dashboard():
         'excluded_by_age': 0,
         'dismissed_this_year': 0,
         'mobilized': 0,
+    }
+    study_form_totals = _empty_study_form_counts()
+    study_form_by_cat = {
+        'officers': _empty_study_form_counts(),
+        'rank': _empty_study_form_counts(),
+        'women': _empty_study_form_counts(),
+        'conscripts': _empty_study_form_counts(),
     }
     issues = {
         'no_tck': 0,
@@ -565,6 +661,7 @@ def dashboard():
 
         # ── 2. Активний — рахуємо в загальному охваті ──
         total_students += 1
+        _bump_study_form(study_form_totals, s['study_form'])
 
         # ── 2b. Немає наказу про зарахування (для всіх активних не-frozen) ──
         if s['id'] not in enrolled_ids:
@@ -615,6 +712,7 @@ def dashboard():
         )
         if category:
             counts[category] += 1
+            _bump_study_form(study_form_by_cat[category], s['study_form'])
         else:
             issues['no_category'] += 1
 
@@ -649,6 +747,8 @@ def dashboard():
     return render_template(
         'military_reports/dashboard.html',
         counts=counts,
+        study_form_totals=study_form_totals,
+        study_form_by_cat=study_form_by_cat,
         issues=issues,
         frozen_count=frozen_count,
         total_students=total_students,
@@ -701,6 +801,9 @@ def group_list(category):
     # ── Параметри запиту ─────────────────────────────────────
     search = (request.args.get('search') or '').strip()
     group_id = request.args.get('group_id', type=int)
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = ''
     tck_filter = (request.args.get('tck') or '').strip()
     include_frozen = request.args.get('include_frozen') == '1'
     include_dismissed = request.args.get('include_dismissed') == '1'
@@ -761,6 +864,7 @@ def group_list(category):
                m.note_18, m.mobilized_date,
                g.id AS group_id, g.name AS group_name,
                g.start_year AS group_start_year,
+               g.study_form AS study_form,
                fz.id AS frozen_id, fz.reason AS frozen_reason
         FROM students s
         INNER JOIN military m ON m.student_id = s.id
@@ -812,6 +916,8 @@ def group_list(category):
             if not all(w in haystack for w in search.lower().split()):
                 continue
         if group_id and r['group_id'] != group_id:
+            continue
+        if study_form and (r['study_form'] or '') != study_form:
             continue
         if tck_filter and (r['tck_name'] or '') != tck_filter:
             continue
@@ -896,6 +1002,8 @@ def group_list(category):
         range_end=range_end,
         search=search,
         group_id=group_id,
+        study_form=study_form,
+        study_form_options=STUDY_FORM_OPTIONS,
         tck_filter=tck_filter,
         include_frozen=include_frozen,
         include_dismissed=include_dismissed,
@@ -1040,6 +1148,9 @@ def issues_list():
     include_frozen = request.args.get('include_frozen') == '1'
     search = (request.args.get('search') or '').strip()
     group_id = request.args.get('group_id', type=int)
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = ''
     page = max(1, request.args.get('page', 1, type=int))
     per_page = request.args.get('per_page', 50, type=int)
     if per_page not in (20, 50, 100, 200, 500):
@@ -1061,6 +1172,7 @@ def issues_list():
                m.id AS military_id, m.status_badge, m.military_rank,
                m.category_override, m.tck_name, m.vos_code, m.note_18,
                g.id AS group_id, g.name AS group_name,
+               g.study_form AS study_form,
                fz.id AS frozen_id
         FROM students s
         LEFT JOIN military m ON m.student_id = s.id
@@ -1143,6 +1255,8 @@ def issues_list():
                 continue
         if group_id and r['group_id'] != group_id:
             continue
+        if study_form and (r['study_form'] or '') != study_form:
+            continue
 
         row = dict(r)
         row['problems'] = problems
@@ -1208,6 +1322,8 @@ def issues_list():
         range_end=range_end,
         search=search,
         group_id=group_id,
+        study_form=study_form,
+        study_form_options=STUDY_FORM_OPTIONS,
         include_frozen=include_frozen,
         enabled_issues=enabled,
         issue_labels=ISSUE_LABELS,
@@ -1498,7 +1614,8 @@ def summary():
 # ═══════════════════════════════════════════════════════════════════════
 
 def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
-                          base_license_id, base_license_label, tck_filter=None):
+                          base_license_id, base_license_label, tck_filter=None,
+                          study_form=None):
     """
     Збирає рядки для Додатка 5 з повними полями (для генерації .xlsx).
     Логіка фільтрації — та сама, що й у group_list(), але БЕЗ пагінації
@@ -1506,6 +1623,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
     активні на обліку).
 
     tck_filter: точна назва ТЦК (як у military.tck_name) або None/'' = усі.
+    study_form: форма навчання ('Денна' / 'Заочна' / 'Дистанційна') або None/''.
 
     Повертає список dict.
     """
@@ -1513,6 +1631,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
     enrollment_dates = _load_enrollment_dates(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
     enrollment_license_shorts = _load_enrollment_license_shorts(conn)
+    enrollment_or_renewal_orders = _load_enrollment_or_renewal_orders(conn, report_date=report_date)
 
     # Групи з start_year == report_year (для колонки 23 «Зараховано»)
     # і всі дані по студентах + military + passport + license
@@ -1520,7 +1639,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
                s.birth_date, s.gender, s.tax_id, s.dismissed_at,
                s.license_id,
-               s.address_of_residence,         
+               s.address_of_residence,          
                il.short_name_ua AS license_short,
                m.status_badge, m.military_rank, m.category_override,
                m.registry_number, m.vos_code, m.vos_description,
@@ -1531,6 +1650,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
                m.change_credentials,
                m.reason_for_changing_credentials,
                g.start_year AS group_start_year,
+               g.study_form AS study_form,
                fz.id AS frozen_id
         FROM students s
         INNER JOIN military m ON m.student_id = s.id
@@ -1595,6 +1715,8 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
 
         # Фільтр ТЦК (якщо задано)
         if tck_filter and (s['tck_name'] or '') != tck_filter:
+            continue
+        if study_form and (s['study_form'] or '') != study_form:
             continue
 
         # Станом на report_date
@@ -1669,6 +1791,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
             'address': s['address_of_residence'] or '',
             'tck_name': s['tck_name'] or '',
             'deferral': deferral_text,
+            'enrollment_order': enrollment_or_renewal_orders.get(s['id'], ''),
             'note_18': s['note_18'] or '',
             'change_credentials': s['change_credentials'] or '',
             'reason_for_change': s['reason_for_changing_credentials'] or '',
@@ -1721,6 +1844,9 @@ def export_dodatok_5(category):
 
     show_all_licenses = request.args.get('show_all_licenses') == '1'
     tck_filter = (request.args.get('tck') or '').strip() or None
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = None
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -1731,6 +1857,7 @@ def export_dodatok_5(category):
         conn, category, report_date, show_all_licenses,
         base_license_id, base_license_short or base_license_name,
         tck_filter=tck_filter,
+        study_form=study_form,
     )
     conn.close()
 
@@ -1747,6 +1874,7 @@ def export_dodatok_5(category):
             report_date=report_date_custom if report_mode == 'custom' else None,
             show_all_licenses='1' if show_all_licenses else None,
             tck=tck_filter,
+            study_form=study_form,
         ))
 
     xlsx_io = generate_dodatok_5_xlsx(
@@ -1978,17 +2106,19 @@ def tck_offices():
     """
     Довідник ТЦК.
 
-    - is_admin: повний CRUD.
-    - manage_military_reports (не адмін): лише ТЦК зі студентами, без редагування.
+    - is_admin або право manage_military_reports («Військовий облік (дашборд, додатки)»):
+      повний CRUD і перегляд невідомих ТЦК.
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
-    is_admin_user = bool(session.get('is_admin'))
+    can_manage_tck = bool(session.get('is_admin')) or (
+        'manage_military_reports' in (session.get('permissions') or [])
+    )
 
     if request.method == 'POST':
-        if not is_admin_user:
+        if not can_manage_tck:
             conn.close()
-            flash('Редагувати довідник ТЦК може лише адміністратор.', 'error')
+            flash('Недостатньо прав для редагування довідника ТЦК.', 'error')
             return redirect(url_for('military_reports.tck_offices'))
         action = request.form.get('action')
 
@@ -2253,8 +2383,8 @@ def tck_offices():
         )
         rows.append(item)
 
-    # Не-адмін: лише ТЦК, де є студенти на обліку (стосуються роботи з людьми)
-    if not is_admin_user:
+    # Без права повного доступу: лише ТЦК, де є студенти на обліку
+    if not can_manage_tck:
         rows = [r for r in rows if r['students_count_all'] > 0]
 
     # Невідомі ТЦК: є у military, але відсутні в довіднику.
@@ -2328,8 +2458,8 @@ def tck_offices():
 
     conn.close()
 
-    # Не-адмін не бачить блок «невідомі» і масові операції
-    if not is_admin_user:
+    # Без права повного доступу не показується блок «невідомі» і масові операції
+    if not can_manage_tck:
         unknown_tck = []
         stats = {
             **stats,
@@ -2344,7 +2474,7 @@ def tck_offices():
         search=search,
         show=show,
         stats=stats,
-        can_manage_tck=is_admin_user,
+        can_manage_tck=can_manage_tck,
     )
     
 @military_reports_bp.route('/admin/military_reports/tck/<int:tck_id>/students')
@@ -2615,6 +2745,9 @@ def dodatok_4_list():
     """
     search = (request.args.get('search') or '').strip()
     tck_filter = (request.args.get('tck') or '').strip()
+    study_form = (request.args.get('study_form') or '').strip()
+    if study_form not in STUDY_FORM_OPTIONS:
+        study_form = ''
     status = (request.args.get('status') or 'need').strip()
     if status not in ('need', 'sent', 'all'):
         status = 'need'
@@ -2636,7 +2769,7 @@ def dodatok_4_list():
                m.change_credentials, m.reason_for_changing_credentials,
                s.address_of_residence,
                m.dodatok4_sent_at, m.dodatok4_fingerprint, m.dodatok4_snapshot,
-               g.name AS group_name
+               g.name AS group_name, g.study_form AS study_form
         FROM students s
         INNER JOIN military m ON m.student_id = s.id
         LEFT JOIN groups g ON g.id = s.group_id
@@ -2653,6 +2786,8 @@ def dodatok_4_list():
         if status == 'sent' and needs:
             continue
         if tck_filter and (r['tck_name'] or '') != tck_filter:
+            continue
+        if study_form and (r['study_form'] or '') != study_form:
             continue
         if search:
             hay = (
@@ -2684,6 +2819,8 @@ def dodatok_4_list():
         rows=filtered,
         search=search,
         tck_filter=tck_filter,
+        study_form=study_form,
+        study_form_options=STUDY_FORM_OPTIONS,
         status=status,
         tck_offices=tck_offices,
     )
@@ -2766,4 +2903,3 @@ def dodatok_4_export(student_id):
         download_name=filename,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     )
-

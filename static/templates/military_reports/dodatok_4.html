@@ -31,6 +31,15 @@
                     <input type="text" name="search" class="form-control form-control-sm"
                            value="{{ search }}" placeholder="Прізвище…">
                 </div>
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Форма навчання</label>
+                    <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Усі форми</option>
+                        {% for sf in study_form_options %}
+                        <option value="{{ sf }}" {% if study_form == sf %}selected{% endif %}>{{ sf }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-md-3">
                     <label class="form-label small mb-1">ТЦК</label>
                     <select name="tck" class="form-select form-select-sm">
@@ -42,7 +51,7 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <label class="form-label small mb-1">Статус</label>
                     <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
                         <option value="need" {% if status == 'need' %}selected{% endif %}>
@@ -56,7 +65,7 @@
                         </option>
                     </select>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <button type="submit" class="btn btn-sm btn-outline-secondary w-100">OK</button>
                 </div>
             </form>

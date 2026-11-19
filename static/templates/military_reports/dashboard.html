@@ -111,60 +111,68 @@
     <div class="row g-3 mb-4">
         <div class="col-sm-6 col-lg">
             <div class="card h-100 border-primary">
-                <div class="card-body text-center">
+                <div class="card-body text-center d-flex flex-column">
                     <i class="bi bi-people-fill fs-1 text-primary"></i>
                     <div class="fs-2 fw-bold mt-2">{{ total_students }}</div>
                     <div class="text-muted">Всього студентів</div>
                     <div class="small text-muted mt-1" title="Всі активні студенти: не в архіві, не відраховані, не заморожені">
                         охоплено дашбордом
                     </div>
+                    <div class="mt-auto pt-2 border-top text-start small" style="font-size: .78rem;">
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Денна</span><strong class="text-body">{{ study_form_totals.get('Денна', 0) }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Заочна</span><strong class="text-body">{{ study_form_totals.get('Заочна', 0) }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Дистанційна</span><strong class="text-body">{{ study_form_totals.get('Дистанційна', 0) }}</strong>
+                        </div>
+                        {% if study_form_totals.get('other', 0) %}
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Не вказано</span><strong class="text-body">{{ study_form_totals.get('other', 0) }}</strong>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
+        {% set cat_cards = [
+            ('officers',   'bi-award-fill',    'Офіцери',    'офіцерський склад'),
+            ('rank',       'bi-person-fill',   'Рядові',     'рядовий / сержантський склад'),
+            ('women',      'bi-gender-female', 'Жінки',      'окремий список'),
+            ('conscripts', 'bi-person-badge',  'Призовники', 'до призову'),
+        ] %}
+        {% for cat_key, cat_icon, cat_title, cat_sub in cat_cards %}
+        {% set sf = study_form_by_cat.get(cat_key, {}) %}
         <div class="col-sm-6 col-lg">
-            <a href="{{ url_for('military_reports.group_list', category='officers') }}"
+            <a href="{{ url_for('military_reports.group_list', category=cat_key, show_all_licenses=('1' if show_all_licenses else None)) }}"
                class="card text-decoration-none h-100 hover-lift">
-                <div class="card-body text-center">
-                    <i class="bi bi-award-fill fs-1" style="color: var(--brass);"></i>
-                    <div class="fs-2 fw-bold mt-2">{{ counts.officers }}</div>
-                    <div class="text-muted">Офіцери</div>
-                    <div class="small text-muted mt-1">офіцерський склад</div>
+                <div class="card-body text-center d-flex flex-column">
+                    <i class="bi {{ cat_icon }} fs-1" style="color: var(--brass);"></i>
+                    <div class="fs-2 fw-bold mt-2">{{ counts[cat_key] }}</div>
+                    <div class="text-muted">{{ cat_title }}</div>
+                    <div class="small text-muted mt-1">{{ cat_sub }}</div>
+                    <div class="mt-auto pt-2 border-top text-start small" style="font-size: .78rem;">
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Денна</span><strong class="text-body">{{ sf.get('Денна', 0) }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Заочна</span><strong class="text-body">{{ sf.get('Заочна', 0) }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Дистанційна</span><strong class="text-body">{{ sf.get('Дистанційна', 0) }}</strong>
+                        </div>
+                        {% if sf.get('other', 0) %}
+                        <div class="d-flex justify-content-between text-muted">
+                            <span>Не вказано</span><strong class="text-body">{{ sf.get('other', 0) }}</strong>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </a>
         </div>
-        <div class="col-sm-6 col-lg">
-            <a href="{{ url_for('military_reports.group_list', category='rank') }}"
-               class="card text-decoration-none h-100 hover-lift">
-                <div class="card-body text-center">
-                    <i class="bi bi-person-fill fs-1" style="color: var(--brass);"></i>
-                    <div class="fs-2 fw-bold mt-2">{{ counts.rank }}</div>
-                    <div class="text-muted">Рядові</div>
-                    <div class="small text-muted mt-1">рядовий / сержантський склад</div>
-                </div>
-            </a>
-        </div>
-        <div class="col-sm-6 col-lg">
-            <a href="{{ url_for('military_reports.group_list', category='women') }}"
-               class="card text-decoration-none h-100 hover-lift">
-                <div class="card-body text-center">
-                    <i class="bi bi-gender-female fs-1" style="color: var(--brass);"></i>
-                    <div class="fs-2 fw-bold mt-2">{{ counts.women }}</div>
-                    <div class="text-muted">Жінки</div>
-                    <div class="small text-muted mt-1">окремий список</div>
-                </div>
-            </a>
-        </div>
-        <div class="col-sm-6 col-lg">
-            <a href="{{ url_for('military_reports.group_list', category='conscripts') }}"
-               class="card text-decoration-none h-100 hover-lift">
-                <div class="card-body text-center">
-                    <i class="bi bi-person-badge fs-1" style="color: var(--brass);"></i>
-                    <div class="fs-2 fw-bold mt-2">{{ counts.conscripts }}</div>
-                    <div class="text-muted">Призовники</div>
-                    <div class="small text-muted mt-1">до призову</div>
-                </div>
-            </a>
-        </div>
+        {% endfor %}
     </div>
 
     {# ── Нові лічильники: вибулі за графою 18 (Постанова №812) ── #}
