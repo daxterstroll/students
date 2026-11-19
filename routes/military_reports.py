@@ -534,10 +534,16 @@ def _has_base_license(student_id, enrollment_licenses, base_license_id):
     """True, якщо студент має активний enrollment під базовою ліцензією,
     АБО взагалі не має активних enrollment'ів з ліцензією (тоді показуємо
     з бейджем «без ліцензії» — дані потребують виправлення)."""
+    if base_license_id is None:
+        return True
     lic_ids = enrollment_licenses.get(student_id, set())
     if not lic_ids:
         return True
     return base_license_id in lic_ids
+
+
+def _normalize_tck_key(value):
+    return (value or '').strip().lower()
 
 def _format_date_ua(d):
     """Форматує date → 'ДД.ММ.РРРР'."""
@@ -638,6 +644,7 @@ def dashboard():
         'no_category': 0,
         'no_gender': 0,
         'no_military': 0,
+        'no_license': 0,
         'no_enrollment_order': 0,
     }
     frozen_count = 0
@@ -670,10 +677,6 @@ def dashboard():
         total_students += 1
         _bump_study_form(study_form_totals, s['study_form'])
 
-        # ── 2b. Немає наказу про зарахування (для всіх активних не-frozen) ──
-        if s['id'] not in enrolled_ids:
-            issues['no_enrollment_order'] += 1
-
         # ── 3. Жінка без військових даних — не рахуємо ніде ──
         if _is_woman_without_military(
             s['gender'], s['military_id'], s['status_badge'],
@@ -681,31 +684,35 @@ def dashboard():
         ):
             continue
 
-        # ── 4. Без запису military (це вже тільки чоловіки, жінок відсіяли) ──
+        status = s['status_badge'] or ''
+
+        # ── 4. Для наявних записів military перевіряємо виключення до підрахунку проблем ──
+        if s['military_id']:
+            # Виключені статуси (Невійськовозобов'язаний / Знято з обліку)
+            if status in EXCLUDED_STATUSES:
+                continue
+
+            # Позначка графи 18 (Постанова №812)
+            if s['note_18'] == NOTE_EXCLUDED_BY_AGE:
+                counts['excluded_by_age'] += 1
+                continue
+            if s['note_18'] == NOTE_DISMISSED:
+                if _is_dismissed_this_year(s['dismissed_at'], report_year):
+                    counts['dismissed_this_year'] += 1
+                continue
+            if s['note_18'] == NOTE_MOBILIZED:
+                counts['mobilized'] += 1
+                continue
+
+        # ── 5. Проблеми ліцензії та наказу про зарахування (для всіх не-виключених) ──
+        if not enrollment_licenses.get(s['id']) and not s['license_id']:
+            issues['no_license'] += 1
+        if s['id'] not in enrolled_ids:
+            issues['no_enrollment_order'] += 1
+
+        # ── 6. Без запису military (це вже тільки чоловіки, жінок відсіяли) ──
         if not s['military_id']:
             issues['no_military'] += 1
-            continue
-
-        # ── 5. Виключені статуси (Невійськовозобов'язаний / Знято з обліку) ──
-        status = s['status_badge'] or ''
-        if status in EXCLUDED_STATUSES:
-            continue
-
-        # ── 6. Позначка графи 18 (Постанова №812) ──
-        #     Виключені за віком / відраховані / мобілізовані
-        #     не входять у 4 групи Додатка 5, але показуються
-        #     на дашборді окремими лічильниками (для Додатка 12).
-        if s['note_18'] == NOTE_EXCLUDED_BY_AGE:
-            counts['excluded_by_age'] += 1
-            continue
-        if s['note_18'] == NOTE_DISMISSED:
-            # За приміткою до Списків — показуємо в звіті, якщо
-            # відраховано в ПОТОЧНОМУ році
-            if _is_dismissed_this_year(s['dismissed_at'], report_year):
-                counts['dismissed_this_year'] += 1
-            continue
-        if s['note_18'] == NOTE_MOBILIZED:
-            counts['mobilized'] += 1
             continue
 
         # ── 7. Без статі ──
@@ -910,9 +917,23 @@ def group_list(category):
         status = r['status_badge'] or ''
         if status in EXCLUDED_STATUSES:
             continue
-        cat = _detect_category(
-            r['military_rank'], status, r['gender'], r['category_override']
-        )
+
+        # Вибулі за графою 18 (Постанова №812):
+        #   - за віком і мобілізовані не входять у 4 групи Додатка 5
+        #   - відраховані цього року показуються лише з чекбоксом include_dismissed
+        note_18 = r['note_18']
+        if note_18 in (NOTE_EXCLUDED_BY_AGE, NOTE_MOBILIZED):
+            continue
+        if note_18 == NOTE_DISMISSED:
+            if not include_dismissed or not _is_dismissed_this_year(r['dismissed_at'], report_date.year):
+                continue
+            cat = _detect_category(
+                r['military_rank'], status, r['gender'], r['category_override'], note_18=None
+            )
+        else:
+            cat = _detect_category(
+                r['military_rank'], status, r['gender'], r['category_override'], note_18
+            )
         if cat != category:
             continue
         if search:
@@ -926,7 +947,7 @@ def group_list(category):
             continue
         if study_form and (r['study_form'] or '') != study_form:
             continue
-        if tck_filter and (r['tck_name'] or '') != tck_filter:
+        if tck_filter and _normalize_tck_key(r['tck_name']) != _normalize_tck_key(tck_filter):
             continue
         if not _was_enrolled_as_of(
             report_date,
@@ -1054,7 +1075,7 @@ def quick_edit(student_id):
         return jsonify({'ok': False, 'error': 'Студента не знайдено'}), 404
 
     military = conn.execute(
-        "SELECT id FROM military WHERE student_id = ?", (student_id,)
+        "SELECT * FROM military WHERE student_id = ?", (student_id,)
     ).fetchone()
     if not military:
         conn.close()
@@ -1086,12 +1107,33 @@ def quick_edit(student_id):
         conn.close()
         return jsonify({'ok': False, 'error': 'Немає що оновлювати'}), 400
 
+    diff_rows = []
+    for k, new_val in updates.items():
+        old_val = military[k] if k in military.keys() else None
+        old_norm = (str(old_val).strip() if old_val is not None else '')
+        new_norm = (str(new_val).strip() if new_val is not None else '')
+        if old_norm != new_norm:
+            diff_rows.append((k, old_norm, new_norm))
+
     set_clause = ', '.join(f"{k} = ?" for k in updates)
     try:
         conn.execute(
             f"UPDATE military SET {set_clause} WHERE student_id = ?",
             list(updates.values()) + [student_id],
         )
+        if updates.get('note_18') == NOTE_DISMISSED:
+            conn.execute(
+                "UPDATE students SET dismissed_at = COALESCE(dismissed_at, date('now')) WHERE id = ?",
+                (student_id,),
+            )
+        username = current_username()
+        for field_name, old_val, new_val in diff_rows:
+            conn.execute(
+                """INSERT INTO military_history
+                       (student_id, changed_by, source, scope, field_name, old_value, new_value)
+                   VALUES (?, ?, 'quick_edit', 'military', ?, ?, ?)""",
+                (student_id, username, field_name, old_val, new_val),
+            )
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -1153,6 +1195,7 @@ def issues_list():
         enabled = set(ISSUE_LABELS.keys())
 
     include_frozen = request.args.get('include_frozen') == '1'
+    show_all_licenses = request.args.get('show_all_licenses') == '1'
     search = (request.args.get('search') or '').strip()
     group_id = request.args.get('group_id', type=int)
     study_form = (request.args.get('study_form') or '').strip()
@@ -1165,6 +1208,9 @@ def issues_list():
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
+
+    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    enrollment_licenses = _load_enrollment_licenses(conn)
 
     groups = conn.execute("""
         SELECT id, name, start_year, study_form
@@ -1197,7 +1243,14 @@ def issues_list():
         enrolled_ids = get_enrollment_student_ids(conn=conn)
 
     filtered = []
+    issue_counts = {k: 0 for k in ISSUE_LABELS}
+
     for r in rows_raw:
+        # Фільтр базової ліцензії (Постанова №812)
+        if not show_all_licenses:
+            if not _has_base_license(r['id'], enrollment_licenses, base_license_id):
+                continue
+
         # Заморожені
         if r['frozen_id'] and not include_frozen:
             continue
@@ -1209,13 +1262,47 @@ def issues_list():
         ):
             continue
 
+        status = r['status_badge'] or ''
+
+        # Виключені за статусом або графою 18 не входять у Додаток 5,
+        # тому не є «проблемними» для Додатка 5
+        if r['military_id']:
+            if status in EXCLUDED_STATUSES:
+                continue
+            if r['note_18'] in NOTE_18_EXCLUDES_FROM_DODATOK_5:
+                continue
+
+        has_license = bool(enrollment_licenses.get(r['id']) or r['license_id'])
+        has_enrollment = r['id'] in enrolled_ids
+
+        # Підрахунок бейджів по всій вибірці (до пошуку/групи)
+        if not has_license:
+            issue_counts['no_license'] += 1
+        if not has_enrollment:
+            issue_counts['no_enrollment_order'] += 1
+
+        if not r['military_id']:
+            issue_counts['no_military'] += 1
+        else:
+            if not r['gender']:
+                issue_counts['no_gender'] += 1
+            cat = _detect_category(
+                r['military_rank'], status, r['gender'], r['category_override'], r['note_18']
+            )
+            if not cat:
+                issue_counts['no_category'] += 1
+            if not r['tck_name']:
+                issue_counts['no_tck'] += 1
+            if not r['vos_code']:
+                issue_counts['no_vos'] += 1
+
         problems = []
 
         # 0. Без ліцензії вступу (Постанова №812)
-        if not r['license_id'] and 'no_license' in enabled:
+        if not has_license and 'no_license' in enabled:
             problems.append('no_license')
 
-        if r['id'] not in enrolled_ids and 'no_enrollment_order' in enabled:
+        if not has_enrollment and 'no_enrollment_order' in enabled:
             problems.append('no_enrollment_order')
 
         # 1. Без запису military
@@ -1223,20 +1310,13 @@ def issues_list():
             if 'no_military' in enabled:
                 problems.append('no_military')
         else:
-            status = r['status_badge'] or ''
-
-            # Виключені (Невійськовозобов'язаний / Знято з обліку)
-            # не входять у Додаток 5, тому не є "проблемними"
-            if status in EXCLUDED_STATUSES:
-                continue
-
             # 2. Без статі
             if not r['gender'] and 'no_gender' in enabled:
                 problems.append('no_gender')
 
             # 3. Категорія не визначена
             cat = _detect_category(
-                r['military_rank'], status, r['gender'], r['category_override']
+                r['military_rank'], status, r['gender'], r['category_override'], r['note_18']
             )
             if not cat and 'no_category' in enabled:
                 problems.append('no_category')
@@ -1276,43 +1356,6 @@ def issues_list():
     start = (page - 1) * per_page
     page_rows = filtered[start:start + per_page]
 
-    # ── Підрахунок проблем по категоріях (для бейджів) ──────
-    # Рахуємо по ВСІХ активних (не лише сторінці), але з тим самим
-    # фільтром заморожених — щоб бейджик показував актуальне число
-    issue_counts = {k: 0 for k in ISSUE_LABELS}
-    for r in rows_raw:
-        if r['frozen_id'] and not include_frozen:
-            continue
-        if _is_woman_without_military(
-            r['gender'], r['military_id'], r['status_badge'],
-            r['military_rank'], r['vos_code'], r['tck_name']
-        ):
-            continue
-        if r['note_18'] in (NOTE_EXCLUDED_BY_AGE, NOTE_DISMISSED, NOTE_MOBILIZED):
-            continue
-
-        # Проблема: без ліцензії
-        if not r['license_id']:
-            issue_counts['no_license'] += 1
-
-        if not r['military_id']:
-            issue_counts['no_military'] += 1
-            continue
-        status = r['status_badge'] or ''
-        if status in EXCLUDED_STATUSES:
-            continue
-        if not r['gender']:
-            issue_counts['no_gender'] += 1
-        cat = _detect_category(
-            r['military_rank'], status, r['gender'], r['category_override']
-        )
-        if not cat:
-            issue_counts['no_category'] += 1
-        if not r['tck_name']:
-            issue_counts['no_tck'] += 1
-        if not r['vos_code']:
-            issue_counts['no_vos'] += 1
-
     conn.close()
 
     range_start = start + 1 if total else 0
@@ -1332,6 +1375,8 @@ def issues_list():
         study_form=study_form,
         study_form_options=STUDY_FORM_OPTIONS,
         include_frozen=include_frozen,
+        show_all_licenses=show_all_licenses,
+        base_license_label=base_license_short or base_license_name or '—',
         enabled_issues=enabled,
         issue_labels=ISSUE_LABELS,
         issue_counts=issue_counts,
@@ -1400,119 +1445,22 @@ def summary():
     show_all_licenses = request.args.get('show_all_licenses') == '1'
     base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
 
-    students = conn.execute("""
-        SELECT s.id, s.gender, s.dismissed_at, s.license_id,
-               m.id AS military_id, m.status_badge, m.military_rank,
-               m.category_override, m.vos_code, m.tck_name, m.note_18,
-               g.start_year AS group_start_year
-        FROM students s
-        LEFT JOIN military m ON m.student_id = s.id
-        LEFT JOIN groups g ON s.group_id = g.id
-        WHERE COALESCE(s.archived, 0) = 0
-          AND NOT EXISTS (
-              SELECT 1 FROM frozen_students fz
-              WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
-          )
-    """).fetchall()
-    enrollment_licenses = _load_enrollment_licenses(conn)
-
-
-    # Лічильники по категоріях + по роках
-    counts = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
-    enrolled_this_year = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
-
-    # Нові лічильники (Постанова №812, графа 18) — для рядків 3/4/5
-    excluded_by_age = 0
-    dismissed_this_year = 0
-    mobilized = 0
-
-    enrollment_years = _load_enrollment_years(conn)
-
-    for s in students:
-        # ── Фільтр базової ліцензії (Постанова №812) ──
-        if not show_all_licenses:
-            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
-                continue
-
-        if not s['military_id']:
-            continue
-        status = s['status_badge'] or ''
-        if status in EXCLUDED_STATUSES:
-            continue
-
-        # Жінка без військових даних — не входить у звіт
-        if _is_woman_without_military(
-            s['gender'], s['military_id'], s['status_badge'],
-            s['military_rank'], s['vos_code'], s['tck_name']
-        ):
-            continue
-
-        # ── Позначки графи 18 (Постанова №812) ──
-        note_18 = s['note_18']
-
-        if note_18 == NOTE_EXCLUDED_BY_AGE:
-            excluded_by_age += 1
-            continue
-
-        if note_18 == NOTE_MOBILIZED:
-            mobilized += 1
-            continue
-
-        if note_18 == NOTE_DISMISSED:
-            # Враховуємо тільки якщо відраховано в поточному році
-            # (примітка до Списків: до кінця поточного календарного року)
-            if _is_dismissed_this_year(s['dismissed_at'], report_year):
-                dismissed_this_year += 1
-            continue
-
-        # Звичайні (на обліку) — рядки 1/2
-        category = _detect_category(
-            s['military_rank'], status, s['gender'],
-            s['category_override'], note_18
-        )
-        if not category:
-            continue
-        counts[category] += 1
-        # «Зараховано з 1 січня» — ЛИШЕ якщо є наказ про зарахування
-        # з order_date у report_year (без fallback на start_year групи)
-        enroll_year = enrollment_years.get(s['id'])
-        if enroll_year == report_year:
-            enrolled_this_year[category] += 1
-
-    # ── Відраховані цього року ───────────────────────────────
-    # Беремо всі накази за рік і для кожного студента визначаємо
-    # категорію за ПОТОЧНИМ записом military (він міг змінитись після
-    # відрахування, але для статистики це прийнятне наближення).
-    # Відраховані цього року — з orders (order_type=expulsion),
-    # рік береться з order_date у форматі DD.MM.YYYY / YYYY-MM-DD
-    expelled_this_year = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
-    if orders_tables_ready(conn=conn):
-        expelled_rows = conn.execute("""
-            SELECT oi.entity_id AS student_id,
-                   o.order_date,
-                   m.status_badge, m.military_rank, m.category_override,
-                   s.gender
-            FROM orders o
-            JOIN order_items oi ON oi.order_id = o.id
-            LEFT JOIN students s ON s.id = oi.entity_id
-            LEFT JOIN military m ON m.student_id = oi.entity_id
-            WHERE o.status = 'active'
-              AND o.order_type = 'expulsion'
-              AND oi.entity_type = 'student'
-        """).fetchall()
-        for e in expelled_rows:
-            if _year_from_order_date(e['order_date']) != report_year:
-                continue
-            status = e['status_badge'] or ''
-            if status in EXCLUDED_STATUSES:
-                continue
-            category = _detect_category(
-                e['military_rank'], status, e['gender'], e['category_override']
-            )
-            if category:
-                expelled_this_year[category] += 1
-
+    metrics = _compute_dodatok_12_metrics(
+        conn, report_date, show_all_licenses, base_license_id
+    )
     conn.close()
+
+    counts = {
+        'officers': metrics['officers'],
+        'rank': metrics['rank'],
+        'women': metrics['women'],
+        'conscripts': metrics['conscripts'],
+    }
+    enrolled_this_year = metrics['enrolled']
+    expelled_this_year = metrics['expelled']
+    excluded_by_age = metrics['excluded_by_age']
+    dismissed_this_year = metrics['dismissed_this_year']
+    mobilized = metrics['mobilized']
 
     # ── Агрегування для Додатка 12 ───────────────────────────
     mobilized_total = counts['officers'] + counts['rank'] + counts['women']
@@ -1636,19 +1584,19 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
     """
     report_year = report_date.year
     enrollment_dates = _load_enrollment_dates(conn)
+    enrollment_years = _load_enrollment_years(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
     enrollment_license_shorts = _load_enrollment_license_shorts(conn)
     enrollment_or_renewal_orders = _load_enrollment_or_renewal_orders(conn, report_date=report_date)
 
-    # Групи з start_year == report_year (для колонки 23 «Зараховано»)
-    # і всі дані по студентах + military + passport + license
+    # Всі дані по студентах + military + passport + license
     students = conn.execute("""
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
                s.birth_date, s.gender, s.tax_id, s.dismissed_at,
                s.license_id,
                s.address_of_residence,          
                il.short_name_ua AS license_short,
-               m.status_badge, m.military_rank, m.category_override,
+               m.id AS military_id, m.status_badge, m.military_rank, m.category_override,
                m.registry_number, m.vos_code, m.vos_description,
                m.military_registration_document,
                m.tck_name,
@@ -1693,7 +1641,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
 
         # Жінка без військових даних — не в звіт
         if _is_woman_without_military(
-            s['gender'], s['id'], s['status_badge'],
+            s['gender'], s['military_id'], s['status_badge'],
             s['military_rank'], s['vos_code'], s['tck_name']
         ):
             continue
@@ -1721,7 +1669,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
             continue
 
         # Фільтр ТЦК (якщо задано)
-        if tck_filter and (s['tck_name'] or '') != tck_filter:
+        if tck_filter and _normalize_tck_key(s['tck_name']) != _normalize_tck_key(tck_filter):
             continue
         if study_form and (s['study_form'] or '') != study_form:
             continue
@@ -1770,20 +1718,19 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
             if s['deferral_until']:
                 deferral_text += f" до {s['deferral_until']}"
 
-        # Зараховано (колонка 23) — просто позначка, якщо група цього року
+        # Зараховано (колонка 23) — пріоритет наказу про зарахування, fallback на start_year групи
         enrolled_note = ''
-        if s['group_start_year'] == report_year:
+        enroll_order_year = enrollment_years.get(s['id'])
+        if enroll_order_year is not None:
+            if enroll_order_year == report_year:
+                enrolled_note = f"зараховано {enroll_order_year}"
+        elif s['group_start_year'] == report_year:
             enrolled_note = f"зараховано {s['group_start_year']}"
 
         # Відраховано (колонка 24) — тільки якщо dismissed_at цього року
         expelled_note = ''
-        if s['dismissed_at']:
-            try:
-                dy = int(str(s['dismissed_at']).split('-')[0])
-                if dy == report_year:
-                    expelled_note = f"відраховано {s['dismissed_at']}"
-            except (ValueError, IndexError):
-                pass
+        if _is_dismissed_this_year(s['dismissed_at'], report_year):
+            expelled_note = f"відраховано {s['dismissed_at']}"
 
         result.append({
             'full_name': full_name,
@@ -1930,10 +1877,10 @@ def export_dodatok_5(category):
         download_name=filename,
     )
 
-def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id):
+def _compute_dodatok_12_metrics(conn, report_date, show_all_licenses, base_license_id):
     """
-    Збирає підрахунки для Додатка 12.
-    Логіка фільтрації — та сама, що й у summary().
+    Єдиний розрахунок показників для Додатка 12 (спільний для веб-перегляду
+    summary() та Excel-експорту _fetch_dodatok_12_data()).
     """
     report_year = report_date.year
 
@@ -1951,6 +1898,8 @@ def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id
               WHERE fz.student_id = s.id AND fz.resolved_at IS NULL
           )
     """).fetchall()
+    enrollment_licenses = _load_enrollment_licenses(conn)
+    enrollment_years = _load_enrollment_years(conn)
 
     counts = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
     enrolled = {'officers': 0, 'rank': 0, 'women': 0, 'conscripts': 0}
@@ -1961,7 +1910,7 @@ def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id
 
     for s in students:
         if not show_all_licenses:
-            if s['license_id'] is not None and s['license_id'] != base_license_id:
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
                 continue
 
         if not s['military_id']:
@@ -1989,13 +1938,6 @@ def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id
         if note_18 == NOTE_DISMISSED:
             if _is_dismissed_this_year(s['dismissed_at'], report_year):
                 dismissed_this_year += 1
-                # Категорію теж враховуємо (для колонок «відраховано»)
-                cat = _detect_category(
-                    s['military_rank'], status, s['gender'],
-                    s['category_override'], note_18=None
-                )
-                if cat:
-                    expelled[cat] += 1
             continue
 
         category = _detect_category(
@@ -2005,8 +1947,53 @@ def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id
         if not category:
             continue
         counts[category] += 1
-        if s['group_start_year'] == report_year:
+
+        # «Зараховано з 1 січня» — за активним наказом про зарахування у report_year
+        enroll_year = enrollment_years.get(s['id'])
+        if enroll_year == report_year:
             enrolled[category] += 1
+
+    # «Відраховано з 1 січня» — за активними наказами про відрахування в report_year
+    if orders_tables_ready(conn=conn):
+        expelled_rows = conn.execute("""
+            SELECT oi.entity_id AS student_id,
+                   o.order_date,
+                   m.id AS military_id, m.status_badge, m.military_rank,
+                   m.category_override, m.vos_code, m.tck_name,
+                   s.gender, s.license_id
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            LEFT JOIN students s ON s.id = oi.entity_id
+            LEFT JOIN military m ON m.student_id = oi.entity_id
+            WHERE o.status = 'active'
+              AND o.order_type = 'expulsion'
+              AND oi.entity_type = 'student'
+        """).fetchall()
+        for e in expelled_rows:
+            if _year_from_order_date(e['order_date']) != report_year:
+                continue
+            if not show_all_licenses and base_license_id is not None:
+                lic_ids = enrollment_licenses.get(e['student_id'], set())
+                if lic_ids:
+                    if base_license_id not in lic_ids:
+                        continue
+                elif e['license_id'] is not None and e['license_id'] != base_license_id:
+                    continue
+            if not e['military_id']:
+                continue
+            status = e['status_badge'] or ''
+            if status in EXCLUDED_STATUSES:
+                continue
+            if _is_woman_without_military(
+                e['gender'], e['military_id'], e['status_badge'],
+                e['military_rank'], e['vos_code'], e['tck_name']
+            ):
+                continue
+            category = _detect_category(
+                e['military_rank'], status, e['gender'], e['category_override']
+            )
+            if category:
+                expelled[category] += 1
 
     return {
         'officers': counts['officers'],
@@ -2019,6 +2006,14 @@ def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id
         'enrolled': enrolled,
         'expelled': expelled,
     }
+
+
+def _fetch_dodatok_12_data(conn, report_date, show_all_licenses, base_license_id):
+    """
+    Збирає підрахунки для Додатка 12.
+    Логіка фільтрації — та сама, що й у summary().
+    """
+    return _compute_dodatok_12_metrics(conn, report_date, show_all_licenses, base_license_id)
 
 
 @military_reports_bp.route('/admin/military_reports/export/dodatok_12')
@@ -2535,6 +2530,8 @@ def tck_students(tck_id):
         extra_conditions.append("COALESCE(s.archived, 0) = 0")
     if not include_frozen:
         extra_conditions.append("fz.id IS NULL")
+    if not include_dismissed:
+        extra_conditions.append("m.note_18 IS NULL")
     if extra_conditions:
         base_sql += " AND " + " AND ".join(extra_conditions)
     base_sql += """
@@ -2548,12 +2545,14 @@ def tck_students(tck_id):
     counts_row = conn.execute("""
         SELECT
             COUNT(*) AS total_all,
-            SUM(CASE WHEN COALESCE(s.archived, 0) = 0 AND fz.id IS NULL
+            SUM(CASE WHEN COALESCE(s.archived, 0) = 0 AND fz.id IS NULL AND m.note_18 IS NULL
                      THEN 1 ELSE 0 END) AS total_active,
             SUM(CASE WHEN COALESCE(s.archived, 0) = 1
                      THEN 1 ELSE 0 END) AS total_archived,
             SUM(CASE WHEN COALESCE(s.archived, 0) = 0 AND fz.id IS NOT NULL
-                     THEN 1 ELSE 0 END) AS total_frozen
+                     THEN 1 ELSE 0 END) AS total_frozen,
+            SUM(CASE WHEN COALESCE(s.archived, 0) = 0 AND fz.id IS NULL AND m.note_18 IS NOT NULL
+                     THEN 1 ELSE 0 END) AS total_note18
         FROM students s
         INNER JOIN military m ON m.student_id = s.id
         LEFT JOIN frozen_students fz
@@ -2607,6 +2606,7 @@ def tck_students(tck_id):
             'total_active':   counts_row['total_active'] or 0,
             'total_archived': counts_row['total_archived'] or 0,
             'total_frozen':   counts_row['total_frozen'] or 0,
+            'total_note18':   counts_row['total_note18'] or 0,
         },
     })
 
@@ -2792,7 +2792,7 @@ def dodatok_4_list():
             continue
         if status == 'sent' and needs:
             continue
-        if tck_filter and (r['tck_name'] or '') != tck_filter:
+        if tck_filter and _normalize_tck_key(r['tck_name']) != _normalize_tck_key(tck_filter):
             continue
         if study_form and (r['study_form'] or '') != study_form:
             continue

@@ -629,7 +629,7 @@
                         </div>
                     </td>
 					<td class="text-center">
-						{% if has_perm('manage_students') %}
+						{% if has_perm('manage_students') or has_perm('manage_military_reports') %}
 							{% if student.has_military %}
 								<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">
 									<i class="bi bi-pencil"></i> Редагувати
@@ -750,7 +750,7 @@
             <!-- Действия в карточке -->
 			<div class="card-row" style="justify-content: space-between; margin-top: 10px;">
 				<div>
-					{% if has_perm('manage_students') %}
+					{% if has_perm('manage_students') or has_perm('manage_military_reports') %}
 						{% if student.has_military %}
 							<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">Військові дані</a>
 						{% else %}

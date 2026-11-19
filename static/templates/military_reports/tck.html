@@ -701,6 +701,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (c.total_active) parts.push(c.total_active + ' актив.');
             if (c.total_archived) parts.push(c.total_archived + ' арх.');
             if (c.total_frozen) parts.push(c.total_frozen + ' замор.');
+            if (c.total_note18) parts.push(c.total_note18 + ' виб.');
 
             const shown = data.shown || 0;
             const totalAll = c.total_all || 0;

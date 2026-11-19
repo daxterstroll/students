@@ -329,14 +329,14 @@ def _save_pdf_as_attachment(conn, student_id, pdf_bytes, original_filename, user
 # ============================================================
 
 @students_bp.route('/students/<int:student_id>/military/add', methods=['GET', 'POST'])
-@login_required('')
+@permission_required('manage_students', 'manage_military_reports')
 def add_military(student_id):
     """Сумісність зі старим кодом — редірект на military_data."""
     return redirect(url_for('students.military_data', student_id=student_id))
 
 
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
-@permission_required('manage_students')
+@permission_required('manage_students', 'manage_military_reports')
 def military_data(student_id):
     """GET — форма + історія; POST — збереження вручну."""
     conn = get_db()
@@ -413,7 +413,7 @@ def military_data(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/military/upload_pdf', methods=['POST'])
-@login_required('')
+@permission_required('manage_students', 'manage_military_reports')
 def military_upload_pdf(student_id):
     """
     Парсить PDF, зберігає його як скан-копію (entity_type='military')
@@ -539,7 +539,7 @@ def military_upload_pdf(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/military/recrop_pdf_photo', methods=['POST'])
-@login_required('')
+@permission_required('manage_students', 'manage_military_reports')
 def military_pdf_recrop_photo(student_id):
     """Ручна переобрізка фото з PDF (Cropper.js)."""
     raw_key = f'military_pdf_pending_raw_photo_{student_id}'
@@ -585,7 +585,7 @@ def military_pdf_recrop_photo(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/military/apply_pdf', methods=['POST'])
-@login_required('')
+@permission_required('manage_students', 'manage_military_reports')
 def military_apply_pdf(student_id):
     """Застосовує зміни з PDF."""
     mil_key = f'military_pdf_pending_military_{student_id}'
@@ -708,16 +708,23 @@ def military_apply_pdf(student_id):
 
 
 @students_bp.route('/students/<int:student_id>/military/delete_attachment', methods=['POST'])
-@login_required('')
+@permission_required('manage_students', 'manage_military_reports')
 def delete_military_attachment(student_id):
     conn = get_db()
     attachment_id = request.form.get('attachment_id')
-    att = conn.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+    att = conn.execute(
+        "SELECT id, file_path FROM attachments WHERE id=? AND entity_type='military'",
+        (attachment_id,),
+    ).fetchone()
     if att:
         att_path = os.path.join(PROJECT_ROOT, 'static', att['file_path'])
         if os.path.exists(att_path):
             os.remove(att_path)
         conn.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+        try:
+            conn.execute("DELETE FROM attachment_military_meta WHERE attachment_id=?", (attachment_id,))
+        except Exception:
+            pass
         conn.commit()
         flash('Скан видалено', 'success')
     else:

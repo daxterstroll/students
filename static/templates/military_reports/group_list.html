@@ -242,22 +242,25 @@
                                     <i class="bi bi-shield-fill"></i> військовослужбовець
                                 </span>
                                 {% endif %}
-                                {% if not r.license_id %}
+                                {% set lic_names = r.get('enrollment_license_shorts') or [] %}
+                                {% if not lic_names and not r.license_id %}
                                 <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
                                       title="Не вказано ліцензію вступу — заповніть в картці студента">
                                     <i class="bi bi-exclamation-triangle"></i> без ліцензії
                                 </span>
-								{% else %}
-									{% set lic_names = r.get('enrollment_license_shorts') or [] %}
-									{% if lic_names %}
-										{% for lic in lic_names %}
-										<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
-											  title="Ліцензія навчання">
-											<i class="bi bi-award"></i> {{ lic }}
-										</span>
-										{% endfor %}
-									{% endif %}
-								{% endif %}
+                                {% elif lic_names %}
+                                    {% for lic in lic_names %}
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
+                                          title="Ліцензія навчання">
+                                        <i class="bi bi-award"></i> {{ lic }}
+                                    </span>
+                                    {% endfor %}
+                                {% elif r.license_short_name_ua %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1"
+                                      title="Ліцензія навчання">
+                                    <i class="bi bi-award"></i> {{ r.license_short_name_ua }}
+                                </span>
+                                {% endif %}
                             </td>
                             <td class="font-monospace small">{{ r.birth_date or '—' }}</td>
                             <td>

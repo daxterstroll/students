@@ -93,6 +93,19 @@
                 <div class="d-flex align-items-center flex-wrap gap-3 mt-2">
                     <div class="form-check mb-0">
                         <input class="form-check-input" type="checkbox"
+                               name="show_all_licenses" value="1"
+                               id="showAllLicensesCheck"
+                               {% if show_all_licenses %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="showAllLicensesCheck"
+                               title="За Постановою №812 за замовчуванням показуються лише студенти базової ліцензії">
+                            <i class="bi bi-star text-warning"></i>
+                            Показати всі ліцензії
+                            <span class="text-muted">(зараз: {{ base_license_label }})</span>
+                        </label>
+                    </div>
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox"
                                name="include_frozen" value="1"
                                id="includeFrozenCheck"
                                {% if include_frozen %}checked{% endif %}
@@ -178,6 +191,10 @@
                                     <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
                                         <i class="bi bi-hash"></i> {{ issue_labels[p] }}
                                     </span>
+                                    {% elif p == 'no_license' %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
+                                        <i class="bi bi-award"></i> {{ issue_labels[p] }}
+                                    </span>
                                     {% elif p == 'no_enrollment_order' %}
                                     <span class="badge bg-warning-subtle text-warning-emphasis me-1 mb-1">
                                         <i class="bi bi-file-earmark-text"></i> {{ issue_labels[p] }}
@@ -231,6 +248,7 @@
                 'study_form': study_form,
                 'per_page': per_page,
                 'include_frozen': '1' if include_frozen else '',
+                'show_all_licenses': '1' if show_all_licenses else '',
             } %}
             {% for key in issue_labels %}
                 {% if key in enabled_issues %}

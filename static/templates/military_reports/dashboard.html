@@ -233,7 +233,7 @@
                         </a>
                     </div>
                     {% endif %}
-                    {% set total_issues = issues.no_tck + issues.no_vos + issues.no_category + issues.no_gender + issues.no_military + (issues.no_enrollment_order or 0) %}
+                    {% set total_issues = issues.no_tck + issues.no_vos + issues.no_category + issues.no_gender + issues.no_military + (issues.no_license or 0) + (issues.no_enrollment_order or 0) %}
                     {% if total_issues == 0 %}
                         <div class="text-success text-center py-3">
                             <i class="bi bi-check-circle-fill fs-2 d-block mb-2"></i>
@@ -272,7 +272,12 @@
                                 <strong>{{ issues.no_vos }}</strong> студентів без ВОС
                             </li>
                             {% endif %}
-
+                            {% if issues.no_license %}
+                            <li class="mb-2">
+                                <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
+                                <strong>{{ issues.no_license }}</strong> студентів без ліцензії вступу
+                            </li>
+                            {% endif %}
                             {% if issues.no_enrollment_order %}
                             <li class="mb-2">
                                 <i class="bi bi-circle-fill text-warning me-2" style="font-size: .5rem;"></i>
@@ -281,7 +286,7 @@
                             </li>
                             {% endif %}
                         </ul>
-                        <a href="{{ url_for('military_reports.issues_list') }}" class="btn btn-sm btn-outline-warning">
+                        <a href="{{ url_for('military_reports.issues_list', show_all_licenses=('1' if show_all_licenses else None)) }}" class="btn btn-sm btn-outline-warning">
                             <i class="bi bi-list-check me-1"></i>Переглянути проблемних
                         </a>
                     {% endif %}
@@ -294,7 +299,7 @@
                     <h6 class="mb-0"><i class="bi bi-grid me-2"></i>Додатково</h6>
                 </div>
                 <div class="card-body d-flex flex-column gap-2">
-                    <a href="{{ url_for('military_reports.summary') }}" class="btn btn-outline-primary text-start">
+                    <a href="{{ url_for('military_reports.summary', show_all_licenses=('1' if show_all_licenses else None)) }}" class="btn btn-outline-primary text-start">
                         <i class="bi bi-bar-chart-fill me-2"></i>
                         <strong>Додаток 12</strong> — відомість оперативного обліку
                     </a>
@@ -302,7 +307,7 @@
                         <i class="bi bi-file-earmark-ruled me-2"></i>
                         <strong>Додаток 4</strong> — повідомлення про зміну облікових даних
                     </a>
-                    <a href="{{ url_for('military_reports.military_files') }}" class="btn btn-outline-success text-start">
+                    <a href="{{ url_for('military_reports.military_files', show_all_licenses=('1' if show_all_licenses else None)) }}" class="btn btn-outline-success text-start">
                         <i class="bi bi-file-earmark-zip me-2"></i>
                         <strong>Файли «Резерв+»</strong> — паки по місяцях і контроль оновлень
                     </a>

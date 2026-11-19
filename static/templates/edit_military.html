@@ -19,6 +19,12 @@
            class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-person-vcard me-1"></i> Картка студента
         </a>
+        {% if has_perm('manage_military_reports') %}
+        <a href="{{ url_for('military_reports.dashboard') }}"
+           class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-shield-fill-check me-1"></i> До військового обліку
+        </a>
+        {% endif %}
     </div>
 
     {# ── Блок завантаження PDF "Резерв+" ── #}
@@ -70,7 +76,11 @@
                 <i class="bi bi-info-circle me-1"></i>
                 Дата народження, ідентифікаційний код, адреса проживання, телефон і email редагуються
                 на сторінці
-                <a href="{{ url_for('students.edit_student', student_id=student.id) }}">«Редагувати студента»</a> —
+                {% if has_perm('manage_students') %}
+                <a href="{{ url_for('students.edit_student', student_id=student.id) }}">«Редагувати студента»</a>
+                {% else %}
+                «Редагувати студента»
+                {% endif %} —
                 це поля картки студента, а не військового обліку. Фото — на
                 <a href="{{ url_for('students.student_details', student_id=student.id) }}">картці студента</a>.
             </div>

@@ -261,14 +261,14 @@ def login_required(role=None):
         return decorated_function
     return decorator
 
-def permission_required(permission=None):
+def permission_required(*permissions):
     """
-    Декоратор: перевіряє авторизацію та (за потреби) конкретний дозвіл
-    користувача (permission) із таблиці users.permissions (JSON-список).
+    Декоратор: перевіряє авторизацію та (за потреби) наявність ХОЧА Б ОДНОГО
+    із зазначених дозволів користувача із таблиці users.permissions (JSON-список).
 
-    - Якщо permission=None: достатньо просто бути залогіненим.
-    - Якщо permission вказано: потрібен is_admin=1 АБО цей дозвіл
-      присутній у списку permissions користувача.
+    - Якщо дозволів не передано або передано лише None: достатньо бути залогіненим.
+    - Якщо передано один або кілька дозволів (напр. @permission_required('manage_students', 'manage_military_reports')):
+      потрібен is_admin=1 АБО наявність хоча б одного з цих дозволів у permissions користувача.
     - Значення is_admin/permissions спочатку читаються з сесії (кеш),
       і лише якщо їх там ще немає - підвантажуються з БД один раз і
       кешуються в сесії (щоб не робити зайвий SELECT на кожен запит).
@@ -276,6 +276,8 @@ def permission_required(permission=None):
     Незалогінених користувачів редіректить на логін;
     користувачів без потрібного дозволу - на список студентів.
     """
+    required_perms = tuple(p for p in permissions if p)
+
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -288,12 +290,6 @@ def permission_required(permission=None):
             perms = session.get('permissions', [])
 
             # Якщо немає в сесії, завантажуємо з БД.
-            # ВИПРАВЛЕНО: раніше тут було `if not hasattr(session, 'is_admin')`.
-            # Flask-об'єкт session - це словникоподібний контейнер, і
-            # реального python-атрибута 'is_admin' на ньому ніколи не буває,
-            # тож ця умова була ЗАВЖДИ істинною. Через це кеш у сесії ніколи
-            # не спрацьовував і кожен захищений запит робив зайвий SELECT
-            # до таблиці users. Правильна перевірка - через `in`.
             if 'is_admin' not in session:
                 try:
                     conn = get_db()
@@ -318,10 +314,10 @@ def permission_required(permission=None):
                 session['is_admin'] = is_admin
                 session['permissions'] = perms
 
-            if permission is None:
+            if not required_perms:
                 return f(*args, **kwargs)
 
-            if is_admin or permission in perms:
+            if is_admin or any(p in perms for p in required_perms):
                 return f(*args, **kwargs)
 
             flash('Недостатньо прав', 'danger')
