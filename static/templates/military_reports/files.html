@@ -37,7 +37,7 @@
     {{ ui.page_header(
         'bi-file-earmark-zip',
         'Військово-облікові файли («Резерв+»)',
-        'Помісячні ZIP-паки з іменами ПІБ, контроль відсутніх та не оновлених файлів'
+        'Помісячні ZIP-паки з іменами ПІБ за датою «Сформовано:» всередині PDF-файлу, контроль відсутніх та не оновлених файлів'
     ) }}
 
     {# ── Швидкі паки по місяцях, де є файли ── #}
@@ -343,13 +343,20 @@
                                         </span>
                                         {% if r.latest_file %}
                                         <div class="text-muted mt-1" style="font-size:.75rem;">
-                                            Останній:
-                                            <a href="{{ url_for('static', filename=r.latest_file.file_path) }}"
-                                               target="_blank" class="text-decoration-none">
-                                                {{ r.latest_ym_label or r.latest_file.date_display or 'файл' }}
-                                            </a>
-                                            {% if r.latest_file.date_display %}
-                                                ({{ r.latest_file.date_display }})
+                                            {% if r.latest_file.date_source == 'formed' %}
+                                                Останній «Резерв+»:
+                                                <a href="{{ url_for('static', filename=r.latest_file.file_path) }}"
+                                                   target="_blank" class="text-decoration-none">
+                                                    {{ r.latest_ym_label or r.latest_file.date_display }}
+                                                </a>
+                                                (Сформовано: {{ r.latest_file.date_display }})
+                                            {% else %}
+                                                <span class="text-danger-emphasis">У файлі немає «Сформовано:»</span> —
+                                                <a href="{{ url_for('static', filename=r.latest_file.file_path) }}"
+                                                   target="_blank" class="text-decoration-none">
+                                                    {{ r.latest_file.original_name }}
+                                                </a>
+                                                {% if r.latest_file.uploaded_at %}(зав. {{ r.latest_file.uploaded_at }}){% endif %}
                                             {% endif %}
                                         </div>
                                         {% endif %}
@@ -436,7 +443,7 @@
                                 <th>ПІБ (ім'я файлу в паку)</th>
                                 <th>Група / Форма</th>
                                 <th>Категорія</th>
-                                <th>Дата формування / завантаження</th>
+                                <th>Сформовано (з файлу PDF)</th>
                                 <th>Файли</th>
                             </tr>
                         </thead>
@@ -457,20 +464,20 @@
                                 <td class="small">{{ r.category_label }}</td>
                                 <td class="small font-monospace">
                                     {% set first_f = r.in_month_files[0] %}
-                                    {{ first_f.date_display or first_f.uploaded_at or '—' }}
-                                    {% if first_f.date_source == 'formed' %}
-                                        <span class="badge bg-info-subtle text-info-emphasis ms-1">Сформовано</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">Завантажено</span>
+                                    {{ first_f.date_display or '—' }}
+                                    <span class="badge bg-info-subtle text-info-emphasis ms-1">Сформовано у PDF</span>
+                                    {% if first_f.uploaded_at %}
+                                    <div class="text-muted" style="font-size:.72rem;">зав. {{ first_f.uploaded_at }}</div>
                                     {% endif %}
                                 </td>
                                 <td class="small">
                                     {% for f in r.in_month_files %}
                                     <a href="{{ url_for('static', filename=f.file_path) }}"
                                        target="_blank"
+                                       title="Сформовано: {{ f.date_display }}"
                                        class="badge bg-success-subtle text-success-emphasis text-decoration-none me-1">
-                                        <i class="bi {% if f.is_pdf %}bi-file-earmark-pdf{% else %}bi-file-earmark-image{% endif %} me-1"></i>
-                                        {{ r.full_name }}{{ '.pdf' if f.is_pdf else '' }}
+                                        <i class="bi bi-file-earmark-pdf me-1"></i>
+                                        {{ r.full_name }}.pdf{% if r.in_month_files|length > 1 %} ({{ f.date_display }}){% endif %}
                                     </a>
                                     {% endfor %}
                                 </td>

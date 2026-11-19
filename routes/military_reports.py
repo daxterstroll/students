@@ -3014,6 +3014,169 @@ def _recent_months_list(count: int = 12):
     return out
 
 
+_FORMED_AT_IN_PDF_RE = re.compile(
+    r'Сформовано\s*[:\-]?\s*(?:(\d{1,2}[./]\d{1,2}[./]\d{4})|(\d{4}-\d{1,2}-\d{1,2}))'
+    r'(?:[\s,]+(\d{1,2}:\d{2}(?::\d{2})?))?',
+    re.IGNORECASE,
+)
+
+
+def _extract_formed_at_from_text(text: str) -> str:
+    """Шукає «Сформовано: ДД.ММ.РРРР[, ГГ:ХХ]» у тексті PDF «Резерв+»."""
+    if not text:
+        return ''
+    m = _FORMED_AT_IN_PDF_RE.search(text)
+    if not m:
+        return ''
+    date_part = m.group(1) or m.group(2) or ''
+    time_part = m.group(3) or ''
+    return f"{date_part} {time_part}".strip()
+
+
+def _extract_formed_at_from_pdf(disk_path: str):
+    """
+    Читає дату «Сформовано:» безпосередньо з PDF-файлу на диску.
+    Повертає (formed_at_str, parsed_ok):
+      - parsed_ok=True: PDF успішно прочитано (навіть якщо рядок не знайдено)
+      - parsed_ok=False: файл відсутній або не вдалося відкрити/розпізнати
+    """
+    if not disk_path or not os.path.exists(disk_path):
+        return '', False
+
+    text_chunks = []
+    reader_available = False
+
+    # 1. PyMuPDF (fitz) — найшвидший для масового сканування
+    try:
+        import fitz  # PyMuPDF
+        reader_available = True
+        with fitz.open(disk_path) as doc:
+            for page in doc[:2]:
+                txt = page.get_text() or ''
+                if txt:
+                    text_chunks.append(txt)
+                    found = _extract_formed_at_from_text(txt)
+                    if found:
+                        return found, True
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 2. pdfplumber — штатний парсер проєкту (routes/parse_military_pdf.py)
+    try:
+        import pdfplumber
+        reader_available = True
+        with pdfplumber.open(disk_path) as pdf:
+            for page in pdf.pages[:2]:
+                txt = page.extract_text() or ''
+                if txt:
+                    text_chunks.append(txt)
+                    found = _extract_formed_at_from_text(txt)
+                    if found:
+                        return found, True
+    except ImportError:
+        pass
+    except Exception:
+        pass
+
+    # 3. pypdf / PyPDF2 fallback
+    for mod_name in ('pypdf', 'PyPDF2'):
+        try:
+            mod = __import__(mod_name)
+            reader_available = True
+            reader = mod.PdfReader(disk_path)
+            for page in reader.pages[:2]:
+                txt = page.extract_text() or ''
+                if txt:
+                    text_chunks.append(txt)
+                    found = _extract_formed_at_from_text(txt)
+                    if found:
+                        return found, True
+            break
+        except ImportError:
+            continue
+        except Exception:
+            continue
+
+    if text_chunks:
+        return _extract_formed_at_from_text('\n'.join(text_chunks)), True
+
+    return '', reader_available
+
+
+def _ensure_attachment_meta_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS attachment_military_meta (
+            attachment_id INTEGER PRIMARY KEY,
+            file_path TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            file_mtime REAL NOT NULL,
+            formed_at TEXT NOT NULL DEFAULT ''
+        )
+    """)
+
+
+def _load_attachment_formed_map(conn, att_rows):
+    """
+    Повертає словник {attachment_id: formed_at_from_pdf_str} для всіх
+    військово-облікових PDF-файлів, використовуючи кеш у SQLite та автоматично
+    перечитуючи PDF при зміні розміру/mtime/шляху файлу на диску.
+    """
+    _ensure_attachment_meta_table(conn)
+    cached_rows = conn.execute(
+        "SELECT attachment_id, file_path, file_size, file_mtime, formed_at "
+        "FROM attachment_military_meta"
+    ).fetchall()
+    cache = {
+        r['attachment_id']: (
+            r['file_path'], r['file_size'], r['file_mtime'], r['formed_at']
+        )
+        for r in cached_rows
+    }
+
+    result = {}
+    updates = []
+    for a in att_rows:
+        rel_path = a.get('file_path') or ''
+        if not rel_path.lower().endswith('.pdf'):
+            continue
+        disk_path = _resolve_attachment_disk_path(rel_path)
+        if not disk_path or not os.path.exists(disk_path):
+            continue
+        try:
+            st = os.stat(disk_path)
+        except OSError:
+            continue
+
+        aid = a['id']
+        cached = cache.get(aid)
+        if (
+            cached
+            and cached[0] == rel_path
+            and cached[1] == st.st_size
+            and abs(cached[2] - st.st_mtime) < 1e-6
+        ):
+            result[aid] = cached[3]
+            continue
+
+        formed_str, parsed_ok = _extract_formed_at_from_pdf(disk_path)
+        result[aid] = formed_str
+        if parsed_ok:
+            updates.append((aid, rel_path, st.st_size, st.st_mtime, formed_str))
+
+    if updates:
+        conn.executemany(
+            "INSERT OR REPLACE INTO attachment_military_meta "
+            "(attachment_id, file_path, file_size, file_mtime, formed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            updates,
+        )
+        conn.commit()
+
+    return result
+
+
 def _collect_military_files_overview(
     conn,
     *,
@@ -3029,6 +3192,9 @@ def _collect_military_files_overview(
     """
     Збирає дані про військово-облікові файли («Резерв+») для сторінки контролю
     та завантаження помісячних ZIP-паків.
+
+    Уся помісячна прив'язка будується СТРОГО за датою «Сформовано:», зчитаною
+    безпосередньо з самого PDF-файлу (без підміни датою завантаження uploaded_at).
     """
     base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
@@ -3053,15 +3219,18 @@ def _collect_military_files_overview(
                  s.first_name_UA COLLATE UKRAINIAN
     """).fetchall()
 
-    att_rows = conn.execute("""
+    att_rows_raw = conn.execute("""
         SELECT id, entity_id, file_path, original_name, uploaded_at, uploaded_by
         FROM attachments
         WHERE entity_type = 'military'
         ORDER BY id ASC
     """).fetchall()
+    att_rows = [dict(a) for a in att_rows_raw]
+    pdf_formed_map = _load_attachment_formed_map(conn, att_rows)
+
     atts_by_mil = {}
     for a in att_rows:
-        atts_by_mil.setdefault(a['entity_id'], []).append(dict(a))
+        atts_by_mil.setdefault(a['entity_id'], []).append(a)
 
     ready_rows = []
     missing_rows = []
@@ -3119,7 +3288,7 @@ def _collect_military_files_overview(
             if not all(w in haystack for w in search.lower().split()):
                 continue
 
-        formed_ym, formed_sort = _parse_ym_and_sort_key(s['formed_at'])
+        card_formed_ym, _ = _parse_ym_and_sort_key(s['formed_at'])
 
         raw_atts = atts_by_mil.get(s['military_id'], []) if s['military_id'] else []
         if pdf_only:
@@ -3130,37 +3299,29 @@ def _collect_military_files_overview(
         else:
             filtered_atts = list(raw_atts)
 
-        # Визначаємо, який файл є найновішим PDF (або найновішим файлом),
-        # щоб пов'язати з ним дату «Сформовано» (military.formed_at).
-        latest_doc_att_id = None
-        pdf_atts = [
-            a for a in filtered_atts
-            if (a.get('file_path') or '').lower().endswith('.pdf')
-        ]
-        if pdf_atts:
-            latest_doc_att_id = pdf_atts[-1]['id']
-        elif filtered_atts:
-            latest_doc_att_id = filtered_atts[-1]['id']
-
         processed_atts = []
         files_by_month = {}
         for a in filtered_atts:
-            up_ym, up_sort = _parse_ym_and_sort_key(a.get('uploaded_at'))
-            is_latest_doc = (a['id'] == latest_doc_att_id)
-            if is_latest_doc and formed_ym:
-                eff_ym = formed_ym
-                eff_sort = formed_sort or up_sort
-                date_display = (s['formed_at'] or '').strip()
-                date_source = 'formed'
-            else:
-                eff_ym = up_ym
-                eff_sort = up_sort
-                date_display = (a.get('uploaded_at') or '').strip()
-                date_source = 'uploaded'
-
             disk_path = _resolve_attachment_disk_path(a.get('file_path') or '')
             exists_on_disk = bool(disk_path and os.path.exists(disk_path))
             is_pdf = (a.get('file_path') or '').lower().endswith('.pdf')
+
+            # Місяць файлу визначається ВИКЛЮЧНО за «Сформовано:» всередині PDF
+            raw_pdf_formed = pdf_formed_map.get(a['id'], '') if (is_pdf and exists_on_disk) else ''
+            pdf_ym, pdf_sort = _parse_ym_and_sort_key(raw_pdf_formed)
+            _, up_sort = _parse_ym_and_sort_key(a.get('uploaded_at'))
+
+            if pdf_ym:
+                eff_ym = pdf_ym
+                eff_sort = pdf_sort or up_sort
+                date_display = raw_pdf_formed
+                date_source = 'formed'
+            else:
+                eff_ym = None
+                eff_sort = up_sort
+                date_display = ''
+                date_source = 'no_formed'
+
             att_info = {
                 'id': a['id'],
                 'file_path': a.get('file_path') or '',
@@ -3178,16 +3339,19 @@ def _collect_military_files_overview(
             if eff_ym and exists_on_disk:
                 files_by_month.setdefault(eff_ym, []).append(att_info)
 
-        # Підраховуємо помісячну статистику по існуючих файлах
+        # У кожному місяці сортуємо файли від найновішого за «Сформовано:»
         for ym_key, m_files in files_by_month.items():
+            m_files.sort(key=lambda x: (x['effective_sort'], x['id']), reverse=True)
             if m_files:
                 month_student_counts[ym_key] = month_student_counts.get(ym_key, 0) + 1
 
         existing_atts = [a for a in processed_atts if a['exists_on_disk']]
         in_month_files = files_by_month.get(selected_ym, [])
 
+        # Найновіший файл: пріоритет файлам із розпізнаною датою «Сформовано:»
+        formed_atts = [a for a in existing_atts if a['effective_ym']]
         latest_att = max(
-            existing_atts,
+            formed_atts or existing_atts,
             key=lambda a: (a['effective_sort'], a['id']),
             default=None,
         )
@@ -3208,15 +3372,15 @@ def _collect_military_files_overview(
             'email': (s['email'] or '').strip(),
             'address': (s['address_of_residence'] or '').strip(),
             'formed_at': (s['formed_at'] or '').strip(),
-            'formed_ym': formed_ym,
+            'formed_ym': card_formed_ym,
             'in_month_files': in_month_files,
             'all_files_count': len(existing_atts),
             'latest_file': latest_att,
-            'latest_ym': latest_att['effective_ym'] if latest_att else formed_ym,
+            'latest_ym': latest_att['effective_ym'] if latest_att else None,
             'latest_ym_label': (
                 _format_ym_label_ua(latest_att['effective_ym'])
                 if latest_att and latest_att['effective_ym']
-                else (_format_ym_label_ua(formed_ym) if formed_ym else '')
+                else ''
             ),
         }
 
@@ -3401,7 +3565,7 @@ def military_files_download_pack():
             if name_counts.get(base_name, 0) > 1:
                 base_name = f"{base_name} (ID {r['id']})"
 
-            student_files = [a for a in r['in_month_files'] if a['exists_on_disk']]
+            student_files = [a for a in r['in_month_files'] if a['exists_on_disk']][:1]
             for idx, att in enumerate(student_files, start=1):
                 ext = os.path.splitext(att['file_path'])[1].lower() or '.pdf'
                 arcname = f"{base_name}{ext}" if idx == 1 else f"{base_name} ({idx}){ext}"
