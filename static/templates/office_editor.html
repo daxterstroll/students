@@ -21,6 +21,7 @@
             font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
             background: #f4efe3;
             height: 100vh;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
         }
@@ -29,7 +30,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 1rem;
+            gap: .75rem 1rem;
             padding: .75rem 1.25rem;
             background: #0e1b2c;
             color: #f4efe3;
@@ -38,21 +39,25 @@
         .bar .title {
             display: flex;
             align-items: center;
-            gap: .6rem;
+            flex-wrap: wrap;
+            gap: .25rem .6rem;
             font-weight: 700;
             font-size: 1.05rem;
             min-width: 0;
+            flex: 1 1 240px;
         }
-        .bar .title span {
+        .bar .title span:first-of-type {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+            max-width: 100%;
         }
         .bar .hint {
             font-size: .82rem;
             opacity: .75;
-            display: block;
             font-weight: 400;
+            flex-basis: 100%;
+            margin-left: 0 !important;
         }
         .bar .actions { display: flex; gap: .6rem; flex-wrap: wrap; }
         .btn {

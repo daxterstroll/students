@@ -133,6 +133,7 @@
                         {% if not item.students %}
                         <div class="p-3 text-muted small">Немає студентів.</div>
                         {% else %}
+                        <div class="table-responsive">
                         <table class="table table-sm align-middle mb-0">
                             <tbody>
                                 {% for s in item.students %}
@@ -149,6 +150,7 @@
                                 {% endfor %}
                             </tbody>
                         </table>
+                        </div>
                         {% endif %}
                     </div>
                 </div>

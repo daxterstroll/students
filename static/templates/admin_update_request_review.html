@@ -108,7 +108,8 @@
 			<h6 class="text-muted small text-uppercase mb-2">
 				<i class="bi bi-database me-1"></i>Що вже є в базі:
 			</h6>
-			<table class="table table-sm table-bordered mb-3">
+			<div class="table-responsive mb-3">
+			<table class="table table-sm table-bordered mb-0">
 				<thead class="table-light">
 					<tr>
 						<th>Група</th>
@@ -138,6 +139,7 @@
 				{% endfor %}
 				</tbody>
 			</table>
+			</div>
 			{% endif %}
 
 			{# ── Вибір цільової групи (якщо груп > 1) ── #}
@@ -181,9 +183,11 @@
 				<label for="apply_passport" class="form-check-label">Застосувати паспорт із заявки</label>
 				{% endif %}
 			</div>
-			<table class="table table-sm table-borderless mb-2">
+			<div class="table-responsive mb-2">
+			<table class="table table-sm table-borderless mb-0">
 				{# ... існуючий блок з полями (Тип / Серія та номер / Ким видано / …) ... #}
 			</table>
+			</div>
 			{% if passport_scans %}...{% endif %}
 		</div>
 	</div>
@@ -205,7 +209,8 @@
                 <label for="apply_education_document" class="form-check-label">Додати як новий запис (наявні документи не чіпає)</label>
                 {% endif %}
             </div>
-            <table class="table table-sm table-borderless mb-2">
+            <div class="table-responsive mb-2">
+            <table class="table table-sm table-borderless mb-0">
                 <tbody>
                     <tr><th class="text-muted w-25">Тип</th><td>{{ submitted.education_document.document_type or '-' }}</td></tr>
                     <tr><th class="text-muted">Серія та номер</th><td>{{ (submitted.education_document.series ~ ' ' if submitted.education_document.series else '') ~ (submitted.education_document.number or '') or '-' }}</td></tr>
@@ -213,6 +218,7 @@
                     <tr><th class="text-muted">Країна / дата закінчення</th><td>{{ submitted.education_document.country or '-' }} / {{ submitted.education_document.completion_date or '-' }}</td></tr>
                 </tbody>
             </table>
+            </div>
             {% if education_scans %}
             <div class="small text-muted mb-1">Скани:</div>
             {% for a in education_scans %}
@@ -233,6 +239,7 @@
                     <label for="apply_education_reference" class="form-check-label"><strong>Академічна довідка</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
                     {% endif %}
                 </div>
+                <div class="table-responsive">
                 <table class="table table-sm table-borderless mb-0">
                     <tbody>
                         <tr><th class="text-muted w-25">Номер довідки</th><td>{{ submitted.education_document.reference.number or '-' }}</td></tr>
@@ -240,6 +247,7 @@
                         <tr><th class="text-muted">Країна / дата видачі</th><td>{{ submitted.education_document.reference.country or '-' }} / {{ submitted.education_document.reference.issue_date or '-' }}</td></tr>
                     </tbody>
                 </table>
+                </div>
             </div>
             {% endif %}
 
@@ -253,6 +261,7 @@
                     <label for="apply_education_recognition" class="form-check-label"><strong>Свідоцтво про визнання</strong> - додати до {{ 'нового' if has_base_doc else 'найновішого наявного' }} документа</label>
                     {% endif %}
                 </div>
+                <div class="table-responsive">
                 <table class="table table-sm table-borderless mb-0">
                     <tbody>
                         <tr><th class="text-muted w-25">Номер свідоцтва</th><td>{{ submitted.education_document.recognition.certificate_number or '-' }}</td></tr>
@@ -260,6 +269,7 @@
                         <tr><th class="text-muted">Дата видачі</th><td>{{ submitted.education_document.recognition.date or '-' }}</td></tr>
                     </tbody>
                 </table>
+                </div>
             </div>
             {% endif %}
         </div>
@@ -300,7 +310,8 @@
             {% if has_new_fields %}
             {# ── Нові поля з PDF «Резерв+» ── #}
             <h6 class="text-muted small text-uppercase mt-3 mb-2">З PDF «Резерв+»</h6>
-            <table class="table table-sm table-borderless mb-2">
+            <div class="table-responsive mb-2">
+            <table class="table table-sm table-borderless mb-0">
                 <tbody>
                     {% if m.get('status_badge') %}<tr><th class="text-muted w-25">Статус</th><td>{{ m.status_badge }}</td></tr>{% endif %}
                     {% if m.get('registration_category') %}<tr><th class="text-muted">Категорія обліку</th><td>{{ m.registration_category }}</td></tr>{% endif %}
@@ -325,17 +336,20 @@
                     {% if m.get('address_of_residence') %}<tr><th class="text-muted">Адреса проживання</th><td>{{ m.address_of_residence }}</td></tr>{% endif %}
                 </tbody>
             </table>
+            </div>
             {% endif %}
 
             {% if m.get('formed_at') or m.get('military_registration_document') %}
             {# ── Додаткові поля (введено вручну) ── #}
             <h6 class="text-muted small text-uppercase mt-3 mb-2">Додаткові поля (введено вручну)</h6>
-            <table class="table table-sm table-borderless mb-2">
+            <div class="table-responsive mb-2">
+            <table class="table table-sm table-borderless mb-0">
                 <tbody>
                     {% if m.get('military_registration_document') %}<tr><th class="text-muted w-25">Військово-обліковий документ</th><td>{{ m.military_registration_document }}</td></tr>{% endif %}
                     {% if m.get('formed_at') %}<tr><th class="text-muted">Документ сформовано</th><td class="font-monospace">{{ m.formed_at }}</td></tr>{% endif %}
                 </tbody>
             </table>
+            </div>
             {% endif %}
 
             {% if military_scans %}

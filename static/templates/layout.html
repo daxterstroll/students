@@ -354,9 +354,17 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
 
-    // ── Тінь навбара при скролі ──
+    // ── Тінь навбара при скролі та синхронізація висоти навбара (--nav-height) ──
     const nav = document.getElementById('mainNav');
     if (nav) {
+        const syncNavHeight = () => {
+            document.documentElement.style.setProperty('--nav-height', nav.offsetHeight + 'px');
+        };
+        syncNavHeight();
+        if (window.ResizeObserver) {
+            new ResizeObserver(syncNavHeight).observe(nav);
+        }
+        window.addEventListener('resize', syncNavHeight);
         window.addEventListener('scroll', () => {
             nav.classList.toggle('is-scrolled', window.scrollY > 8);
         });

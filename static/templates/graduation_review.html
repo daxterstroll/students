@@ -58,6 +58,7 @@
                 {% if not g.students %}
                 <div class="p-3 text-muted small">У групі немає активних студентів.</div>
                 {% else %}
+                <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <tbody>
                         {% for s in g.students %}
@@ -77,6 +78,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
                 {% endif %}
             </div>
         </div>
@@ -93,7 +95,8 @@
 <script>
 document.querySelectorAll('.js-student-toggle').forEach(function (checkbox) {
     checkbox.addEventListener('change', function () {
-        const reasonField = document.getElementById('reason_' + checkbox.dataset.studentId);
+        const reasonField = document.getElementById(checkbox.dataset.reasonId);
+        if (!reasonField) return;
         if (checkbox.checked) {
             reasonField.classList.add('d-none');
             reasonField.removeAttribute('required');

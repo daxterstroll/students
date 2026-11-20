@@ -70,7 +70,9 @@
         background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 10px;
-        overflow: hidden;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
     }
     table.students-table { margin: 0; }
     .students-table thead th {
@@ -225,7 +227,7 @@
 
     .btn-military {
         border: 1px solid var(--line);
-        background: #fff;
+        background: var(--surface);
         color: var(--ink-text);
         font-size: .8rem;
         font-weight: 600;
@@ -250,6 +252,8 @@
     .student-card .card-row {
         display: flex;
         justify-content: space-between;
+        align-items: baseline;
+        gap: .75rem;
         margin-bottom: 8px;
         padding-bottom: 8px;
         border-bottom: 1px dashed var(--line);
@@ -261,12 +265,15 @@
         font-size: 12px;
         letter-spacing: .06em;
         text-transform: uppercase;
+        flex-shrink: 0;
     }
     .student-card .card-value {
         color: var(--ink-text);
         font-size: 14px;
         text-align: right;
         font-weight: 500;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
     .student-card .progress-bar-container { width: 100%; }
 
@@ -340,11 +347,11 @@
     @media (max-width: 576px) {
         .student-card { padding: 12px; margin-bottom: 12px; }
         .student-card .card-label, .student-card .card-value { font-size: 13px; }
-        .btn-chip { width: 30px; height: 30px; font-size: .85rem; }
+        .btn-chip { width: 32px; height: 32px; font-size: .88rem; }
         .dropdown-menu { font-size: 13px; }
         .input-group { flex-wrap: nowrap; }
-        .input-group-text { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
-        .form-control, .form-select { padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+        .input-group-text { padding: 0.35rem 0.6rem; font-size: 0.9rem; }
+        .form-control, .form-select { padding: 0.42rem 0.65rem; font-size: 1rem; }
     }
     .dropdown-menu { z-index: 1060 !important; }
 </style>
@@ -714,7 +721,28 @@
             {% if student.group_name %}
             <div class="card-row">
                 <span class="card-label">Група</span>
-                <span class="card-value">{{ student.group_name }}</span>
+                <span class="card-value">
+                    {{ student.group_name }}
+                    {% if student.is_parallel %}
+                    <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                          title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+                        <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+                    </span>
+                    {% endif %}
+                </span>
+            </div>
+            {% elif student.all_groups_list %}
+            <div class="card-row">
+                <span class="card-label">Група</span>
+                <span class="card-value">
+                    {{ student.all_groups_list | join(', ') }}
+                    {% if student.is_parallel %}
+                    <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                          title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+                        <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+                    </span>
+                    {% endif %}
+                </span>
             </div>
             {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
             <div class="card-row">
@@ -858,19 +886,6 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-
-    function checkDevice() {
-        const width = window.innerWidth;
-        const isMobile = width <= 991;
-        if (isMobile) {
-            document.querySelectorAll('.student-cards-container').forEach(el => { el.style.display = 'block'; });
-            document.querySelectorAll('.table-responsive table, .table-responsive thead, .table-responsive tbody').forEach(el => { el.style.display = 'none'; });
-        }
-    }
-    checkDevice();
-    window.addEventListener('resize', checkDevice);
-    window.addEventListener('orientationchange', checkDevice);
-
     // анімоване заповнення прогрес-барів
     requestAnimationFrame(() => {
         setTimeout(() => {
@@ -878,19 +893,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 el.style.width = el.getAttribute('data-width');
             });
         }, 80);
-    });
-
-    // збереження параметрів фільтрації при сортуванні
-    document.querySelectorAll('thead a').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href && href.includes('sort_by')) {
-            if (!href.includes('search=') && '{{ search }}') {
-                link.setAttribute('href', href + '&search={{ search }}');
-            }
-            if (!href.includes('group_id=') && '{{ group_id }}') {
-                link.setAttribute('href', href + '&group_id={{ group_id }}');
-            }
-        }
     });
 });
 </script>
@@ -944,8 +946,8 @@ document.addEventListener('DOMContentLoaded', function () {
 </script>
 
 <style>
-.group-picker-menu { width: 320px; max-height: 360px; overflow-y: auto; }
-.group-picker-item { cursor: pointer; }
+.group-picker-menu { width: min(340px, calc(100vw - 2.5rem)); max-height: 360px; overflow-y: auto; }
+.group-picker-item { cursor: pointer; white-space: normal; }
 #groupPickerBtn { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-panel .form-label { margin-bottom: .15rem; }
 </style>

@@ -141,8 +141,8 @@
                             <img src="{{ url_for('static', filename=student.photo) }}"
                                  class="rounded border" style="width:120px; height:160px; object-fit:cover;">
                         {% else %}
-                            <div class="d-flex align-items-center justify-content-center border rounded bg-light"
-                                 style="width:120px; height:160px; margin:0 auto;">
+                            <div class="d-flex align-items-center justify-content-center border rounded"
+                                 style="width:120px; height:160px; margin:0 auto; background: var(--paper-2);">
                                 <span class="text-muted small">немає</span>
                             </div>
                         {% endif %}
@@ -206,6 +206,7 @@
         </summary>
         <div class="card mt-2">
             <div class="card-body p-0">
+                <div class="table-responsive">
                 <table class="table table-sm mb-0">
                     <tbody>
                         {% for key, label in military_fields %}
@@ -231,6 +232,7 @@
                         {% endfor %}
                     </tbody>
                 </table>
+                </div>
             </div>
         </div>
     </details>

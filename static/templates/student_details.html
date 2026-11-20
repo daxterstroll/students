@@ -167,7 +167,7 @@
         justify-content: center;
         color: var(--muted);
         font-size: 3rem;
-        background: linear-gradient(160deg, var(--paper-2), #fff);
+        background: linear-gradient(160deg, var(--paper-2), var(--surface));
     }
     .photo-frame--header .photo-frame__placeholder { font-size: 2rem; color: var(--brass-semi); }
 
@@ -182,11 +182,17 @@
         align-items: center;
         justify-content: center;
         font-size: .85rem;
-        background: #fff;
+        background: var(--surface);
         box-shadow: 0 2px 6px rgba(0,0,0,.35);
     }
     .photo-corner-btn { left: 6px; }
     .photo-corner-btn--delete { left: auto; right: 6px; }
+
+    .card-body .col-6,
+    .card-body .col-sm-6 {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
 </style>
 
 <div class="container py-4">
@@ -515,7 +521,7 @@
 
                                             {# Актуальний (найновіший) паспорт — розгорнуто #}
                                             <div class="border rounded-3 p-4 mb-3">
-                                                <h5 class="d-flex align-items-center justify-content-between">
+                                                <h5 class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                                     <span>{{ _newest.document_type }}</span>
                                                     {% if not _newest.group_id %}
                                                     <span class="badge bg-secondary-subtle text-secondary-emphasis"
@@ -592,12 +598,12 @@
                                         {% else %}
 										
 																	{% if has_perm('manage_passport_documents') %}
-							<ringt><a href="{{ url_for('admin.manage_passport_documents',
+							<div class="text-end"><a href="{{ url_for('admin.manage_passport_documents',
 												student_id=student.id,
 												group_id=g.group_id) }}"
 							   class="btn btn-sm btn-primary mt-2">
 								<i class="bi bi-plus-circle me-1"></i>Додати паспорт для цієї групи
-							</a></right>
+							</a></div>
 							{% endif %}
 							
                                             <div class="p-4 text-center text-muted">
@@ -1273,7 +1279,7 @@
 							</div>
 							{% endif %}
 											
-                                                <h5 class="d-flex align-items-center justify-content-between">
+                                                <h5 class="d-flex align-items-center justify-content-between flex-wrap gap-2">
                                                     <span>{{ doc.document_type | default('Документ', true) }}</span>
                                                     {% if not doc.group_id %}
                                                     <span class="badge bg-secondary-subtle text-secondary-emphasis"
@@ -1560,61 +1566,6 @@
     .grade-pill--warn { background: var(--brass-soft); color: #8a6a1a; }
     html[data-theme="dark"] .grade-pill--pass { background: rgba(79,122,82,.25); color: #bfe3c2; }
     html[data-theme="dark"] .grade-pill--warn { color: var(--brass-lt); }
-
-    /* ===== Фото студента ===== */
-    .photo-frame {
-        width: 150px;
-        height: 200px;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 6px 18px rgba(14,27,44,.14);
-        border: 3px solid #fff;
-        background: var(--paper-2);
-    }
-    .photo-frame--header {
-        width: 96px;
-        height: 128px;
-        border-radius: 10px;
-        border: 3px solid var(--brass);
-        box-shadow: 0 8px 20px rgba(0,0,0,.35);
-        margin: 0 auto;
-    }
-    .student-header .page-header,
-    .student-header.page-header { padding-top: 1.5rem; padding-bottom: 1.5rem; }
-    .photo-frame__img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-    }
-    .photo-frame__placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--muted);
-        font-size: 3rem;
-        background: linear-gradient(160deg, var(--paper-2), #fff);
-    }
-    .photo-frame--header .photo-frame__placeholder { font-size: 2rem; color: var(--brass-semi); }
-
-    .photo-frame-wrap { position: relative; width: 96px; }
-    .photo-corner-btn {
-        position: absolute;
-        bottom: -6px;
-        width: 30px;
-        height: 30px;
-        padding: 0;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: .85rem;
-        background: #fff;
-        box-shadow: 0 2px 6px rgba(0,0,0,.35);
-    }
-    .photo-corner-btn { left: 6px; }
-    .photo-corner-btn--delete { left: auto; right: 6px; }
 </style>
 
 <!-- Модальне вікно завантаження/обрізки фото -->
@@ -1896,7 +1847,7 @@
                     <div class="row g-3 mb-3">
                         <div class="col-12">
                             <label class="form-label small text-muted mb-1">Поточне ПІБ</label>
-                            <div class="p-2 bg-light rounded border small font-monospace">
+                            <div class="p-2 rounded border small font-monospace" style="background: var(--paper-2);">
                                 {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
                                 {% if student.last_name_ENG or student.first_name_ENG %}
                                 <div class="text-muted">

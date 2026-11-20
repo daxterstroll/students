@@ -3,16 +3,57 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    <meta name="color-scheme" content="light dark">
     <title>{{ sheet.discipline_name }} — відомість</title>
+    <script>
+    (function () {
+        try {
+            var saved = localStorage.getItem('theme');
+            var dark = saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+        } catch (e) {}
+    })();
+    </script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css" rel="stylesheet">
     <style>
-        body { background: #f4efe3; font-family: 'Manrope', sans-serif; }
+        :root {
+            --ink: #0e1b2c;
+            --ink-2: #16283f;
+            --paper: #f4efe3;
+            --paper-2: #e9e0cc;
+            --surface: #ffffff;
+            --ink-text: #1f2a3a;
+            --muted: #6c6355;
+            --brass: #c8a24a;
+            --brass-lt: #e3c87a;
+            --line: rgba(31,42,58,.15);
+            --thead-bg: #0e1b2c;
+            --thead-text: #e3c87a;
+            --readonly-bg: #f3ede0;
+            --readonly-text: #7a5c14;
+        }
+        :root[data-theme="dark"] {
+            --paper: #0f151c;
+            --paper-2: #1a222b;
+            --surface: #1e2936;
+            --ink-text: #e7e2d6;
+            --muted: #9aa3ad;
+            --line: rgba(231,226,214,.14);
+            --thead-bg: #070d14;
+            --thead-text: #f0d896;
+            --readonly-bg: rgba(200,162,74,.16);
+            --readonly-text: #f0d896;
+        }
+        body { background: var(--paper); color: var(--ink-text); font-family: 'Manrope', sans-serif; }
         .batch-nav {
             display: flex; justify-content: space-between; align-items: center;
             gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem;
-            padding: .75rem 1rem; background: #fff; border-radius: 10px;
+            padding: .75rem 1rem; background: var(--surface); border-radius: 10px;
+            border: 1px solid var(--line);
             box-shadow: 0 2px 8px rgba(0,0,0,.06);
         }
         .header-glass {
@@ -22,13 +63,29 @@
             padding: 1.5rem; margin-bottom: 1rem;
         }
         .header-glass h1 { color: #e3c87a; font-family: 'Lora', serif; font-size: 1.3rem; }
-        .grade-input { text-align: center; font-weight: 700; }
-        .grade-input:read-only { background: #f7f3ea; }
-        @media (max-width: 768px) {
-            .header-glass { padding: 1rem; }
-            .header-glass h1 { font-size: 1.1rem; }
+        .card { background: var(--surface); color: var(--ink-text); border-color: var(--line); border-radius: 14px; overflow: hidden; }
+        .card-footer { background: var(--paper-2); border-top-color: var(--line); }
+        .table.batch-table { color: var(--ink-text); --bs-table-bg: transparent; --bs-table-color: var(--ink-text); border-color: var(--line); }
+        .table.batch-table thead th {
+            background: var(--thead-bg) !important;
+            color: var(--thead-text) !important;
+            border-color: rgba(200,162,74,.25) !important;
+            vertical-align: middle;
         }
-	   .kind-badge {
+        .table.batch-table tbody td {
+            border-color: var(--line);
+            color: var(--ink-text);
+        }
+        .grade-input { text-align: center; font-weight: 700; min-width: 4.5rem; }
+        .topic-input { min-width: 11rem; }
+        .grade-input:read-only,
+        .grade-input.is-computed { background: var(--readonly-bg) !important; color: var(--readonly-text) !important; }
+        .btn-primary {
+            background: linear-gradient(160deg, var(--brass-lt), var(--brass));
+            border: none; color: #0e1b2c; font-weight: 700;
+        }
+        .btn-primary:hover { background: linear-gradient(160deg, var(--brass), var(--brass-lt)); color: #0e1b2c; }
+        .kind-badge {
             display: inline-flex;
             align-items: center;
             gap: .3rem;
@@ -39,6 +96,42 @@
             font-size: .72rem;
             font-weight: 800;
             vertical-align: middle;
+        }
+
+        .grades-mobile { display: none; }
+        .grade-card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            padding: .9rem;
+            margin-bottom: .65rem;
+        }
+        .grade-card:last-child { margin-bottom: 0; }
+        .grade-card__header {
+            display: flex; align-items: flex-start; gap: .5rem;
+            margin-bottom: .7rem; padding-bottom: .55rem;
+            border-bottom: 1px dashed var(--line);
+        }
+        .grade-card__num { font-family: ui-monospace, monospace; font-weight: 700; color: var(--muted); font-size: .85rem; }
+        .grade-card__name { font-weight: 700; line-height: 1.3; }
+        .grade-card__code { font-family: ui-monospace, monospace; font-size: .74rem; color: var(--muted); }
+        .grade-card__row {
+            display: grid; grid-template-columns: 1fr 96px;
+            align-items: center; gap: .5rem; margin-bottom: .5rem;
+        }
+        .grade-card__label { font-size: .84rem; font-weight: 600; color: var(--muted); }
+        .grade-card__input { min-height: 40px; font-size: 1rem; text-align: center; font-weight: 700; }
+        .grade-card__result {
+            display: flex; justify-content: space-between; align-items: center; gap: .5rem;
+            margin-top: .65rem; padding: .55rem .75rem;
+            border-radius: 8px; background: var(--paper-2); font-size: .86rem; font-weight: 600;
+        }
+
+        @media (max-width: 767.98px) {
+            .header-glass { padding: 1rem; }
+            .header-glass h1 { font-size: 1.1rem; }
+            .grades-desktop { display: none; }
+            .grades-mobile { display: block; padding: .75rem; background: var(--paper-2); }
         }
     </style>
 </head>
@@ -118,9 +211,9 @@
     <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="card">
-            <div class="table-responsive">
-                <table class="table table-sm table-bordered mb-0 align-middle">
-                    <thead style="background: #0e1b2c; color: #e3c87a;">
+            <div class="table-responsive grades-desktop">
+                <table class="table table-sm table-bordered batch-table mb-0 align-middle">
+                    <thead>
                         <tr>
                             <th rowspan="2">№</th>
                             <th rowspan="2">ПІБ</th>
@@ -142,14 +235,15 @@
                     </thead>
                     <tbody>
                         {% for st in students %}
-                        <tr>
+                        <tr data-sid="{{ st.student_id }}">
                             <td class="text-center">{{ st.position }}</td>
                             <td>{{ st.full_name }}</td>
                             <td class="small font-monospace">{{ st.edebo_code or '—' }}</td>
                             {% if sheet.entity_kind in ('attestation', 'coursework') %}
                             <td>
                                 {% if not readonly %}
-                                <input type="text" class="form-control form-control-sm"
+                                <input type="text" class="form-control form-control-sm topic-input"
+                                       data-field="work_topic"
                                        name="work_topic_{{ st.student_id }}"
                                        value="{{ st.work_topic or '' }}">
                                 {% else %}{{ st.work_topic or '—' }}{% endif %}
@@ -157,12 +251,16 @@
                             {% endif %}
                             {% if not readonly %}
                             <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                                       data-field="points_mid"
                                        name="points_mid_{{ st.student_id }}" value="{{ st.points_mid if st.points_mid is not none else '' }}"></td>
                             <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                                       data-field="points_current"
                                        name="points_current_{{ st.student_id }}" value="{{ st.points_current if st.points_current is not none else '' }}"></td>
                             <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                                       data-field="points_exam"
                                        name="points_exam_{{ st.student_id }}" value="{{ st.points_exam if st.points_exam is not none else '' }}"></td>
                             <td><input type="number" min="0" max="100" class="form-control form-control-sm grade-input"
+                                       data-field="points"
                                        name="points_{{ st.student_id }}" value="{{ st.points if st.points is not none else '' }}"></td>
                             {% else %}
                             <td class="text-center">{{ st.points_mid if st.points_mid is not none else '—' }}</td>
@@ -170,14 +268,100 @@
                             <td class="text-center">{{ st.points_exam if st.points_exam is not none else '—' }}</td>
                             <td class="text-center fw-bold">{{ st.points if st.points is not none else '—' }}</td>
                             {% endif %}
-                            <td class="small">{{ st.national_grade or '—' }}</td>
-                            <td class="text-center">{{ st.ects or '—' }}</td>
+                            <td class="small js-nat">{{ st.national_grade or '—' }}</td>
+                            <td class="text-center js-ects">{{ st.ects or '—' }}</td>
                             <td class="small">{{ sheet.teacher_name or '—' }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+
+            <div class="grades-mobile">
+                {% for st in students %}
+                <div class="grade-card" data-sid="{{ st.student_id }}">
+                    <div class="grade-card__header">
+                        <span class="grade-card__num">{{ st.position }}.</span>
+                        <div>
+                            <div class="grade-card__name">{{ st.full_name }}</div>
+                            {% if st.edebo_code %}
+                            <div class="grade-card__code">{{ st.edebo_code }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if sheet.entity_kind in ('attestation', 'coursework') %}
+                    <div class="mb-2">
+                        <label class="grade-card__label d-block mb-1">Тема роботи</label>
+                        {% if not readonly %}
+                        <input type="text" class="form-control form-control-sm js-mobile-input"
+                               data-field="work_topic"
+                               value="{{ st.work_topic or '' }}" placeholder="Тема роботи">
+                        {% else %}
+                        <div class="small">{{ st.work_topic or '—' }}</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if not readonly %}
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Міжсесійний</label>
+                        <input type="number" min="0" max="100" inputmode="numeric"
+                               class="form-control form-control-sm grade-card__input js-mobile-input"
+                               data-field="points_mid"
+                               value="{{ st.points_mid if st.points_mid is not none else '' }}" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Поточні</label>
+                        <input type="number" min="0" max="100" inputmode="numeric"
+                               class="form-control form-control-sm grade-card__input js-mobile-input"
+                               data-field="points_current"
+                               value="{{ st.points_current if st.points_current is not none else '' }}" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label">Іспит</label>
+                        <input type="number" min="0" max="100" inputmode="numeric"
+                               class="form-control form-control-sm grade-card__input js-mobile-input"
+                               data-field="points_exam"
+                               value="{{ st.points_exam if st.points_exam is not none else '' }}" placeholder="—">
+                    </div>
+                    <div class="grade-card__row">
+                        <label class="grade-card__label"><strong>Підсумок</strong></label>
+                        <input type="number" min="0" max="100" inputmode="numeric"
+                               class="form-control form-control-sm grade-card__input js-mobile-input"
+                               data-field="points"
+                               value="{{ st.points if st.points is not none else '' }}" placeholder="—">
+                    </div>
+                    {% else %}
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Міжсесійний</span>
+                        <span class="text-end">{{ st.points_mid if st.points_mid is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Поточні</span>
+                        <span class="text-end">{{ st.points_current if st.points_current is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label">Іспит</span>
+                        <span class="text-end">{{ st.points_exam if st.points_exam is not none else '—' }}</span>
+                    </div>
+                    <div class="grade-card__row">
+                        <span class="grade-card__label"><strong>Підсумок</strong></span>
+                        <span class="text-end fw-bold">{{ st.points if st.points is not none else '—' }}</span>
+                    </div>
+                    {% endif %}
+
+                    <div class="grade-card__result">
+                        <span class="text-muted small">Результат:</span>
+                        <span>
+                            <span class="js-nat">{{ st.national_grade or '—' }}</span>
+                            (<span class="js-ects font-monospace fw-bold">{{ st.ects or '—' }}</span>)
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
             {% if not readonly %}
             <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
                 <span class="small text-muted">
@@ -229,73 +413,118 @@
         return isNaN(n) ? null : n;
     }
 
-    function bindRow(row) {
-        const mid  = row.querySelector('input[name^="points_mid_"]');
-        const cur  = row.querySelector('input[name^="points_current_"]');
-        const exam = row.querySelector('input[name^="points_exam_"]');
-        const total = row.querySelector(
-            'input[name^="points_"]:not([name^="points_mid_"]):not([name^="points_current_"]):not([name^="points_exam_"])'
-        );
-        if (!total || !mid || !cur || !exam) return;
+    function setText(el, value) {
+        if (!el) return;
+        el.textContent = (value === null || value === undefined || value === '') ? '—' : value;
+    }
 
-        const totalTd = total.closest('td');
-        const natTd  = totalTd ? totalTd.nextElementSibling : null;
-        const ectsTd = natTd ? natTd.nextElementSibling : null;
+    document.querySelectorAll('table.batch-table tbody tr[data-sid]').forEach(row => {
+        const sid = row.getAttribute('data-sid');
+        const card = document.querySelector('.grade-card[data-sid="' + sid + '"]');
 
-        function setText(td, value) {
-            if (!td) return;
-            td.textContent = (value === null || value === undefined || value === '') ? '—' : value;
+        const dMid  = row.querySelector('[data-field="points_mid"]');
+        const dCur  = row.querySelector('[data-field="points_current"]');
+        const dExam = row.querySelector('[data-field="points_exam"]');
+        const dTot  = row.querySelector('[data-field="points"]');
+        const dTop  = row.querySelector('[data-field="work_topic"]');
+        const dNat  = row.querySelector('.js-nat');
+        const dEcts = row.querySelector('.js-ects');
+
+        const mMid  = card ? card.querySelector('[data-field="points_mid"]') : null;
+        const mCur  = card ? card.querySelector('[data-field="points_current"]') : null;
+        const mExam = card ? card.querySelector('[data-field="points_exam"]') : null;
+        const mTot  = card ? card.querySelector('[data-field="points"]') : null;
+        const mTop  = card ? card.querySelector('[data-field="work_topic"]') : null;
+        const mNat  = card ? card.querySelector('.js-nat') : null;
+        const mEcts = card ? card.querySelector('.js-ects') : null;
+
+        if (!dTot || !dMid || !dCur || !dExam) return;
+
+        function syncToMobile() {
+            if (!card) return;
+            if (mMid)  mMid.value = dMid.value;
+            if (mCur)  mCur.value = dCur.value;
+            if (mExam) mExam.value = dExam.value;
+            if (mTot) {
+                mTot.value = dTot.value;
+                mTot.readOnly = dTot.readOnly;
+                mTot.classList.toggle('is-computed', dTot.readOnly);
+            }
+            if (mTop && dTop) mTop.value = dTop.value;
+        }
+
+        function setComputedState(isComputed) {
+            dTot.readOnly = isComputed;
+            dTot.classList.toggle('is-computed', isComputed);
+            if (mTot) {
+                mTot.readOnly = isComputed;
+                mTot.classList.toggle('is-computed', isComputed);
+            }
+        }
+
+        function updateResult(nat, ects) {
+            setText(dNat, nat);
+            setText(dEcts, ects);
+            setText(mNat, nat);
+            setText(mEcts, ects);
         }
 
         function recalc() {
-            const a = parseNum(mid.value);
-            const b = parseNum(cur.value);
-            const c = parseNum(exam.value);
+            const a = parseNum(dMid.value);
+            const b = parseNum(dCur.value);
+            const c = parseNum(dExam.value);
             const anyFilled = (a !== null || b !== null || c !== null);
 
             if (!anyFilled) {
-                total.readOnly = false;
-                total.classList.remove('bg-light');
+                setComputedState(false);
+                syncToMobile();
                 return;
             }
 
             let sum = (a || 0) + (b || 0) + (c || 0);
             if (sum > 100) sum = 100;
 
-            total.value = sum;
-            total.readOnly = true;
-            total.classList.add('bg-light');
+            dTot.value = sum;
+            setComputedState(true);
+            syncToMobile();
 
             const { nat, ects } = pointsToNationalEcts(sum, CONTROL_FORM);
-            setText(natTd, nat);
-            setText(ectsTd, ects);
+            updateResult(nat, ects);
         }
 
-        mid.addEventListener('input', recalc);
-        cur.addEventListener('input', recalc);
-        exam.addEventListener('input', recalc);
+        function onManualTotal(val) {
+            if (dTot.readOnly) return;
+            dTot.value = val;
+            dMid.value = '';
+            dCur.value = '';
+            dExam.value = '';
+            syncToMobile();
 
-        total.addEventListener('input', function () {
-            if (total.readOnly) return;
-            mid.value = '';
-            cur.value = '';
-            exam.value = '';
-
-            const manual = parseNum(total.value);
+            const manual = parseNum(val);
             if (manual === null) {
-                setText(natTd, '—');
-                setText(ectsTd, '—');
+                updateResult('—', '—');
                 return;
             }
             const { nat, ects } = pointsToNationalEcts(manual, CONTROL_FORM);
-            setText(natTd, nat);
-            setText(ectsTd, ects);
-        });
+            updateResult(nat, ects);
+        }
+
+        [dMid, dCur, dExam].forEach(el => el.addEventListener('input', recalc));
+        dTot.addEventListener('input', () => onManualTotal(dTot.value));
+        if (dTop && mTop) {
+            dTop.addEventListener('input', () => { mTop.value = dTop.value; });
+            mTop.addEventListener('input', () => { dTop.value = mTop.value; });
+        }
+
+        if (mMid && mCur && mExam && mTot) {
+            mMid.addEventListener('input', () => { dMid.value = mMid.value; recalc(); });
+            mCur.addEventListener('input', () => { dCur.value = mCur.value; recalc(); });
+            mExam.addEventListener('input', () => { dExam.value = mExam.value; recalc(); });
+            mTot.addEventListener('input', () => onManualTotal(mTot.value));
+        }
 
         recalc();
-    }
-
-    document.querySelectorAll('table tbody tr').forEach(bindRow);
+    });
 })();
 </script>
 </body>

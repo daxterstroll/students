@@ -592,7 +592,7 @@
                         {% for entity_type, name, grade, letter, thesis_title in student_detail.activities %}
                         <tr>
                             <td class="small">
-                                <span class="badge bg-light text-dark border me-1">{{ {'practice':'практика','coursework':'курсова','attestation':'атестація'}.get(entity_type, entity_type) }}</span>
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis border me-1">{{ {'practice':'практика','coursework':'курсова','attestation':'атестація'}.get(entity_type, entity_type) }}</span>
                                 {{ name or '' }}
                                 {% if thesis_title %}<br><span class="text-muted">Тема: {{ thesis_title }}</span>{% endif %}
                             </td>

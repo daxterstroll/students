@@ -33,7 +33,8 @@
             background: var(--paper);
             color: var(--ink-text);
             font-family: 'Manrope', sans-serif;
-            padding-top: 64px;
+            padding-top: var(--nav-height, 64px);
+            overflow-x: clip;
         }
 
         h1, h2, h3, h4, h5 { font-family: 'Lora', serif; color: var(--ink-text); }
@@ -83,16 +84,18 @@
         .navbar-toggler:active { transform: scale(.94); }
         .navbar-toggler .bi { font-size: 1.2rem; }
 
-        /* nav links — underline grow */
-        .nav-link, .admin-link {
+        /* nav links — underline grow (scoped strictly to #mainNav so .nav-tabs / .nav-pills keep readable contrast) */
+        #mainNav .nav-link,
+        #mainNav .admin-link {
             position: relative;
             color: var(--brass-lt) !important;
             font-weight: 500;
             font-size: .92rem;
             border-radius: 6px;
+            text-decoration: none;
             transition: background .2s ease, color .2s ease, transform .15s ease;
         }
-        .nav-link::after {
+        #mainNav .nav-link::after {
             content: "";
             position: absolute;
             left: .9rem; right: .9rem; bottom: 2px;
@@ -103,15 +106,26 @@
             transition: transform .28s cubic-bezier(.4,0,.2,1);
             border-radius: 2px;
         }
-        .nav-link:hover::after,
-        .nav-link.active::after { transform: scaleX(1); }
+        #mainNav .nav-link:hover::after,
+        #mainNav .nav-link.active::after { transform: scaleX(1); }
 
-        .nav-link:hover, .nav-link.active,
-        #mainNavbar .dropdown-item:hover, .admin-link:hover {
+        #mainNav .nav-link:hover,
+        #mainNav .nav-link.active,
+        #mainNavbar .dropdown-item:hover,
+        #mainNav .admin-link:hover {
             background: var(--brass-semi);
             color: var(--brass-lt) !important;
         }
-        .nav-link:active { transform: translateY(1px); }
+        #mainNav .nav-link:active { transform: translateY(1px); }
+
+        @media (min-width: 992px) {
+            #mainNav .nav-link { white-space: nowrap; }
+        }
+        @media (min-width: 992px) and (max-width: 1279.98px) {
+            #mainNav .navbar-brand { font-size: 1rem; gap: .4rem; }
+            #mainNav .nav-link { font-size: .84rem; padding-left: .45rem; padding-right: .45rem; }
+            #mainNav .user-badge { font-size: .7rem; padding: .35rem .5rem; }
+        }
 
         /* dropdown caret micro-rotation */
         .dropdown-toggle::after { transition: transform .25s ease; }
@@ -222,11 +236,13 @@
         @media (max-width: 991.98px) {
             .navbar-collapse {
                 position: fixed;
-                top: 64px; left: 0; right: 0;
+                top: var(--nav-height, 64px); left: 0; right: 0;
                 background: var(--ink);
-                padding: 1rem;
-                max-height: calc(100vh - 64px);
+                padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+                max-height: calc(100vh - var(--nav-height, 64px));
+                max-height: calc(100dvh - var(--nav-height, 64px));
                 overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
                 border-top: 1px solid var(--brass-semi);
                 z-index: 1050;
             }
@@ -301,6 +317,7 @@
         }
 
 			/* ===== PAGE ENTRANCE ===== */
+main#main-content,
 main.container {
     animation: pageIn .45s ease-out both;
 }
@@ -365,6 +382,61 @@ main.container {
         }
         .table tbody tr:hover {
             background: var(--brass-soft);
+        }
+
+        /* ===== NAV TABS / PILLS (light theme + mobile overflow) ===== */
+        .nav-tabs {
+            border-bottom-color: var(--line);
+        }
+        .nav-tabs .nav-link {
+            color: var(--ink-text);
+            font-weight: 600;
+            border-radius: 8px 8px 0 0;
+            transition: background .15s ease, color .15s ease, border-color .15s ease;
+        }
+        .nav-tabs .nav-link:hover {
+            color: var(--ink);
+            border-color: var(--line) var(--line) transparent;
+            background: var(--brass-soft);
+        }
+        .nav-tabs .nav-link.active {
+            background-color: var(--surface);
+            color: var(--ink);
+            border-color: var(--line) var(--line) var(--surface);
+            border-top: 2px solid var(--brass);
+        }
+        .nav-pills .nav-link {
+            color: var(--ink-text);
+            font-weight: 600;
+        }
+        .nav-pills .nav-link:hover {
+            background: var(--brass-soft);
+            color: var(--ink);
+        }
+        .nav-pills .nav-link.active {
+            background-color: var(--ink);
+            color: var(--brass-lt);
+        }
+        @media (max-width: 767.98px) {
+            .nav-tabs {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                overflow-y: hidden;
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: thin;
+            }
+            .nav-tabs .nav-link {
+                white-space: nowrap;
+            }
+        }
+        @media (max-width: 991.98px) {
+            .table-responsive td input.form-control:not([type="checkbox"]):not([type="radio"]):not([type="color"]),
+            .table-responsive td select.form-select {
+                min-width: 7.5rem;
+            }
+            .table-responsive td input[type="number"].form-control {
+                min-width: 4.75rem;
+            }
         }
 
         /* ======================================================================
@@ -619,13 +691,15 @@ main.container {
         }
         html[data-theme="dark"] .nav-tabs .nav-link:hover {
             border-color: var(--line) var(--line) transparent;
+            background: var(--brass-soft);
             color: var(--ink-text);
         }
         html[data-theme="dark"] .nav-tabs .nav-link.active,
         html[data-theme="dark"] .nav-pills .nav-link.active {
             background-color: var(--paper-2);
-            color: var(--ink-text);
+            color: var(--brass-lt);
             border-color: var(--line) var(--line) var(--paper-2);
+            border-top: 2px solid var(--brass);
         }
 
         /* .alert-info (Bootstrap) - світлий блакитний фон за
@@ -833,7 +907,7 @@ main.container {
            додаток до диплома") - Bootstrap-синя рамка замінюється на
            золотисту, у тон іншим акцентним елементам сайту. */
         html[data-theme="dark"] .border-primary { border-color: var(--brass) !important; }
-        html[data-theme="dark"] .bg-light { background-color: var(--paper-2) !important; color: var(--ink-text); }
+        html[data-theme="dark"] .bg-light { background-color: var(--paper-2) !important; color: var(--ink-text) !important; }
         html[data-theme="dark"] .border { border-color: var(--line) !important; }
         html[data-theme="dark"] hr.divider,
         html[data-theme="dark"] hr { border-color: var(--line); opacity: 1; }

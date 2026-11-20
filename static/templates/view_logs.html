@@ -43,13 +43,14 @@
       <i class="bi bi-chevron-down small"></i>
     </button>
     <div class="collapse mt-2" id="recentErrorsPanel">
+      <div class="table-responsive">
       <table class="table table-sm mb-0">
         <tbody>
           {% for e in recent_errors %}
           <tr>
             <td class="text-muted small font-monospace" style="white-space:nowrap;">{{ e.date }} {{ e.time }}</td>
             <td class="small"><span class="badge bg-secondary">{{ e.month }}</span></td>
-            <td class="small">{{ e.action }}</td>
+            <td class="small log-action">{{ e.action }}</td>
             <td class="text-end" style="white-space:nowrap;">
               {% if e.month != selected_month %}
               <a href="{{ url_for('admin.view_logs', month=e.month) }}" class="small">Відкрити місяць</a>
@@ -59,6 +60,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 </div>
@@ -251,4 +253,7 @@ document.getElementById('filter-date').addEventListener('change',   applyFilters
 document.getElementById('filter-level').addEventListener('change',  applyFilters);
 </script>
 
+<style>
+.log-action { overflow-wrap: anywhere; }
+</style>
 {% endblock %}
