@@ -34,6 +34,8 @@ from werkzeug.utils import secure_filename
 from routes.db import get_db
 from routes.utils import permission_required, log_action, logger, is_student_on_reduced_program
 from routes.helpers import current_username
+from routes.security import is_safe_hex_token, resolve_under_dir
+from routes.user_scope import get_allowed_group_ids
 
 import_grades_bp = Blueprint('import_grades', __name__)
 
@@ -59,26 +61,35 @@ def _cleanup_old_sessions():
 
 
 def _state_path(token):
-    return os.path.join(SESSIONS_DIR, f"{token}.json")
+    if not is_safe_hex_token(token):
+        return None
+    return resolve_under_dir(SESSIONS_DIR, f"{token}.json")
 
 
 def _xlsx_path(token):
-    return os.path.join(SESSIONS_DIR, f"{token}.xlsx")
+    if not is_safe_hex_token(token):
+        return None
+    return resolve_under_dir(SESSIONS_DIR, f"{token}.xlsx")
 
 
 def _save_state(token, state):
+    path = _state_path(token)
+    if not path:
+        raise ValueError("Некоректний токен сесії")
     os.makedirs(SESSIONS_DIR, exist_ok=True)
-    with open(_state_path(token), 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False)
 
 
 def _load_state_or_none(token):
-    token = re.sub(r'[^0-9a-f]', '', token or '')
     path = _state_path(token)
-    if not token or not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return None
     with open(path, encoding='utf-8') as f:
-        return json.load(f)
+        state = json.load(f)
+    if state.get('user_id') != session.get('user_id') and not session.get('is_admin'):
+        return None
+    return state
 
 
 # ============================================================
@@ -383,9 +394,22 @@ def upload():
     """Крок 1: файл + група."""
     _cleanup_old_sessions()
     conn = get_db()
-    groups = conn.execute(
-        "SELECT id, name, start_year, study_form FROM groups WHERE COALESCE(archived, 0) NOT IN (1) ORDER BY name"
-    ).fetchall()
+    is_admin = bool(session.get('is_admin', False)) or session.get('role') == 'admin'
+    if is_admin:
+        groups = conn.execute(
+            "SELECT id, name, start_year, study_form FROM groups WHERE COALESCE(archived, 0) NOT IN (1) ORDER BY name"
+        ).fetchall()
+    else:
+        allowed_ids = get_allowed_group_ids(conn, session.get('user_id'))
+        if allowed_ids:
+            ph = ','.join('?' for _ in allowed_ids)
+            groups = conn.execute(
+                f"SELECT id, name, start_year, study_form FROM groups WHERE id IN ({ph}) AND COALESCE(archived, 0) NOT IN (1) ORDER BY name",
+                allowed_ids,
+            ).fetchall()
+        else:
+            groups = []
+    allowed_set = {g['id'] for g in groups}
     conn.close()
 
     if request.method == 'POST':
@@ -394,8 +418,8 @@ def upload():
         if not file or not file.filename.lower().endswith('.xlsx'):
             flash('Оберіть файл формату .xlsx', 'danger')
             return redirect(url_for('import_grades.upload'))
-        if not group_id:
-            flash('Оберіть групу', 'danger')
+        if not group_id or group_id not in allowed_set:
+            flash('Оберіть доступну групу', 'danger')
             return redirect(url_for('import_grades.upload'))
 
         token = uuid.uuid4().hex
@@ -408,7 +432,7 @@ def upload():
             wb.close()
         except Exception as e:
             logger.error(f"Імпорт оцінок: не вдалося відкрити файл: {e}", exc_info=True)
-            flash(f'Не вдалося відкрити файл: {e}', 'danger')
+            flash('Не вдалося відкрити Excel-файл', 'danger')
             return redirect(url_for('import_grades.upload'))
 
         _save_state(token, {
@@ -645,7 +669,7 @@ def preview(token):
         except Exception as e:
             conn.rollback()
             logger.error(f"Імпорт оцінок: помилка запису: {e}", exc_info=True)
-            flash(f'Помилка при записі оцінок: {e}', 'danger')
+            flash('Помилка при записі оцінок', 'danger')
         finally:
             conn.close()
             # Прибираємо тимчасові файли сесії

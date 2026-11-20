@@ -13,6 +13,7 @@ from routes.admin import admin_bp
 import sqlite3
 import os
 from routes.utils import get_templates_with_metadata, TEMPLATE_FOLDER
+from routes.security import is_safe_hex_token, resolve_under_dir, validate_docx_bytes
 from routes.gen_docx import gen_doc
 from routes import office_editor
 from werkzeug.utils import secure_filename
@@ -191,11 +192,23 @@ def manage_templates():
             display_name = filename
 
         os.makedirs(TEMPLATE_FOLDER, exist_ok=True)
-        dest_path = os.path.join(TEMPLATE_FOLDER, filename)
+        dest_path = resolve_under_dir(TEMPLATE_FOLDER, filename)
+        if not dest_path:
+            conn.close()
+            flash('Некоректна назва файлу шаблону', 'danger')
+            return redirect(url_for('admin.manage_templates'))
         is_replace = os.path.exists(dest_path)
 
+        raw_bytes = file.read()
+        ok_docx, err_docx = validate_docx_bytes(raw_bytes)
+        if not ok_docx:
+            conn.close()
+            flash(err_docx, 'danger')
+            return redirect(url_for('admin.manage_templates'))
+
         try:
-            file.save(dest_path)
+            with open(dest_path, 'wb') as out_f:
+                out_f.write(raw_bytes)
             conn.execute("""
                 INSERT INTO document_templates (filename, display_name, description, admin_only, hidden, uploaded_by, uploaded_at)
                 VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -216,7 +229,7 @@ def manage_templates():
             flash(f"Шаблон «{filename}» успішно {'оновлено' if is_replace else 'завантажено'}", 'success')
         except Exception as e:
             logger.error(f"Помилка при завантаженні шаблону {filename}: {e}", exc_info=True)
-            flash(f'Помилка при завантаженні шаблону: {e}', 'danger')
+            flash('Помилка при завантаженні шаблону', 'danger')
         finally:
             conn.close()
 
@@ -288,7 +301,7 @@ def toggle_template_visibility(filename):
         flash(f"Шаблон «{filename}» тепер {'прихований зі' if new_hidden else 'видимий у'} списках вибору", 'success')
     except Exception as e:
         logger.error(f"Помилка при зміні видимості шаблону {filename}: {e}", exc_info=True)
-        flash(f'Помилка при зміні видимості шаблону: {e}', 'danger')
+        flash('Помилка при зміні видимості шаблону', 'danger')
     finally:
         conn.close()
 
@@ -326,7 +339,7 @@ def delete_template(filename):
         flash(f"Шаблон «{filename}» видалено", 'success')
     except Exception as e:
         logger.error(f"Помилка при видаленні шаблону {filename}: {e}", exc_info=True)
-        flash(f'Помилка при видаленні шаблону: {e}', 'danger')
+        flash('Помилка при видаленні шаблону', 'danger')
     finally:
         conn.close()
 
@@ -614,7 +627,7 @@ def _run_generation_job(job_id, students_data, selected_template, batch_id, user
             with _JOBS_LOCK:
                 job['failed'].append({
                     'name': f"{student_dict.get('last_name_UA','')} {student_dict.get('first_name_UA','')}",
-                    'error': str(e),
+                    'error': 'Помилка генерації документа',
                 })
         finally:
             with _JOBS_LOCK:
@@ -747,6 +760,7 @@ def generate_group_docs():
 
     with _JOBS_LOCK:
         _JOBS[job_id] = {
+            'user_id': session.get('user_id'),
             'total': len(students_data),
             'done': 0,
             'current_name': '',
@@ -773,10 +787,14 @@ def generate_group_docs():
 @permission_required('group_export')
 def generate_group_docs_status(job_id):
     """JSON-статус фонової генерації - опитується сторінкою прогресу через AJAX."""
+    if not is_safe_hex_token(job_id):
+        return {'error': 'not_found'}, 404
     with _JOBS_LOCK:
         job = _JOBS.get(job_id)
         if not job:
             return {'error': 'not_found'}, 404
+        if job.get('user_id') != session.get('user_id') and not session.get('is_admin'):
+            return {'error': 'forbidden'}, 403
         return {
             'total': job['total'],
             'done': job['done'],
@@ -791,10 +809,16 @@ def generate_group_docs_status(job_id):
 @permission_required('group_export')
 def generate_group_docs_result(job_id):
     """Показує підсумок завершеної фонової генерації: перелік готових документів (з переходом у ONLYOFFICE) і, за наявності, список тих, що не вдалося згенерувати."""
+    if not is_safe_hex_token(job_id):
+        flash('Завдання генерації не знайдено', 'warning')
+        return redirect(url_for('admin.group_export'))
     with _JOBS_LOCK:
         job = _JOBS.get(job_id)
     if not job or not job['complete']:
         flash('Завдання генерації не знайдено або ще не завершено', 'warning')
+        return redirect(url_for('admin.group_export'))
+    if job.get('user_id') != session.get('user_id') and not session.get('is_admin'):
+        flash('Доступ до цього завдання генерації заборонено', 'danger')
         return redirect(url_for('admin.group_export'))
 
     if not job['succeeded']:

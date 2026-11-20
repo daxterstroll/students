@@ -54,6 +54,8 @@ import uuid
 import threading
 from zipfile import ZipFile
 
+from urllib.parse import urlparse
+
 import jwt
 import requests
 from flask import (
@@ -61,14 +63,16 @@ from flask import (
     send_file, abort, session, flash, redirect, url_for
 )
 
-from routes.utils import logger
+from routes.utils import logger, permission_required
 from routes.helpers import current_username
+from routes.security import is_safe_hex_token, resolve_under_dir
 from routes.config import (
     ONLYOFFICE_PUBLIC_URL,
     ONLYOFFICE_CALLBACK_BASE_URL,
     ONLYOFFICE_JWT_SECRET,
     ONLYOFFICE_VERIFY_SSL,
     ONLYOFFICE_COMMAND_URL,
+    ONLYOFFICE_ALLOW_INSECURE_CALLBACK,
 )
 
 if not ONLYOFFICE_VERIFY_SSL:
@@ -140,23 +144,48 @@ def _sign_jwt(payload: dict):
     return jwt.encode(payload, ONLYOFFICE_JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
+def _url_port(parsed) -> int:
+    if parsed.port is not None:
+        return parsed.port
+    return 443 if parsed.scheme == 'https' else 80
+
+
+def _is_allowed_download_url(download_url: str) -> bool:
+    """Дозволяє завантажувати збережений документ лише з налаштованого ONLYOFFICE Document Server (scheme + host + port)."""
+    if not download_url or not isinstance(download_url, str):
+        return False
+    parsed = urlparse(download_url.strip())
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    port = _url_port(parsed)
+    loopback = {'localhost', '127.0.0.1', '::1'}
+
+    for candidate in (ONLYOFFICE_PUBLIC_URL, ONLYOFFICE_COMMAND_URL):
+        if not candidate:
+            continue
+        cp = urlparse(candidate.strip())
+        if cp.scheme not in ('http', 'https') or not cp.hostname:
+            continue
+        chost = cp.hostname.lower()
+        cport = _url_port(cp)
+        if parsed.scheme != cp.scheme or port != cport:
+            continue
+        if host == chost or (host in loopback and chost in loopback):
+            return True
+    return False
+
+
 def _verify_document_server_request(body: dict):
     """
     Перевіряє, що вхідний запит (callback) дійсно надійшов від Document
     Server, підписаного нашим спільним секретом, а не від будь-кого, хто
     просто вгадав URL.
-
-    Якщо ONLYOFFICE_JWT_SECRET не задано - перевірку пропускаємо (JWT
-    вимкнено з обох боків за замовчуванням на щойно встановленому
-    Document Server).
-
-    ONLYOFFICE-SPECIFIC: залежно від версії/налаштувань Document Server,
-    підписаний токен приходить або в заголовку Authorization: Bearer ...,
-    або прямо в тілі запиту як поле "token". Перевіряємо обидва варіанти.
-    Payload токена може бути або самим тілом запиту, або обгорнутий у
-    {"payload": {...}} - теж перевіряємо обидва варіанти.
     """
     if not ONLYOFFICE_JWT_SECRET:
+        if not ONLYOFFICE_ALLOW_INSECURE_CALLBACK:
+            logger.error("ONLYOFFICE_JWT_SECRET не задано — callback відхилено (встановіть секрет або ONLYOFFICE_ALLOW_INSECURE_CALLBACK=true для локального налагодження).")
+            return False, None
         return True, body
 
     token = None
@@ -455,25 +484,19 @@ def callback(doc_id):
         if not download_url:
             logger.error(f"Callback status={status} без посилання на файл (doc_id={doc_id})")
             return jsonify({"error": 1})
+        if not _is_allowed_download_url(download_url):
+            logger.error(f"Відхилено callback з недозволеним URL завантаження (doc_id={doc_id}): {download_url}")
+            return jsonify({"error": 1})
         try:
-            # verify=ONLYOFFICE_VERIFY_SSL: Document Server сам зараз
-            # використовує самопідписаний сертифікат (той самий, що і
-            # для основного сайту), тому стандартна перевірка SSL тут
-            # відхиляє з'єднання (requests не довіряє самопідписаним
-            # сертифікатам за замовчуванням, так само як спочатку не
-            # довіряв і браузер). Коли на сервері зʼявиться сертифікат
-            # від довіреного CA, поставте ONLYOFFICE_VERIFY_SSL=true
-            # в .env, щоб повернути повну перевірку.
-            resp = requests.get(download_url, timeout=30, verify=ONLYOFFICE_VERIFY_SSL)
+            resp = requests.get(
+                download_url, timeout=30, verify=ONLYOFFICE_VERIFY_SSL, allow_redirects=False
+            )
             resp.raise_for_status()
             tmp_path = s['path'] + '.tmp'
             with open(tmp_path, 'wb') as f:
                 f.write(resp.content)
             os.replace(tmp_path, s['path'])
             logger.info(f"Збережено відредагований документ '{s['display_name']}' (doc_id={doc_id})")
-            # Сигналізуємо _forcesave_and_wait (якщо він зараз чекає у
-            # /office/finalize або /office/batch/.../zip), що файл на
-            # диску вже актуальний і його можна віддавати користувачу.
             s['save_event'].set()
         except Exception as e:
             logger.error(f"Не вдалося зберегти відредагований документ (doc_id={doc_id}): {e}", exc_info=True)
@@ -504,7 +527,23 @@ def finalize(doc_id):
                       mimetype=DOCX_MIME)
 
 
+def _check_batch_access(batch_id):
+    if not is_safe_hex_token(batch_id):
+        abort(404)
+    with _LOCK:
+        doc_ids = list(_BATCHES.get(batch_id, []))
+        sessions = [_SESSIONS[d] for d in doc_ids if d in _SESSIONS]
+    if not sessions:
+        return False
+    if not session.get('is_admin'):
+        uid = session.get('user_id')
+        if any(s.get('user_id') != uid for s in sessions):
+            abort(403)
+    return True
+
+
 @office_bp.route('/batch/<batch_id>')
+@permission_required('group_export')
 def batch_view(batch_id):
     """
     Сторінка зі списком усіх документів пакету (масова генерація) -
@@ -512,9 +551,7 @@ def batch_view(batch_id):
     повернутися до списку з редактора окремого документа і завантажити
     підсумковий ZIP, не перегенеровуючи документи заново.
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-
+    _check_batch_access(batch_id)
     items = get_batch_preview_items(batch_id)
     if not items:
         flash('Пакет документів не знайдено (можливо, сесія застаріла)', 'danger')
@@ -527,15 +564,14 @@ def batch_view(batch_id):
 
 
 @office_bp.route('/batch/<batch_id>/zip')
+@permission_required('group_export')
 def download_batch_zip(batch_id):
     """
     Збирає всі документи пакету (масова генерація) в один ZIP - у
     поточному стані кожного файлу (враховуючи будь-які зміни, збережені
     через редактор для окремих студентів).
     """
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-
+    _check_batch_access(batch_id)
     items = get_batch_items(batch_id)
     if not items:
         flash('Пакет документів не знайдено (можливо, сесія застаріла)', 'danger')
@@ -544,14 +580,18 @@ def download_batch_zip(batch_id):
     # Форс-збереження кожного документа пакета, який зараз відкрито в
     # редакторі, щоб у ZIP потрапили актуальні версії.
     for doc_id, _name in items:
-        s = _SESSIONS.get(doc_id)
+        with _LOCK:
+            s = _SESSIONS.get(doc_id)
         if s:
             _forcesave_and_wait(s, doc_id, timeout=10)
 
-    zip_path = os.path.join(SESSIONS_DIR, f"batch_{batch_id}.zip")
+    zip_path = resolve_under_dir(SESSIONS_DIR, f"batch_{batch_id}.zip")
+    if not zip_path:
+        abort(400)
     with ZipFile(zip_path, 'w') as zipf:
         for doc_id, display_name in items:
-            s = _SESSIONS.get(doc_id)
+            with _LOCK:
+                s = _SESSIONS.get(doc_id)
             if s and os.path.exists(s['path']):
                 zipf.write(s['path'], arcname=display_name)
 

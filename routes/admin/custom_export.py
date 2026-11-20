@@ -1,4 +1,3 @@
-
 """
 routes/admin/custom_export.py
 ==============================
@@ -36,6 +35,7 @@ from routes.utils import logger, permission_required
 from routes.helpers import current_username
 from routes.admin import admin_bp
 from routes.passport_types import PASSPORT_TYPES
+from routes.security import sanitize_spreadsheet_cell
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -735,6 +735,8 @@ def _export_xlsx(records, columns):
             val = rec.get(col_key, '')
             if val == '':
                 val = None
+            else:
+                val = sanitize_spreadsheet_cell(val, for_csv=False)
             cell = ws.cell(row=r_idx, column=c_idx, value=val)
             cell.alignment = Alignment(vertical='top', wrap_text=False)
             cell.border = border
@@ -760,9 +762,9 @@ def _export_xlsx(records, columns):
 def _export_csv(records, columns):
     buf = io.StringIO()
     writer = csv.writer(buf, delimiter=';', quoting=csv.QUOTE_MINIMAL)
-    writer.writerow([COLUMN_LABELS.get(k, k) for k in columns])
+    writer.writerow([sanitize_spreadsheet_cell(COLUMN_LABELS.get(k, k), for_csv=True) for k in columns])
     for rec in records:
-        writer.writerow([rec.get(k, '') for k in columns])
+        writer.writerow([sanitize_spreadsheet_cell(rec.get(k, ''), for_csv=True) for k in columns])
     # Excel любить BOM для коректного відображення кирилиці
     data = '\ufeff' + buf.getvalue()
     return io.BytesIO(data.encode('utf-8'))
@@ -967,7 +969,7 @@ def custom_export_preview():
         }
     except Exception as e:
         logger.error(f"custom_export preview error: {e}", exc_info=True)
-        return {'error': str(e)}, 500
+        return {'error': 'Не вдалося виконати підрахунок записів.'}, 500
     finally:
         conn.close()
 
@@ -1019,7 +1021,7 @@ def custom_export_download():
         return send_file(buf, mimetype=mimetype, as_attachment=True, download_name=filename)
     except Exception as e:
         logger.error(f"custom_export download error: {e}", exc_info=True)
-        flash(f'Помилка експорту: {e}', 'error')
+        flash('Не вдалося сформувати файл експорту. Перевірте параметри або зверніться до адміністратора.', 'error')
         return redirect(url_for('admin.custom_export'))
     finally:
         conn.close()

@@ -678,11 +678,12 @@
 							</a>
 							{% endif %}
 							{% if has_perm('manage_students') %}
-							<a href="{{ url_for('students.delete_student', student_id=student.id) }}"
-							   class="btn-chip btn-chip--delete" title="Видалити студента"
-							   onclick="return confirm('Ви впевнені, що хочете видалити студента {{ student.last_name_UA }}?')">
-								<i class="bi bi-trash3"></i>
-							</a>
+							<form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}" class="d-inline"
+								  onsubmit="return confirm({{ ('Ви впевнені, що хочете видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
+								<button type="submit" class="btn-chip btn-chip--delete" title="Видалити студента">
+									<i class="bi bi-trash3"></i>
+								</button>
+							</form>
 							{% endif %}
 						</div>
 					</td>
@@ -789,10 +790,14 @@
 						{% endif %}
 						{% if has_perm('manage_students') %}
 						<li><hr class="dropdown-divider"></li>
-						<li><a class="dropdown-item text-danger" href="{{ url_for('students.delete_student', student_id=student.id) }}"
-							   onclick="return confirm('Видалити студента {{ student.last_name_UA }}?')">
-							<i class="bi bi-trash me-2"></i>Видалити
-						</a></li>
+						<li>
+							<form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}"
+								  onsubmit="return confirm({{ ('Видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
+								<button type="submit" class="dropdown-item text-danger">
+									<i class="bi bi-trash me-2"></i>Видалити
+								</button>
+							</form>
+						</li>
 						{% endif %}
 					</ul>
 				</div>

@@ -37,6 +37,13 @@ from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
 from routes.utils import get_attachments, save_multiple_attachments
+from routes.security import (
+    has_any_permission,
+    is_safe_hex_token,
+    resolve_under_dir,
+    user_can_access_student,
+    validate_upload_file,
+)
 from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
 from routes.photo import (
     process_and_save_pending_photo,
@@ -335,6 +342,12 @@ def add_military(student_id):
     return redirect(url_for('students.military_data', student_id=student_id))
 
 
+def _can_edit_military(conn, student_id: int) -> bool:
+    if has_any_permission('manage_military_reports'):
+        return True
+    return user_can_access_student(conn, student_id)
+
+
 @students_bp.route('/students/<int:student_id>/military', methods=['GET', 'POST'])
 @permission_required('manage_students', 'manage_military_reports')
 def military_data(student_id):
@@ -344,6 +357,10 @@ def military_data(student_id):
     if not student:
         conn.close()
         flash("Студента не знайдено", "error")
+        return redirect(url_for('students.student_list'))
+    if not _can_edit_military(conn, student_id):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))
 
     military = _current_military(conn, student_id)
@@ -371,11 +388,16 @@ def military_data(student_id):
                     'military_records', current_username(),
                 )
             conn.commit()
+        except ValueError as e:
+            conn.rollback()
+            conn.close()
+            flash(str(e), "error")
+            return redirect(url_for('students.military_data', student_id=student_id))
         except Exception as e:
             conn.rollback()
             logger.error(f"Помилка збереження військових даних (student_id={student_id}): {e}", exc_info=True)
             conn.close()
-            flash(f"Помилка збереження: {e}", "error")
+            flash("Помилка збереження військових даних", "error")
             return redirect(url_for('students.military_data', student_id=student_id))
 
         action_name = "редагував" if military else "додав"
@@ -420,11 +442,9 @@ def military_upload_pdf(student_id):
     і показує preview з diff-блоками + блоком фото.
     """
     file = request.files.get('pdf_file')
-    if not file or not file.filename:
-        flash("Оберіть PDF-файл", "error")
-        return redirect(url_for('students.military_data', student_id=student_id))
-    if not file.filename.lower().endswith('.pdf'):
-        flash("Підтримуються лише PDF-файли", "error")
+    ok_pdf, err_pdf = validate_upload_file(file, frozenset({'.pdf'}))
+    if not ok_pdf:
+        flash(err_pdf if file and file.filename else "Оберіть PDF-файл", "error")
         return redirect(url_for('students.military_data', student_id=student_id))
 
     pdf_bytes = file.read()
@@ -435,6 +455,10 @@ def military_upload_pdf(student_id):
     if not student:
         conn.close()
         flash("Студента не знайдено", "error")
+        return redirect(url_for('students.student_list'))
+    if not _can_edit_military(conn, student_id):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))
 
     military = _current_military(conn, student_id)
@@ -460,7 +484,7 @@ def military_upload_pdf(student_id):
         except OSError:
             pass
         conn.close()
-        flash(f"Не вдалося розпізнати PDF: {e}", "error")
+        flash("Не вдалося розпізнати PDF-файл. Переконайтеся, що це коректний документ «Резерв+».", "error")
         return redirect(url_for('students.military_data', student_id=student_id))
 
     raw_photo_bytes = extract_photo_from_pdf(tmp_path)
@@ -542,6 +566,12 @@ def military_upload_pdf(student_id):
 @permission_required('manage_students', 'manage_military_reports')
 def military_pdf_recrop_photo(student_id):
     """Ручна переобрізка фото з PDF (Cropper.js)."""
+    conn = get_db()
+    can_edit = _can_edit_military(conn, student_id)
+    conn.close()
+    if not can_edit:
+        return jsonify({'error': 'forbidden'}), 403
+
     raw_key = f'military_pdf_pending_raw_photo_{student_id}'
     cropped_key = f'military_pdf_pending_photo_{student_id}'
 
@@ -549,8 +579,9 @@ def military_pdf_recrop_photo(student_id):
     if not raw_path:
         return jsonify({'error': 'no_raw_photo'}), 400
 
-    raw_abs = os.path.join(PROJECT_ROOT, 'static', raw_path)
-    if not os.path.exists(raw_abs):
+    static_root = os.path.join(PROJECT_ROOT, 'static')
+    raw_abs = resolve_under_dir(static_root, raw_path)
+    if not raw_abs or not os.path.exists(raw_abs):
         return jsonify({'error': 'raw_photo_missing'}), 404
 
     try:
@@ -614,6 +645,10 @@ def military_apply_pdf(student_id):
         session.pop(raw_key, None)
         flash("Студента не знайдено", "error")
         return redirect(url_for('students.student_list'))
+    if not _can_edit_military(conn, student_id):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
+        return redirect(url_for('students.student_list'))
 
     photo_saved = False
     try:
@@ -662,7 +697,7 @@ def military_apply_pdf(student_id):
         conn.rollback()
         logger.error(f"Помилка застосування PDF-даних (student_id={student_id}): {e}", exc_info=True)
         conn.close()
-        flash(f"Помилка збереження: {e}", "error")
+        flash("Помилка збереження військових даних", "error")
         return redirect(url_for('students.military_data', student_id=student_id))
 
     conn.close()
@@ -711,16 +746,33 @@ def military_apply_pdf(student_id):
 @permission_required('manage_students', 'manage_military_reports')
 def delete_military_attachment(student_id):
     conn = get_db()
-    attachment_id = request.form.get('attachment_id')
-    att = conn.execute(
-        "SELECT id, file_path FROM attachments WHERE id=? AND entity_type='military'",
-        (attachment_id,),
+    if not _can_edit_military(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
+
+    attachment_id = request.form.get('attachment_id', type=int)
+    military_row = conn.execute(
+        "SELECT id FROM military WHERE student_id = ?", (student_id,)
     ).fetchone()
+    att = (
+        conn.execute(
+            "SELECT id, file_path FROM attachments "
+            "WHERE id=? AND entity_type='military' AND entity_id=?",
+            (attachment_id, military_row['id']),
+        ).fetchone()
+        if (military_row and attachment_id)
+        else None
+    )
     if att:
-        att_path = os.path.join(PROJECT_ROOT, 'static', att['file_path'])
-        if os.path.exists(att_path):
+        static_root = os.path.join(PROJECT_ROOT, 'static')
+        att_path = resolve_under_dir(static_root, att['file_path'])
+        if att_path and os.path.exists(att_path):
             os.remove(att_path)
-        conn.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+        conn.execute(
+            "DELETE FROM attachments WHERE id=? AND entity_type='military' AND entity_id=?",
+            (attachment_id, military_row['id']),
+        )
         try:
             conn.execute("DELETE FROM attachment_military_meta WHERE attachment_id=?", (attachment_id,))
         except Exception:
@@ -733,29 +785,35 @@ def delete_military_attachment(student_id):
     return redirect(url_for('students.military_data', student_id=student_id))
 
 
-@students_bp.route('/students/<int:student_id>/military/delete')
+@students_bp.route('/students/<int:student_id>/military/delete', methods=['POST'])
 @permission_required('manage_students')
 def delete_military(student_id):
     conn = get_db()
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
     student_row = conn.execute(
         "SELECT last_name_UA, first_name_UA, group_id FROM students WHERE id=?", (student_id,)
     ).fetchone()
     military_row = conn.execute("SELECT id FROM military WHERE student_id = ?", (student_id,)).fetchone()
     if military_row:
+        static_root = os.path.join(PROJECT_ROOT, 'static')
         for att in get_attachments(conn, 'military', military_row['id']):
-            att_path = os.path.join(PROJECT_ROOT, 'static', att['file_path'])
-            if os.path.exists(att_path):
+            att_path = resolve_under_dir(static_root, att['file_path'])
+            if att_path and os.path.exists(att_path):
                 os.remove(att_path)
         conn.execute("DELETE FROM attachments WHERE entity_type='military' AND entity_id=?", (military_row['id'],))
     conn.execute("DELETE FROM military WHERE student_id = ?", (student_id,))
     conn.commit()
     conn.close()
 
-    log_action(
-        current_username(),
-        f"ВИДАЛИВ військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
-        group_ids=[student_row['group_id']] if student_row else []
-    )
+    if student_row:
+        log_action(
+            current_username(),
+            f"ВИДАЛИВ військові дані: {student_row['last_name_UA']} {student_row['first_name_UA']} (ID {student_id})",
+            group_ids=[student_row['group_id']],
+        )
     return redirect(url_for('students.student_list'))
 
 
@@ -803,6 +861,11 @@ def military_bulk_import_pdf():
             'photo_tmp_path': None,
         }
         try:
+            ok_pdf, err_pdf = validate_upload_file(file, frozenset({'.pdf'}))
+            if not ok_pdf:
+                result['error'] = err_pdf
+                results.append(result)
+                continue
             pdf_bytes = file.read()
             pdf_name = f"pdf_{i}.pdf"
             pdf_disk_path = os.path.join(tmp_dir, pdf_name)
@@ -956,7 +1019,7 @@ def military_bulk_import_pdf():
 
         except Exception as e:
             logger.error(f"Помилка обробки {file.filename}: {e}", exc_info=True)
-            result['error'] = f"Помилка обробки: {e}"
+            result['error'] = "Не вдалося обробити PDF-файл"
 
         results.append(result)
 
@@ -982,7 +1045,18 @@ def military_bulk_import_pdf():
 @permission_required('import_military_pdf')
 def military_bulk_import_apply(token):
     """Застосовує зміни з пакетного імпорту (з чекбоксами по полях)."""
-    tmp_dir = os.path.join(TMP_MILITARY_BULK_DIR, token)
+    if not is_safe_hex_token(token):
+        flash("Некоректний токен сесії імпорту", "warning")
+        return redirect(url_for('students.military_bulk_import_pdf'))
+
+    if not session.get('is_admin') and session.get('military_bulk_token') != token:
+        flash("Доступ до цієї сесії пакетного імпорту заборонено або сесія застаріла", "warning")
+        return redirect(url_for('students.military_bulk_import_pdf'))
+
+    tmp_dir = resolve_under_dir(TMP_MILITARY_BULK_DIR, token)
+    if not tmp_dir:
+        flash("Сесія імпорту не знайдена або застаріла", "warning")
+        return redirect(url_for('students.military_bulk_import_pdf'))
     state_path = os.path.join(tmp_dir, 'state.json')
 
     if not os.path.exists(state_path):

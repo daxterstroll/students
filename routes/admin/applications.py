@@ -13,6 +13,7 @@ from routes.admin import admin_bp
 import sqlite3
 import os
 from routes.utils import get_attachments, save_multiple_attachments, generate_english_name
+from routes.security import resolve_under_dir
 from routes.admin.documents import translate_to_en
 from datetime import datetime
 import json
@@ -84,17 +85,17 @@ def _promote_pending_military_to_student(conn, pending_id, student_id, military_
         from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
     except ImportError as e:
         logger.error(f"[promote_apply] parse_military_pdf: {e}", exc_info=True)
-        return False, f"Модуль парсера PDF недоступний: {e}"
+        return False, "Модуль парсера PDF недоступний"
 
-    pdf_abs = os.path.join('static', pdf_attachment['file_path'])
-    if not os.path.exists(pdf_abs):
-        return False, f"PDF не знайдено на диску: {pdf_abs}"
+    pdf_abs = resolve_under_dir('static', pdf_attachment['file_path'])
+    if not pdf_abs or not os.path.exists(pdf_abs):
+        return False, "PDF не знайдено на диску"
 
     try:
         parsed = parse_reserve_plus_pdf(pdf_abs)
     except Exception as e:
         logger.error(f"[promote_apply] parse_reserve_plus_pdf: {e}", exc_info=True)
-        return False, f"Не вдалося розпізнати PDF: {e}"
+        return False, "Не вдалося розпізнати PDF"
 
     try:
         photo_bytes = extract_photo_from_pdf(pdf_abs)
@@ -240,9 +241,9 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
     if not pdf_attachment:
         return False, "PDF «Резерв+» не знайдено серед сканів"
 
-    pdf_abs = os.path.join('static', pdf_attachment['file_path'])
-    if not os.path.exists(pdf_abs):
-        return False, f"PDF не знайдено на диску: {pdf_abs}"
+    pdf_abs = resolve_under_dir('static', pdf_attachment['file_path'])
+    if not pdf_abs or not os.path.exists(pdf_abs):
+        return False, "PDF не знайдено на диску"
 
     try:
         from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
@@ -250,7 +251,7 @@ def _promote_update_request_military_to_student(conn, request_id, student_id, us
         photo_bytes = extract_photo_from_pdf(pdf_abs)
     except Exception as e:
         logger.error(f"[promote_update] parse: {e}", exc_info=True)
-        return False, f"Не вдалося розпізнати PDF: {e}"
+        return False, "Не вдалося розпізнати PDF"
 
     military_row = conn.execute(
         "SELECT id FROM military WHERE student_id=?", (student_id,)
@@ -801,13 +802,13 @@ def pending_student_review(pending_id):
 
         elif action == 'delete':
             if row['photo_path']:
-                photo_abs = os.path.join('static', row['photo_path'])
-                if os.path.exists(photo_abs):
+                photo_abs = resolve_under_dir('static', row['photo_path'])
+                if photo_abs and os.path.exists(photo_abs):
                     os.remove(photo_abs)
             for entity_type in ('pending_student', 'pending_student_passport', 'pending_student_military'):
                 for att in get_attachments(conn, entity_type, pending_id):
-                    att_abs = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_abs):
+                    att_abs = resolve_under_dir('static', att['file_path'])
+                    if att_abs and os.path.exists(att_abs):
                         os.remove(att_abs)
                 conn.execute(
                     "DELETE FROM attachments WHERE entity_type=? AND entity_id=?",
@@ -939,8 +940,8 @@ def pending_student_review(pending_id):
                     try:
                         from routes.photo import photo_path_for_student, _ensure_dir
                         _ensure_dir()
-                        src_path = os.path.join('static', row['photo_path'])
-                        if os.path.exists(src_path):
+                        src_path = resolve_under_dir('static', row['photo_path'])
+                        if src_path and os.path.exists(src_path):
                             dest_path = photo_path_for_student(student_id)
                             with open(src_path, 'rb') as src, open(dest_path, 'wb') as dst:
                                 dst.write(src.read())
@@ -1415,8 +1416,8 @@ def pending_student_review(pending_id):
                     try:
                         from routes.photo import photo_path_for_student, _ensure_dir
                         _ensure_dir()
-                        src_path = os.path.join('static', row['photo_path'])
-                        if os.path.exists(src_path):
+                        src_path = resolve_under_dir('static', row['photo_path'])
+                        if src_path and os.path.exists(src_path):
                             dest_path = photo_path_for_student(existing_id)
                             with open(src_path, 'rb') as src, open(dest_path, 'wb') as dst:
                                 dst.write(src.read())
@@ -2108,8 +2109,8 @@ def pending_student_photo(pending_id):
             conn.close()
             flash("Немає наявного фото для переобрізки - завантажте файл", "error")
             return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
-        src_path = os.path.join('static', row['photo_path'])
-        if not os.path.exists(src_path):
+        src_path = resolve_under_dir('static', row['photo_path'])
+        if not src_path or not os.path.exists(src_path):
             conn.close()
             flash("Файл наявного фото не знайдено на диску", "error")
             return redirect(url_for('admin.pending_student_review', pending_id=pending_id))
@@ -2199,8 +2200,8 @@ def update_request_photo(request_id):
             conn.close()
             flash("Немає наявного фото для переобрізки - завантажте файл", "error")
             return redirect(url_for('admin.update_request_review', request_id=request_id))
-        src_path = os.path.join('static', row['photo_path'])
-        if not os.path.exists(src_path):
+        src_path = resolve_under_dir('static', row['photo_path'])
+        if not src_path or not os.path.exists(src_path):
             conn.close()
             flash("Файл наявного фото не знайдено на диску", "error")
             return redirect(url_for('admin.update_request_review', request_id=request_id))
@@ -2268,16 +2269,16 @@ def update_request_review(request_id):
                         "SELECT 1 FROM attachments WHERE file_path=? AND id!=? LIMIT 1",
                         (att['file_path'], att['id'])
                     ).fetchone()
-                    att_path = os.path.join('static', att['file_path'])
-                    if not still_used and os.path.exists(att_path):
+                    att_path = resolve_under_dir('static', att['file_path'])
+                    if not still_used and att_path and os.path.exists(att_path):
                         os.remove(att_path)
                 conn.execute(
                     "DELETE FROM attachments WHERE entity_type=? AND entity_id=?",
                     (entity_type, request_id)
                 )
             if row['photo_path']:
-                photo_abs = os.path.join('static', row['photo_path'])
-                if os.path.exists(photo_abs):
+                photo_abs = resolve_under_dir('static', row['photo_path'])
+                if photo_abs and os.path.exists(photo_abs):
                     os.remove(photo_abs)
             conn.execute("DELETE FROM update_requests WHERE id=?", (request_id,))
             conn.commit()
@@ -2343,8 +2344,8 @@ def update_request_review(request_id):
                 if 'photo' in allowed_fields and row['photo_path'] and request.form.get('apply_photo'):
                     from routes.photo import photo_path_for_student, _ensure_dir
                     _ensure_dir()
-                    src_path = os.path.join('static', row['photo_path'])
-                    if os.path.exists(src_path):
+                    src_path = resolve_under_dir('static', row['photo_path'])
+                    if src_path and os.path.exists(src_path):
                         dest_path = photo_path_for_student(student_id)
                         with open(src_path, 'rb') as src, open(dest_path, 'wb') as dst:
                             dst.write(src.read())

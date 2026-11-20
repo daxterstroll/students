@@ -1142,7 +1142,7 @@ def quick_edit(student_id):
             f"quick_edit military (student_id={student_id}): {e}",
             exc_info=True,
         )
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({'ok': False, 'error': 'Помилка збереження військових даних'}), 500
 
     conn.close()
     log_action(

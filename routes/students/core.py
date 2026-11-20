@@ -6,11 +6,12 @@ routes/students/core.py
 посилання на оновлення даних (/update-info), генерація документів для
 одного студента, FAQ.
 """
-from flask import render_template, request, redirect, url_for, session, flash
+from flask import render_template, request, redirect, url_for, session, flash, abort
 from routes.db import get_db
 from routes.utils import log_action, login_required, permission_required, logger
 from routes.helpers import current_username
 from routes.students import students_bp
+from routes.security import has_any_permission, resolve_under_dir, user_can_access_student
 import sqlite3
 from routes.utils import (
     generate_english_name, is_student_on_reduced_program, save_multiple_attachments,
@@ -690,6 +691,18 @@ def student_list():
 @login_required('')
 def student_details(student_id):
     """Картка студента."""
+    if not has_any_permission(
+        'manage_students',
+        'manage_military_reports',
+        'study_periods',
+        'group_export',
+        'manage_education_documents',
+        'manage_passport_documents',
+        'manage_orders',
+        'edit_grades',
+    ):
+        abort(403)
+
     conn = get_db()
     student = conn.execute("""
         SELECT s.*, g.program_credits,
@@ -715,6 +728,10 @@ def student_details(student_id):
         flash("Студента не знайдено")
         conn.close()
         return redirect(url_for('students.student_list'))
+
+    if not (has_any_permission('manage_military_reports') or user_can_access_student(conn, student_id)):
+        conn.close()
+        abort(403)
 
     log_action(
         current_username(),
@@ -1079,8 +1096,12 @@ def manage_study_periods(student_id):
     """, (student_id,))
     student = cursor.fetchone()
     if not student:
+        db.close()
         flash('Студента не знайдено', 'danger')
         return redirect(url_for('admin.manage_education_documents'))
+    if not user_can_access_student(db, student_id):
+        db.close()
+        abort(403)
 
     # Активні (та історичні) enrollment'и — для випадаючого списку груп
     try:
@@ -1198,22 +1219,25 @@ def manage_study_periods(student_id):
 def add_student():
     """Форма додавання нового студента."""
     conn = get_db()
-    role = session.get('role')
-    group_ids = session.get('group_ids', [])
+    is_admin = bool(session.get('is_admin', False)) or session.get('role') == 'admin'
+    role = 'admin' if is_admin else session.get('role')
+    group_ids = get_allowed_group_ids(conn, session.get('user_id'))
 
-    if role == 'admin':
+    if is_admin:
         groups = conn.execute("""
             SELECT id, name, start_year, study_form, program_credits,
                    name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
             FROM groups WHERE archived = FALSE ORDER BY name, start_year
         """).fetchall()
-    else:
+    elif group_ids:
         placeholders = ','.join('?' for _ in group_ids)
         groups = conn.execute(f"""
             SELECT id, name, start_year, study_form, program_credits,
                    name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
             FROM groups WHERE id IN ({placeholders}) AND archived = FALSE ORDER BY name, start_year
         """, group_ids).fetchall()
+    else:
+        groups = []
 
     licenses = conn.execute(
         "SELECT id, name_ua, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
@@ -1474,8 +1498,6 @@ def upload_photo(student_id):
         return redirect(url_for('students.student_details', student_id=student_id))
 
     conn = get_db()
-    role = session.get('role')
-    group_ids = session.get('group_ids', [])
 
     student = conn.execute("SELECT group_id FROM students WHERE id = ?", (student_id,)).fetchone()
     if not student:
@@ -1483,7 +1505,7 @@ def upload_photo(student_id):
         flash('Студента не знайдено', 'error')
         return redirect(url_for('students.student_list'))
 
-    if role != 'admin' and student['group_id'] not in group_ids:
+    if not user_can_access_student(conn, student_id):
         conn.close()
         flash('Ви не маєте доступу до цього студента', 'error')
         return redirect(url_for('students.student_list'))
@@ -1536,8 +1558,6 @@ def upload_photo(student_id):
 def delete_photo(student_id):
     """Видаляє фото студента."""
     conn = get_db()
-    role = session.get('role')
-    group_ids = session.get('group_ids', [])
 
     student = conn.execute("SELECT group_id FROM students WHERE id = ?", (student_id,)).fetchone()
     if not student:
@@ -1545,7 +1565,7 @@ def delete_photo(student_id):
         flash('Студента не знайдено', 'error')
         return redirect(url_for('students.student_list'))
 
-    if role != 'admin' and student['group_id'] not in group_ids:
+    if not user_can_access_student(conn, student_id):
         conn.close()
         flash('Ви не маєте доступу до цього студента', 'error')
         return redirect(url_for('students.student_list'))
@@ -1590,6 +1610,11 @@ def freeze_student(student_id):
         flash('Студента не знайдено', 'error')
         return redirect(url_for('students.student_list'))
 
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
+
     if not reason:
         conn.close()
         flash('Вкажіть причину заморожування.', 'error')
@@ -1620,21 +1645,27 @@ def freeze_student(student_id):
 
     document_files = request.files.getlist('document_files')
 
-    cur = conn.execute(
-        "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) "
-        "VALUES (?, ?, NULL, ?, NULL, ?)",
-        (student_id, group_id, reason, current_username()),
-    )
-    frozen_id = cur.lastrowid
-    saved_paths = save_multiple_attachments(
-        conn, 'frozen_student', frozen_id, document_files,
-        'frozen_students', current_username(),
-    )
-    if saved_paths:
-        conn.execute(
-            "UPDATE frozen_students SET document_file = ? WHERE id = ?",
-            (saved_paths[0], frozen_id),
+    try:
+        cur = conn.execute(
+            "INSERT INTO frozen_students (student_id, previous_group_id, order_id, reason, document_file, frozen_by) "
+            "VALUES (?, ?, NULL, ?, NULL, ?)",
+            (student_id, group_id, reason, current_username()),
         )
+        frozen_id = cur.lastrowid
+        saved_paths = save_multiple_attachments(
+            conn, 'frozen_student', frozen_id, document_files,
+            'frozen_students', current_username(),
+        )
+        if saved_paths:
+            conn.execute(
+                "UPDATE frozen_students SET document_file = ? WHERE id = ?",
+                (saved_paths[0], frozen_id),
+            )
+    except ValueError as e:
+        conn.rollback()
+        conn.close()
+        flash(str(e), 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
 
     end_enrollment(student_id, group_id, status='frozen', conn=conn)
     # archived=TRUE виставляє end_enrollment, якщо активних більше нема.
@@ -1658,8 +1689,9 @@ def freeze_student(student_id):
 def edit_student(student_id):
     """Форма редагування особистих даних студента."""
     conn = get_db()
-    role = session.get('role')
-    group_ids = session.get('group_ids', [])
+    is_admin = bool(session.get('is_admin', False)) or session.get('role') == 'admin'
+    role = 'admin' if is_admin else session.get('role')
+    group_ids = get_allowed_group_ids(conn, session.get('user_id'))
 
     student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
     if not student:
@@ -1667,24 +1699,26 @@ def edit_student(student_id):
         conn.close()
         return redirect(url_for('students.student_list'))
 
-    if role != 'admin' and student['group_id'] not in group_ids:
+    if not user_can_access_student(conn, student_id):
         flash('Ви не маєте доступу до цього студента', 'error')
         conn.close()
         return redirect(url_for('students.student_list'))
 
-    if role == 'admin':
+    if is_admin:
         groups = conn.execute("""
             SELECT id, name, start_year, study_form, program_credits,
                    name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
             FROM groups WHERE archived = FALSE ORDER BY name, start_year
         """).fetchall()
-    else:
+    elif group_ids:
         placeholders = ','.join('?' for _ in group_ids)
         groups = conn.execute(f"""
             SELECT id, name, start_year, study_form, program_credits,
                    name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
             FROM groups WHERE id IN ({placeholders}) ORDER BY name, start_year
         """, group_ids).fetchall()
+    else:
+        groups = []
 
     licenses = conn.execute(
         "SELECT id, name_ua, short_name_ua FROM institution_licenses WHERE is_active = 1 OR id = ? ORDER BY id",
@@ -1815,7 +1849,7 @@ def edit_student(student_id):
     return render_template('edit_student.html', student=student, groups=groups, licenses=licenses)
 
 
-@students_bp.route('/students/<int:student_id>/delete')
+@students_bp.route('/students/<int:student_id>/delete', methods=['POST'])
 @permission_required('manage_students')
 def delete_student(student_id):
     """Видаляє студента разом з усіма пов'язаними записами."""
@@ -1829,6 +1863,11 @@ def delete_student(student_id):
         conn.close()
         return redirect(url_for('students.student_list'))
 
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
+        return redirect(url_for('students.student_list'))
+
     try:
         conn.execute("UPDATE pending_students SET resulting_student_id = NULL WHERE resulting_student_id = ?", (student_id,))
 
@@ -1840,8 +1879,8 @@ def delete_student(student_id):
         for passport_id in passport_ids:
             all_attachments.extend(get_attachments(conn, 'passport_document', passport_id))
         for att in all_attachments:
-            att_path = os.path.join('static', att['file_path'])
-            if os.path.exists(att_path):
+            att_path = resolve_under_dir('static', att['file_path'])
+            if att_path and os.path.exists(att_path):
                 os.remove(att_path)
         conn.execute("DELETE FROM attachments WHERE entity_type='student' AND entity_id=?", (student_id,))
         if doc_ids:
@@ -1852,13 +1891,13 @@ def delete_student(student_id):
             conn.execute(f"DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id IN ({placeholders})", passport_ids)
 
         for row in conn.execute("SELECT document_file FROM frozen_students WHERE student_id = ? AND document_file IS NOT NULL", (student_id,)).fetchall():
-            doc_path = os.path.join('static', row[0])
-            if os.path.exists(doc_path):
+            doc_path = resolve_under_dir('static', row[0])
+            if doc_path and os.path.exists(doc_path):
                 os.remove(doc_path)
 
         if student['photo']:
-            photo_path = os.path.join('static', student['photo'])
-            if os.path.exists(photo_path):
+            photo_path = resolve_under_dir('static', student['photo'])
+            if photo_path and os.path.exists(photo_path):
                 os.remove(photo_path)
 
         conn.execute("""
@@ -1893,7 +1932,7 @@ def delete_student(student_id):
     except Exception as e:
         conn.rollback()
         logger.error(f"Помилка при видаленні студента ID {student_id}: {e}", exc_info=True)
-        flash(f"Помилка при видаленні студента: {e}", "error")
+        flash("Помилка при видаленні студента", "error")
     finally:
         conn.close()
 
@@ -1915,6 +1954,14 @@ def unarchive_student(student_id):
         return redirect(url_for('students.student_details', student_id=student_id))
 
     conn = get_db()
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
+    if not session.get('is_admin') and group_id not in set(get_allowed_group_ids(conn, session.get('user_id'))):
+        conn.close()
+        flash('Доступ заборонено: обрана група не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
     try:
         ok, msg = add_enrollment(
             student_id, group_id, is_primary=True, conn=conn,
@@ -1933,7 +1980,7 @@ def unarchive_student(student_id):
     except Exception as e:
         conn.rollback()
         logger.error(f'unarchive_student failed (student={student_id}): {e}', exc_info=True)
-        flash(f'Помилка: {e}', 'error')
+        flash('Не вдалося розархівувати студента.', 'error')
     finally:
         conn.close()
 
@@ -1950,6 +1997,10 @@ def generate_update_link(student_id):
     if not student:
         conn.close()
         flash("Студента не знайдено", "error")
+        return redirect(url_for('students.student_list'))
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))
 
     generated_link = None
@@ -2013,7 +2064,7 @@ def generate(student_id):
             'students.student_details', student_id=student_id,
         ))
 
-    if not _user_can_access_student(session, student_groups, student_basic['group_id']):
+    if not _user_can_access_student(session, student_groups, student_basic['group_id'], conn=conn):
         conn.close()
         flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))
@@ -2140,7 +2191,7 @@ def generate(student_id):
                 exc_info=True,
             )
             conn.close()
-            flash(f"Помилка генерації: {e}", "danger")
+            flash("Помилка генерації документа", "danger")
             return redirect(url_for(
                 'students.generate', student_id=student_id, group_id=gid,
             ))
@@ -2198,6 +2249,14 @@ def enrollment_add(student_id):
     scan_files = [f for f in request.files.getlist('scan_files') if f and f.filename]
 
     conn = get_db()
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
+    if not session.get('is_admin') and group_id not in set(get_allowed_group_ids(conn, session.get('user_id'))):
+        conn.close()
+        flash('Доступ заборонено: обрана група не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
     try:
         order_id = None
         if bypass_order:
@@ -2274,7 +2333,7 @@ def enrollment_add(student_id):
         conn.rollback()
         conn.close()
         logger.error(f'enrollment_add failed (student={student_id}): {e}', exc_info=True)
-        flash(f'Помилка створення наказу: {e}', 'error')
+        flash('Помилка створення наказу.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
         
 @students_bp.route('/students/<int:student_id>/enrollments/<int:group_id>/action', methods=['POST'],)
@@ -2342,6 +2401,10 @@ def enrollment_action(student_id, group_id):
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
     try:
         enrollment = conn.execute(
             "SELECT id, license_id, edebo_code FROM student_enrollments "
@@ -2524,7 +2587,7 @@ def enrollment_action(student_id, group_id):
         conn.rollback()
         conn.close()
         logger.error(f'enrollment_action failed (student={student_id}): {e}', exc_info=True)
-        flash(f'Помилка: {e}', 'error')
+        flash('Помилка виконання дії над навчанням.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
         
 @students_bp.route('/students/<int:student_id>/enrollments/set_primary', methods=['POST'])
@@ -2534,6 +2597,13 @@ def enrollment_set_primary(student_id):
     if not group_id:
         flash('Не вказано групу.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
+
+    conn_chk = get_db()
+    allowed_student = user_can_access_student(conn_chk, student_id)
+    conn_chk.close()
+    if not allowed_student:
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
 
     ok, msg = set_primary_enrollment(student_id, group_id)
     flash(msg, 'success' if ok else 'error')
@@ -2595,6 +2665,10 @@ def change_student_name(student_id):
     if not student:
         conn.close()
         flash('Студента не знайдено', 'error')
+        return redirect(url_for('students.student_list'))
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
         return redirect(url_for('students.student_list'))
 
     old_snapshot = {
@@ -2696,7 +2770,7 @@ def change_student_name(student_id):
         conn.rollback()
         conn.close()
         logger.error(f'change_student_name failed (student={student_id}): {e}', exc_info=True)
-        flash(f'Помилка: {e}', 'error')
+        flash('Помилка під час зміни ПІБ.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
 
 
@@ -2749,6 +2823,14 @@ def transfer_student_group(student_id):
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
+    if not session.get('is_admin') and to_group_id not in set(get_allowed_group_ids(conn, session.get('user_id'))):
+        conn.close()
+        flash('Доступ заборонено: цільова група не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_details', student_id=student_id))
 
     src_enrollment = conn.execute("""
         SELECT id, is_primary FROM student_enrollments
@@ -2860,7 +2942,7 @@ def transfer_student_group(student_id):
         conn.rollback()
         conn.close()
         logger.error(f'transfer_student_group failed (student={student_id}): {e}', exc_info=True)
-        flash(f'Помилка: {e}', 'error')
+        flash('Помилка під час переведення між групами.', 'error')
         return redirect(url_for('students.student_details', student_id=student_id))
         
 @students_bp.route('/students/<int:student_id>/attachments/<int:attachment_id>/reattach', methods=['POST'])
@@ -2882,6 +2964,10 @@ def reattach_attachment(student_id, attachment_id):
         return redirect(url_for('students.student_details', student_id=student_id))
 
     conn = get_db()
+    if not user_can_access_student(conn, student_id):
+        conn.close()
+        flash('Доступ заборонено: студент не належить до ваших груп', 'error')
+        return redirect(url_for('students.student_list'))
     try:
         att = conn.execute(
             "SELECT id, file_path, original_name, entity_type, entity_id "
@@ -2934,7 +3020,7 @@ def reattach_attachment(student_id, attachment_id):
     except Exception as e:
         conn.rollback()
         logger.error(f"reattach_attachment failed: {e}", exc_info=True)
-        flash(f"Помилка: {e}", 'error')
+        flash("Помилка прив'язки файлу.", 'error')
     finally:
         conn.close()
 

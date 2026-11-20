@@ -233,15 +233,20 @@
                             <i class="bi bi-arrow-left me-2"></i>Назад
                         </a>
 						{% if military and has_perm('manage_students') %}
-						<a href="{{ url_for('students.delete_military', student_id=student.id) }}"
-						   class="btn btn-outline-danger ms-auto"
-						   onclick="return confirm('Видалити військові дані? Історія змін і скановані копії будуть видалені.');">
+						<button type="submit" form="deleteMilitaryForm"
+								class="btn btn-outline-danger ms-auto"
+								onclick="return confirm('Видалити військові дані? Історія змін і скановані копії будуть видалені.');">
 							<i class="bi bi-trash3 me-2"></i>Видалити запис
-						</a>
+						</button>
 						{% endif %}
                     </div>
                 </div>
             </form>
+			{% if military and has_perm('manage_students') %}
+			<form id="deleteMilitaryForm" method="POST"
+				  action="{{ url_for('students.delete_military', student_id=student.id) }}"
+				  class="d-none"></form>
+			{% endif %}
         </div>
     </div>
 
@@ -327,7 +332,11 @@
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = "{{ url_for('students.delete_military_attachment', student_id=student.id) }}";
-        form.innerHTML = '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
+        const inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'attachment_id';
+        inp.value = String(attachmentId);
+        form.appendChild(inp);
         document.body.appendChild(form);
         form.submit();
     }

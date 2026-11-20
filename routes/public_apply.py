@@ -18,7 +18,14 @@ from routes.photo import process_and_save_pending_photo, load_and_validate_image
 from routes.config import PROJECT_ROOT
 from routes.passport_types import (
     PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE,
-    normalize_passport_number, passport_template_context,
+    normalize_passport_number, normalize_passport_series, passport_template_context,
+)
+from routes.security import (
+    SAFE_SCAN_EXTENSIONS,
+    check_rate_limit,
+    client_ip,
+    resolve_under_dir,
+    validate_upload_file,
 )
 
 public_apply_bp = Blueprint('public_apply', __name__)
@@ -103,9 +110,9 @@ def _validate_scan_files(files, max_files, label):
     if len(files) > max_files:
         return f"Забагато файлів{label} за одну загрузку (максимум {max_files})."
     for sf in files:
-        ext = os.path.splitext(sf.filename)[1].lower()
-        if ext not in ALLOWED_SCAN_EXTENSIONS:
-            return f"Файл «{sf.filename}»{label}: непідтримуваний формат. Дозволені: JPG, PNG, WEBP, PDF."
+        ok, err = validate_upload_file(sf, SAFE_SCAN_EXTENSIONS)
+        if not ok:
+            return f"Файл «{sf.filename}»{label}: {err}. Дозволені: JPG, PNG, WEBP, PDF."
         sf.seek(0, os.SEEK_END)
         size = sf.tell()
         sf.seek(0)
@@ -119,6 +126,10 @@ def _parse_pdf_ajax():
     """AJAX-парсинг PDF. Викликається з apply() при action=parse_pdf."""
     if (request.form.get('website') or '').strip():
         return jsonify({'ok': False, 'error': 'spam'}), 400
+
+    allowed, _retry = check_rate_limit('public_apply_pdf', client_ip(), limit=20, window_seconds=300)
+    if not allowed:
+        return jsonify({'ok': False, 'error': 'Занадто багато запитів. Спробуйте через кілька хвилин.'}), 429
 
     file = request.files.get('pdf_file')
     if not file or not file.filename:
@@ -140,7 +151,8 @@ def _parse_pdf_ajax():
     try:
         from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
     except ImportError as e:
-        return jsonify({'ok': False, 'error': f'Парсер PDF недоступний: {e}'}), 500
+        logger.error(f"[parse_pdf_apply] import error: {e}")
+        return jsonify({'ok': False, 'error': 'Парсер PDF тимчасово недоступний'}), 500
 
     tmp_path = None
     try:
@@ -150,9 +162,8 @@ def _parse_pdf_ajax():
         parsed = parse_reserve_plus_pdf(tmp_path)
         photo_bytes = extract_photo_from_pdf(tmp_path)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'ok': False, 'error': f'Не вдалося розпізнати PDF: {e}'}), 400
+        logger.warning(f"[parse_pdf_apply] parse failed: {e}")
+        return jsonify({'ok': False, 'error': 'Не вдалося розпізнати PDF. Перевірте файл або заповніть поля вручну.'}), 400
     finally:
         if tmp_path:
             try:
@@ -226,15 +237,17 @@ def _parse_pdf_ajax():
         if photo_bytes:
             try:
                 photo_path = process_and_save_pending_photo(photo_bytes)
-                photo_url = f'/static/{photo_path}'
+                # /static/uploads/pending_photos закритий для неавторизованих,
+                # тому публічній анкеті передаємо лише base64 data URI.
+                photo_url = None
                 import base64
-                abs_path = os.path.join(PROJECT_ROOT, 'static', photo_path)
-                with open(abs_path, 'rb') as fp:
-                    raw = fp.read()
-                photo_data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode('ascii')
-            except Exception:
-                import traceback
-                traceback.print_exc()
+                abs_path = resolve_under_dir(os.path.join(PROJECT_ROOT, 'static'), photo_path)
+                if abs_path and os.path.isfile(abs_path):
+                    with open(abs_path, 'rb') as fp:
+                        raw = fp.read()
+                    photo_data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode('ascii')
+            except Exception as exc:
+                logger.warning(f"[parse_pdf_apply] photo extract warning: {exc}")
 
         # Зберігаємо оригінальний PDF АБСОЛЮТНО (PROJECT_ROOT/static/...)
         import uuid as _uuid
@@ -259,9 +272,8 @@ def _parse_pdf_ajax():
             'pdf_path': pdf_rel_path,
         })
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'ok': False, 'error': f'Серверна помилка обробки PDF: {e}'}), 500
+        logger.error(f"[parse_pdf_apply] server error: {e}", exc_info=True)
+        return jsonify({'ok': False, 'error': 'Серверна помилка обробки PDF'}), 500
 
 
 @public_apply_bp.before_request
@@ -288,13 +300,21 @@ def apply():
         try:
             return _parse_pdf_ajax()
         except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({'ok': False, 'error': f'Критична серверна помилка: {e}'}), 500
+            logger.error(f"[apply parse_pdf] critical error: {e}", exc_info=True)
+            return jsonify({'ok': False, 'error': 'Критична серверна помилка'}), 500
 
     # ── POST: honeypot — тихо показуємо "дякуємо", не зберігаємо ──
     if (request.form.get('website') or '').strip():
         return redirect(url_for('public_apply.apply', ok='1'))
+
+    allowed, _retry = check_rate_limit('public_apply_submit', client_ip(), limit=15, window_seconds=600)
+    if not allowed:
+        return render_template(
+            'public_apply.html',
+            error="Занадто багато спроб надсилання анкети. Спробуйте, будь ласка, через кілька хвилин.",
+            form=request.form,
+            **_birth_date_bounds(),
+        ), 429
 
     def f(name):
         return (request.form.get(name) or '').strip() or None
@@ -334,11 +354,11 @@ def apply():
             return render_template('public_apply.html', error=f"Фото: {e}", form=request.form, **_birth_date_bounds())
         prefilled_photo_path = ''
     elif prefilled_photo_path:
-        if not prefilled_photo_path.startswith('uploads/pending_photos/'):
+        if not re.fullmatch(r'uploads/pending_photos/[0-9a-f]{32}\.jpg', prefilled_photo_path):
             prefilled_photo_path = ''
         else:
-            full = os.path.join(PROJECT_ROOT, 'static', prefilled_photo_path)
-            if not os.path.exists(full):
+            full = resolve_under_dir(os.path.join(PROJECT_ROOT, 'static'), prefilled_photo_path)
+            if not full or not os.path.isfile(full):
                 prefilled_photo_path = ''
 
     scan_files = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
@@ -544,7 +564,7 @@ def apply():
         pdf_bytes = pdf_file.read()
         logger.info(f"[apply] pdf_file size: {len(pdf_bytes)} bytes, "
                     f"starts_with_pdf={pdf_bytes.startswith(b'%PDF')}")
-        if pdf_bytes.startswith(b'%PDF'):
+        if len(pdf_bytes) <= MAX_PDF_SIZE_BYTES and pdf_bytes.startswith(b'%PDF'):
             import uuid as _uuid
             os.makedirs(PENDING_STUDENTS_DIR, exist_ok=True)
             safe_name = f"{_uuid.uuid4().hex}.pdf"
@@ -572,12 +592,17 @@ def apply():
     elif prefilled_photo_path:
         conn.execute("UPDATE pending_students SET photo_path=? WHERE id=?", (prefilled_photo_path, pending_id))
 
-    if scan_files:
-        save_multiple_attachments(conn, 'pending_student', pending_id, scan_files, 'pending_students')
-    if passport_scan_files:
-        save_multiple_attachments(conn, 'pending_student_passport', pending_id, passport_scan_files, 'pending_students')
-    if military_scan_files:
-        save_multiple_attachments(conn, 'pending_student_military', pending_id, military_scan_files, 'pending_students')
+    try:
+        if scan_files:
+            save_multiple_attachments(conn, 'pending_student', pending_id, scan_files, 'pending_students')
+        if passport_scan_files:
+            save_multiple_attachments(conn, 'pending_student_passport', pending_id, passport_scan_files, 'pending_students')
+        if military_scan_files:
+            save_multiple_attachments(conn, 'pending_student_military', pending_id, military_scan_files, 'pending_students')
+    except ValueError as e:
+        conn.rollback()
+        conn.close()
+        return render_template('public_apply.html', error=str(e), form=request.form, **_birth_date_bounds()), 400
 
     conn.commit()
     conn.close()

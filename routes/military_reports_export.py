@@ -41,6 +41,7 @@ from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 
 from routes.utils import logger
+from routes.security import sanitize_spreadsheet_cell
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -232,7 +233,8 @@ def _write_dodatok_5_row(ws, row_num, data):
     ]
     row = ws.max_row + 1
     for col, val in enumerate(values, start=1):
-        cell = ws.cell(row=row, column=col, value=val)
+        safe_val = sanitize_spreadsheet_cell(val)
+        cell = ws.cell(row=row, column=col, value=safe_val)
         cell.font = FONT_BASE
         cell.border = BORDER
         cell.alignment = CENTER if col in (1, 5, 19) else LEFT_TOP

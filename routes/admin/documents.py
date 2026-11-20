@@ -14,6 +14,7 @@ from routes.admin import admin_bp
 import sqlite3
 import os
 from routes.utils import get_attachments, save_multiple_attachments
+from routes.security import is_safe_hex_token, is_safe_uuid, resolve_under_dir
 from routes.admin import allowed_file
 from werkzeug.utils import secure_filename
 import pandas as pd
@@ -229,11 +230,9 @@ def manage_education_documents():
         if action == 'delete':
             doc_id = request.form.get('doc_id')
             try:
-                # Спершу самі файли сканів з диска, а тоді записи -
-                # інакше видалення документа лишало б "осиротілі" файли.
                 for att in get_attachments(db, 'education_document', doc_id):
-                    att_path = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_path):
+                    att_path = resolve_under_dir('static', att['file_path'])
+                    if att_path and os.path.exists(att_path):
                         os.remove(att_path)
                 cursor.execute("DELETE FROM attachments WHERE entity_type='education_document' AND entity_id=?", (doc_id,))
                 cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
@@ -244,17 +243,26 @@ def manage_education_documents():
             except sqlite3.Error as e:
                 db.rollback()
                 logger.error(f"Помилка видалення документа про освіту (ID {doc_id}): {e}", exc_info=True)
-                flash(f'Помилка видалення: {e}', 'danger')
+                flash('Помилка видалення документа', 'danger')
 
         elif action == 'delete_attachment':
-            attachment_id = request.form.get('attachment_id')
+            attachment_id = request.form.get('attachment_id', type=int)
             try:
-                att = cursor.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+                att = (
+                    cursor.execute(
+                        "SELECT id, file_path FROM attachments WHERE id=? AND entity_type='education_document'",
+                        (attachment_id,),
+                    ).fetchone()
+                    if attachment_id else None
+                )
                 if att:
-                    att_path = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_path):
+                    att_path = resolve_under_dir('static', att['file_path'])
+                    if att_path and os.path.exists(att_path):
                         os.remove(att_path)
-                    cursor.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+                    cursor.execute(
+                        "DELETE FROM attachments WHERE id=? AND entity_type='education_document'",
+                        (attachment_id,),
+                    )
                     db.commit()
                     flash('Скан видалено', 'success')
                 else:
@@ -262,7 +270,7 @@ def manage_education_documents():
             except Exception as e:
                 db.rollback()
                 logger.error(f"Помилка видалення вкладення (ID {attachment_id}): {e}", exc_info=True)
-                flash(f'Помилка видалення файлу: {e}', 'danger')
+                flash('Помилка видалення файлу', 'danger')
             return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
 
         elif action == 'edit':
@@ -368,14 +376,17 @@ def manage_education_documents():
                 )
                 flash('Документ успішно оновлено', 'success')
 
+            except ValueError as e:
+                db.rollback()
+                flash(str(e), 'danger')
             except sqlite3.Error as e:
                 db.rollback()
                 logger.error(f"Помилка БД при редагуванні документа про освіту (ID {doc_id}): {e}", exc_info=True)
-                flash(f'Помилка при редагуванні: {e}', 'danger')
+                flash('Помилка бази даних при редагуванні документа', 'danger')
             except Exception as e:
                 db.rollback()
                 logger.error(f"Непередбачена помилка при редагуванні документа про освіту (ID {doc_id}): {e}", exc_info=True)
-                flash(f'Непередбачена помилка: {str(e)}', 'danger')
+                flash('Непередбачена помилка при редагуванні документа', 'danger')
 
             return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
 
@@ -726,8 +737,8 @@ def manage_passport_documents():
             doc_id = request.form.get('doc_id')
             try:
                 for att in get_attachments(db, 'passport_document', doc_id):
-                    att_path = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_path):
+                    att_path = resolve_under_dir('static', att['file_path'])
+                    if att_path and os.path.exists(att_path):
                         os.remove(att_path)
                 cursor.execute("DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id=?", (doc_id,))
                 cursor.execute("DELETE FROM passport_documents WHERE id = ?", (doc_id,))
@@ -737,17 +748,26 @@ def manage_passport_documents():
             except sqlite3.Error as e:
                 db.rollback()
                 logger.error(f"Помилка видалення паспортних даних (ID {doc_id}): {e}", exc_info=True)
-                flash(f'Помилка видалення: {e}', 'danger')
+                flash('Помилка видалення запису', 'danger')
 
         elif action == 'delete_attachment':
-            attachment_id = request.form.get('attachment_id')
+            attachment_id = request.form.get('attachment_id', type=int)
             try:
-                att = cursor.execute("SELECT file_path FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+                att = (
+                    cursor.execute(
+                        "SELECT id, file_path FROM attachments WHERE id=? AND entity_type='passport_document'",
+                        (attachment_id,),
+                    ).fetchone()
+                    if attachment_id else None
+                )
                 if att:
-                    att_path = os.path.join('static', att['file_path'])
-                    if os.path.exists(att_path):
+                    att_path = resolve_under_dir('static', att['file_path'])
+                    if att_path and os.path.exists(att_path):
                         os.remove(att_path)
-                    cursor.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+                    cursor.execute(
+                        "DELETE FROM attachments WHERE id=? AND entity_type='passport_document'",
+                        (attachment_id,),
+                    )
                     db.commit()
                     flash('Скан видалено', 'success')
                 else:
@@ -755,7 +775,7 @@ def manage_passport_documents():
             except Exception as e:
                 db.rollback()
                 logger.error(f"Помилка видалення вкладення (ID {attachment_id}): {e}", exc_info=True)
-                flash(f'Помилка видалення файлу: {e}', 'danger')
+                flash('Помилка видалення файлу', 'danger')
             return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
 
         elif action == 'edit':
@@ -912,22 +932,23 @@ def _cleanup_passport_import_sessions():
 
 
 def _passport_state_path(token):
-    token = re.sub(r'[^0-9a-f]', '', token or '')
-    return os.path.join(PASSPORT_IMPORT_SESSIONS_DIR, f'{token}.json')
+    if not is_safe_hex_token(token):
+        return None
+    return resolve_under_dir(PASSPORT_IMPORT_SESSIONS_DIR, f'{token}.json')
 
 
 def _save_passport_state(token, state):
+    path = _passport_state_path(token)
+    if not path:
+        raise ValueError("Некоректний токен сесії імпорту")
     os.makedirs(PASSPORT_IMPORT_SESSIONS_DIR, exist_ok=True)
-    with open(_passport_state_path(token), 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, default=str)
 
 
 def _load_passport_state(token):
-    token = re.sub(r'[^0-9a-f]', '', token or '')
-    if not token:
-        return None
     path = _passport_state_path(token)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return None
     with open(path, encoding='utf-8') as f:
         return json.load(f)
@@ -1453,8 +1474,10 @@ def save_preview_to_file(preview):
 
 def load_preview_from_file(preview_id):
     """Завантажує раніше збережений (save_preview_to_file) прев'ю-результат імпорту за його ID."""
-    path = os.path.join(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
-    if not os.path.exists(path):
+    if not is_safe_uuid(preview_id):
+        return []
+    path = resolve_under_dir(TEMP_PREVIEW_FOLDER, f"{preview_id}.json")
+    if not path or not os.path.exists(path):
         return []
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)

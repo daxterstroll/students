@@ -26,6 +26,8 @@ from routes.photo import (
     smart_crop_to_id_photo_with_info,
     MAX_FILE_SIZE_BYTES, ALLOWED_FORMATS,
 )
+from routes.security import is_safe_hex_token, resolve_under_dir
+from routes.user_scope import get_allowed_group_ids
 
 photo_bulk_bp = Blueprint('photo_bulk', __name__)
 
@@ -48,22 +50,35 @@ def _cleanup_old_sessions():
 
 
 def _session_dir(token):
-    return os.path.join(SESSIONS_DIR, token)
+    if not is_safe_hex_token(token):
+        return None
+    return resolve_under_dir(SESSIONS_DIR, token)
 
 
 def _manifest_path(token):
-    return os.path.join(_session_dir(token), 'manifest.json')
+    sdir = _session_dir(token)
+    return resolve_under_dir(sdir, 'manifest.json') if sdir else None
 
 
 def _original_path(token, file_key):
-    return os.path.join(_session_dir(token), f"orig_{file_key}.jpg")
+    if not is_safe_hex_token(file_key):
+        return None
+    sdir = _session_dir(token)
+    return resolve_under_dir(sdir, f"orig_{file_key}.jpg") if sdir else None
 
 
 def _preview_path(token, file_key):
-    return os.path.join(_session_dir(token), f"preview_{file_key}.jpg")
+    if not is_safe_hex_token(file_key):
+        return None
+    sdir = _session_dir(token)
+    return resolve_under_dir(sdir, f"preview_{file_key}.jpg") if sdir else None
 
 
 def _save_manifest(token, data):
+    mpath = _manifest_path(token)
+    if not mpath:
+        raise ValueError('Invalid session token')
+
     def _default(o):
         # numpy-скаляри (np.int64, np.float64 тощо) не серіалізуються
         # стандартним json-енкодером, хоча поводяться як числа.
@@ -80,16 +95,20 @@ def _save_manifest(token, data):
             pass
         raise TypeError(f'Object of type {o.__class__.__name__} is not JSON serializable')
 
-    with open(_manifest_path(token), 'w', encoding='utf-8') as f:
+    with open(mpath, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, default=_default)
 
 
 def _load_manifest(token):
     path = _manifest_path(token)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return None
     with open(path, encoding='utf-8') as f:
-        return json.load(f)
+        data = json.load(f)
+    is_admin = bool(session.get('is_admin', False)) or session.get('role') == 'admin'
+    if not is_admin and data.get('user_id') != session.get('user_id'):
+        return None
+    return data
 
 
 def _norm_name(s):
@@ -279,8 +298,8 @@ def bulk_upload():
         return render_template('photo_bulk_upload.html')
 
     conn = get_db()
-    role = session.get('role')
-    group_ids = session.get('group_ids', [])
+    role = 'admin' if (bool(session.get('is_admin', False)) or session.get('role') == 'admin') else session.get('role')
+    group_ids = get_allowed_group_ids(conn, session.get('user_id'))
 
     files = request.files.getlist('photo_files')
     if not files or all(f.filename == '' for f in files):
@@ -448,13 +467,21 @@ def recrop(token, file_key):
     if not manifest:
         return jsonify({'error': 'session_not_found'}), 404
 
+    if not is_safe_hex_token(file_key):
+        return jsonify({'error': 'file_not_found'}), 404
+
     item = next((i for i in manifest['photos'] if i['file_key'] == file_key), None)
     if not item:
         return jsonify({'error': 'file_not_found'}), 404
 
+    orig_path = _original_path(token, file_key)
+    prev_path = _preview_path(token, file_key)
+    if not orig_path or not prev_path or not os.path.isfile(orig_path):
+        return jsonify({'error': 'file_not_found'}), 404
+
     if request.method == 'GET':
         from flask import send_file
-        return send_file(_original_path(token, file_key), mimetype='image/jpeg')
+        return send_file(orig_path, mimetype='image/jpeg')
 
     try:
         crop_box = (
@@ -465,9 +492,10 @@ def recrop(token, file_key):
         return jsonify({'error': 'invalid_crop'}), 400
 
     from PIL import Image
-    img = Image.open(_original_path(token, file_key))
+    Image.MAX_IMAGE_PIXELS = 40_000_000
+    img = Image.open(orig_path)
     preview_img = crop_and_resize(img, crop_box)
-    preview_img.save(_preview_path(token, file_key), 'JPEG', quality=85)
+    preview_img.save(prev_path, 'JPEG', quality=85)
 
     item['crop_box'] = list(crop_box)
     # Ручна переобрізка — користувач сам вирішив, скільки фото лишити,
@@ -487,9 +515,14 @@ def recrop(token, file_key):
 @photo_bulk_bp.route('/admin/photos/bulk/<token>/preview_image/<file_key>')
 @permission_required('bulk_photos')
 def preview_image(token, file_key):
+    manifest = _load_manifest(token)
+    if not manifest or not is_safe_hex_token(file_key):
+        return '', 404
+    if not any(i.get('file_key') == file_key for i in manifest.get('photos', [])):
+        return '', 404
     from flask import send_file
     path = _preview_path(token, file_key)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return '', 404
     return send_file(path, mimetype='image/jpeg')
 
@@ -518,12 +551,16 @@ def confirm(token):
         valid_ids = set()
 
     from PIL import Image
+    Image.MAX_IMAGE_PIXELS = 40_000_000
     saved = 0
     for item in manifest['photos']:
         sid = item.get('student_id')
         if not sid or sid not in valid_ids:
             continue
-        img = Image.open(_original_path(token, item['file_key']))
+        orig_path = _original_path(token, item.get('file_key'))
+        if not orig_path or not os.path.isfile(orig_path):
+            continue
+        img = Image.open(orig_path)
         final_img = crop_and_resize(img, item['crop_box'])
         rel_path = save_final_image(final_img, sid)
         conn.execute("UPDATE students SET photo = ? WHERE id = ?", (rel_path, sid))
@@ -538,7 +575,9 @@ def confirm(token):
     )
 
     import shutil
-    shutil.rmtree(_session_dir(token), ignore_errors=True)
+    sdir = _session_dir(token)
+    if sdir:
+        shutil.rmtree(sdir, ignore_errors=True)
 
     flash(f"Збережено {saved} фото", 'success')
     return redirect(url_for('students.student_list'))

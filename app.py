@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="docxcompose")
 
+from datetime import timedelta
 import argparse
 import json
 import os
@@ -10,6 +11,11 @@ from flask import Flask, render_template, request, abort, session, redirect, url
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from routes.config import SECRET_KEY, PREFERRED_URL_SCHEME
+from routes.security import (
+    authorize_and_serve_static,
+    generate_csrf_token,
+    validate_csrf_request,
+)
 from routes.auth import auth_bp
 from routes.students import students_bp
 from routes.admin import admin_bp
@@ -42,31 +48,19 @@ app = Flask(
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  before_request №1: блокування прямого доступу через /static/
+#  before_request №1: блокування /static/templates/ та захист /static/uploads/
 # ═══════════════════════════════════════════════════════════════════
 @app.before_request
 def block_templates_static_access():
-    """Забороняє прямий доступ через /static/ до:
-       - templates/ (сирі Jinja-шаблони);
-       - тимчасових папок військових PDF (скан-копії «Резерв+»);
-       - сесійних папок, у яких лежать згенеровані .docx,
-         Excel-стани імпорту, JSON-звіти та тимчасові фото —
-         усе це з персональними даними студентів і не повинно
-         відкриватися за прямим URL, навіть якщо файл існує.
-    """
-    blocked_prefixes = (
-        '/static/templates/',
-        '/static/uploads/tmp_military_pdf/',
-        '/static/uploads/tmp_military_bulk/',
-        '/static/uploads/import_reports/',
-        '/static/uploads/import_sessions/',
-        '/static/uploads/office_sessions/',
-        '/static/uploads/photo_bulk_sessions/',
-        '/static/uploads/license_reports/',
-    )
-    for prefix in blocked_prefixes:
-        if request.path.startswith(prefix):
-            abort(404)
+    """Блокує прямий доступ до шаблонів і тимчасових каталогів та
+    контролює доступ до /static/uploads/ на основі сесії, прав і скоупа."""
+    return authorize_and_serve_static()
+
+
+@app.before_request
+def enforce_csrf():
+    """Глобальна перевірка CSRF-токена для мутуючих HTTP-методів."""
+    return validate_csrf_request()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -105,6 +99,8 @@ def refresh_session_permissions():
     if now - last_check < PERMS_TTL:
         return  # ще рано — віримо кешу
 
+    from routes.user_scope import get_allowed_group_ids
+
     try:
         conn = get_db()
         try:
@@ -112,6 +108,7 @@ def refresh_session_permissions():
                 "SELECT role, is_admin, permissions FROM users WHERE id = ?",
                 (session['user_id'],)
             ).fetchone()
+            allowed_gids = get_allowed_group_ids(conn, session['user_id']) if row is not None else []
         finally:
             conn.close()
     except Exception as e:
@@ -146,11 +143,13 @@ def refresh_session_permissions():
         session.get('is_admin') != is_admin
         or session.get('role') != row['role']
         or session.get('permissions') != perms
+        or session.get('group_ids') != allowed_gids
     )
     if changed:
         session['is_admin'] = is_admin
         session['role'] = row['role']
         session['permissions'] = perms
+        session['group_ids'] = allowed_gids
         session.modified = True
 
     session['perm_check_at'] = now
@@ -227,9 +226,26 @@ app.config.update(
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
     PREFERRED_URL_SCHEME=PREFERRED_URL_SCHEME,
     MAX_CONTENT_LENGTH=90 * 1024 * 1024,
 )
+app.jinja_env.globals['csrf_token'] = generate_csrf_token
+
+
+@app.after_request
+def add_security_headers(response):
+    """Базові HTTP-заголовки безпеки для всіх відповідей застосунку."""
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'SAMEORIGIN')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if request.is_secure:
+        response.headers.setdefault(
+            'Strict-Transport-Security',
+            'max-age=31536000; includeSubDomains',
+        )
+    return response
 
 
 @app.template_filter('fromjson')

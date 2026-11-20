@@ -112,6 +112,10 @@ ONLYOFFICE_CALLBACK_BASE_URL = os.environ.get('ONLYOFFICE_CALLBACK_BASE_URL', 'h
 # Server - інакше будь-хто, хто вгадає doc_id, зможе підмінити callback
 # збереження).
 ONLYOFFICE_JWT_SECRET = os.environ.get('ONLYOFFICE_JWT_SECRET', '')
+ONLYOFFICE_ALLOW_INSECURE_CALLBACK = (
+    os.environ.get('ONLYOFFICE_ALLOW_INSECURE_CALLBACK', 'false').strip().lower()
+    in ('1', 'true', 'yes')
+)
 
 # --------------------------------------------------------------------
 # Публічно доступна база для посилань, які бачить студент з інтернету
@@ -132,14 +136,7 @@ PUBLIC_APPLY_BASE_URL = os.environ.get('PUBLIC_APPLY_BASE_URL', 'https://join.e-
 # DEEPL_API_KEY - автопереклад укр.->англ. полів документа про освіту
 # (routes/admin/documents.py, translate_to_en) через офіційний API
 # DeepL замість GoogleTranslator/MyMemory (ненадійні безкоштовні
-# неофіційні сервіси, що агресивно блокують за частотою запитів).
-#
-# ВАЖЛИВО: звичайний акаунт на deepl.com (для перекладу в браузері чи
-# застосунку DeepL) не підходить - потрібен ОКРЕМИЙ ключ з тарифу
-# "DeepL API Free". Зареєструватись і взяти ключ:
-# https://www.deepl.com/en/pro-api -> після реєстрації ключ лежить в
-# акаунті: Account -> API Keys. Безкоштовний тариф - 500 000
-# символів/місяць, ключ завжди закінчується на ":fx".
+# неофіційні сертифікати/сервіси).
 # --------------------------------------------------------------------
 DEEPL_API_KEY = os.environ.get('DEEPL_API_KEY', '').strip()
 
@@ -154,27 +151,21 @@ if not DEEPL_API_KEY:
 
 if not ONLYOFFICE_JWT_SECRET:
     logger.warning(
-        "ONLYOFFICE_JWT_SECRET не задано - перевірка підпису запитів від "
-        "Document Server вимкнена. Це прийнятно лише для первинного "
-        "тестування на localhost. Перед реальним використанням задайте "
-        "однаковий секрет тут і в налаштуваннях Document Server."
+        "ONLYOFFICE_JWT_SECRET не задано - callback-и від ONLYOFFICE Document Server "
+        "будуть відхилятися (задайте секрет в .env; для тимчасового локального "
+        "налагодження дозволено ONLYOFFICE_ALLOW_INSECURE_CALLBACK=true)."
     )
 
 # ONLYOFFICE_VERIFY_SSL - чи перевіряти дійсність SSL-сертифіката, коли
-# наш Flask сам звертається до Document Server (наприклад, щоб забрати
-# щойно збережену версію документа після редагування). Поки Document
-# Server використовує самопідписаний сертифікат (типова ситуація для
-# внутрішнього/тестового розгортання), стандартна перевірка сертифіката
-# відхиляє з'єднання - так само, як спочатку відхиляв і браузер, доки
-# ви вручну не підтвердили виняток. Коли на сервері з'явиться сертифікат
-# від довіреного центру сертифікації (CA) - задайте ONLYOFFICE_VERIFY_SSL=true.
-ONLYOFFICE_VERIFY_SSL = os.environ.get('ONLYOFFICE_VERIFY_SSL', 'false').strip().lower() in ('1', 'true', 'yes')
+# наш Flask сам звертається до Document Server. За замовчуванням увімкнено;
+# для тимчасового самопідписаного сертифіката задайте ONLYOFFICE_VERIFY_SSL=false у .env.
+ONLYOFFICE_VERIFY_SSL = os.environ.get('ONLYOFFICE_VERIFY_SSL', 'true').strip().lower() in ('1', 'true', 'yes')
 
 if not ONLYOFFICE_VERIFY_SSL:
     logger.warning(
         "ONLYOFFICE_VERIFY_SSL вимкнено - перевірка SSL-сертифіката Document Server "
-        "при завантаженні збережених документів пропускається (типово для самопідписаного "
-        "сертифіката). Коли встановите довірений сертифікат, задайте ONLYOFFICE_VERIFY_SSL=true."
+        "при завантаженні збережених документів пропускається. Для продакшену "
+        "встановіть довірений сертифікат і задайте ONLYOFFICE_VERIFY_SSL=true."
     )
 
 # ONLYOFFICE_COMMAND_URL - адреса службового "Command Service" Document

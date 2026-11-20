@@ -8,14 +8,21 @@ import json
 import tempfile
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, jsonify
+from flask import Blueprint, render_template, request, jsonify, send_file, abort
 from routes.db import get_db
 from routes.utils import save_multiple_attachments, logger
 from routes.photo import process_and_save_pending_photo
 from routes.config import PROJECT_ROOT
 from routes.passport_types import (
     PASSPORT_TYPES, PASSPORT_TYPES_ID_STYLE,
-    normalize_passport_number, passport_template_context,
+    normalize_passport_number, normalize_passport_series, passport_template_context,
+)
+from routes.security import (
+    SAFE_SCAN_EXTENSIONS,
+    check_rate_limit,
+    client_ip,
+    resolve_under_dir,
+    validate_upload_file,
 )
 
 public_update_bp = Blueprint('public_update', __name__)
@@ -52,9 +59,9 @@ def _validate_scan_files(files, max_files, label):
     if len(files) > max_files:
         return f"Забагато файлів{label} за одну загрузку (максимум {max_files})."
     for sf in files:
-        ext = os.path.splitext(sf.filename)[1].lower()
-        if ext not in ALLOWED_SCAN_EXTENSIONS:
-            return f"Файл «{sf.filename}»{label}: непідтримуваний формат."
+        ok, err = validate_upload_file(sf, SAFE_SCAN_EXTENSIONS)
+        if not ok:
+            return f"Файл «{sf.filename}»{label}: {err}."
         sf.seek(0, os.SEEK_END)
         size = sf.tell()
         sf.seek(0)
@@ -99,7 +106,8 @@ def _parse_pdf_ajax_response(pdf_bytes):
     try:
         from routes.parse_military_pdf import parse_reserve_plus_pdf, extract_photo_from_pdf
     except ImportError as e:
-        return jsonify({'ok': False, 'error': f'Парсер PDF недоступний: {e}'}), 500
+        logger.error(f"[parse_pdf_update] import error: {e}")
+        return jsonify({'ok': False, 'error': 'Парсер PDF тимчасово недоступний'}), 500
 
     tmp_path = None
     try:
@@ -109,9 +117,8 @@ def _parse_pdf_ajax_response(pdf_bytes):
         parsed = parse_reserve_plus_pdf(tmp_path)
         photo_bytes = extract_photo_from_pdf(tmp_path)
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'ok': False, 'error': f'Не вдалося розпізнати PDF: {e}'}), 400
+        logger.warning(f"[parse_pdf_update] parse failed: {e}")
+        return jsonify({'ok': False, 'error': 'Не вдалося розпізнати PDF. Перевірте файл або заповніть поля вручну.'}), 400
     finally:
         if tmp_path:
             try:
@@ -177,15 +184,15 @@ def _parse_pdf_ajax_response(pdf_bytes):
     if photo_bytes:
         try:
             photo_path = process_and_save_pending_photo(photo_bytes)
-            photo_url = f'/static/{photo_path}'
+            photo_url = None
             import base64
-            abs_path = os.path.join(PROJECT_ROOT, 'static', photo_path)
-            with open(abs_path, 'rb') as fp:
-                raw = fp.read()
-            photo_data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode('ascii')
-        except Exception:
-            import traceback
-            traceback.print_exc()
+            abs_path = resolve_under_dir(os.path.join(PROJECT_ROOT, 'static'), photo_path)
+            if abs_path and os.path.isfile(abs_path):
+                with open(abs_path, 'rb') as fp:
+                    raw = fp.read()
+                photo_data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode('ascii')
+        except Exception as exc:
+            logger.warning(f"[parse_pdf_update] photo extract warning: {exc}")
 
     import uuid as _uuid
     os.makedirs(PENDING_PDFS_DIR, exist_ok=True)
@@ -208,6 +215,33 @@ def _parse_pdf_ajax_response(pdf_bytes):
         'photo_data_url': photo_data_url,
         'pdf_path': pdf_rel_path,
     })
+
+
+@public_update_bp.route('/update-info/<token>/photo')
+def current_photo(token):
+    """Віддає поточне фото студента лише за валідним активним токеном оновлення."""
+    conn, row = _load_request(token)
+    try:
+        if not row or row['status'] != 'pending' or _is_expired(row):
+            abort(404)
+        allowed_fields = json.loads(row['allowed_fields'])
+        if 'photo' not in allowed_fields:
+            abort(404)
+        student = conn.execute(
+            "SELECT photo FROM students WHERE id = ?", (row['student_id'],)
+        ).fetchone()
+        if not student or not student['photo']:
+            abort(404)
+        disk_path = resolve_under_dir(os.path.join(PROJECT_ROOT, 'static'), student['photo'])
+        if not disk_path or not os.path.isfile(disk_path):
+            abort(404)
+    finally:
+        conn.close()
+
+    resp = send_file(disk_path, mimetype='image/jpeg')
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Cache-Control'] = 'private, no-store'
+    return resp
 
 
 @public_update_bp.route('/update-info/<token>', methods=['GET', 'POST'])
@@ -236,6 +270,10 @@ def update_info(token):
     allowed_fields = json.loads(row['allowed_fields'])
 
     if request.method == 'POST' and request.form.get('action') == 'parse_pdf':
+        allowed, _retry = check_rate_limit('public_update_pdf', client_ip(), limit=20, window_seconds=300)
+        if not allowed:
+            conn.close()
+            return jsonify({'ok': False, 'error': 'Занадто багато запитів. Спробуйте пізніше.'}), 429
         file = request.files.get('pdf_file')
         if not file or not file.filename:
             conn.close()
@@ -254,6 +292,7 @@ def update_info(token):
         conn.close()
         return render_template(
             'public_update_form.html',
+            token=token,
             student=student, allowed_fields=allowed_fields,
             simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
         )
@@ -262,6 +301,18 @@ def update_info(token):
     if (request.form.get('website') or '').strip():
         conn.close()
         return render_template('public_update_thanks.html')
+
+    allowed, _retry = check_rate_limit('public_update_submit', client_ip(), limit=15, window_seconds=600)
+    if not allowed:
+        conn.close()
+        return render_template(
+            'public_update_form.html',
+            token=token,
+            student=student, allowed_fields=allowed_fields,
+            simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
+            error="Занадто багато спроб надсилання. Спробуйте через кілька хвилин.",
+            form=request.form,
+        ), 429
 
     def f(name):
         return (request.form.get(name) or '').strip() or None
@@ -291,7 +342,7 @@ def update_info(token):
             except ValueError as e:
                 conn.close()
                 return render_template(
-                    'public_update_form.html', student=student, allowed_fields=allowed_fields,
+                    'public_update_form.html', token=token, student=student, allowed_fields=allowed_fields,
                     simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
                     error=f"Фото: {e}", form=request.form,
                 )
@@ -302,7 +353,7 @@ def update_info(token):
         if err:
             conn.close()
             return render_template(
-                'public_update_form.html', student=student, allowed_fields=allowed_fields,
+                'public_update_form.html', token=token, student=student, allowed_fields=allowed_fields,
                 simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
                 error=err, form=request.form,
             )
@@ -329,7 +380,7 @@ def update_info(token):
         if err:
             conn.close()
             return render_template(
-                'public_update_form.html', student=student, allowed_fields=allowed_fields,
+                'public_update_form.html', token=token, student=student, allowed_fields=allowed_fields,
                 simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
                 error=err, form=request.form,
             )
@@ -368,7 +419,7 @@ def update_info(token):
         if err:
             conn.close()
             return render_template(
-                'public_update_form.html', student=student, allowed_fields=allowed_fields,
+                'public_update_form.html', token=token, student=student, allowed_fields=allowed_fields,
                 simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
                 error=err, form=request.form,
             )
@@ -414,24 +465,26 @@ def update_info(token):
     # ═══════════════════════════════════════════════════════════
     # Скани
     # ═══════════════════════════════════════════════════════════
-    if 'passport' in allowed_fields:
-        scans = [sf for sf in request.files.getlist('passport_scans') if sf and sf.filename]
-        if scans:
-            save_multiple_attachments(conn, 'update_request_passport', row['id'], scans, 'update_requests')
-    if 'education_document' in allowed_fields:
-        scans = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
-        if scans:
-            save_multiple_attachments(conn, 'update_request_education', row['id'], scans, 'update_requests')
-
-    # ── PDF «Резерв+» — обробляємо НЕЗАЛЕЖНО від 'military' у
-    # allowed_fields. Логіка: якщо студент якимось чином завантажив
-    # PDF через «Швидке заповнення» (навіть якщо адмін не дозволив
-    # military) — файл все одно має бути в сканах заявки, щоб адмін
-    # міг його побачити й вирішити, чи застосовувати.
-    if 'military' in allowed_fields:
-        scans = [sf for sf in request.files.getlist('military_scans') if sf and sf.filename]
-        if scans:
-            save_multiple_attachments(conn, 'update_request_military', row['id'], scans, 'update_requests')
+    try:
+        if 'passport' in allowed_fields:
+            scans = [sf for sf in request.files.getlist('passport_scans') if sf and sf.filename]
+            if scans:
+                save_multiple_attachments(conn, 'update_request_passport', row['id'], scans, 'update_requests')
+        if 'education_document' in allowed_fields:
+            scans = [sf for sf in request.files.getlist('document_scans') if sf and sf.filename]
+            if scans:
+                save_multiple_attachments(conn, 'update_request_education', row['id'], scans, 'update_requests')
+        if 'military' in allowed_fields:
+            scans = [sf for sf in request.files.getlist('military_scans') if sf and sf.filename]
+            if scans:
+                save_multiple_attachments(conn, 'update_request_military', row['id'], scans, 'update_requests')
+    except ValueError as e:
+        conn.close()
+        return render_template(
+            'public_update_form.html', token=token, student=student, allowed_fields=allowed_fields,
+            simple_fields=SIMPLE_FIELDS, section_labels=SECTION_LABELS,
+            error=str(e), form=request.form,
+        ), 400
 
     # Спроба 1: файл напряму з поля pdf_file
     pdf_file = request.files.get('pdf_file')
@@ -443,7 +496,7 @@ def update_info(token):
     if pdf_file and pdf_file.filename and pdf_file.filename.lower().endswith('.pdf'):
         pdf_bytes = pdf_file.read()
         logger.info(f"[update_info] pdf_file size: {len(pdf_bytes)} bytes")
-        if pdf_bytes.startswith(b'%PDF'):
+        if len(pdf_bytes) <= MAX_PDF_SIZE_BYTES and pdf_bytes.startswith(b'%PDF'):
             import uuid as _uuid
             os.makedirs(UPDATE_REQUESTS_DIR, exist_ok=True)
             safe_name = f"{_uuid.uuid4().hex}.pdf"
@@ -464,8 +517,7 @@ def update_info(token):
             pdf_saved = True
         else:
             logger.warning(
-                f"[update_info] pdf_file does NOT start with %PDF: "
-                f"{pdf_bytes[:20]!r}"
+                f"[update_info] invalid pdf_file size/header"
             )
 
     # Спроба 2 (fallback): якщо pdf_file порожній, але є
@@ -476,13 +528,13 @@ def update_info(token):
         logger.info(
             f"[update_info] fallback: prefilled_pdf_path={prefilled_pdf!r}"
         )
-        if prefilled_pdf and prefilled_pdf.startswith('uploads/pending_pdfs/'):
-            src_pdf = os.path.join(PROJECT_ROOT, 'static', prefilled_pdf)
+        if prefilled_pdf and re.fullmatch(r'uploads/pending_pdfs/[0-9a-f]{32}\.pdf', prefilled_pdf):
+            src_pdf = resolve_under_dir(os.path.join(PROJECT_ROOT, 'static'), prefilled_pdf)
             logger.info(
                 f"[update_info] fallback: src_pdf={src_pdf}, "
-                f"exists={os.path.exists(src_pdf)}"
+                f"exists={bool(src_pdf and os.path.isfile(src_pdf))}"
             )
-            if os.path.exists(src_pdf):
+            if src_pdf and os.path.isfile(src_pdf):
                 import shutil
                 import uuid as _uuid
                 os.makedirs(UPDATE_REQUESTS_DIR, exist_ok=True)

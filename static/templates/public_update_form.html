@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Оновлення даних — Європейський університет</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -134,6 +135,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
             {% endif %}
 
             <form method="POST" enctype="multipart/form-data" novalidate id="updateForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="hp-field" aria-hidden="true">
                     <label>Сайт</label>
                     <input type="text" name="website" tabindex="-1" autocomplete="off">
@@ -169,7 +171,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
                     <div class="grid">
                         <div class="col-12">
                             <div class="file-drop">
-                                {% if student.photo %}<img src="/static/{{ student.photo }}" class="current-photo" alt="">{% endif %}
+                                {% if student.photo %}<img src="{{ url_for('public_update.current_photo', token=token) }}" class="current-photo" alt="">{% endif %}
                                 <label class="file-btn" for="photo">📷 {{ 'Замінити фото' if student.photo else 'Обрати фото' }}</label>
                                 <span class="file-name" id="photo_name">Файл не обрано</span>
                                 <input type="file" name="photo" id="photo" accept="image/*">
@@ -529,7 +531,12 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
         fd.append('pdf_file', file);
         fd.append('action', 'parse_pdf');
 
-        fetch(window.location.pathname, { method: 'POST', body: fd })
+        const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+        fetch(window.location.pathname, {
+            method: 'POST',
+            headers: csrfMeta ? { 'X-CSRFToken': csrfMeta.getAttribute('content') } : {},
+            body: fd,
+        })
             .then(async resp => {
                 const ct = resp.headers.get('content-type') || '';
                 if (!ct.includes('application/json')) {

@@ -1761,7 +1761,9 @@
             return;
         }
         nextBtn.disabled = false;
-        fileNameEl.innerHTML = '<i class="bi bi-file-earmark-check me-1"></i>' + file.name;
+        const fileIcon = document.createElement('i');
+        fileIcon.className = 'bi bi-file-earmark-check me-1';
+        fileNameEl.replaceChildren(fileIcon, document.createTextNode(file.name));
     });
 
     nextBtn.addEventListener('click', function () {

@@ -183,16 +183,11 @@
 
             if (finalResp.redirected) {
                 window.location.href = finalResp.url;
-            } else if (finalResp.ok) {
-                const html = await finalResp.text();
-                // Сервер повернув HTML замість редіректу — рендеримо як є
-                document.open();
-                document.write(html);
-                document.close();
+            } else if (finalResp.ok && finalResp.url && finalResp.url !== window.location.href) {
+                window.location.href = finalResp.url;
             } else {
                 throw new Error(
-                    'Сервер відмовив (HTTP ' + finalResp.status + '). ' +
-                    'Дивіться логи: logs/app-YYYY-MM.log'
+                    'Не вдалося перейти до попереднього перегляду (HTTP ' + finalResp.status + ').'
                 );
             }
         } catch (err) {

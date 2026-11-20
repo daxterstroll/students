@@ -10,6 +10,10 @@ import uuid
 
 from PIL import Image, ImageOps
 
+from routes.security import resolve_under_dir
+
+Image.MAX_IMAGE_PIXELS = 40_000_000
+
 TARGET_WIDTH = 600
 TARGET_HEIGHT = 800
 TARGET_RATIO = TARGET_WIDTH / TARGET_HEIGHT  # 0.75 (3:4)
@@ -45,8 +49,10 @@ def load_and_validate_image(file_bytes):
         img = Image.open(io.BytesIO(file_bytes))
         img_format = img.format
         img = ImageOps.exif_transpose(img)
-    except Exception as e:
-        raise ValueError(f"Не вдалося розпізнати зображення: {e}")
+    except Image.DecompressionBombError:
+        raise ValueError("Зображення має завелику роздільну здатність (перевищено ліміт пікселів).")
+    except Exception:
+        raise ValueError("Не вдалося розпізнати зображення. Перевірте, що файл не пошкоджено.")
     if img_format not in ALLOWED_FORMATS:
         raise ValueError(
             f"Формат {img_format or 'невідомий'} не підтримується. "
@@ -124,13 +130,15 @@ def process_and_save_pending_photo_with_crop(file_bytes, crop_box, old_rel_path=
     final_img.save(tmp_path, "JPEG", quality=92)
     os.replace(tmp_path, dest_path)
 
-    if old_rel_path:
-        old_abs_path = os.path.join('static', old_rel_path)
-        if os.path.exists(old_abs_path):
-            try:
-                os.remove(old_abs_path)
-            except OSError:
-                pass
+    if old_rel_path and isinstance(old_rel_path, str):
+        rel = old_rel_path.replace('\\', '/').lstrip('/')
+        if rel.startswith('uploads/pending_photos/'):
+            old_abs_path = resolve_under_dir(PENDING_PHOTOS_DIR, rel[len('uploads/pending_photos/'):])
+            if old_abs_path and os.path.isfile(old_abs_path):
+                try:
+                    os.remove(old_abs_path)
+                except OSError:
+                    pass
     return f"uploads/pending_photos/{filename}"
 
 

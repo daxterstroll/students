@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Анкета для зарахування — Європейський університет</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -274,6 +275,7 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
             </div>
 
             <form method="POST" enctype="multipart/form-data" novalidate id="applyForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="hp-field" aria-hidden="true">
                     <label>Сайт</label>
                     <input type="text" name="website" tabindex="-1" autocomplete="off">
@@ -753,8 +755,10 @@ label.f-label{ display:block; font-size:.83rem; font-weight:600; color:var(--ink
             fd.append('pdf_file', file);
             fd.append('action', 'parse_pdf');
 
+            const csrfMeta = document.querySelector('meta[name="csrf-token"]');
             fetch('/apply', {
                 method: 'POST',
+                headers: csrfMeta ? { 'X-CSRFToken': csrfMeta.getAttribute('content') } : {},
                 body: fd,
             })
             .then(async resp => {

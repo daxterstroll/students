@@ -482,21 +482,22 @@ document.addEventListener('DOMContentLoaded', function () {
             hidden.value = id;
             idsContainer.appendChild(hidden);
 
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
             const card = document.createElement('label');
             card.className = 'd-flex align-items-center gap-3 p-2 rounded border';
             card.style.cursor = 'pointer';
             card.style.background = 'var(--paper-2)';
             card.innerHTML = `
-                <input type="radio" name="__main_pick" value="${id}"
+                <input type="radio" name="__main_pick" value="${esc(id)}"
                        ${idx === 0 ? 'checked' : ''}
                        class="form-check-input m-0">
                 <div class="flex-grow-1">
                     <div class="fw-semibold">
-                        № ${number} <span class="text-muted">від ${date}</span>
-                        <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">${typeLabel}</span>
+                        № ${esc(number)} <span class="text-muted">від ${esc(date)}</span>
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">${esc(typeLabel)}</span>
                     </div>
                     <div class="small text-muted">
-                        Позицій: ${itemsCount}${notes ? ' · ' + notes : ''}
+                        Позицій: ${esc(itemsCount)}${notes ? ' · ' + esc(notes) : ''}
                     </div>
                 </div>
             `;

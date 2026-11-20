@@ -489,25 +489,21 @@ def get_templates_with_metadata(is_admin=False):
 
 def save_multiple_attachments(conn, entity_type, entity_id, files, upload_subdir, uploaded_by=None):
     """Зберігає список файлів (з request.files.getlist(...)) на диск і
-    реєструє кожен у спільній таблиці "attachments" - для місць, де
-    раніше можна було прикріпити лише один файл (наказ про переведення
-    на курс, наказ про відрахування, підстава заморозки студента).
-
-    files: список werkzeug FileStorage (порожні/без імені - пропускаються).
-    upload_subdir: підпапка в static/uploads/, напр. 'course_transfer_orders'.
-    Повертає список відносних шляхів (для static/) щойно збережених файлів,
-    у тому ж порядку, в якому їх завантажили - перший елемент можна
-    використати як значення "старого" одиничного поля (scan_file/document_file)
-    для сумісності з рештою коду, яка ще на нього спирається.
-    """
+    реєструє кожен у спільній таблиці "attachments".
+    Перевіряє безпечні розширення та заголовки файлів (захист від XSS/виконаних файлів)."""
     import uuid as _uuid
+    from routes.security import validate_upload_file, SAFE_ATTACHMENT_EXTENSIONS
+
     saved_paths = []
     upload_dir = os.path.join('static', 'uploads', upload_subdir)
     os.makedirs(upload_dir, exist_ok=True)
     for f in (files or []):
         if not f or not f.filename:
             continue
-        ext = os.path.splitext(f.filename)[1]
+        ok, err = validate_upload_file(f, SAFE_ATTACHMENT_EXTENSIONS)
+        if not ok:
+            raise ValueError(f"Файл «{f.filename}»: {err}")
+        ext = os.path.splitext(f.filename)[1].lower()
         safe_name = f"{_uuid.uuid4().hex}{ext}"
         f.save(os.path.join(upload_dir, safe_name))
         rel_path = f"uploads/{upload_subdir}/{safe_name}"

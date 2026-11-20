@@ -19,6 +19,7 @@ from routes.students import students_bp
 import sqlite3
 from routes.utils import is_student_on_reduced_program, program_track_condition, apply_track_overrides
 from routes.enrollments_service import get_active_group_ids_for_student, ensure_enrollments_table
+from routes.user_scope import get_allowed_group_ids
 from datetime import datetime
 
 
@@ -109,12 +110,16 @@ def _groups_for_student(conn, student_id, include_inactive=False):
     return result
 
 
-def _user_can_access_student(session_obj, student_groups, primary_group_id):
+def _user_can_access_student(session_obj, student_groups, primary_group_id, conn=None):
     """True, якщо користувач має доступ хоча б до однієї з груп студента
     (або є адміном)."""
     if session_obj.get('role') == 'admin' or session_obj.get('is_admin'):
         return True
-    user_group_ids = set(session_obj.get('group_ids', []) or [])
+    uid = session_obj.get('user_id')
+    if conn is not None and uid:
+        user_group_ids = set(get_allowed_group_ids(conn, uid))
+    else:
+        user_group_ids = set(session_obj.get('group_ids', []) or [])
     if primary_group_id and primary_group_id in user_group_ids:
         return True
     for g in student_groups:
@@ -157,7 +162,7 @@ def edit_activities_grades(student_id):
 
     student_groups = _groups_for_student(conn, student_id)
 
-    if not _user_can_access_student(session, student_groups, student['group_id']):
+    if not _user_can_access_student(session, student_groups, student['group_id'], conn=conn):
         conn.close()
         flash("Доступ заборонено: студент не належить до ваших груп", "error")
         return redirect(url_for('students.student_list'))

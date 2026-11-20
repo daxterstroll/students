@@ -8,6 +8,7 @@ from routes.db import get_db
 from routes.utils import log_action, permission_required, logger
 from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
+from routes.security import ALLOWED_USER_ROLES, validate_password_strength
 import sqlite3
 import os
 from werkzeug.security import generate_password_hash
@@ -287,7 +288,11 @@ def add_user():
     if request.method == 'POST':
         username = (request.form.get('username') or '').strip()
         password = request.form.get('password') or ''
-        role = request.form.get('role') or 'user'
+        role = (request.form.get('role') or 'user').strip()
+        if role not in ALLOWED_USER_ROLES:
+            flash('Недопустима роль користувача', 'error')
+            conn.close()
+            return redirect(url_for('admin.add_user'))
         group_ids = [g for g in request.form.getlist('group_id') if g]
         specialty_codes = [s for s in request.form.getlist('specialty_code') if s]
         degree_levels = [d for d in request.form.getlist('degree_level') if d]
@@ -298,8 +303,9 @@ def add_user():
             flash("Логін і пароль обов'язкові", 'error')
             conn.close()
             return redirect(url_for('admin.add_user'))
-        if len(password) < 6:
-            flash('Пароль не коротший за 6 символів', 'error')
+        ok_pwd, pwd_err = validate_password_strength(password)
+        if not ok_pwd:
+            flash(pwd_err, 'error')
             conn.close()
             return redirect(url_for('admin.add_user'))
 
@@ -390,7 +396,11 @@ def edit_user(user_id):
         return redirect(url_for('admin.manage_users'))
 
     if request.method == 'POST':
-        role = request.form.get('role') or 'user'
+        role = (request.form.get('role') or 'user').strip()
+        if role not in ALLOWED_USER_ROLES:
+            flash('Недопустима роль користувача', 'error')
+            conn.close()
+            return redirect(url_for('admin.edit_user', user_id=user_id))
         group_ids = [g for g in request.form.getlist('group_id') if g]
         specialty_codes = [s for s in request.form.getlist('specialty_code') if s]
         degree_levels = [d for d in request.form.getlist('degree_level') if d]
@@ -504,8 +514,9 @@ def change_password(user_id):
 
     if request.method == 'POST':
         password = request.form.get('password') or ''
-        if len(password) < 6:
-            flash('Пароль не коротший за 6 символів', 'error')
+        ok_pwd, pwd_err = validate_password_strength(password)
+        if not ok_pwd:
+            flash(pwd_err, 'error')
             conn.close()
             return redirect(url_for('admin.change_password', user_id=user_id))
         conn.execute(

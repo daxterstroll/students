@@ -29,6 +29,8 @@ from routes.enrollments_service import (
     add_enrollment, ensure_enrollments_table,
     update_enrollment_edebo_code, update_enrollment_program_credits,
 )
+from routes.security import is_safe_hex_token, resolve_under_dir
+from routes.user_scope import get_allowed_group_ids
 import sqlite3
 from routes.utils import generate_english_name
 from werkzeug.utils import secure_filename
@@ -270,22 +272,23 @@ def _cleanup_old_states():
 
 
 def _state_path(token):
-    token = re.sub(r'[^0-9a-f]', '', token or '')
-    return os.path.join(STUDENTS_IMPORT_DIR, f'{token}.json')
+    if not is_safe_hex_token(token):
+        return None
+    return resolve_under_dir(STUDENTS_IMPORT_DIR, f'{token}.json')
 
 
 def _save_state(token, state):
+    path = _state_path(token)
+    if not path:
+        raise ValueError("Некоректний токен сесії імпорту")
     os.makedirs(STUDENTS_IMPORT_DIR, exist_ok=True)
-    with open(_state_path(token), 'w', encoding='utf-8') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(state, f, ensure_ascii=False, default=str)
 
 
 def _load_state(token):
-    token = re.sub(r'[^0-9a-f]', '', token or '')
-    if not token:
-        return None
     path = _state_path(token)
-    if not os.path.isfile(path):
+    if not path or not os.path.isfile(path):
         return None
     with open(path, encoding='utf-8') as f:
         return json.load(f)
@@ -380,7 +383,7 @@ def _build_import_preview(filepath, conn, allowed_group_ids):
         sheet = wb.active
     except Exception as e:
         logger.error(f'[import_preview] open xlsx: {e}', exc_info=True)
-        global_errors.append({'reason': f'Не вдалося відкрити файл: {e}'})
+        global_errors.append({'reason': 'Не вдалося відкрити Excel-файл'})
         return preview, global_errors
 
     row_counter = 0
@@ -895,15 +898,15 @@ def import_from_excel():
     conn = get_db()
     ensure_enrollments_table(conn)
     try:
-        role = session.get('role')
-        if role == 'admin':
+        is_admin = bool(session.get('is_admin', False)) or session.get('role') == 'admin'
+        if is_admin:
             allowed_group_ids = {
                 r['id'] for r in conn.execute(
                     "SELECT id FROM groups WHERE archived = FALSE"
                 ).fetchall()
             }
         else:
-            user_group_ids = session.get('group_ids', []) or []
+            user_group_ids = get_allowed_group_ids(conn, session.get('user_id'))
             if user_group_ids:
                 ph = ','.join('?' * len(user_group_ids))
                 allowed_group_ids = {
@@ -1179,7 +1182,7 @@ def import_commit(token):
     except Exception as e:
         conn.rollback()
         logger.error(f'[import_commit] global: {e}', exc_info=True)
-        flash(f'Помилка імпорту: {e}', 'error')
+        flash('Помилка під час збереження даних імпорту', 'error')
         conn.close()
         return redirect(url_for('students.import_preview', token=token))
     finally:

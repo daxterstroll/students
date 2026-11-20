@@ -14,6 +14,7 @@ from routes.exam_sessions.service import (
     parse_points, compute_final_points, sheet_token_valid,
     points_to_national_ects, recompute_sheet_status,
 )
+from routes.security import check_rate_limit, client_ip
 
 
 def _save_teacher_grades(conn, sheet_id, sheet_control_form, form):
@@ -155,6 +156,10 @@ def teacher_sheet(teacher_token, sheet_id):
     readonly = sheet['status'] in ('approved', 'locked')
 
     if request.method == 'POST' and not readonly:
+        allowed, _retry = check_rate_limit('teacher_grade_post', client_ip(), limit=120, window_seconds=300)
+        if not allowed:
+            conn.close()
+            return 'Занадто багато запитів. Зачекайте кілька хвилин і повторіть збереження.', 429
         _save_teacher_grades(conn, sheet_id, sheet['control_form'], request.form)
         new_status = recompute_sheet_status(conn, sheet_id)
 
@@ -280,6 +285,10 @@ def teacher_grade_form(token):
     readonly = sheet['status'] in ('approved', 'locked')
 
     if request.method == 'POST' and not readonly:
+        allowed, _retry = check_rate_limit('teacher_grade_post', client_ip(), limit=120, window_seconds=300)
+        if not allowed:
+            conn.close()
+            return 'Занадто багато запитів. Зачекайте кілька хвилин і повторіть збереження.', 429
         _save_teacher_grades(conn, sheet['id'], sheet['control_form'], request.form)
         new_status = recompute_sheet_status(conn, sheet['id'])
 

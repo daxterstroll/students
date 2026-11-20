@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <title>Вхід — Реєстр студентів</title>
 	<link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.2/bootstrap-icons.css') }}" rel="stylesheet">
 	<link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
@@ -446,6 +447,7 @@ html,body{
       <p class="form__subtitle">Особові справи, оцінки та документи студентів — в одному реєстрі.</p>
 
       <form method="POST" class="form" id="loginForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label class="field">
           <span class="field__label">Логін</span>
           <input type="text" name="username" id="username" autocomplete="username" required>

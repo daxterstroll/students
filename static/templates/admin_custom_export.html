@@ -1,4 +1,3 @@
-
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Кастомний експорт даних{% endblock %}
@@ -607,14 +606,21 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(r => r.json())
         .then(function (data) {
             if (data.error) {
-                pill.innerHTML = '<i class="bi bi-x-circle text-danger me-1"></i>' + data.error;
+                const ic = document.createElement('i');
+                ic.className = 'bi bi-x-circle text-danger me-1';
+                pill.replaceChildren(ic, document.createTextNode(String(data.error)));
                 hint.style.display = 'none';
                 return;
             }
             // count — після фільтрів; total — пул до фільтрів (залежить від режиму рядків)
-            pill.innerHTML = '<i class="bi bi-people me-1"></i>У вибірці: <strong>'
-                + data.count + '</strong> <span class="text-muted fw-normal">з пулу '
-                + data.total + '</span>';
+            const peopleIcon = document.createElement('i');
+            peopleIcon.className = 'bi bi-people me-1';
+            const countStrong = document.createElement('strong');
+            countStrong.textContent = String(Number(data.count) || 0);
+            const poolSpan = document.createElement('span');
+            poolSpan.className = 'text-muted fw-normal';
+            poolSpan.textContent = ' з пулу ' + (Number(data.total) || 0);
+            pill.replaceChildren(peopleIcon, document.createTextNode('У вибірці: '), countStrong, poolSpan);
 
             const parts = [];
             parts.push(

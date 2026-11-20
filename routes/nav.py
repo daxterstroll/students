@@ -106,6 +106,8 @@ NAV_SECTIONS = [
              'icon': 'bi-journal-bookmark',      'label': 'Номери диплому / додатку'},
             {'perm': 'manage_military_reports',  'url': 'military_reports.dashboard',
              'icon': 'bi-shield-fill-check',     'label': 'Військовий облік (Додаток 5)'},
+            {'perm': 'manage_military_reports',  'url': 'military_reports.military_files',
+             'icon': 'bi-file-earmark-zip',      'label': 'Файли «Резерв+» (по місяцях)'},
             {'divider': True},
             {'perm': 'manage_orders',            'url': 'admin.orders_list',
              'icon': 'bi-journal-text',          'label': 'Реєстр наказів'},

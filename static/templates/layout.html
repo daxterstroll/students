@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<meta name="color-scheme" content="light dark">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}База даних студентів Львівської філії ПВНЗ "Європейський університет"{% endblock %}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='style/images/favicon.png') }}" type="image/png">
 
@@ -266,6 +267,80 @@
 </main>
 
 <script src="{{ url_for('static', filename='style/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js') }}"></script>
+
+<script>
+(function () {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const csrfToken = meta ? meta.getAttribute('content') : '';
+    if (!csrfToken) return;
+
+    function injectCsrf(form) {
+        if (!form || !form.tagName || form.tagName !== 'FORM') return;
+        const method = (form.getAttribute('method') || form.method || 'GET').toUpperCase();
+        if (method !== 'POST') return;
+        if (!form.querySelector('input[name="csrf_token"]')) {
+            const inp = document.createElement('input');
+            inp.type = 'hidden';
+            inp.name = 'csrf_token';
+            inp.value = csrfToken;
+            form.appendChild(inp);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('form').forEach(injectCsrf);
+    });
+    document.addEventListener('submit', (e) => injectCsrf(e.target), true);
+
+    const origSubmit = HTMLFormElement.prototype.submit;
+    HTMLFormElement.prototype.submit = function () {
+        injectCsrf(this);
+        return origSubmit.apply(this, arguments);
+    };
+
+    function isSameOrigin(url) {
+        try {
+            const u = new URL(url, window.location.origin);
+            return u.origin === window.location.origin;
+        } catch (e) {
+            return true;
+        }
+    }
+
+    if (window.fetch) {
+        const origFetch = window.fetch;
+        window.fetch = function (input, init) {
+            init = init ? Object.assign({}, init) : {};
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            const method = (init.method || (input && input.method) || 'GET').toUpperCase();
+            if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(method) && isSameOrigin(url)) {
+                const headers = new Headers(init.headers || (input && input.headers) || {});
+                if (!headers.has('X-CSRFToken') && !headers.has('X-CSRF-Token')) {
+                    headers.set('X-CSRFToken', csrfToken);
+                }
+                init.headers = headers;
+            }
+            return origFetch.call(this, input, init);
+        };
+    }
+
+    if (window.XMLHttpRequest) {
+        const origOpen = XMLHttpRequest.prototype.open;
+        const origSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function (method, url) {
+            this.__csrfMethod = (method || 'GET').toUpperCase();
+            this.__csrfUrl = url || '';
+            return origOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function () {
+            if (!['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes(this.__csrfMethod) && isSameOrigin(this.__csrfUrl)) {
+                try { this.setRequestHeader('X-CSRFToken', csrfToken); } catch (e) {}
+            }
+            return origSend.apply(this, arguments);
+        };
+    }
+})();
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {

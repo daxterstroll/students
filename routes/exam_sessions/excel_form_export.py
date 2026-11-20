@@ -10,6 +10,8 @@ from openpyxl import load_workbook
 from openpyxl.formula.translate import Translator
 from openpyxl.utils import get_column_letter
 
+from routes.security import sanitize_spreadsheet_cell
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 TEMPLATE_DIR = os.path.join(ROOT, 'static', 'templates', 'excel')
 
@@ -112,7 +114,7 @@ def _set_header_values(ws, sheet):
         'A15': f"Викладач                                                   {_get(sheet, 'teacher_short') or _get(sheet, 'teacher_name') or _get(sheet, 'teacher_full') or ''}",
     }
     for cell, value in values.items():
-        ws[cell] = value
+        ws[cell] = sanitize_spreadsheet_cell(value)
 
 
 def _copy_row(ws, source, target):
@@ -236,15 +238,15 @@ def build_statement_xlsx(sheet, students) -> BytesIO:
         nat, ects = _grade_values(points, control)
         values = {
             'n': idx + 1,
-            'name': _get(student, 'full_name') or '',
-            'edebo': _get(student, 'edebo_code') or '',
+            'name': sanitize_spreadsheet_cell(_get(student, 'full_name') or ''),
+            'edebo': sanitize_spreadsheet_cell(_get(student, 'edebo_code') or ''),
             'mid': _get(student, 'points_mid') if not is_day else '',
             'current': _get(student, 'points_current') if not is_day else '',
             'exam': _get(student, 'points_exam') if not is_day else '',
             'total': points if points is not None else '',
-            'national': _get(student, 'national_grade') or nat,
-            'ects': _get(student, 'ects') or ects,
-            'sign': _get(student, 'teacher_sign') or teacher_sign,
+            'national': sanitize_spreadsheet_cell(_get(student, 'national_grade') or nat),
+            'ects': sanitize_spreadsheet_cell(_get(student, 'ects') or ects),
+            'sign': sanitize_spreadsheet_cell(_get(student, 'teacher_sign') or teacher_sign),
         }
         for role, value in values.items():
             col = roles.get(role)

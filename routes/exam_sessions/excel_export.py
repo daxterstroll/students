@@ -14,6 +14,8 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
+from routes.security import sanitize_spreadsheet_cell
+
 _TEMPLATE_CANDIDATES = [
     os.path.join('static', 'templates', 'excel', 'vidomist_template.xlsx'),
     os.path.join(os.path.dirname(__file__), '..', '..', 'static', 'templates', 'excel', 'vidomist_template.xlsx'),
@@ -313,12 +315,12 @@ def _write_students(ws, sheet: dict, students: list, start: int = 19) -> int:
         sign = _get(st, 'teacher_sign') or teacher_sign
 
         _set(ws, r, 1, i + 1, f11, center, _thin)
-        _set(ws, r, 2, name, f11, left, _thin)
-        _set(ws, r, 3, code, f11, center, _thin)
-        _set(ws, r, 4, nat, f12, center, _thin)
+        _set(ws, r, 2, sanitize_spreadsheet_cell(name), f11, left, _thin)
+        _set(ws, r, 3, sanitize_spreadsheet_cell(code), f11, center, _thin)
+        _set(ws, r, 4, sanitize_spreadsheet_cell(nat), f12, center, _thin)
         _set(ws, r, 5, points if points is not None and points != '' else '', f11, center, _thin)
         _set(ws, r, 6, _ects_formula(r), f12, center, _thin)
-        _set(ws, r, 7, sign, f11, center, _thin)
+        _set(ws, r, 7, sanitize_spreadsheet_cell(sign), f11, center, _thin)
         ws.row_dimensions[r].height = 16.5
 
     return start + n - 1
@@ -608,7 +610,7 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
         ws.cell(row, 1, ri + 1).font = normal
         ws.cell(row, 1).alignment = center
         ws.cell(row, 1).border = thin
-        ws.cell(row, 2, st.get('full_name') or '').font = normal
+        ws.cell(row, 2, sanitize_spreadsheet_cell(st.get('full_name') or '')).font = normal
         ws.cell(row, 2).alignment = left
         ws.cell(row, 2).border = thin
 
@@ -621,14 +623,14 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
                 nat = g.get('national') or ''
                 pts = g.get('points')
                 ects = g.get('ects') or ''
-                ws.cell(row, c, nat).font = normal
+                ws.cell(row, c, sanitize_spreadsheet_cell(nat)).font = normal
                 ws.cell(row, c).alignment = center
                 ws.cell(row, c).border = thin
                 cell_pts = ws.cell(row, c + 1, pts if pts is not None and pts != '' else '')
                 cell_pts.font = normal
                 cell_pts.alignment = center
                 cell_pts.border = thin
-                ws.cell(row, c + 2, ects).font = normal
+                ws.cell(row, c + 2, sanitize_spreadsheet_cell(ects)).font = normal
                 ws.cell(row, c + 2).alignment = center
                 ws.cell(row, c + 2).border = thin
                 if pts is not None and pts != '':
@@ -865,16 +867,16 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
         fill = zebra_fill if is_zebra else None
 
         put(row, 1, ri + 1, f_body, center, fill, border)
-        put(row, 2, names.get(sid, ''), f_body, left, fill, border)
+        put(row, 2, sanitize_spreadsheet_cell(names.get(sid, '')), f_body, left, fill, border)
 
         pts_list = []
         for i, sh in enumerate(sheets):
             base_col = 3 + i * 3
             g = (grades.get(sid) or {}).get(sh['id']) or {}
-            put(row, base_col,     g.get('national_grade') or '', f_body, center, fill, border)
+            put(row, base_col,     sanitize_spreadsheet_cell(g.get('national_grade') or ''), f_body, center, fill, border)
             pts = g.get('points')
             put(row, base_col + 1, '' if pts is None else pts,  f_body, center, fill, border)
-            put(row, base_col + 2, g.get('ects') or '',        f_body, center, fill, border)
+            put(row, base_col + 2, sanitize_spreadsheet_cell(g.get('ects') or ''),        f_body, center, fill, border)
             if pts is not None and pts != '':
                 try:
                     pts_list.append(float(pts))
