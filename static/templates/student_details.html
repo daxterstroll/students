@@ -1956,6 +1956,25 @@ document.querySelectorAll('select[name="target_type"]').forEach(function (typeSe
     typeSelect.addEventListener('change', filterOptions);
     filterOptions();
 });
+
+(function () {
+    const hash = window.location.hash;
+    if (!hash) return;
+    if (hash === '#photoUploadModal') {
+        const modalEl = document.getElementById('photoUploadModal');
+        if (modalEl && window.bootstrap) {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
+        }
+        return;
+    }
+    const target = document.querySelector(hash);
+    if (target && target.classList.contains('accordion-collapse') && window.bootstrap) {
+        bootstrap.Collapse.getOrCreateInstance(target, { toggle: false }).show();
+        setTimeout(() => {
+            target.closest('.accordion-item')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 160);
+    }
+})();
 </script>
 
 

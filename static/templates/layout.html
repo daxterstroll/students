@@ -267,6 +267,9 @@
 </main>
 
 <script src="{{ url_for('static', filename='style/bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js') }}"></script>
+{% if eu_groups_catalog is defined and eu_groups_catalog.get('groups') %}
+<script id="euGroupsCatalog" type="application/json">{{ eu_groups_catalog|tojson }}</script>
+{% endif %}
 <script defer src="{{ url_for('static', filename='js/group_picker.js') }}"></script>
 
 <script>

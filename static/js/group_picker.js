@@ -477,6 +477,64 @@
         };
     }
 
+    const SEARCH_PLACEHOLDER = 'Назва, рік, форма, курс, спеціальність…';
+
+    let CATALOG_LOADED = false;
+    let CATALOG_GROUPS = {};
+    let DEGREE_ORDER = {};
+
+    function loadCatalog() {
+        if (CATALOG_LOADED) return;
+        const el = document.getElementById('euGroupsCatalog');
+        if (!el) return;
+        CATALOG_LOADED = true;
+        try {
+            const data = JSON.parse(el.textContent || '{}');
+            if (data && typeof data === 'object') {
+                if (data.groups && typeof data.groups === 'object') {
+                    CATALOG_GROUPS = data.groups;
+                }
+                if (data.degree_order && typeof data.degree_order === 'object') {
+                    DEGREE_ORDER = data.degree_order;
+                }
+            }
+        } catch (e) {
+            CATALOG_GROUPS = {};
+            DEGREE_ORDER = {};
+        }
+    }
+
+    function formatTriggerLabelFromCatalog(cat) {
+        if (!cat || !cat.name) return '';
+        const extra = [cat.year, cat.form].filter(Boolean).join(', ');
+        return extra ? (cat.name + ' (' + extra + ')') : cat.name;
+    }
+
+    function buildCatalogMetaText(cat, rawText) {
+        const parts = [];
+        if (cat.year) parts.push(String(cat.year));
+        if (cat.form) parts.push(cat.form);
+        if (cat.course) parts.push(cat.course + ' курс');
+        if (cat.specialty) parts.push(cat.specialty);
+        if (rawText && rawText.toLowerCase().indexOf('архів') !== -1 && parts.join(' ').toLowerCase().indexOf('архів') === -1) {
+            parts.push('архів');
+        }
+        return parts.join(' · ');
+    }
+
+    function parseFallbackOptionText(rawText) {
+        const m = rawText.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+        if (!m) {
+            return { title: rawText, meta: '' };
+        }
+        const meta = m[2]
+            .split(/\s*,\s*/)
+            .map(function (s) { return s.trim(); })
+            .filter(Boolean)
+            .join(' · ');
+        return { title: m[1].trim(), meta: meta };
+    }
+
     /**
      * Режим 1: Покращення кастомного компонента на students.html
      */
@@ -493,7 +551,7 @@
         const form = root.closest('form');
         if (!triggerBtn || !menu || !list || !hiddenInput) return;
 
-        const search = createSearchHeader('Назва, рік, форма, курс, спеціальність…');
+        const search = createSearchHeader(SEARCH_PLACEHOLDER);
         menu.insertBefore(search.wrap, list);
 
         let api = null;
@@ -579,9 +637,11 @@
 
     /**
      * Режим 2: Автоматичне покращення стандартних <select> груп
+     * (візуально й функціонально ідентично students.html)
      */
     function initSelectPicker(select) {
         if (shouldSkipSelect(select)) return;
+        loadCatalog();
         select.dataset.euGpInit = '1';
 
         const isSmall = select.classList.contains('form-select-sm');
@@ -612,7 +672,7 @@
         const menu = document.createElement('div');
         menu.className = 'dropdown-menu eu-group-picker-menu p-0';
 
-        const search = createSearchHeader('Пошук: назва, рік, форма…');
+        const search = createSearchHeader(SEARCH_PLACEHOLDER);
         const list = document.createElement('div');
         list.className = 'eu-group-picker-list';
 
@@ -639,6 +699,7 @@
         let builtSignature = null;
         let items = [];
         let headers = [];
+        let isSyncingValue = false;
 
         function getOptionsSignature() {
             const parts = [];
@@ -657,13 +718,50 @@
             return false;
         }
 
-        function buildOptionRow(opt) {
+        function getOptionDisplayLabel(opt) {
+            if (!opt) return '— оберіть групу —';
+            const val = String(opt.value || '');
+            const rawText = opt.textContent.replace(/\s+/g, ' ').trim();
+            if (val !== '' && CATALOG_GROUPS[val]) {
+                return formatTriggerLabelFromCatalog(CATALOG_GROUPS[val]) || rawText;
+            }
+            return rawText || '— оберіть групу —';
+        }
+
+        function buildOptionRow(opt, explicitDegree) {
+            const val = String(opt.value || '');
+            const rawText = opt.textContent.replace(/\s+/g, ' ').trim();
+            const isReset = val === '';
+            const cat = !isReset ? CATALOG_GROUPS[val] : null;
+            const optGroupLabel = explicitDegree || (
+                opt.parentElement && opt.parentElement.tagName === 'OPTGROUP'
+                    ? (opt.parentElement.label || '')
+                    : ''
+            );
+
+            let displayText = rawText;
+            let metaText = '';
+            let triggerLabel = rawText;
+            let degree = optGroupLabel;
+
+            if (isReset) {
+                displayText = rawText || 'Всі групи';
+                triggerLabel = displayText;
+            } else if (cat && cat.name) {
+                displayText = cat.name;
+                metaText = buildCatalogMetaText(cat, rawText);
+                triggerLabel = formatTriggerLabelFromCatalog(cat) || rawText;
+                degree = optGroupLabel || cat.degree || 'Без ступеня';
+            } else {
+                const parsed = parseFallbackOptionText(rawText);
+                displayText = parsed.title;
+                metaText = parsed.meta;
+                triggerLabel = rawText;
+            }
+
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'dropdown-item eu-group-picker-item';
-            const val = opt.value;
-            const text = opt.textContent.replace(/\s+/g, ' ').trim();
-            const isReset = val === '';
             if (isReset) btn.classList.add('fw-semibold');
             if (opt.disabled) {
                 btn.disabled = true;
@@ -675,8 +773,16 @@
 
             const titleSpan = document.createElement('span');
             titleSpan.className = 'eu-gp-item-title';
-            titleSpan.textContent = text;
+            titleSpan.textContent = displayText;
             contentWrap.appendChild(titleSpan);
+
+            let metaSpan = null;
+            if (metaText) {
+                metaSpan = document.createElement('span');
+                metaSpan.className = 'eu-gp-item-meta';
+                metaSpan.textContent = metaText;
+                contentWrap.appendChild(metaSpan);
+            }
 
             const checkIcon = document.createElement('i');
             checkIcon.className = 'bi bi-check2 eu-group-picker-check';
@@ -685,21 +791,31 @@
             btn.appendChild(contentWrap);
             btn.appendChild(checkIcon);
 
-            const extraSearch = [
-                text,
-                opt.getAttribute('data-study-form') || '',
-                opt.getAttribute('data-label') || '',
-                opt.parentElement && opt.parentElement.tagName === 'OPTGROUP' ? (opt.parentElement.label || '') : ''
-            ].join(' ').toLowerCase();
+            const searchParts = [rawText];
+            if (cat) {
+                if (cat.name) searchParts.push(cat.name);
+                if (cat.form) searchParts.push(cat.form);
+                if (cat.year) searchParts.push(String(cat.year));
+                if (cat.course) searchParts.push(cat.course + ' курс');
+                if (cat.specialty) searchParts.push(cat.specialty);
+            }
+            if (degree) searchParts.push(degree);
+            if (opt.getAttribute('data-study-form')) searchParts.push(opt.getAttribute('data-study-form'));
+            if (opt.getAttribute('data-label')) searchParts.push(opt.getAttribute('data-label'));
+
+            const searchBase = searchParts.join(' ').toLowerCase();
 
             const itemObj = {
                 el: btn,
                 value: val,
-                label: text,
-                displayText: text,
+                label: triggerLabel,
+                displayText: displayText,
                 textNodeTarget: titleSpan,
-                searchable: extraSearch,
-                compactSearchable: compactStr(extraSearch),
+                metaText: metaText,
+                metaNodeTarget: metaSpan,
+                degree: degree,
+                searchable: searchBase,
+                compactSearchable: compactStr(searchBase),
                 isReset: isReset,
                 isDisabled: opt.disabled
             };
@@ -722,35 +838,98 @@
             items = [];
             headers = [];
 
-            Array.from(select.children).forEach(function (child) {
-                if (child.tagName === 'OPTGROUP') {
-                    const hdr = document.createElement('div');
-                    hdr.className = 'eu-group-picker-degree';
-                    hdr.textContent = child.label || '';
-                    list.appendChild(hdr);
-                    const grpItems = [];
-                    Array.from(child.children).forEach(function (opt) {
-                        if (opt.tagName !== 'OPTION') return;
-                        const itemObj = buildOptionRow(opt);
+            const hasOptgroups = Array.from(select.children).some(function (c) {
+                return c.tagName === 'OPTGROUP';
+            });
+
+            if (hasOptgroups) {
+                Array.from(select.children).forEach(function (child) {
+                    if (child.tagName === 'OPTGROUP') {
+                        const hdr = document.createElement('div');
+                        hdr.className = 'eu-group-picker-degree';
+                        hdr.textContent = child.label || '';
+                        list.appendChild(hdr);
+                        const grpItems = [];
+                        Array.from(child.children).forEach(function (opt) {
+                            if (opt.tagName !== 'OPTION') return;
+                            const itemObj = buildOptionRow(opt, child.label || '');
+                            list.appendChild(itemObj.el);
+                            items.push(itemObj);
+                            grpItems.push(itemObj);
+                        });
+                        headers.push({ el: hdr, items: grpItems });
+                    } else if (child.tagName === 'OPTION') {
+                        if (child.value === '' && child.disabled) return;
+                        const itemObj = buildOptionRow(child, '');
                         list.appendChild(itemObj.el);
                         items.push(itemObj);
-                        grpItems.push(itemObj);
-                    });
-                    headers.push({ el: hdr, items: grpItems });
-                } else if (child.tagName === 'OPTION') {
-                    const itemObj = buildOptionRow(child);
+                    }
+                });
+            } else {
+                const resetRows = [];
+                const groupRows = [];
+                Array.from(select.options).forEach(function (opt) {
+                    if (opt.value === '') {
+                        // Задизейблений плейсхолдер («— оберіть —») не додаємо в список,
+                        // але активний скидач («Всі групи», «— оберіть групу —») залишаємо.
+                        if (!opt.disabled) {
+                            resetRows.push(buildOptionRow(opt, ''));
+                        }
+                        return;
+                    }
+                    groupRows.push(buildOptionRow(opt, ''));
+                });
+
+                resetRows.forEach(function (itemObj) {
                     list.appendChild(itemObj.el);
                     items.push(itemObj);
+                });
+
+                const hasDegrees = groupRows.some(function (it) { return Boolean(it.degree); });
+                if (hasDegrees) {
+                    const buckets = {};
+                    groupRows.forEach(function (it) {
+                        const deg = it.degree || 'Без ступеня';
+                        if (!Object.prototype.hasOwnProperty.call(buckets, deg)) {
+                            buckets[deg] = [];
+                        }
+                        buckets[deg].push(it);
+                    });
+
+                    const sortedDegrees = Object.keys(buckets).sort(function (a, b) {
+                        const oa = Object.prototype.hasOwnProperty.call(DEGREE_ORDER, a) ? DEGREE_ORDER[a] : 999;
+                        const ob = Object.prototype.hasOwnProperty.call(DEGREE_ORDER, b) ? DEGREE_ORDER[b] : 999;
+                        if (oa !== ob) return oa - ob;
+                        return a.localeCompare(b, 'uk');
+                    });
+
+                    sortedDegrees.forEach(function (deg) {
+                        const hdr = document.createElement('div');
+                        hdr.className = 'eu-group-picker-degree';
+                        hdr.textContent = deg;
+                        list.appendChild(hdr);
+                        const grpItems = [];
+                        buckets[deg].forEach(function (itemObj) {
+                            list.appendChild(itemObj.el);
+                            items.push(itemObj);
+                            grpItems.push(itemObj);
+                        });
+                        headers.push({ el: hdr, items: grpItems });
+                    });
+                } else {
+                    groupRows.forEach(function (itemObj) {
+                        list.appendChild(itemObj.el);
+                        items.push(itemObj);
+                    });
                 }
-            });
+            }
 
             list.appendChild(emptyEl);
         }
 
         function syncTriggerFromSelect() {
             const selectedOpt = select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
-            const labelText = selectedOpt ? selectedOpt.textContent.replace(/\s+/g, ' ').trim() : '— оберіть групу —';
-            labelEl.textContent = labelText;
+            labelEl.textContent = getOptionDisplayLabel(selectedOpt);
             const isEmpty = !select.value;
             triggerBtn.classList.toggle('is-placeholder', isEmpty);
             triggerBtn.disabled = select.disabled;
@@ -759,12 +938,36 @@
 
         function applySelectValue(val) {
             const changed = select.value !== String(val || '');
-            select.value = val || '';
+            isSyncingValue = true;
+            try {
+                select.value = val || '';
+            } finally {
+                isSyncingValue = false;
+            }
             triggerBtn.classList.remove('is-invalid');
             syncTriggerFromSelect();
             if (changed) {
                 select.dispatchEvent(new Event('change', { bubbles: true }));
             }
+        }
+
+        // Відслідковуємо програмне присвоєння select.value = '...' (як у модалках переведення)
+        const valueDescriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+        if (valueDescriptor && valueDescriptor.configurable) {
+            Object.defineProperty(select, 'value', {
+                configurable: true,
+                enumerable: true,
+                get: function () {
+                    return valueDescriptor.get.call(this);
+                },
+                set: function (v) {
+                    valueDescriptor.set.call(this, v);
+                    if (!isSyncingValue) {
+                        triggerBtn.classList.remove('is-invalid');
+                        syncTriggerFromSelect();
+                    }
+                }
+            });
         }
 
         api = bindSharedPickerBehavior({
@@ -780,8 +983,13 @@
             getSelectedValue: function () { return select.value; },
             canClear: canClear,
             onSelect: function (val) { applySelectValue(val); },
-            onBeforeOpen: buildMenuList
+            onBeforeOpen: function () {
+                syncTriggerFromSelect();
+                buildMenuList();
+            }
         });
+
+        select.__euGpSync = syncTriggerFromSelect;
 
         // Синхронізація, якщо value або disabled змінили ззовні (JS або form.reset())
         select.addEventListener('change', function () {
@@ -808,13 +1016,19 @@
                 builtSignature = null;
                 syncTriggerFromSelect();
             });
-            mo.observe(select, { attributes: true, attributeFilter: ['disabled'], childList: true });
+            mo.observe(select, {
+                attributes: true,
+                attributeFilter: ['disabled'],
+                childList: true,
+                subtree: true
+            });
         }
 
         syncTriggerFromSelect();
     }
 
     function initAll(scope) {
+        loadCatalog();
         const root = scope || document;
         root.querySelectorAll('.eu-group-picker[data-eu-gp="custom"]').forEach(initCustomPicker);
         root.querySelectorAll(SELECT_SELECTOR).forEach(initSelectPicker);
@@ -825,6 +1039,15 @@
         initSelect: initSelectPicker,
         initCustom: initCustomPicker
     };
+
+    document.addEventListener('show.bs.modal', function (e) {
+        if (e.target) {
+            initAll(e.target);
+            e.target.querySelectorAll(SELECT_SELECTOR).forEach(function (sel) {
+                if (typeof sel.__euGpSync === 'function') sel.__euGpSync();
+            });
+        }
+    });
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function () { initAll(document); });

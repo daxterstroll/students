@@ -1,20 +1,48 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Список студентів{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
 {% block content %}
 
 <style>
-    /* ===== HEADER ===== */
-    .page-title {
-        font-family: 'Lora', serif;
-        font-weight: 700;
-        display: flex;
-        align-items: center;
-        gap: .6rem;
-    }
-    .page-title .bi { color: var(--brass); }
+    /* ===== СЕМАНТИЧНІ СТАТУСНІ ЗМІННІ (СВІТЛА + ТЕМНА ТЕМА) ===== */
+    .students-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2f6041;
+        --st-ok-bd: rgba(79, 122, 82, .36);
 
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #7a5a10;
+        --st-warn-bd: rgba(200, 162, 74, .48);
+
+        --st-miss-bg: var(--stamp-soft);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: var(--stamp-semi);
+
+        --st-na-bg: var(--paper-2);
+        --st-na-fg: #6b6356;
+        --st-na-bd: var(--line);
+    }
+
+    html[data-theme="dark"] .students-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+
+        --st-na-bg: rgba(231, 226, 214, .08);
+        --st-na-fg: #a69e92;
+        --st-na-bd: rgba(231, 226, 214, .16);
+    }
+
+    /* ===== BUTTONS & CONTROLS ===== */
     .btn-add {
         background: linear-gradient(160deg, var(--brass-lt), var(--brass));
         border: none;
@@ -28,8 +56,7 @@
         color: var(--ink);
     }
 
-    /* ===== FORM CONTROLS ===== */
-	    .form-control, .form-select, .input-group-text {
+    .form-control, .form-select, .input-group-text {
         border: 1px solid var(--line);
         background: var(--surface);
         color: var(--ink-text);
@@ -45,6 +72,7 @@
         font-weight: 700;
         letter-spacing: .04em;
     }
+    .filter-panel .form-label { margin-bottom: .15rem; }
 
     /* ===== FILTER INFO BAR ===== */
     .filter-bar {
@@ -52,7 +80,7 @@
         border-left: 3px solid var(--brass);
         background: var(--paper-2);
         color: var(--ink-text);
-        border-radius: 6px;
+        border-radius: 8px;
     }
     .filter-chip {
         background: var(--brass-soft);
@@ -60,12 +88,79 @@
         border: 1px solid var(--brass-semi);
         font-weight: 600;
         font-size: .78rem;
-        padding: .25rem .6rem;
+        padding: .22rem .6rem;
         border-radius: 999px;
     }
-    .filter-chip.group { background: var(--paper); }
+    .filter-chip.group { background: var(--surface); }
 
-    /* ===== TABLE ===== */
+    /* ===== SUMMARY STRIP ===== */
+    .summary-strip {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .65rem .85rem;
+        margin-bottom: 1rem;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .45rem;
+    }
+    .summary-strip__title {
+        font-size: .75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .06em;
+        color: var(--muted);
+        margin-right: .25rem;
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+    }
+    .summary-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .28rem .62rem;
+        border-radius: 999px;
+        font-size: .78rem;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--ink-text);
+        transition: transform .12s ease, border-color .15s ease, background .15s ease;
+    }
+    .summary-pill:hover {
+        transform: translateY(-1px);
+        border-color: var(--brass);
+        color: var(--ink-text);
+    }
+    .summary-pill--alert {
+        background: var(--st-miss-bg);
+        color: var(--st-miss-fg);
+        border-color: var(--st-miss-bd);
+    }
+    .summary-pill--warn {
+        background: var(--st-warn-bg);
+        color: var(--st-warn-fg);
+        border-color: var(--st-warn-bd);
+    }
+    .summary-pill--ok {
+        background: var(--st-ok-bg);
+        color: var(--st-ok-fg);
+        border-color: var(--st-ok-bd);
+    }
+    .summary-pill.is-active {
+        box-shadow: 0 0 0 2px var(--brass);
+        border-color: var(--brass);
+    }
+    .summary-pill__count {
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: 700;
+        font-size: .75rem;
+    }
+
+    /* ===== TABLE (DESKTOP) ===== */
     .table-wrap {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -78,13 +173,14 @@
     .students-table thead th {
         background: var(--ink);
         color: var(--brass-lt);
-        font-size: .76rem;
+        font-size: .74rem;
         font-weight: 700;
-        letter-spacing: .08em;
+        letter-spacing: .07em;
         text-transform: uppercase;
         border: none;
         vertical-align: middle;
-        padding: .75rem .6rem;
+        padding: .72rem .6rem;
+        white-space: nowrap;
     }
     .students-table thead a {
         color: var(--brass-lt);
@@ -92,216 +188,362 @@
         transition: color .15s ease;
     }
     .students-table thead a:hover { color: #fff; }
+    .students-table thead .sort-sep { opacity: .4; margin: 0 .25rem; }
 
-    .students-table td { vertical-align: middle; border-color: var(--line); font-size: .9rem; }
+    .students-table td {
+        vertical-align: middle;
+        border-color: var(--line);
+        font-size: .88rem;
+        padding: .65rem .6rem;
+    }
     .students-table tbody tr { transition: background .15s ease; }
     .students-table tbody tr:nth-of-type(odd) { background: var(--paper-2); }
     .students-table tbody tr:hover { background: var(--brass-soft); }
 
-    /* ===== FILL BARS ===== */
+    .st-name-main {
+        font-weight: 700;
+        color: var(--ink-text);
+        line-height: 1.3;
+    }
+    .st-name-sub {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        margin-top: .22rem;
+        font-size: .76rem;
+        color: var(--muted);
+    }
+    .st-name-sub span {
+        display: inline-flex;
+        align-items: center;
+        gap: .22rem;
+    }
+
+    /* ===== COMPLETENESS BLOCK ===== */
+    .comp-box { min-width: 280px; }
+    .comp-top {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .38rem;
+    }
     .fill-bar {
+        flex: 1 1 auto;
         background: var(--paper-2);
-        height: 13px;
-        width: 100%;
-        border-radius: 10px;
+        height: 15px;
+        border-radius: 999px;
         position: relative;
-        margin-bottom: 5px;
         overflow: hidden;
         border: 1px solid var(--line);
     }
     .fill-bar__inner {
         height: 100%;
         width: 0;
-        border-radius: 10px;
-        transition: width .9s cubic-bezier(.2,.7,.2,1);
+        border-radius: 999px;
+        transition: width .75s cubic-bezier(.2,.7,.2,1);
     }
-    .fill-bar__inner--main       { background: linear-gradient(90deg, var(--brass), var(--brass-lt)); }
-    .fill-bar__inner--grades     { background: var(--ink); }
-    .fill-bar__inner--activities { background: var(--stamp); }
-    .fill-bar__inner--military   { background: var(--muted); }
+    .fill-bar__inner--high { background: linear-gradient(90deg, #4f7a52, #6fa073); }
+    .fill-bar__inner--mid  { background: linear-gradient(90deg, var(--brass), var(--brass-lt)); }
+    .fill-bar__inner--low  { background: linear-gradient(90deg, var(--stamp), #c95849); }
+
     .fill-bar__label {
-        position: absolute; inset: 0;
-        display: flex; align-items: center; justify-content: center;
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         font-family: 'JetBrains Mono', monospace;
         font-size: 10.5px;
+        font-weight: 700;
         color: var(--ink-text);
-        text-shadow: 0 1px 1px rgba(255,255,255,.5);
+        text-shadow: 0 1px 1px rgba(255,255,255,.55);
         z-index: 1;
-        letter-spacing: .03em;
+        letter-spacing: .02em;
     }
-    .students-table tr:hover .fill-bar__inner--main,
-    .fill-bar__inner--main { color: var(--ink); }
-
-    /* У темній темі --ink-text стає світлим (для заголовків на
-       темному фоні сторінки), але тут цей самий колір лягає ще й на
-       золоту частину смужки заповненості (--brass) - світлий текст
-       на золотому майже не видно. Тому в темній темі даємо мітці
-       фіксований білий колір з темним контуром (text-shadow), що
-       читається однаково і на темній, і на золотій ділянці смужки. */
     html[data-theme="dark"] .fill-bar__label {
         color: #fff;
-        text-shadow: 0 0 2px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7);
+        text-shadow: 0 0 3px rgba(0,0,0,.95), 0 1px 2px rgba(0,0,0,.85);
     }
 
-    /* ===== КОМПАКТНІ ЧІПИ ДОДАТКОВОЇ ЗАПОВНЕНОСТІ =====
-       Окрема повнорозмірна смужка на кожну категорію (оцінки,
-       активності, військові, паспорт, документ про освіту) займала б
-       забагато висоти - тому тільки "особисті дані" лишається повною
-       смужкою (fill-bar вище), а решта показується маленькими чіпами
-       в один рядок, що переноситься, не розтягуючи колонку. */
+    .comp-details-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .5rem;
+        border-radius: 999px;
+        font-size: .74rem;
+        font-weight: 700;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink-text);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all .15s ease;
+    }
+    .comp-details-btn:hover {
+        border-color: var(--brass);
+        background: var(--brass-soft);
+    }
+    .comp-details-btn--ok {
+        background: var(--st-ok-bg);
+        color: var(--st-ok-fg);
+        border-color: var(--st-ok-bd);
+    }
+    .comp-details-btn--gap {
+        background: var(--st-miss-bg);
+        color: var(--st-miss-fg);
+        border-color: var(--st-miss-bd);
+    }
+
+    /* Статусні міні-чіпи категорій */
     .fill-chips {
         display: flex;
-        flex-wrap: nowrap;
-        gap: 3px;
-        margin-top: 4px;
+        flex-wrap: wrap;
+        gap: 4px;
     }
-    /* Лише іконка, без цифр чи підпису - повна інформація (X з Y) в
-       title-підказці при наведенні. Так усі значки (фото, оцінки,
-       практика, документи...) гарантовано влазять в один рядок,
-       навіть у вузькій колонці. Колір - не за категорією, а за
-       статусом: червоний, поки не все заповнено, зелений - коли
-       заповнено повністю (для фото - просто є/немає). */
     .fill-chip {
         display: inline-flex;
         align-items: center;
-        justify-content: center;
-        width: 23px;
-        height: 23px;
-        flex-shrink: 0;
-        border-radius: 50%;
-        font-size: 12px;
-        border: 1px solid transparent;
-    }
-    .fill-chip--complete   { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.4); }
-    .fill-chip--incomplete { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
-    html[data-theme="dark"] .fill-chip--complete { background: rgba(79,122,82,.25); color: #bfe3c2; border-color: rgba(79,122,82,.4); }
-
-    /* У мобільній картці title-підказка при наведенні не працює (немає
-       hover на дотику), тому там значки показують короткий підпис
-       прямо в чіпі замість того, щоб ховати все в title. Колонка в
-       таблиці для десктопу лишається вузькою - там тільки іконка. */
-    .student-card .fill-chips { flex-wrap: wrap; }
-    .student-card .fill-chip {
-        width: auto;
-        height: auto;
-        padding: 2px 8px;
-        border-radius: 10px;
+        gap: 3px;
+        padding: 2px 7px;
+        border-radius: 6px;
         font-size: 11px;
-        gap: 4px;
+        font-weight: 600;
+        line-height: 1.35;
+        border: 1px solid transparent;
+        text-decoration: none;
+        white-space: nowrap;
+        transition: transform .12s ease, filter .15s ease;
+    }
+    a.fill-chip:hover {
+        transform: translateY(-1px);
+        filter: brightness(.95);
+    }
+    html[data-theme="dark"] a.fill-chip:hover {
+        filter: brightness(1.12);
+    }
+    .fill-chip--complete   { background: var(--st-ok-bg);   color: var(--st-ok-fg);   border-color: var(--st-ok-bd); }
+    .fill-chip--partial    { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .fill-chip--incomplete { background: var(--st-miss-bg); color: var(--st-miss-fg); border-color: var(--st-miss-bd); }
+    .fill-chip--na         { background: var(--st-na-bg);   color: var(--st-na-fg);   border-color: var(--st-na-bd); }
+
+    .gap-line {
+        margin-top: .36rem;
+        font-size: .75rem;
+        line-height: 1.35;
+        color: var(--st-miss-fg);
+        display: flex;
+        align-items: flex-start;
+        gap: .3rem;
+    }
+    .gap-line--ok {
+        color: var(--st-ok-fg);
     }
 
     /* ===== ACTION CHIPS ===== */
-    .chip-group { display: inline-flex; gap: .3rem; }
+    .chip-group { display: inline-flex; flex-wrap: nowrap; gap: .28rem; }
     .btn-chip {
         display: inline-flex; align-items: center; justify-content: center;
-        width: 34px; height: 34px;
+        width: 32px; height: 32px;
         border-radius: 7px;
         border: 1px solid var(--line);
         background: var(--surface);
         color: var(--ink-text);
-        transition: transform .15s ease, box-shadow .2s ease, background .2s ease, color .2s ease, border-color .2s ease;
-        font-size: .95rem;
+        transition: transform .15s ease, box-shadow .2s ease, background .2s ease, color .2s ease;
+        font-size: .92rem;
     }
     .btn-chip:hover { transform: translateY(-2px); box-shadow: 0 8px 16px -10px rgba(31,42,58,.45); }
     .btn-chip--view       { color: var(--ink-text); }
     .btn-chip--view:hover { background: var(--paper-2); }
-    .btn-chip--edit       { background: var(--brass-soft); border-color: var(--brass-semi); color: #8a6a1a; }
+    .btn-chip--edit       { background: var(--brass-soft); border-color: var(--brass-semi); color: var(--st-warn-fg); }
     .btn-chip--edit:hover { background: var(--brass); color: var(--ink); }
     .btn-chip--grades     { background: var(--ink); border-color: var(--ink); color: var(--brass-lt); }
-    .btn-chip--grades:hover { background: var(--ink-2); }
-    .btn-chip--activities { background: var(--paper-2); border-color: var(--brass-semi); color: #8a6a1a; }
+    .btn-chip--grades:hover { background: var(--ink-2); color: #fff; }
+    .btn-chip--activities { background: var(--paper-2); border-color: var(--brass-semi); color: var(--st-warn-fg); }
     .btn-chip--activities:hover { background: var(--brass-soft); }
-    .btn-chip--generate   { background: rgba(79,122,82,.16); border-color: rgba(79,122,82,.40); color: #3f7556; }
+    .btn-chip--link       { background: rgba(74,110,168,.14); border-color: rgba(74,110,168,.35); color: #2f5f87; }
+    .btn-chip--link:hover { background: #2f5f87; color: #fff; }
+    html[data-theme="dark"] .btn-chip--link { background: rgba(74,110,168,.24); color: #a9c2e8; border-color: rgba(169,194,232,.35); }
+    html[data-theme="dark"] .btn-chip--link:hover { background: #a9c2e8; color: #0e1b2c; }
+    .btn-chip--generate   { background: var(--st-ok-bg); border-color: var(--st-ok-bd); color: var(--st-ok-fg); }
     .btn-chip--generate:hover { background: #3f7556; color: #fff; }
-    html[data-theme="dark"] .btn-chip--generate {
-        background: rgba(79,122,82,.25);
-        border-color: rgba(79,122,82,.45);
-        color: #bfe3c2;
-    }
-    html[data-theme="dark"] .btn-chip--generate:hover {
-        background: #bfe3c2;
-        color: #0e1b2c;
-    }
-    .btn-chip--delete     { background: var(--stamp-soft); border-color: var(--stamp-semi); color: var(--stamp); }
+    html[data-theme="dark"] .btn-chip--generate:hover { background: #bfe3c2; color: #0e1b2c; }
+    .btn-chip--delete     { background: var(--st-miss-bg); border-color: var(--st-miss-bd); color: var(--st-miss-fg); }
     .btn-chip--delete:hover { background: var(--stamp); color: #fff; }
 
     .btn-military {
         border: 1px solid var(--line);
         background: var(--surface);
         color: var(--ink-text);
-        font-size: .8rem;
+        font-size: .78rem;
         font-weight: 600;
         transition: all .2s ease;
     }
-    .btn-military:hover { background: var(--brass-soft); border-color: var(--brass-semi); }
+    .btn-military:hover { background: var(--brass-soft); border-color: var(--brass-semi); color: var(--ink-text); }
 
-    /* ===== MOBILE CARDS ===== */
+    .license-warn-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .22rem;
+        margin-top: .22rem;
+        padding: 1px 6px;
+        border-radius: 5px;
+        font-size: .72rem;
+        font-weight: 600;
+        background: var(--st-warn-bg);
+        color: var(--st-warn-fg);
+        border: 1px solid var(--st-warn-bd);
+    }
+
+    /* ===== MOBILE CARDS (< 992px) ===== */
     .student-card {
         border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 15px;
-        margin-bottom: 15px;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 12px;
         background: var(--surface);
-        box-shadow: 0 2px 6px rgba(31,42,58,.05);
-        transition: box-shadow .2s ease, transform .2s ease;
+        box-shadow: 0 2px 8px rgba(14,27,44,.06);
     }
-    .student-card:hover {
-        box-shadow: 0 10px 24px -16px rgba(31,42,58,.4);
-        transform: translateY(-1px);
-    }
-    .student-card .card-row {
+    .mc-header {
         display: flex;
         justify-content: space-between;
-        align-items: baseline;
-        gap: .75rem;
-        margin-bottom: 8px;
-        padding-bottom: 8px;
-        border-bottom: 1px dashed var(--line);
+        align-items: flex-start;
+        gap: .65rem;
+        margin-bottom: .55rem;
     }
-    .student-card .card-row:last-child { border-bottom: none; margin-bottom: 0; }
-    .student-card .card-label {
+    .mc-name {
         font-weight: 700;
-        color: var(--muted);
-        font-size: 12px;
-        letter-spacing: .06em;
-        text-transform: uppercase;
-        flex-shrink: 0;
-    }
-    .student-card .card-value {
+        font-size: 1rem;
+        line-height: 1.3;
         color: var(--ink-text);
-        font-size: 14px;
-        text-align: right;
-        font-weight: 500;
         min-width: 0;
         overflow-wrap: anywhere;
     }
-    .student-card .progress-bar-container { width: 100%; }
-
-    /* ===== PAGINATION ===== */
-    .pagination .page-link {
-        padding: 0.375rem 0.75rem;
-        font-size: 0.875rem;
-        color: var(--ink-text);
-        border: 1px solid var(--line);
-        background: var(--surface);
-        transition: all .15s ease;
+    .mc-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem .75rem;
+        font-size: .8rem;
+        color: var(--muted);
+        padding-bottom: .65rem;
+        margin-bottom: .65rem;
+        border-bottom: 1px dashed var(--line);
     }
-    .pagination .page-link:hover { background: var(--brass-soft); }
-    .pagination .page-item.active .page-link {
-        background: var(--brass);
-        border-color: var(--brass);
-        color: var(--ink);
-        font-weight: 700;
+    .mc-meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        min-width: 0;
+        overflow-wrap: anywhere;
     }
-    .pagination .page-item.disabled .page-link {
+    .mc-comp-panel {
         background: var(--paper-2);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .65rem .75rem;
+        margin-bottom: .7rem;
+    }
+    .mc-comp-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .4rem;
+    }
+    .mc-comp-label {
+        font-size: .74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .05em;
         color: var(--muted);
     }
+    .mc-chips-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: .5rem;
+    }
+    .mc-chips-grid .fill-chip {
+        justify-content: flex-start;
+        padding: 6px 8px;
+        font-size: 11.5px;
+        border-radius: 8px;
+        min-height: 32px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .mc-gap-box {
+        margin-top: .55rem;
+        padding: .42rem .58rem;
+        border-radius: 8px;
+        font-size: .78rem;
+        line-height: 1.38;
+        background: var(--st-miss-bg);
+        color: var(--st-miss-fg);
+        border: 1px solid var(--st-miss-bd);
+    }
+    .mc-gap-box--ok {
+        background: var(--st-ok-bg);
+        color: var(--st-ok-fg);
+        border-color: var(--st-ok-bd);
+    }
+    .mc-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .5rem;
+        flex-wrap: wrap;
+    }
 
-    /* ===== Нова пагінація: стрілки + випадний список сторінок =====
-       Кольори - через ті самі CSS-змінні, що вже визначені в :root і
-       перевизначені в html[data-theme="dark"] (main.css), тому окремий
-       dark-theme override тут не потрібен - підлаштовується сама. */
+    /* ===== MODAL DETAIL BREAKDOWN ===== */
+    #completenessModal .modal-content {
+        background: var(--surface);
+        color: var(--ink-text);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+    }
+    #completenessModal .modal-header {
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    #completenessModal .modal-footer {
+        background: var(--paper-2);
+        border-top: 1px solid var(--line);
+    }
+    .cm-section-title {
+        font-size: .76rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .07em;
+        margin-bottom: .55rem;
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+    }
+    .cm-section-title--miss { color: var(--st-miss-fg); }
+    .cm-section-title--ok   { color: var(--st-ok-fg); }
+
+    .cm-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: .75rem;
+        padding: .58rem .75rem;
+        border-radius: 9px;
+        border: 1px solid var(--line);
+        margin-bottom: .45rem;
+        font-size: .86rem;
+    }
+    .cm-item--miss { background: var(--st-miss-bg); border-color: var(--st-miss-bd); color: var(--ink-text); }
+    .cm-item--ok   { background: var(--st-ok-bg);   border-color: var(--st-ok-bd);   color: var(--ink-text); }
+    .cm-item--na   { background: var(--st-na-bg);   border-color: var(--st-na-bd);   color: var(--st-na-fg); }
+    .cm-item__body { min-width: 0; flex: 1 1 auto; }
+    .cm-item__title { font-weight: 700; line-height: 1.25; }
+    .cm-item__detail { font-size: .78rem; color: var(--muted); margin-top: .15rem; overflow-wrap: anywhere; }
+    html[data-theme="dark"] .cm-item--miss .cm-item__detail { color: #e8cbc7; }
+    html[data-theme="dark"] .cm-item--ok .cm-item__detail { color: #cbe0cd; }
+
+    /* ===== PAGINATION ===== */
     .pagination-arrow {
         display: inline-flex;
         align-items: center;
@@ -326,48 +568,38 @@
         font-size: .875rem;
     }
 
-    @media (max-width: 991px) {
-        .table-responsive table, .table-responsive thead, .table-responsive tbody,
-        .table-responsive tbody tr, .table-responsive th, .table-responsive td {
-            display: none !important;
-        }
+    @media (max-width: 991.98px) {
+        .table-wrap { display: none !important; }
         .student-cards-container { display: block !important; }
-
-        .admin-section-title {}
-
-        .pagination .page-link { padding: 0.25rem 0.5rem; font-size: 0.8125rem; margin: 0 1px; }
     }
     @media (min-width: 992px) {
         .student-cards-container { display: none !important; }
-        .table-responsive table, .table-responsive thead, .table-responsive tbody,
-        .table-responsive tbody tr, .table-responsive th, .table-responsive td {
-            display: revert !important;
-        }
     }
     @media (max-width: 576px) {
-        .student-card { padding: 12px; margin-bottom: 12px; }
-        .student-card .card-label, .student-card .card-value { font-size: 13px; }
-        .btn-chip { width: 32px; height: 32px; font-size: .88rem; }
-        .dropdown-menu { font-size: 13px; }
+        .student-card { padding: 12px; }
+        .mc-chips-grid { grid-template-columns: 1fr 1fr; gap: 5px; }
+        .mc-chips-grid .fill-chip { font-size: 11px; padding: 5px 6px; }
         .input-group { flex-wrap: nowrap; }
-        .input-group-text { padding: 0.35rem 0.6rem; font-size: 0.9rem; }
-        .form-control, .form-select { padding: 0.42rem 0.65rem; font-size: 1rem; }
+        .form-control, .form-select { font-size: 1rem; }
     }
     .dropdown-menu { z-index: 1060 !important; }
 </style>
 
+<div class="container py-4 students-page">
 
-<div class="container py-4">
+    {% set can_edit_stu = has_perm('manage_students') %}
+    {% set can_mil = has_perm('manage_students') or has_perm('manage_military_reports') %}
+    {% set can_view_card = has_perm('manage_students') or has_perm('manage_military_reports') or has_perm('study_periods') or has_perm('group_export') or has_perm('manage_education_documents') or has_perm('manage_passport_documents') or has_perm('manage_orders') or has_perm('edit_grades') %}
 
-    {{ ui.page_header('bi-person-vcard', 'Список студентів', 'Реєстр студентів, оцінки, документи та військовий облік') }}
+    {{ ui.page_header('bi-person-vcard', 'Список студентів', 'Реєстр студентів, заповненість профілів, документи та військовий облік') }}
 
-{% if has_perm('manage_students') %}
-<div class="d-flex justify-content-end mb-3">
-    <a href="{{ url_for('students.add_student') }}" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-circle me-1"></i> Додати студента
-    </a>
-</div>
-{% endif %}
+    {% if has_perm('manage_students') %}
+    <div class="d-flex justify-content-end mb-3">
+        <a href="{{ url_for('students.add_student') }}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-circle me-1"></i> Додати студента
+        </a>
+    </div>
+    {% endif %}
 
     <!-- Фільтри -->
     {% set active_extra_filters = [] %}
@@ -384,17 +616,19 @@
         <div class="card-body py-3">
             <form method="GET" id="filterForm" class="row g-2 align-items-end">
                 <input type="hidden" name="group_id" id="groupIdInput" value="{{ group_id or '' }}">
+                <input type="hidden" name="sort_by" id="sortByInput" value="{{ sort_by }}">
+                <input type="hidden" name="sort_order" id="sortOrderInput" value="{{ sort_order }}">
 
-                <div class="col-12 {% if session.get('is_admin') %}col-lg-5{% else %}col-lg-9{% endif %}">
-                    <label class="form-label small text-muted mb-1">Пошук по ПІБ</label>
+                <div class="col-12 {% if session.get('is_admin') %}col-lg-4{% else %}col-lg-6{% endif %}">
+                    <label class="form-label small text-muted mb-1">Пошук (ПІБ або телефон)</label>
                     <div class="input-group input-group-sm">
-                        <input type="text" name="search" placeholder="Прізвище, ім'я…" class="form-control" value="{{ search }}">
-                        <button type="submit" class="btn btn-add"><i class="bi bi-search"></i></button>
+                        <input type="text" name="search" placeholder="Прізвище, ім'я або +380…" class="form-control" value="{{ search }}">
+                        <button type="submit" class="btn btn-add" aria-label="Шукати"><i class="bi bi-search"></i></button>
                     </div>
                 </div>
 
                 {% if session.get('is_admin') %}
-                <div class="col-12 col-lg-4">
+                <div class="col-12 col-md-6 col-lg-3">
                     <label class="form-label small text-muted mb-1">Група</label>
                     <div class="dropdown eu-group-picker" data-eu-gp="custom" data-target-input="groupIdInput">
                         <button type="button" class="form-select form-select-sm text-start eu-group-picker-btn" id="groupPickerBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
@@ -438,7 +672,17 @@
                 </div>
                 {% endif %}
 
-                <div class="col-12 col-lg-3">
+                <div class="col-12 col-md-6 {% if session.get('is_admin') %}col-lg-3{% else %}col-lg-4{% endif %}">
+                    <label class="form-label small text-muted mb-1">Чого не вистачає</label>
+                    <select name="missing" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">Усі студенти</option>
+                        {% for mkey, mlabel in missing_options %}
+                        <option value="{{ mkey }}" {% if missing == mkey %}selected{% endif %}>{{ mlabel }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-12 col-lg-2">
                     <button type="button" class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-center gap-2" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="{{ 'true' if extra_filters_open else 'false' }}" aria-controls="advancedFilters">
                         <i class="bi bi-sliders"></i> Інші фільтри
                         {% if active_extra_filters %}<span class="badge rounded-pill text-bg-primary">{{ active_extra_filters|length }}</span>{% endif %}
@@ -447,7 +691,7 @@
 
                 <div class="collapse col-12{% if extra_filters_open %} show{% endif %}" id="advancedFilters">
                     <div class="row g-2 pt-3 mt-1 border-top">
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">Ступінь</label>
                             <select name="degree_level" class="form-select form-select-sm" onchange="this.form.submit()">
                                 <option value="">Всі</option>
@@ -457,7 +701,7 @@
                             </select>
                         </div>
 
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">Форма</label>
                             <select name="study_form" class="form-select form-select-sm" onchange="this.form.submit()">
                                 <option value="">Всі</option>
@@ -467,7 +711,7 @@
                             </select>
                         </div>
 
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">Курс</label>
                             <select name="course" class="form-select form-select-sm" onchange="this.form.submit()">
                                 <option value="">Всі</option>
@@ -477,18 +721,18 @@
                             </select>
                         </div>
 
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">Ліцензія</label>
-							<select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
-								<option value="">Всі</option>
-								{% for l in licenses_available %}
-								<option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
-								{% endfor %}
-								<option value="none" {% if license_id == 'none' %}selected{% endif %}>— без ліцензії —</option>
-							</select>
+                            <select name="license_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for l in licenses_available %}
+                                <option value="{{ l.id }}" {% if license_id == l.id %}selected{% endif %}>{{ l.short_name_ua }}</option>
+                                {% endfor %}
+                                <option value="none" {% if license_id == 'none' %}selected{% endif %}>— без ліцензії —</option>
+                            </select>
                         </div>
 
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">Програма</label>
                             <select name="reduced" class="form-select form-select-sm" onchange="this.form.submit()">
                                 <option value="">Всі студенти</option>
@@ -497,18 +741,32 @@
                             </select>
                         </div>
 
-                        <div class="col-6 col-lg-2">
+                        <div class="col-6 col-md-4 col-lg-2">
                             <label class="form-label small text-muted mb-1">На сторінці</label>
                             <select name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
                                 {% for option in [10, 20, 50, 100] %}
-                                    <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
+                                <option value="{{ option }}" {% if per_page == option %}selected{% endif %}>{{ option }}</option>
                                 {% endfor %}
                             </select>
                         </div>
 
-                        <div class="col-12 d-flex align-items-center gap-2 flex-wrap mt-1">
-                            <span class="small text-muted">Показати також:</span>
+                        <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label small text-muted mb-1">Сортування</label>
+                            <select id="sortComboSelect" class="form-select form-select-sm">
+                                {% set sort_val = sort_by ~ ':' ~ sort_order %}
+                                <option value="id:desc" {% if sort_val == 'id:desc' %}selected{% endif %}>Нові спочатку (ID ↓)</option>
+                                <option value="id:asc" {% if sort_val == 'id:asc' %}selected{% endif %}>Старі спочатку (ID ↑)</option>
+                                <option value="completeness:asc" {% if sort_val == 'completeness:asc' %}selected{% endif %}>Заповненість: спочатку з прогалинами ↑</option>
+                                <option value="completeness:desc" {% if sort_val == 'completeness:desc' %}selected{% endif %}>Заповненість: спочатку заповнені ↓</option>
+                                <option value="last_name_UA:asc" {% if sort_val == 'last_name_UA:asc' %}selected{% endif %}>Прізвище (А → Я)</option>
+                                <option value="last_name_UA:desc" {% if sort_val == 'last_name_UA:desc' %}selected{% endif %}>Прізвище (Я → А)</option>
+                                <option value="group_id:asc" {% if sort_val == 'group_id:asc' %}selected{% endif %}>Група ↑</option>
+                                <option value="birth_date:asc" {% if sort_val == 'birth_date:asc' %}selected{% endif %}>Дата народження ↑</option>
+                            </select>
+                        </div>
 
+                        <div class="col-12 col-lg-8 d-flex align-items-end gap-2 flex-wrap">
+                            <span class="small text-muted me-1">Показати також:</span>
                             <input type="checkbox" class="btn-check" id="includeFrozenCheck" name="include_frozen" value="1" autocomplete="off" {% if include_frozen %}checked{% endif %} onchange="this.form.submit()">
                             <label class="btn btn-sm btn-outline-secondary" for="includeFrozenCheck"><i class="bi bi-snow"></i> Заморожені</label>
 
@@ -517,15 +775,50 @@
                         </div>
                     </div>
                 </div>
-
-                <input type="hidden" name="sort_by" value="{{ sort_by }}">
-                <input type="hidden" name="sort_order" value="{{ sort_order }}">
             </form>
         </div>
     </div>
 
-    <!-- Информация о фильтрах -->
-    {% if search or group_id or degree_level or study_form or course or license_id or reduced or include_frozen or include_archived %}
+    <!-- Зведена стрічка прогалин по вибірці / сторінці -->
+    {% if summary_total > 0 %}
+    {% set summary_pills = [
+        ('any', 'З прогалинами', 'bi-exclamation-circle', 'summary-pill--alert'),
+        ('personal', 'Неповні особ. дані', 'bi-person-lines-fill', 'summary-pill--warn'),
+        ('photo', 'Без фото', 'bi-camera', 'summary-pill--alert'),
+        ('passport', 'Без паспорта / неповн.', 'bi-person-vcard', 'summary-pill--alert'),
+        ('edu_doc', 'Без док. про освіту', 'bi-mortarboard', 'summary-pill--alert'),
+        ('military', 'Військові дані', 'bi-shield-exclamation', 'summary-pill--warn'),
+        ('military_pdf', 'Без PDF Резерв+', 'bi-file-earmark-pdf', 'summary-pill--warn'),
+        ('grades', 'Неповні оцінки', 'bi-journal-check', 'summary-pill--warn'),
+        ('license', 'Без ліцензії', 'bi-award', 'summary-pill--warn'),
+    ] %}
+    <div class="summary-strip" aria-label="Швидка аналітика прогалин">
+        <span class="summary-strip__title">
+            <i class="bi bi-clipboard2-pulse"></i>
+            {% if summary_scope == 'selection' %}У вибірці ({{ summary_total }}):{% else %}На сторінці ({{ summary_total }}):{% endif %}
+        </span>
+        {% if summary_counts.get('any', 0) == 0 %}
+            <span class="summary-pill summary-pill--ok"><i class="bi bi-check-circle-fill"></i> Усі профілі заповнені повністю</span>
+        {% else %}
+            {% for key, lbl, icon, cls in summary_pills %}
+                {% set cnt = summary_counts.get(key, 0) %}
+                {% if cnt > 0 %}
+                    {% set next_missing = '' if missing == key else key %}
+                    <a href="{{ url_for('students.student_list', search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=next_missing, include_frozen=include_frozen, include_archived=include_archived, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+                       class="summary-pill {{ cls }} {% if missing == key %}is-active{% endif %}"
+                       title="{{ 'Скинути фільтр' if missing == key else ('Показати лише: ' ~ lbl) }}">
+                        <i class="bi {{ icon }}"></i>
+                        <span>{{ lbl }}</span>
+                        <span class="summary-pill__count">{{ cnt }}</span>
+                    </a>
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Активні фільтри -->
+    {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
     <div class="filter-bar mb-3 py-2 px-3" role="alert">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -539,18 +832,27 @@
                         {% endif %}
                     {% endfor %}
                 {% endif %}
+                {% if missing %}
+                    {% for mkey, mlabel in missing_options %}
+                        {% if mkey == missing %}
+                            <span class="filter-chip" style="background: var(--st-miss-bg); border-color: var(--st-miss-bd); color: var(--st-miss-fg);">
+                                <i class="bi bi-exclamation-triangle me-1"></i>{{ mlabel }}
+                            </span>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
                 {% if degree_level %}<span class="filter-chip">Ступінь: {{ degree_level }}</span>{% endif %}
                 {% if study_form %}<span class="filter-chip">Форма: {{ study_form }}</span>{% endif %}
                 {% if course %}<span class="filter-chip">Курс: {{ course }}</span>{% endif %}
-				{% if license_id == 'none' %}
-					<span class="filter-chip" style="background: var(--stamp-soft); border-color: var(--stamp-semi);">
-						<i class="bi bi-exclamation-triangle"></i> Без ліцензії (потребує заповнення)
-					</span>
-				{% elif license_id %}
-					{% for l in licenses_available %}
-						{% if l.id == license_id %}<span class="filter-chip">Ліцензія: {{ l.short_name_ua }}</span>{% endif %}
-					{% endfor %}
-				{% endif %}
+                {% if license_id == 'none' %}
+                    <span class="filter-chip" style="background: var(--st-miss-bg); border-color: var(--st-miss-bd); color: var(--st-miss-fg);">
+                        <i class="bi bi-exclamation-triangle"></i> Без ліцензії
+                    </span>
+                {% elif license_id %}
+                    {% for l in licenses_available %}
+                        {% if l.id == license_id %}<span class="filter-chip">Ліцензія: {{ l.short_name_ua }}</span>{% endif %}
+                    {% endfor %}
+                {% endif %}
                 {% if reduced == '1' %}<span class="filter-chip">Лише скорочена програма</span>{% endif %}
                 {% if reduced == '0' %}<span class="filter-chip">Лише повна програма</span>{% endif %}
                 {% if include_frozen %}<span class="filter-chip"><i class="bi bi-snow"></i> + Заморожені</span>{% endif %}
@@ -563,297 +865,456 @@
     </div>
     {% endif %}
 
-    <!-- Таблица для десктопа -->
-    <div class="table-responsive table-wrap">
-        <table class="table table-bordered students-table mb-0">
-            {% macro sort_link(column, label) -%}
-                {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
-                <a href="{{ url_for('students.student_list', search=search, page=page, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
-                    {{ label }}
-                    {%- if sort_by == column %}
-                        {% if sort_order == 'asc' %} ▲
-                        {% else %} ▼
-                        {% endif %}
-                    {% endif %}
-                </a>
-            {%- endmacro %}
+    {% macro sort_link(column, label) -%}
+        {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
+        <a href="{{ url_for('students.student_list', search=search, page=1, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
+            {{ label }}
+            {%- if sort_by == column %}
+                {% if sort_order == 'asc' %} ▲{% else %} ▼{% endif %}
+            {% endif %}
+        </a>
+    {%- endmacro %}
 
+    {% macro chip_class(status) -%}
+        {%- if status == 'complete' -%}fill-chip--complete
+        {%- elif status == 'partial' -%}fill-chip--partial
+        {%- elif status == 'na' -%}fill-chip--na
+        {%- else -%}fill-chip--incomplete{%- endif -%}
+    {%- endmacro %}
+
+    <!-- Таблиця для десктопа -->
+    <div class="table-wrap">
+        <table class="table table-bordered students-table mb-0">
             <thead>
                 <tr>
                     {% if session.get('is_admin') %}
-                    <th class="text-center">ID</th>
+                    <th class="text-center">{{ sort_link('id', 'ID') }}</th>
                     {% endif %}
-                    <th class="text-center">{{ sort_link('last_name_UA', 'Прізвище') }}</th>
-                    <th class="text-center">{{ sort_link('first_name_UA', 'Імʼя') }}</th>
-                    <th class="text-center">{{ sort_link('middle_name_UA', 'По батькові') }}</th>
-                    <th class="text-center">{{ sort_link('birth_date', 'Дата народження') }}</th>
-                    <th class="text-center">{{ sort_link('group_id', 'Група') }}</th>
-                    <th class="text-center">Заповненість</th>
-                    <th class="text-center">Військові дані</th>
+                    <th>{{ sort_link('last_name_UA', 'Прізвище') }}<span class="sort-sep">·</span>{{ sort_link('first_name_UA', 'Імʼя') }}</th>
+                    <th class="text-center">{{ sort_link('birth_date', 'Дата нар.') }}</th>
+                    <th>{{ sort_link('group_id', 'Група') }}</th>
+                    <th>{{ sort_link('completeness', 'Заповненість та прогалини') }}</th>
+                    <th class="text-center">Військові</th>
                     <th class="text-center">Дії</th>
                 </tr>
             </thead>
             <tbody>
                 {% for student in students %}
+                {% set bar_cls = 'fill-bar__inner--high' if student.overall_pct >= 85 else ('fill-bar__inner--mid' if student.overall_pct >= 55 else 'fill-bar__inner--low') %}
                 <tr>
                     {% if session.get('is_admin') %}
                     <td class="text-center font-monospace">{{ student.id }}</td>
                     {% endif %}
-                    <td>{{ student.last_name_UA }}</td>
-                    <td>{{ student.first_name_UA }} {{ ui.reduced_program_badge(student) }} {{ ui.student_status_badge(student) }}</td>
-                    <td>{{ student.middle_name_UA }}</td>
-                    <td>{{ student.birth_date }}</td>
-					<td>
-						{% if student.group_name %}
-							{{ student.group_name }}
-							{% if student.is_parallel %}
-								<span class="badge bg-info-subtle text-info-emphasis ms-1"
-									  title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
-									<i class="bi bi-people"></i> +{{ student.extra_groups_count }}
-								</span>
-							{% endif %}
-						{% elif student.all_groups_list %}
-							{# s.group_id=NULL, але активні enrollments є (напр. заморожений
-							   з однієї групи, але паралельно вчиться в іншій) #}
-							{{ student.all_groups_list | join(', ') }}
-							{% if student.is_parallel %}
-								<span class="badge bg-info-subtle text-info-emphasis ms-1"
-									  title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
-									<i class="bi bi-people"></i> +{{ student.extra_groups_count }}
-								</span>
-							{% endif %}
-						{% elif student.status == 'frozen' and student.frozen_previous_group_name %}
-							<span class="text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
-						{% else %}
-							<span class="text-muted">-</span>
-						{% endif %}
-					</td>
-                    <td style="min-width:160px;">
-                        <div class="progress-bar-container">
-                            <div class="fill-bar">
-                                <div class="fill-bar__inner fill-bar__inner--main" data-width="{{ (student.filled_fields / student.total_fields) * 100 }}%"></div>
-                                <div class="fill-bar__label">{{ student.filled_fields }} з {{ student.total_fields }}</div>
-                            </div>
-                            <div class="fill-chips">
-                            {% if student.has_photo %}
-                            <span class="fill-chip fill-chip--complete" title="Фото завантажено"><i class="bi bi-camera-fill"></i></span>
+                    <td>
+                        <div class="st-name-main">
+                            {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
+                            {{ ui.reduced_program_badge(student) }}
+                            {{ ui.student_status_badge(student) }}
+                        </div>
+                        <div class="st-name-sub">
+                            {% if student.phone %}
+                            <span><i class="bi bi-telephone"></i> {{ student.phone }}</span>
                             {% else %}
-                            <span class="fill-chip fill-chip--incomplete" title="Фото не завантажено"><i class="bi bi-camera"></i></span>
+                            <span style="color: var(--st-miss-fg);"><i class="bi bi-telephone-x"></i> без тел.</span>
                             {% endif %}
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.grades_total and student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}" title="Оцінки: {{ student.grades_filled }} з {{ student.grades_total }}"><i class="bi bi-journal-check"></i></span>
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.activities_total_fields and student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}" title="Практика/курсові/атестація: {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}"><i class="bi bi-briefcase"></i></span>
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}" title="Військові дані: {{ 'відсутні' if not student.has_military else (student.military_filled_fields ~ ' з ' ~ student.military_total_fields) }}"><i class="bi bi-shield"></i></span>
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_passport and student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}" title="Паспортні дані: {{ 'відсутні' if not student.has_passport else (student.passport_filled_fields ~ ' з ' ~ student.passport_total_fields) }}"><i class="bi bi-person-vcard"></i></span>
-                            <span class="fill-chip {{ 'fill-chip--complete' if student.has_education_doc and student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}" title="Документ про освіту: {{ 'відсутній' if not student.has_education_doc else (student.edu_doc_filled_fields ~ ' з ' ~ student.edu_doc_total_fields) }}"><i class="bi bi-mortarboard"></i></span>
-                            </div>
+                            {% if student.edebo_code %}
+                            <span><i class="bi bi-upc"></i> {{ student.edebo_code }}</span>
+                            {% else %}
+                            <span style="color: var(--st-miss-fg);"><i class="bi bi-upc"></i> без ЄДЕБО</span>
+                            {% endif %}
                         </div>
                     </td>
-					<td class="text-center">
-						{% if has_perm('manage_students') or has_perm('manage_military_reports') %}
-							{% if student.has_military %}
-								<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">
-									<i class="bi bi-pencil"></i> Редагувати
-								</a>
-							{% else %}
-								<a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-military">
-									<i class="bi bi-plus-circle-dotted"></i> Додати
-								</a>
-							{% endif %}
-						{% else %}
-							{#- показуємо стан без кнопки редагування, щоб колонка не була порожньою -#}
-							{% if student.has_military %}
-								<span class="text-success" title="Військові дані заповнено">
-									<i class="bi bi-shield-check"></i>
-								</span>
-							{% else %}
-								<span class="text-muted">—</span>
-							{% endif %}
-						{% endif %}
-					</td>
-					<td>
-						<div class="chip-group">
-							{# Перегляд — доступний усім залогіненим #}
-							<a href="{{ url_for('students.student_details', student_id=student.id) }}"
-							   class="btn-chip btn-chip--view" title="Переглянути деталі студента">
-								<i class="bi bi-eye"></i>
-							</a>
-							{% if has_perm('manage_students') %}
-							<a href="{{ url_for('students.edit_student', student_id=student.id) }}"
-							   class="btn-chip btn-chip--edit" title="Редагувати дані студента">
-								<i class="bi bi-pencil-square"></i>
-							</a>
-							<a href="{{ url_for('students.edit_grades', student_id=student.id) }}"
-							   class="btn-chip btn-chip--grades" title="Редагувати оцінки">
-								<i class="bi bi-card-checklist"></i>
-							</a>
-							<a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"
-							   class="btn-chip btn-chip--activities" title="Редагувати оцінки за Прак. Атес. Курс.">
-								<i class="bi bi-star"></i>
-							</a>
-							{% endif %}
-							{% if has_perm('group_export') %}
-							<a href="{{ url_for('students.generate', student_id=student.id) }}"
-							   class="btn-chip btn-chip--generate" title="Згенерувати документ">
-								<i class="bi bi-file-earmark-word"></i>
-							</a>
-							{% endif %}
-							{% if has_perm('manage_students') %}
-							<form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}" class="d-inline"
-								  onsubmit="return confirm({{ ('Ви впевнені, що хочете видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
-								<button type="submit" class="btn-chip btn-chip--delete" title="Видалити студента">
-									<i class="bi bi-trash3"></i>
-								</button>
-							</form>
-							{% endif %}
-						</div>
-					</td>
+                    <td class="text-center text-nowrap">{{ student.birth_date or '—' }}</td>
+                    <td>
+                        {% if student.group_name %}
+                            {{ student.group_name }}
+                            {% if student.is_parallel %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                                      title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+                                    <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+                                </span>
+                            {% endif %}
+                        {% elif student.all_groups_list %}
+                            {{ student.all_groups_list | join(', ') }}
+                            {% if student.is_parallel %}
+                                <span class="badge bg-info-subtle text-info-emphasis ms-1"
+                                      title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
+                                    <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
+                                </span>
+                            {% endif %}
+                        {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
+                            <span class="text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endif %}
+                        {% if student.group_id and not student.has_license %}
+                        <div><span class="license-warn-badge"><i class="bi bi-exclamation-triangle"></i> без ліцензії</span></div>
+                        {% endif %}
+                    </td>
+                    <td class="comp-box">
+                        <div class="comp-top">
+                            <div class="fill-bar" title="Особисті дані: {{ student.filled_fields }} з {{ student.total_fields }}">
+                                <div class="fill-bar__inner {{ bar_cls }}" data-width="{{ student.overall_pct }}%"></div>
+                                <div class="fill-bar__label">{{ student.overall_pct }}% · особ. {{ student.filled_fields }}/{{ student.total_fields }}</div>
+                            </div>
+                            <button type="button"
+                                    class="comp-details-btn {{ 'comp-details-btn--ok' if student.missing_count == 0 else 'comp-details-btn--gap' }} js-open-completeness"
+                                    data-sid="{{ student.id }}"
+                                    title="Показати, що заповнено і чого не вистачає">
+                                {% if student.missing_count == 0 %}
+                                    <i class="bi bi-check2-circle"></i> Повний
+                                {% else %}
+                                    <i class="bi bi-list-check"></i> Прогалин: {{ student.missing_count }}
+                                {% endif %}
+                            </button>
+                        </div>
+
+                        <div class="fill-chips">
+                            {# Фото #}
+                            {% set photo_tag = 'a' if can_view_card else 'span' %}
+                            <{{ photo_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}{{ '#photoUploadModal' if can_edit_stu else '' }}"{% endif %}
+                               class="fill-chip {{ 'fill-chip--complete' if student.has_photo else 'fill-chip--incomplete' }}"
+                               title="{{ 'Фото 3×4 завантажено' if student.has_photo else 'Фото 3×4 не завантажено (натисніть, щоб додати)' }}">
+                                <i class="bi {{ 'bi-camera-fill' if student.has_photo else 'bi-camera' }}"></i>
+                                <span>Фото {{ '✓' if student.has_photo else '✗' }}</span>
+                            </{{ photo_tag }}>
+
+                            {# Паспорт #}
+                            <{{ photo_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}#passportCollapse"{% endif %}
+                               class="fill-chip {{ chip_class(student.passport_status) }}"
+                               title="Паспорт: {{ 'відсутній' if not student.has_passport else (student.passport_filled_fields ~ ' з ' ~ student.passport_total_fields) }}">
+                                <i class="bi bi-person-vcard"></i>
+                                <span>Паспорт {{ (student.passport_filled_fields ~ '/' ~ student.passport_total_fields) if student.has_passport else '✗' }}</span>
+                            </{{ photo_tag }}>
+
+                            {# Освіта #}
+                            <{{ photo_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}#educationDocsCollapse"{% endif %}
+                               class="fill-chip {{ chip_class(student.edu_doc_status) }}"
+                               title="Документ про освіту: {{ 'відсутній' if not student.has_education_doc else (student.edu_doc_filled_fields ~ ' з ' ~ student.edu_doc_total_fields) }}">
+                                <i class="bi bi-mortarboard"></i>
+                                <span>Освіта {{ (student.edu_doc_filled_fields ~ '/' ~ student.edu_doc_total_fields) if student.has_education_doc else '✗' }}</span>
+                            </{{ photo_tag }}>
+
+                            {# Військові #}
+                            {% set mil_tag = 'a' if can_mil else 'span' %}
+                            {% set mil_href = (url_for('students.military_data', student_id=student.id) if student.has_military else url_for('students.add_military', student_id=student.id)) if can_mil else '' %}
+                            <{{ mil_tag }} {% if can_mil %}href="{{ mil_href }}"{% endif %}
+                               class="fill-chip {{ chip_class(student.military_status) }}"
+                               title="{% if student.military_status == 'na' %}Військовий облік не вимагається (жін.){% elif not student.has_military %}Військові дані відсутні{% else %}Військові дані: {{ student.military_filled_fields }} з {{ student.military_total_fields }}{{ ' · PDF є' if student.military_has_pdf else ' · без PDF' }}{% endif %}">
+                                <i class="bi bi-shield"></i>
+                                <span>
+                                    {% if student.military_status == 'na' %}Н/Д
+                                    {% elif not student.has_military %}Військ. ✗
+                                    {% else %}Військ. {{ student.military_filled_fields }}/{{ student.military_total_fields }}{% if student.military_has_pdf %} PDF{% endif %}{% endif %}
+                                </span>
+                            </{{ mil_tag }}>
+
+                            {# Оцінки #}
+                            {% set grd_tag = 'a' if (can_edit_stu and student.grades_total > 0) else 'span' %}
+                            <{{ grd_tag }} {% if can_edit_stu and student.grades_total > 0 %}href="{{ url_for('students.edit_grades', student_id=student.id) }}"{% endif %}
+                               class="fill-chip {{ chip_class(student.grades_status) }}"
+                               title="{% if student.grades_status == 'na' %}Предмети в групі відсутні{% else %}Оцінки: {{ student.grades_filled }} з {{ student.grades_total }}{% endif %}">
+                                <i class="bi bi-journal-check"></i>
+                                <span>{% if student.grades_status == 'na' %}Оцінки Н/Д{% else %}Оцінки {{ student.grades_filled }}/{{ student.grades_total }}{% endif %}</span>
+                            </{{ grd_tag }}>
+
+                            {# Активності #}
+                            {% set act_tag = 'a' if (can_edit_stu and student.activities_total_fields > 0) else 'span' %}
+                            <{{ act_tag }} {% if can_edit_stu and student.activities_total_fields > 0 %}href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"{% endif %}
+                               class="fill-chip {{ chip_class(student.activities_status) }}"
+                               title="{% if student.activities_status == 'na' %}Практики/курсові/атестації відсутні{% else %}Практика/атестація: {{ student.activities_filled_fields }} з {{ student.activities_total_fields }}{% endif %}">
+                                <i class="bi bi-briefcase"></i>
+                                <span>{% if student.activities_status == 'na' %}Прак. Н/Д{% else %}Прак. {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}{% endif %}</span>
+                            </{{ act_tag }}>
+                        </div>
+
+                        {% if student.short_gaps %}
+                        <div class="gap-line">
+                            <i class="bi bi-exclamation-circle-fill mt-1 flex-shrink-0"></i>
+                            <span><strong>Бракує:</strong> {{ student.short_gaps[:3] | join(', ') }}{% if student.short_gaps|length > 3 %} <em>(+ще {{ student.short_gaps|length - 3 }})</em>{% endif %}</span>
+                        </div>
+                        {% else %}
+                        <div class="gap-line gap-line--ok">
+                            <i class="bi bi-check-circle-fill mt-1 flex-shrink-0"></i>
+                            <span>Усі обовʼязкові дані заповнено</span>
+                        </div>
+                        {% endif %}
+                    </td>
+
+                    <td class="text-center text-nowrap">
+                        {% if can_mil %}
+                            {% if student.has_military %}
+                                <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">
+                                    <i class="bi bi-pencil"></i> Редагувати
+                                </a>
+                            {% else %}
+                                <a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-military">
+                                    <i class="bi bi-plus-circle-dotted"></i> Додати
+                                </a>
+                            {% endif %}
+                        {% else %}
+                            {% if student.has_military %}
+                                <span class="text-success" title="Військові дані заповнено"><i class="bi bi-shield-check"></i></span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        <div class="chip-group">
+                            <a href="{{ url_for('students.student_details', student_id=student.id) }}"
+                               class="btn-chip btn-chip--view" title="Переглянути картку студента">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            {% if can_edit_stu %}
+                            <a href="{{ url_for('students.edit_student', student_id=student.id) }}"
+                               class="btn-chip btn-chip--edit" title="Редагувати дані студента">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                            <a href="{{ url_for('students.edit_grades', student_id=student.id) }}"
+                               class="btn-chip btn-chip--grades" title="Редагувати оцінки">
+                                <i class="bi bi-card-checklist"></i>
+                            </a>
+                            <a href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"
+                               class="btn-chip btn-chip--activities" title="Редагувати оцінки за Прак. Атес. Курс.">
+                                <i class="bi bi-star"></i>
+                            </a>
+                            <a href="{{ url_for('students.generate_update_link', student_id=student.id) }}"
+                               class="btn-chip btn-chip--link" title="Створити посилання для оновлення даних студентом">
+                                <i class="bi bi-link-45deg"></i>
+                            </a>
+                            {% endif %}
+                            {% if has_perm('group_export') %}
+                            <a href="{{ url_for('students.generate', student_id=student.id) }}"
+                               class="btn-chip btn-chip--generate" title="Згенерувати документ">
+                                <i class="bi bi-file-earmark-word"></i>
+                            </a>
+                            {% endif %}
+                            {% if can_edit_stu %}
+                            <form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}" class="d-inline"
+                                  onsubmit="return confirm({{ ('Ви впевнені, що хочете видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn-chip btn-chip--delete" title="Видалити студента">
+                                    <i class="bi bi-trash3"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="{{ 7 if session.get('is_admin') else 6 }}" class="text-center py-5 text-muted">
+                        <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
+                        <div class="fw-semibold">Студентів за обраними параметрами не знайдено</div>
+                        {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
+                        <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary mt-2">Скинути фільтри</a>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <!-- Карточки для мобильной и планшетной версии -->
+    <!-- Картки для мобільної та планшетної версії -->
     <div class="student-cards-container mt-3">
         {% for student in students %}
+        {% set bar_cls = 'fill-bar__inner--high' if student.overall_pct >= 85 else ('fill-bar__inner--mid' if student.overall_pct >= 55 else 'fill-bar__inner--low') %}
         <div class="student-card">
-            {% if session.get('is_admin') %}
-            <div class="card-row">
-                <span class="card-label">ID</span>
-                <span class="card-value font-monospace">{{ student.id }}</span>
-            </div>
-            {% endif %}
-            <div class="card-row">
-                <span class="card-label">ПІБ</span>
-                <span class="card-value">{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }} {{ ui.reduced_program_badge(student) }} {{ ui.student_status_badge(student) }}</span>
-            </div>
-            <div class="card-row">
-                <span class="card-label">Дата народження</span>
-                <span class="card-value">{{ student.birth_date }}</span>
-            </div>
-            {% if student.group_name %}
-            <div class="card-row">
-                <span class="card-label">Група</span>
-                <span class="card-value">
-                    {{ student.group_name }}
-                    {% if student.is_parallel %}
-                    <span class="badge bg-info-subtle text-info-emphasis ms-1"
-                          title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
-                        <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
-                    </span>
+            <div class="mc-header">
+                <div class="mc-name">
+                    {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}
+                    {{ ui.reduced_program_badge(student) }}
+                    {{ ui.student_status_badge(student) }}
+                    {% if session.get('is_admin') %}
+                    <span class="badge bg-secondary-subtle text-secondary-emphasis font-monospace ms-1">#{{ student.id }}</span>
                     {% endif %}
-                </span>
+                </div>
+                <button type="button"
+                        class="comp-details-btn {{ 'comp-details-btn--ok' if student.missing_count == 0 else 'comp-details-btn--gap' }} js-open-completeness"
+                        data-sid="{{ student.id }}">
+                    {{ student.overall_pct }}%
+                    {% if student.missing_count > 0 %} · −{{ student.missing_count }}{% else %} ✓{% endif %}
+                </button>
             </div>
-            {% elif student.all_groups_list %}
-            <div class="card-row">
-                <span class="card-label">Група</span>
-                <span class="card-value">
-                    {{ student.all_groups_list | join(', ') }}
-                    {% if student.is_parallel %}
-                    <span class="badge bg-info-subtle text-info-emphasis ms-1"
-                          title="Паралельне навчання: {{ student.all_groups_list | join(', ') }}">
-                        <i class="bi bi-people"></i> +{{ student.extra_groups_count }}
-                    </span>
-                    {% endif %}
-                </span>
-            </div>
-            {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
-            <div class="card-row">
-                <span class="card-label">Група</span>
-                <span class="card-value text-muted fst-italic small">{{ student.frozen_previous_group_name }} (до заморожування)</span>
-            </div>
-            {% endif %}
 
-            <!-- Прогресс-бары в карточке -->
-            <div class="card-row" style="flex-direction: column; align-items: flex-start;">
-                <span class="card-label mb-2">Заповненість</span>
-                <div class="progress-bar-container">
-                    <div class="fill-bar">
-                        <div class="fill-bar__inner fill-bar__inner--main" data-width="{{ (student.filled_fields / student.total_fields) * 100 }}%"></div>
-                        <div class="fill-bar__label">{{ student.filled_fields }} з {{ student.total_fields }}</div>
-                    </div>
-                    <div class="fill-chips">
-                    {% if student.has_photo %}
-                    <span class="fill-chip fill-chip--complete"><i class="bi bi-camera-fill"></i>Фото</span>
+            <div class="mc-meta">
+                <span class="mc-meta-item">
+                    <i class="bi bi-calendar3"></i> {{ student.birth_date or '—' }}
+                </span>
+                {% if student.phone %}
+                <span class="mc-meta-item"><i class="bi bi-telephone"></i> {{ student.phone }}</span>
+                {% endif %}
+                <span class="mc-meta-item">
+                    <i class="bi bi-people"></i>
+                    {% if student.group_name %}
+                        {{ student.group_name }}
+                        {% if student.is_parallel %}
+                            <span class="badge bg-info-subtle text-info-emphasis ms-1">+{{ student.extra_groups_count }}</span>
+                        {% endif %}
+                    {% elif student.all_groups_list %}
+                        {{ student.all_groups_list | join(', ') }}
+                    {% elif student.status == 'frozen' and student.frozen_previous_group_name %}
+                        {{ student.frozen_previous_group_name }} (до заморожування)
                     {% else %}
-                    <span class="fill-chip fill-chip--incomplete"><i class="bi bi-camera"></i>Без фото</span>
+                        Без групи
                     {% endif %}
-                    {% if student.grades_filled %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.grades_filled == student.grades_total else 'fill-chip--incomplete' }}"><i class="bi bi-journal-check"></i>Оцінки {{ student.grades_filled }}/{{ student.grades_total }}</span>
+                </span>
+                {% if student.group_id and not student.has_license %}
+                <span class="license-warn-badge"><i class="bi bi-exclamation-triangle"></i> без ліцензії</span>
+                {% endif %}
+            </div>
+
+            <div class="mc-comp-panel">
+                <div class="mc-comp-head">
+                    <span class="mc-comp-label">Заповненість профілю</span>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none js-open-completeness" data-sid="{{ student.id }}" style="font-size:.78rem; font-weight:700;">
+                        Що заповнено / чого бракує <i class="bi bi-chevron-right"></i>
+                    </button>
+                </div>
+
+                <div class="fill-bar">
+                    <div class="fill-bar__inner {{ bar_cls }}" data-width="{{ student.overall_pct }}%"></div>
+                    <div class="fill-bar__label">{{ student.overall_pct }}% · особ. {{ student.filled_fields }} з {{ student.total_fields }}</div>
+                </div>
+
+                <div class="mc-chips-grid">
+                    {% set m_tag = 'a' if can_view_card else 'span' %}
+                    <{{ m_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}{{ '#photoUploadModal' if can_edit_stu else '' }}"{% endif %}
+                       class="fill-chip {{ 'fill-chip--complete' if student.has_photo else 'fill-chip--incomplete' }}">
+                        <i class="bi {{ 'bi-camera-fill' if student.has_photo else 'bi-camera' }}"></i>
+                        <span>Фото: {{ 'є ✓' if student.has_photo else 'немає' }}</span>
+                    </{{ m_tag }}>
+
+                    <{{ m_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}#passportCollapse"{% endif %}
+                       class="fill-chip {{ chip_class(student.passport_status) }}">
+                        <i class="bi bi-person-vcard"></i>
+                        <span>Паспорт: {{ (student.passport_filled_fields ~ '/' ~ student.passport_total_fields) if student.has_passport else 'немає' }}</span>
+                    </{{ m_tag }}>
+
+                    <{{ m_tag }} {% if can_view_card %}href="{{ url_for('students.student_details', student_id=student.id) }}#educationDocsCollapse"{% endif %}
+                       class="fill-chip {{ chip_class(student.edu_doc_status) }}">
+                        <i class="bi bi-mortarboard"></i>
+                        <span>Освіта: {{ (student.edu_doc_filled_fields ~ '/' ~ student.edu_doc_total_fields) if student.has_education_doc else 'немає' }}</span>
+                    </{{ m_tag }}>
+
+                    {% set mm_tag = 'a' if can_mil else 'span' %}
+                    {% set mm_href = (url_for('students.military_data', student_id=student.id) if student.has_military else url_for('students.add_military', student_id=student.id)) if can_mil else '' %}
+                    <{{ mm_tag }} {% if can_mil %}href="{{ mm_href }}"{% endif %}
+                       class="fill-chip {{ chip_class(student.military_status) }}">
+                        <i class="bi bi-shield"></i>
+                        <span>
+                            {% if student.military_status == 'na' %}Військ.: Н/Д
+                            {% elif not student.has_military %}Військ.: немає
+                            {% else %}Військ.: {{ student.military_filled_fields }}/{{ student.military_total_fields }}{% if student.military_has_pdf %} PDF{% endif %}{% endif %}
+                        </span>
+                    </{{ mm_tag }}>
+
+                    {% set mgr_tag = 'a' if (can_edit_stu and student.grades_total > 0) else 'span' %}
+                    <{{ mgr_tag }} {% if can_edit_stu and student.grades_total > 0 %}href="{{ url_for('students.edit_grades', student_id=student.id) }}"{% endif %}
+                       class="fill-chip {{ chip_class(student.grades_status) }}">
+                        <i class="bi bi-journal-check"></i>
+                        <span>{% if student.grades_status == 'na' %}Оцінки: Н/Д{% else %}Оцінки: {{ student.grades_filled }}/{{ student.grades_total }}{% endif %}</span>
+                    </{{ mgr_tag }}>
+
+                    {% set mact_tag = 'a' if (can_edit_stu and student.activities_total_fields > 0) else 'span' %}
+                    <{{ mact_tag }} {% if can_edit_stu and student.activities_total_fields > 0 %}href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}"{% endif %}
+                       class="fill-chip {{ chip_class(student.activities_status) }}">
+                        <i class="bi bi-briefcase"></i>
+                        <span>{% if student.activities_status == 'na' %}Практика: Н/Д{% else %}Практика: {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}{% endif %}</span>
+                    </{{ mact_tag }}>
+                </div>
+
+                {% if student.short_gaps %}
+                <div class="mc-gap-box">
+                    <i class="bi bi-exclamation-circle-fill me-1"></i>
+                    <strong>Не вистачає:</strong> {{ student.short_gaps[:4] | join(', ') }}{% if student.short_gaps|length > 4 %} <em>(+ще {{ student.short_gaps|length - 4 }})</em>{% endif %}
+                </div>
+                {% else %}
+                <div class="mc-gap-box mc-gap-box--ok">
+                    <i class="bi bi-check-circle-fill me-1"></i> Усі обовʼязкові дані та документи заповнено
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="mc-actions">
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-eye me-1"></i>Картка
+                    </a>
+                    {% if can_mil %}
+                        {% if student.has_military %}
+                            <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">
+                                <i class="bi bi-shield-check me-1"></i>Військові
+                            </a>
+                        {% else %}
+                            <a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-military">
+                                <i class="bi bi-plus-circle-dotted me-1"></i>Військові
+                            </a>
+                        {% endif %}
                     {% endif %}
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.activities_total_fields and student.activities_filled_fields == student.activities_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-briefcase"></i>Практика {{ student.activities_filled_fields }}/{{ student.activities_total_fields }}</span>
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_military and student.military_filled_fields == student.military_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-shield"></i>Військові {{ (student.military_filled_fields ~ '/' ~ student.military_total_fields) if student.has_military else ' - немає запису' }}</span>
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_passport and student.passport_filled_fields == student.passport_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-person-vcard"></i>Паспорт {{ (student.passport_filled_fields ~ '/' ~ student.passport_total_fields) if student.has_passport else ' - немає запису' }}</span>
-                    <span class="fill-chip {{ 'fill-chip--complete' if student.has_education_doc and student.edu_doc_filled_fields == student.edu_doc_total_fields else 'fill-chip--incomplete' }}"><i class="bi bi-mortarboard"></i>Документ {{ (student.edu_doc_filled_fields ~ '/' ~ student.edu_doc_total_fields) if student.has_education_doc else ' - немає запису' }}</span>
-                    </div>
+                </div>
+
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-military dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                        Дії
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li><a class="dropdown-item" href="{{ url_for('students.student_details', student_id=student.id) }}">
+                            <i class="bi bi-eye me-2"></i>Переглянути картку
+                        </a></li>
+                        {% if can_edit_stu %}
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_student', student_id=student.id) }}">
+                            <i class="bi bi-pencil me-2"></i>Редагувати дані
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_grades', student_id=student.id) }}">
+                            <i class="bi bi-card-checklist me-2"></i>Оцінки з предметів
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}">
+                            <i class="bi bi-star me-2"></i>Практика / Атестація
+                        </a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('students.generate_update_link', student_id=student.id) }}">
+                            <i class="bi bi-link-45deg me-2"></i>Запросити оновлення
+                        </a></li>
+                        {% endif %}
+                        {% if has_perm('group_export') %}
+                        <li><a class="dropdown-item" href="{{ url_for('students.generate', student_id=student.id) }}">
+                            <i class="bi bi-file-word me-2"></i>Генерувати документ
+                        </a></li>
+                        {% endif %}
+                        {% if can_edit_stu %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}"
+                                  onsubmit="return confirm({{ ('Видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="dropdown-item text-danger">
+                                    <i class="bi bi-trash me-2"></i>Видалити
+                                </button>
+                            </form>
+                        </li>
+                        {% endif %}
+                    </ul>
                 </div>
             </div>
-
-            <!-- Действия в карточке -->
-			<div class="card-row" style="justify-content: space-between; margin-top: 10px;">
-				<div>
-					{% if has_perm('manage_students') or has_perm('manage_military_reports') %}
-						{% if student.has_military %}
-							<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">Військові дані</a>
-						{% else %}
-							<a href="{{ url_for('students.add_military', student_id=student.id) }}" class="btn btn-sm btn-military">Додати військові дані</a>
-						{% endif %}
-					{% elif student.has_military %}
-						<span class="text-success small" title="Військові дані заповнено">
-							<i class="bi bi-shield-check"></i> Дані заповнено
-						</span>
-					{% endif %}
-				</div>
-
-				<div class="dropdown">
-					<button class="btn btn-sm btn-military dropdown-toggle" type="button" data-bs-toggle="dropdown">
-						Дії
-					</button>
-					<ul class="dropdown-menu dropdown-menu-end">
-						<li><a class="dropdown-item" href="{{ url_for('students.student_details', student_id=student.id) }}">
-							<i class="bi bi-eye me-2"></i>Переглянути
-						</a></li>
-						{% if has_perm('manage_students') %}
-						<li><a class="dropdown-item" href="{{ url_for('students.edit_student', student_id=student.id) }}">
-							<i class="bi bi-pencil me-2"></i>Редагувати
-						</a></li>
-						<li><a class="dropdown-item" href="{{ url_for('students.edit_grades', student_id=student.id) }}">
-							<i class="bi bi-card-checklist me-2"></i>Оцінки
-						</a></li>
-						<li><a class="dropdown-item" href="{{ url_for('students.edit_activities_grades', student_id=student.id) }}">
-							<i class="bi bi-star me-2"></i>Активності
-						</a></li>
-						{% endif %}
-						{% if has_perm('group_export') %}
-						<li><a class="dropdown-item" href="{{ url_for('students.generate', student_id=student.id) }}">
-							<i class="bi bi-file-word me-2"></i>Генерувати
-						</a></li>
-						{% endif %}
-						{% if has_perm('manage_students') %}
-						<li><hr class="dropdown-divider"></li>
-						<li>
-							<form method="POST" action="{{ url_for('students.delete_student', student_id=student.id) }}"
-								  onsubmit="return confirm({{ ('Видалити студента ' ~ (student.last_name_UA or '') ~ '?') | tojson }})">
-								<button type="submit" class="dropdown-item text-danger">
-									<i class="bi bi-trash me-2"></i>Видалити
-								</button>
-							</form>
-						</li>
-						{% endif %}
-					</ul>
-				</div>
-            </div>
+        </div>
+        {% else %}
+        <div class="student-card text-center py-4 text-muted">
+            <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
+            <div class="fw-semibold">Студентів за обраними параметрами не знайдено</div>
+            {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary mt-2">Скинути фільтри</a>
+            {% endif %}
         </div>
         {% endfor %}
     </div>
 
-    <!-- ПАГІНАЦІЯ: замість списку номерів з "..." - компактна строка:
-         стрілки вперед/назад + нативний select з усіма сторінками
-         (без окремих мобільної/десктопної версій), і знизу - скільки
-         студентів показано з скількох усього. -->
+    <!-- Пагінація -->
     {% if total_pages > 1 %}
-    {% set prev_url = url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
-    {% set next_url = url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set prev_url = url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set next_url = url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
     {% set range_start = (page - 1) * per_page + 1 %}
     {% set range_end = [page * per_page, total_students] | min %}
 
@@ -873,6 +1334,7 @@
                 <input type="hidden" name="course" value="{{ course or '' }}">
                 <input type="hidden" name="license_id" value="{{ license_id or '' }}">
                 <input type="hidden" name="reduced" value="{{ reduced }}">
+                <input type="hidden" name="missing" value="{{ missing }}">
                 <input type="hidden" name="include_frozen" value="{{ include_frozen }}">
                 <input type="hidden" name="include_archived" value="{{ include_archived }}">
                 <input type="hidden" name="per_page" value="{{ per_page }}">
@@ -892,25 +1354,218 @@
             {% endif %}
         </div>
 
-        <div class="small" style="color: var(--muted);">Показано {{ range_start }}-{{ range_end }} з {{ total_students }} студентів</div>
+        <div class="small" style="color: var(--muted);">Показано {{ range_start }}–{{ range_end }} з {{ total_students }} студентів</div>
     </div>
     {% endif %}
 </div>
 
+<!-- Модальне вікно деталізації заповненості -->
+<div class="modal fade" id="completenessModal" tabindex="-1" aria-labelledby="cmStudentTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title mb-0 d-flex align-items-center gap-2 flex-wrap" id="cmStudentTitle"></h5>
+                    <div class="small text-muted mt-1" id="cmStudentSub"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body" id="cmModalBody"></div>
+            <div class="modal-footer justify-content-between flex-wrap gap-2">
+                <div class="d-flex gap-2 flex-wrap" id="cmFooterActions"></div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% set completeness_payload = {} %}
+{% for student in students %}
+    {% set urls = {
+        'details': url_for('students.student_details', student_id=student.id) if can_view_card else '',
+        'edit': url_for('students.edit_student', student_id=student.id) if can_edit_stu else '',
+        'photo': (url_for('students.student_details', student_id=student.id) ~ '#photoUploadModal') if can_edit_stu else '',
+        'passport': (url_for('students.student_details', student_id=student.id) ~ '#passportCollapse') if can_view_card else '',
+        'edu_doc': (url_for('students.student_details', student_id=student.id) ~ '#educationDocsCollapse') if can_view_card else '',
+        'military': ((url_for('students.military_data', student_id=student.id) if student.has_military else url_for('students.add_military', student_id=student.id)) if can_mil else ''),
+        'grades': url_for('students.edit_grades', student_id=student.id) if can_edit_stu else '',
+        'activities': url_for('students.edit_activities_grades', student_id=student.id) if can_edit_stu else '',
+        'update_link': url_for('students.generate_update_link', student_id=student.id) if can_edit_stu else '',
+    } %}
+    {% set _ = completeness_payload.update({
+        (student.id|string): {
+            'name': (student.last_name_UA or '') ~ ' ' ~ (student.first_name_UA or '') ~ (' ' ~ student.middle_name_UA if student.middle_name_UA else ''),
+            'group': student.group_name or (student.all_groups_list | join(', ')) or 'Без групи',
+            'pct': student.overall_pct,
+            'missing': student.missing_items,
+            'filled': student.filled_items,
+            'urls': urls,
+        }
+    }) %}
+{% endfor %}
+<script type="application/json" id="studentsCompletenessData">{{ completeness_payload | tojson }}</script>
+
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // анімоване заповнення прогрес-барів
-    requestAnimationFrame(() => {
-        setTimeout(() => {
-            document.querySelectorAll('.fill-bar__inner[data-width]').forEach(el => {
+document.addEventListener('DOMContentLoaded', function () {
+    // Анімоване заповнення прогрес-барів
+    requestAnimationFrame(function () {
+        setTimeout(function () {
+            document.querySelectorAll('.fill-bar__inner[data-width]').forEach(function (el) {
                 el.style.width = el.getAttribute('data-width');
             });
-        }, 80);
+        }, 60);
+    });
+
+    // Комбо-селектор сортування
+    var sortCombo = document.getElementById('sortComboSelect');
+    var sortByInput = document.getElementById('sortByInput');
+    var sortOrderInput = document.getElementById('sortOrderInput');
+    var filterForm = document.getElementById('filterForm');
+    if (sortCombo && sortByInput && sortOrderInput && filterForm) {
+        sortCombo.addEventListener('change', function () {
+            var parts = (sortCombo.value || 'id:desc').split(':');
+            sortByInput.value = parts[0] || 'id';
+            sortOrderInput.value = parts[1] || 'desc';
+            filterForm.submit();
+        });
+    }
+
+    // Модалка «Що заповнено / чого не вистачає»
+    var dataEl = document.getElementById('studentsCompletenessData');
+    var modalEl = document.getElementById('completenessModal');
+    if (!dataEl || !modalEl || !window.bootstrap) return;
+
+    var studentsData = {};
+    try {
+        studentsData = JSON.parse(dataEl.textContent || '{}');
+    } catch (e) {
+        studentsData = {};
+    }
+
+    var titleEl = document.getElementById('cmStudentTitle');
+    var subEl = document.getElementById('cmStudentSub');
+    var bodyEl = document.getElementById('cmModalBody');
+    var footerActionsEl = document.getElementById('cmFooterActions');
+    var modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    function createIcon(cls) {
+        var i = document.createElement('i');
+        i.className = cls;
+        return i;
+    }
+
+    function createItemRow(item, kind, urls) {
+        var row = document.createElement('div');
+        row.className = 'cm-item ' + (kind === 'miss' ? 'cm-item--miss' : (item.is_na ? 'cm-item--na' : 'cm-item--ok'));
+
+        var body = document.createElement('div');
+        body.className = 'cm-item__body';
+
+        var title = document.createElement('div');
+        title.className = 'cm-item__title d-flex align-items-center gap-2';
+        var iconCls = kind === 'miss'
+            ? 'bi bi-exclamation-circle-fill'
+            : (item.is_na ? 'bi bi-dash-circle' : 'bi bi-check-circle-fill');
+        title.appendChild(createIcon(iconCls));
+        title.appendChild(document.createTextNode(item.title || ''));
+        body.appendChild(title);
+
+        if (item.detail) {
+            var detail = document.createElement('div');
+            detail.className = 'cm-item__detail';
+            detail.textContent = item.detail;
+            body.appendChild(detail);
+        }
+        row.appendChild(body);
+
+        if (kind === 'miss' && item.action_type && urls[item.action_type]) {
+            var link = document.createElement('a');
+            link.href = urls[item.action_type];
+            link.className = 'btn btn-sm btn-outline-secondary flex-shrink-0';
+            link.textContent = 'Заповнити';
+            link.appendChild(document.createTextNode(' '));
+            link.appendChild(createIcon('bi bi-arrow-right'));
+            row.appendChild(link);
+        }
+        return row;
+    }
+
+    function openCompleteness(sid) {
+        var st = studentsData[String(sid)];
+        if (!st) return;
+
+        titleEl.replaceChildren(document.createTextNode(st.name || 'Студент'));
+        var pctBadge = document.createElement('span');
+        pctBadge.className = 'badge ' + (st.pct >= 85 ? 'text-bg-success' : (st.pct >= 55 ? 'text-bg-warning' : 'text-bg-danger'));
+        pctBadge.textContent = st.pct + '% заповнено';
+        titleEl.appendChild(pctBadge);
+
+        subEl.textContent = st.group || '';
+        bodyEl.replaceChildren();
+
+        // Секція 1: Чого не вистачає
+        var missHead = document.createElement('div');
+        missHead.className = 'cm-section-title cm-section-title--miss';
+        missHead.appendChild(createIcon('bi bi-exclamation-triangle-fill'));
+        missHead.appendChild(document.createTextNode('Чого не вистачає (' + (st.missing ? st.missing.length : 0) + ')'));
+        bodyEl.appendChild(missHead);
+
+        if (st.missing && st.missing.length) {
+            st.missing.forEach(function (item) {
+                bodyEl.appendChild(createItemRow(item, 'miss', st.urls || {}));
+            });
+        } else {
+            var allOk = document.createElement('div');
+            allOk.className = 'cm-item cm-item--ok';
+            allOk.textContent = 'Усі обовʼязкові поля та документи заповнені.';
+            bodyEl.appendChild(allOk);
+        }
+
+        // Секція 2: Що вже заповнено
+        var okHead = document.createElement('div');
+        okHead.className = 'cm-section-title cm-section-title--ok mt-3';
+        okHead.appendChild(createIcon('bi bi-check2-all'));
+        okHead.appendChild(document.createTextNode('Що вже заповнено'));
+        bodyEl.appendChild(okHead);
+
+        if (st.filled && st.filled.length) {
+            st.filled.forEach(function (item) {
+                bodyEl.appendChild(createItemRow(item, 'ok', st.urls || {}));
+            });
+        } else {
+            var noneOk = document.createElement('div');
+            noneOk.className = 'text-muted small';
+            noneOk.textContent = 'Поки що немає повністю заповнених розділів.';
+            bodyEl.appendChild(noneOk);
+        }
+
+        // Кнопки в футері
+        footerActionsEl.replaceChildren();
+        if (st.urls && st.urls.details) {
+            var cardBtn = document.createElement('a');
+            cardBtn.href = st.urls.details;
+            cardBtn.className = 'btn btn-sm btn-outline-secondary';
+            cardBtn.appendChild(createIcon('bi bi-eye me-1'));
+            cardBtn.appendChild(document.createTextNode('Картка студента'));
+            footerActionsEl.appendChild(cardBtn);
+        }
+        if (st.urls && st.urls.update_link) {
+            var updBtn = document.createElement('a');
+            updBtn.href = st.urls.update_link;
+            updBtn.className = 'btn btn-sm btn-primary';
+            updBtn.appendChild(createIcon('bi bi-link-45deg me-1'));
+            updBtn.appendChild(document.createTextNode('Посилання для дозаповнення'));
+            footerActionsEl.appendChild(updBtn);
+        }
+
+        modalInstance.show();
+    }
+
+    document.querySelectorAll('.js-open-completeness').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            openCompleteness(btn.getAttribute('data-sid'));
+        });
     });
 });
 </script>
-
-<style>
-.filter-panel .form-label { margin-bottom: .15rem; }
-</style>
 {% endblock %}

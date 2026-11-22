@@ -178,18 +178,51 @@ def inject_nav_context():
             'has_perm': lambda p: False,
             'is_admin': False,
             'perms': [],
+            'eu_groups_catalog': {'degree_order': {}, 'groups': {}},
         }
 
+    eu_groups_catalog = {'degree_order': {}, 'groups': {}}
     try:
         from routes.db import get_db
         conn = get_db()
-        new_applications = conn.execute(
-            "SELECT COUNT(*) FROM pending_students WHERE status='new'"
-        ).fetchone()[0]
-        new_update_requests = conn.execute(
-            "SELECT COUNT(*) FROM update_requests WHERE status='submitted'"
-        ).fetchone()[0]
-        conn.close()
+        try:
+            new_applications = conn.execute(
+                "SELECT COUNT(*) FROM pending_students WHERE status='new'"
+            ).fetchone()[0]
+            new_update_requests = conn.execute(
+                "SELECT COUNT(*) FROM update_requests WHERE status='submitted'"
+            ).fetchone()[0]
+            try:
+                degree_rows = conn.execute(
+                    "SELECT name_ua, id FROM degree_levels"
+                ).fetchall()
+                eu_groups_catalog['degree_order'] = {
+                    r['name_ua']: r['id'] for r in degree_rows if r['name_ua']
+                }
+                group_rows = conn.execute(
+                    """
+                    SELECT id, name, start_year, study_form, degree_level,
+                           course, program_credits, specialty
+                    FROM groups
+                    ORDER BY start_year DESC, name COLLATE UKRAINIAN
+                    """
+                ).fetchall()
+                eu_groups_catalog['groups'] = {
+                    str(g['id']): {
+                        'name': g['name'] or '',
+                        'year': g['start_year'],
+                        'form': g['study_form'] or '',
+                        'degree': g['degree_level'] or 'Без ступеня',
+                        'course': g['course'],
+                        'credits': g['program_credits'],
+                        'specialty': g['specialty'] or '',
+                    }
+                    for g in group_rows
+                }
+            except Exception:
+                pass
+        finally:
+            conn.close()
     except Exception:
         new_applications = 0
         new_update_requests = 0
@@ -215,6 +248,7 @@ def inject_nav_context():
         'has_perm': has_perm,
         'is_admin': is_admin,
         'perms': list(perms),
+        'eu_groups_catalog': eu_groups_catalog,
     }
 
 

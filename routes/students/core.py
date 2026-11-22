@@ -140,24 +140,709 @@ def _get_applicable_military_fields(status_badge, military_row):
     return fields
 
 
+MILITARY_FIELD_LABELS = {
+    'status_badge': 'Категорія у «Резерв+»',
+    'valid_until': 'Дійсний до',
+    'registration_category': 'Категорія обліку',
+    'tck_name': 'Найменування ТЦК та СП',
+    'registry_number': 'Номер у реєстрі «Оберіг»',
+    'data_update_date': 'Дата оновлення даних',
+    'military_rank': 'Військове звання',
+    'vos_code': 'Код ВОС',
+    'vos_description': 'Опис ВОС',
+    'deferral_type': 'Тип відстрочки',
+    'deferral_until': 'Відстрочка до',
+    'vlk_decision': 'Висновок ВЛК',
+    'vlk_date': 'Дата ВЛК',
+    'removal_basis': 'Підстава зняття з обліку',
+    'data_verified_on_time': 'Позначка «Дані перевірено вчасно»',
+}
+
+STUDENT_PERSONAL_FIELD_LABELS = [
+    ('last_name_UA', 'Прізвище (укр.)'),
+    ('first_name_UA', "Ім'я (укр.)"),
+    ('middle_name_UA', 'По батькові'),
+    ('last_name_ENG', 'Прізвище (англ.)'),
+    ('first_name_ENG', "Ім'я (англ.)"),
+    ('birth_date', 'Дата народження'),
+    ('group_id', 'Група'),
+    ('edebo_code', 'Код ЄДЕБО'),
+    ('tax_id', 'РНОКПП (ІПН)'),
+    ('phone', 'Телефон'),
+    ('email', 'Email'),
+]
+
+PASSPORT_FIELD_LABELS = {
+    'document_type': 'Тип документа',
+    'series': 'Серія',
+    'number': 'Номер',
+    'issued_by': 'Ким виданий',
+    'issue_date': 'Дата видачі',
+    'valid_until': 'Дійсний до',
+    'unique_number': 'УНЗР',
+}
+
+EDU_DOC_FIELD_LABELS = [
+    ('document_type', 'Тип документа'),
+    ('document_type_en', 'Тип (англ.)'),
+    ('document_number', 'Номер документа'),
+    ('institution_name', 'Заклад освіти'),
+    ('institution_name_en', 'Заклад (англ.)'),
+    ('country', 'Країна'),
+    ('country_en', 'Країна (англ.)'),
+    ('completion_date', 'Дата завершення'),
+]
+
+MISSING_FILTER_OPTIONS = [
+    ('any', 'Є будь-які прогалини'),
+    ('personal', 'Неповні особисті дані'),
+    ('photo', 'Без фото 3×4'),
+    ('passport', 'Немає / неповний паспорт'),
+    ('edu_doc', 'Немає / неповний документ про освіту'),
+    ('military', 'Немає / неповні військові дані'),
+    ('military_pdf', 'Без PDF «Резерв+»'),
+    ('grades', 'Не всі оцінки з предметів'),
+    ('activities', 'Не всі оцінки за практику/атестацію'),
+    ('license', 'Без привʼязки до ліцензії'),
+]
+
+
 def _compute_military_completeness(military_row):
     """
-    Повертає (filled, total) для одного запису military з урахуванням
-    статусу. Якщо military_row is None — (0, len(common)+1).
+    Повертає (filled, total, missing_labels) для одного запису military з урахуванням
+    статусу. Якщо military_row is None — (0, len(common)+1, ['Немає запису військового обліку']).
     """
     if not military_row:
-        return 0, len(MILITARY_COMMON_FIELDS) + 1
+        return 0, len(MILITARY_COMMON_FIELDS) + 1, ['Немає запису військового обліку']
     applicable = _get_applicable_military_fields(
         military_row.get('status_badge'), military_row
     )
-    filled = sum(
-        1 for f in applicable
-        if military_row.get(f) and str(military_row.get(f)).strip()
-    )
+    filled = 0
+    missing = []
+    for f in applicable:
+        val = military_row.get(f)
+        if val and str(val).strip():
+            filled += 1
+        else:
+            missing.append(MILITARY_FIELD_LABELS.get(f, f))
     if military_row.get('data_verified_on_time'):
         filled += 1
+    else:
+        missing.append(MILITARY_FIELD_LABELS['data_verified_on_time'])
     total = len(applicable) + 1
-    return filled, total
+    return filled, total, missing
+
+
+def _chunked(items, size=400):
+    seq = list(items)
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def _enrich_students_completeness(conn, students):
+    """Батчевий розрахунок заповненості профілю (без N+1 запитів)."""
+    if not students:
+        return []
+
+    student_dicts = [dict(s) for s in students]
+    student_ids = [s['id'] for s in student_dicts]
+    group_ids = list({s['group_id'] for s in student_dicts if s.get('group_id')})
+    military_ids = [s['has_military'] for s in student_dicts if s.get('has_military')]
+
+    # 1. PDF «Резерв+» для військового обліку
+    mil_pdf_ids = set()
+    for chunk in _chunked(military_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT DISTINCT entity_id FROM attachments "
+            f"WHERE entity_type='military' AND entity_id IN ({ph}) "
+            f"AND (LOWER(original_name) LIKE '%.pdf' OR LOWER(file_path) LIKE '%.pdf')",
+            chunk,
+        ).fetchall()
+        mil_pdf_ids.update(r['entity_id'] for r in rows)
+
+    # 2. Активні enrollments (ліцензія + per-group override кредитів)
+    enrollments_by_sid = {}
+    for chunk in _chunked(student_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"""
+            SELECT e.student_id, e.group_id, e.license_id, e.program_credits_override,
+                   il.short_name_ua AS license_short_name
+            FROM student_enrollments e
+            LEFT JOIN institution_licenses il ON il.id = e.license_id
+            WHERE e.student_id IN ({ph}) AND e.status = 'active'
+            """,
+            chunk,
+        ).fetchall()
+        for r in rows:
+            enrollments_by_sid.setdefault(r['student_id'], []).append(dict(r))
+
+    # 3. Предмети та активності по групах (одразу з прапорцями повної/скороченої програми)
+    subjects_by_gid = {}
+    practices_by_gid = {}
+    courseworks_by_gid = {}
+    attestations_by_gid = {}
+    all_subject_ids = set()
+    for chunk in _chunked(group_ids):
+        ph = ','.join('?' for _ in chunk)
+        for r in conn.execute(
+            f"SELECT id, group_id, full_program_only, reduced_only FROM subjects WHERE group_id IN ({ph})",
+            chunk,
+        ).fetchall():
+            subjects_by_gid.setdefault(r['group_id'], []).append(dict(r))
+            all_subject_ids.add(r['id'])
+        for r in conn.execute(
+            f"SELECT id, group_id, full_program_only, reduced_only FROM practices WHERE group_id IN ({ph})",
+            chunk,
+        ).fetchall():
+            practices_by_gid.setdefault(r['group_id'], []).append(dict(r))
+        for r in conn.execute(
+            f"SELECT id, group_id, full_program_only, reduced_only FROM courseworks WHERE group_id IN ({ph})",
+            chunk,
+        ).fetchall():
+            courseworks_by_gid.setdefault(r['group_id'], []).append(dict(r))
+        for r in conn.execute(
+            f"SELECT id, group_id, full_program_only, reduced_only FROM attestations WHERE group_id IN ({ph})",
+            chunk,
+        ).fetchall():
+            attestations_by_gid.setdefault(r['group_id'], []).append(dict(r))
+
+    # 4. Виставлені оцінки з предметів
+    grades_by_sid = {}
+    if all_subject_ids:
+        for chunk in _chunked(student_ids):
+            ph = ','.join('?' for _ in chunk)
+            rows = conn.execute(
+                f"SELECT student_id, subject_id, grade FROM grades WHERE student_id IN ({ph})",
+                chunk,
+            ).fetchall()
+            for r in rows:
+                if r['grade'] is not None and str(r['grade']).strip() and r['subject_id'] in all_subject_ids:
+                    grades_by_sid.setdefault(r['student_id'], set()).add(r['subject_id'])
+
+    # 5. Оцінки за активності
+    act_grades_by_sid = {}
+    for chunk in _chunked(student_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT student_id, entity_id, entity_type, grade FROM activity_grades "
+            f"WHERE student_id IN ({ph}) AND entity_type IN ('practice', 'coursework', 'attestation')",
+            chunk,
+        ).fetchall()
+        for r in rows:
+            if r['grade'] is not None and str(r['grade']).strip():
+                act_grades_by_sid.setdefault(r['student_id'], set()).add((r['entity_type'], r['entity_id']))
+
+    # 6. Паспортні дані + скани
+    passports_by_sid = {}
+    for chunk in _chunked(student_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT id, student_id, group_id, document_type, series, number, issued_by, issue_date, valid_until, unique_number "
+            f"FROM passport_documents WHERE student_id IN ({ph}) ORDER BY id DESC",
+            chunk,
+        ).fetchall()
+        for r in rows:
+            passports_by_sid.setdefault(r['student_id'], []).append(dict(r))
+
+    passport_doc_ids = [rows[0]['id'] for rows in passports_by_sid.values() if rows]
+    passport_all_ids = [r['id'] for rows in passports_by_sid.values() for r in rows]
+    passport_scan_ids = set()
+    for chunk in _chunked(passport_all_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT DISTINCT entity_id FROM attachments WHERE entity_type='passport_document' AND entity_id IN ({ph})",
+            chunk,
+        ).fetchall()
+        passport_scan_ids.update(r['entity_id'] for r in rows)
+
+    # 7. Документи про освіту + скани
+    edu_docs_by_sid = {}
+    for chunk in _chunked(student_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"""
+            SELECT ed.id, ed.student_id, ed.document_type, ed.document_type_en, ed.document_number,
+                   ed.institution_name, ed.institution_name_en, ed.country, ed.country_en, ed.completion_date,
+                   fed.recognition_certificate_number
+            FROM education_documents ed
+            LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
+            WHERE ed.student_id IN ({ph})
+            ORDER BY ed.id DESC
+            """,
+            chunk,
+        ).fetchall()
+        for r in rows:
+            if r['student_id'] not in edu_docs_by_sid:
+                edu_docs_by_sid[r['student_id']] = dict(r)
+
+    edu_all_ids = [r['id'] for r in edu_docs_by_sid.values()]
+    edu_scan_ids = set()
+    for chunk in _chunked(edu_all_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT DISTINCT entity_id FROM attachments WHERE entity_type='education_document' AND entity_id IN ({ph})",
+            chunk,
+        ).fetchall()
+        edu_scan_ids.update(r['entity_id'] for r in rows)
+
+    def _track_allows(item_row, is_reduced_flag):
+        if is_reduced_flag:
+            return not bool(item_row.get('full_program_only'))
+        return not bool(item_row.get('reduced_only'))
+
+    enriched = []
+    for student_dict in student_dicts:
+        sid = student_dict['id']
+        gid = student_dict.get('group_id')
+
+        if student_dict.get('frozen_record_id'):
+            student_dict['status'] = 'frozen'
+        elif student_dict.get('archived'):
+            student_dict['status'] = 'archived'
+        else:
+            student_dict['status'] = 'active'
+
+        # ── Особисті дані ──
+        personal_missing = []
+        personal_filled_labels = []
+        for field_key, field_label in STUDENT_PERSONAL_FIELD_LABELS:
+            val = student_dict.get(field_key)
+            if val is not None and str(val).strip():
+                personal_filled_labels.append(field_label)
+            else:
+                personal_missing.append(field_label)
+        student_filled_fields = len(personal_filled_labels)
+        student_total_fields = len(STUDENT_PERSONAL_FIELD_LABELS)
+        student_dict['filled_fields'] = student_filled_fields
+        student_dict['total_fields'] = student_total_fields
+        student_dict['personal_missing'] = personal_missing
+        student_dict['personal_filled_labels'] = personal_filled_labels
+        student_dict['has_photo'] = bool(student_dict.get('photo'))
+
+        # ── Паралельне навчання та ліцензія ──
+        raw_groups = (student_dict.get('all_groups') or '').strip()
+        student_dict['all_groups_list'] = [
+            name.strip() for name in raw_groups.split('|') if name.strip()
+        ]
+        if student_dict.get('group_name'):
+            primary_short = (student_dict['group_name'].split(' (')[0]).strip()
+            if primary_short and primary_short not in student_dict['all_groups_list']:
+                student_dict['all_groups_list'].insert(0, primary_short)
+        student_dict['is_parallel'] = len(student_dict['all_groups_list']) > 1
+        student_dict['extra_groups_count'] = max(0, len(student_dict['all_groups_list']) - 1)
+
+        sid_enrs = enrollments_by_sid.get(sid, [])
+        lic_enr = next((e for e in sid_enrs if e.get('license_id') is not None), None)
+        student_dict['has_license'] = bool(lic_enr)
+        student_dict['license_short_name'] = lic_enr['license_short_name'] if lic_enr else None
+
+        # Визначаємо, чи на скороченій програмі у основній групі
+        is_reduced = False
+        if gid and student_dict.get('program_credits'):
+            primary_enr = next((e for e in sid_enrs if e.get('group_id') == gid), None)
+            override_cr = primary_enr.get('program_credits_override') if primary_enr else student_dict.get('program_credits_override')
+            try:
+                if override_cr and int(override_cr) < int(student_dict['program_credits']):
+                    is_reduced = True
+            except (TypeError, ValueError):
+                is_reduced = False
+
+        # ── Військові дані (з урахуванням статі) ──
+        gender_val = (student_dict.get('gender') or '').strip().upper()
+        if gender_val not in ('M', 'F'):
+            gender_val = detect_gender_from_middle_name(student_dict.get('middle_name_UA') or '') or ''
+        is_female = (gender_val == 'F')
+        has_military = bool(student_dict.get('has_military'))
+        military_applicable = (not is_female) or has_military
+        military_row_for_calc = student_dict if has_military else None
+        mil_filled, mil_total, mil_missing = _compute_military_completeness(military_row_for_calc)
+        mil_has_pdf = (student_dict['has_military'] in mil_pdf_ids) if has_military else False
+        student_dict['is_female'] = is_female
+        student_dict['military_applicable'] = military_applicable
+        student_dict['military_filled_fields'] = mil_filled
+        student_dict['military_total_fields'] = mil_total
+        student_dict['military_missing'] = mil_missing if military_applicable else []
+        student_dict['military_has_pdf'] = mil_has_pdf
+        if not military_applicable:
+            student_dict['military_status'] = 'na'
+        elif has_military and mil_filled == mil_total:
+            student_dict['military_status'] = 'complete'
+        elif has_military:
+            student_dict['military_status'] = 'partial'
+        else:
+            student_dict['military_status'] = 'missing'
+
+        # ── Оцінки з предметів ──
+        group_subjects = [s for s in subjects_by_gid.get(gid, []) if _track_allows(s, is_reduced)] if gid else []
+        subj_id_set = {s['id'] for s in group_subjects}
+        sid_grades = grades_by_sid.get(sid, set())
+        grades_filled = len(subj_id_set.intersection(sid_grades))
+        grades_total = len(subj_id_set)
+        student_dict['has_grades'] = grades_total > 0
+        student_dict['grades_filled'] = grades_filled
+        student_dict['grades_total'] = grades_total
+        student_dict['grades_fill_percentage'] = (grades_filled / grades_total * 100) if grades_total > 0 else 0
+        if grades_total == 0:
+            student_dict['grades_status'] = 'na'
+        elif grades_filled == grades_total:
+            student_dict['grades_status'] = 'complete'
+        elif grades_filled > 0:
+            student_dict['grades_status'] = 'partial'
+        else:
+            student_dict['grades_status'] = 'missing'
+
+        # ── Практики / курсові / атестація (з фільтрацією за треком і групою) ──
+        if gid:
+            p_ids = {('practice', r['id']) for r in practices_by_gid.get(gid, []) if _track_allows(r, is_reduced)}
+            c_ids = {('coursework', r['id']) for r in courseworks_by_gid.get(gid, []) if _track_allows(r, is_reduced)}
+            a_ids = {('attestation', r['id']) for r in attestations_by_gid.get(gid, []) if _track_allows(r, is_reduced)}
+            expected_act = p_ids | c_ids | a_ids
+        else:
+            expected_act = set()
+        sid_act = act_grades_by_sid.get(sid, set())
+        activities_total = len(expected_act)
+        activities_filled = len(expected_act.intersection(sid_act))
+        student_dict['has_activities'] = activities_total > 0
+        student_dict['activities_filled_fields'] = activities_filled
+        student_dict['activities_total_fields'] = activities_total
+        student_dict['activities_fill_percentage'] = (activities_filled / activities_total * 100) if activities_total > 0 else 0
+        if activities_total == 0:
+            student_dict['activities_status'] = 'na'
+        elif activities_filled == activities_total:
+            student_dict['activities_status'] = 'complete'
+        elif activities_filled > 0:
+            student_dict['activities_status'] = 'partial'
+        else:
+            student_dict['activities_status'] = 'missing'
+
+        # ── Паспортні дані ──
+        pd_candidates = passports_by_sid.get(sid, [])
+        pd = next((r for r in pd_candidates if r.get('group_id') == gid or r.get('group_id') is None), None)
+        student_dict['has_passport'] = pd is not None
+        if pd:
+            if pd.get('document_type') in PASSPORT_TYPES_ID_STYLE:
+                passport_fields = ['document_type', 'number', 'issued_by', 'issue_date', 'valid_until', 'unique_number']
+            else:
+                passport_fields = ['document_type', 'series', 'number', 'issued_by', 'issue_date']
+            passport_filled = 0
+            passport_missing = []
+            for f in passport_fields:
+                v = pd.get(f)
+                if v and str(v).strip():
+                    passport_filled += 1
+                else:
+                    passport_missing.append(PASSPORT_FIELD_LABELS.get(f, f))
+            student_dict['passport_filled_fields'] = passport_filled
+            student_dict['passport_total_fields'] = len(passport_fields)
+            student_dict['passport_missing'] = passport_missing
+            student_dict['passport_has_scan'] = pd['id'] in passport_scan_ids
+            if passport_filled == len(passport_fields):
+                student_dict['passport_status'] = 'complete'
+            elif passport_filled > 0:
+                student_dict['passport_status'] = 'partial'
+            else:
+                student_dict['passport_status'] = 'missing'
+        else:
+            student_dict['passport_filled_fields'] = 0
+            student_dict['passport_total_fields'] = 0
+            student_dict['passport_missing'] = ['Немає запису про паспорт']
+            student_dict['passport_has_scan'] = False
+            student_dict['passport_status'] = 'missing'
+
+        # ── Документ про освіту ──
+        ed = edu_docs_by_sid.get(sid)
+        student_dict['has_education_doc'] = ed is not None
+        if ed:
+            edu_filled = 0
+            edu_missing = []
+            for f, lbl in EDU_DOC_FIELD_LABELS:
+                v = ed.get(f)
+                if v and str(v).strip():
+                    edu_filled += 1
+                else:
+                    edu_missing.append(lbl)
+            country_norm = (ed.get('country') or '').strip().lower()
+            is_foreign_edu = bool(country_norm) and country_norm not in ('україна', 'ukraine', 'ua')
+            needs_recognition = is_foreign_edu and not (ed.get('recognition_certificate_number') or '').strip()
+            student_dict['edu_doc_filled_fields'] = edu_filled
+            student_dict['edu_doc_total_fields'] = len(EDU_DOC_FIELD_LABELS)
+            student_dict['edu_doc_missing'] = edu_missing
+            student_dict['edu_doc_has_scan'] = ed['id'] in edu_scan_ids
+            student_dict['edu_doc_needs_recognition'] = needs_recognition
+            if edu_filled == len(EDU_DOC_FIELD_LABELS):
+                student_dict['edu_doc_status'] = 'complete'
+            elif edu_filled > 0:
+                student_dict['edu_doc_status'] = 'partial'
+            else:
+                student_dict['edu_doc_status'] = 'missing'
+        else:
+            student_dict['edu_doc_filled_fields'] = 0
+            student_dict['edu_doc_total_fields'] = 0
+            student_dict['edu_doc_missing'] = ['Немає документа про освіту']
+            student_dict['edu_doc_has_scan'] = False
+            student_dict['edu_doc_needs_recognition'] = False
+            student_dict['edu_doc_status'] = 'missing'
+
+        # ── Зведена структура "Що заповнено / Чого не вистачає" ──
+        missing_items = []
+        filled_items = []
+        category_scores = []
+
+        # Особисті дані
+        category_scores.append(student_filled_fields / student_total_fields if student_total_fields else 1.0)
+        if personal_missing:
+            missing_items.append({
+                'key': 'personal',
+                'title': f'Особисті дані ({student_filled_fields}/{student_total_fields})',
+                'detail': 'Не вистачає: ' + ', '.join(personal_missing),
+                'short_missing': personal_missing[:3],
+                'action_type': 'edit',
+            })
+        else:
+            filled_items.append({
+                'key': 'personal',
+                'title': f'Особисті дані ({student_filled_fields}/{student_total_fields})',
+                'detail': 'Усі основні поля заповнено',
+            })
+
+        # Фото 3х4
+        category_scores.append(1.0 if student_dict['has_photo'] else 0.0)
+        if not student_dict['has_photo']:
+            missing_items.append({
+                'key': 'photo',
+                'title': 'Фото 3×4',
+                'detail': 'Фотографія не завантажена',
+                'action_type': 'photo',
+            })
+        else:
+            filled_items.append({
+                'key': 'photo',
+                'title': 'Фото 3×4',
+                'detail': 'Фото завантажено',
+            })
+
+        # Паспорт
+        if student_dict['passport_status'] == 'complete':
+            category_scores.append(1.0)
+            scan_note = ' · є скан' if student_dict['passport_has_scan'] else ' · без скану'
+            filled_items.append({
+                'key': 'passport',
+                'title': f"Паспортні дані ({student_dict['passport_filled_fields']}/{student_dict['passport_total_fields']})",
+                'detail': 'Усі поля заповнено' + scan_note,
+            })
+        else:
+            ratio = (student_dict['passport_filled_fields'] / student_dict['passport_total_fields']) if student_dict['passport_total_fields'] else 0.0
+            category_scores.append(ratio)
+            missing_items.append({
+                'key': 'passport',
+                'title': 'Паспортні дані' + (f" ({student_dict['passport_filled_fields']}/{student_dict['passport_total_fields']})" if student_dict['has_passport'] else ''),
+                'detail': 'Не вистачає: ' + ', '.join(student_dict['passport_missing']),
+                'action_type': 'passport',
+            })
+
+        # Документ про освіту
+        if student_dict['edu_doc_status'] == 'complete':
+            category_scores.append(1.0)
+            notes = []
+            if student_dict['edu_doc_has_scan']:
+                notes.append('є скан')
+            else:
+                notes.append('без скану')
+            if student_dict['edu_doc_needs_recognition']:
+                notes.append('потрібне свідоцтво про визнання')
+            filled_items.append({
+                'key': 'edu_doc',
+                'title': f"Документ про освіту ({student_dict['edu_doc_filled_fields']}/{student_dict['edu_doc_total_fields']})",
+                'detail': 'Усі поля заповнено · ' + ', '.join(notes),
+            })
+        else:
+            ratio = (student_dict['edu_doc_filled_fields'] / student_dict['edu_doc_total_fields']) if student_dict['edu_doc_total_fields'] else 0.0
+            category_scores.append(ratio)
+            detail = 'Не вистачає: ' + ', '.join(student_dict['edu_doc_missing'])
+            if student_dict['edu_doc_needs_recognition']:
+                detail += '; без свідоцтва про визнання'
+            missing_items.append({
+                'key': 'edu_doc',
+                'title': 'Документ про освіту' + (f" ({student_dict['edu_doc_filled_fields']}/{student_dict['edu_doc_total_fields']})" if student_dict['has_education_doc'] else ''),
+                'detail': detail,
+                'action_type': 'edu_doc',
+            })
+
+        # Військовий облік
+        if student_dict['military_status'] == 'na':
+            filled_items.append({
+                'key': 'military',
+                'title': 'Військовий облік',
+                'detail': 'Не вимагається (жіноча стать)',
+                'is_na': True,
+            })
+        elif student_dict['military_status'] == 'complete':
+            category_scores.append(1.0)
+            pdf_note = ' · PDF «Резерв+» прикріплено' if mil_has_pdf else ' · без PDF «Резерв+»'
+            filled_items.append({
+                'key': 'military',
+                'title': f'Військовий облік ({mil_filled}/{mil_total})',
+                'detail': 'Обовʼязкові поля заповнено' + pdf_note,
+            })
+            if not mil_has_pdf:
+                missing_items.append({
+                    'key': 'military_pdf',
+                    'title': 'PDF «Резерв+»',
+                    'detail': 'Поля обліку заповнено, але файл PDF не завантажено',
+                    'action_type': 'military',
+                })
+        else:
+            category_scores.append((mil_filled / mil_total) if (has_military and mil_total) else 0.0)
+            detail = 'Не вистачає: ' + ', '.join(mil_missing)
+            if has_military and not mil_has_pdf:
+                detail += '; немає PDF «Резерв+»'
+            missing_items.append({
+                'key': 'military',
+                'title': 'Військовий облік' + (f' ({mil_filled}/{mil_total})' if has_military else ''),
+                'detail': detail,
+                'action_type': 'military',
+            })
+
+        # Оцінки з предметів
+        if student_dict['grades_status'] == 'na':
+            filled_items.append({
+                'key': 'grades',
+                'title': 'Оцінки з предметів',
+                'detail': 'Предмети в групі відсутні',
+                'is_na': True,
+            })
+        elif student_dict['grades_status'] == 'complete':
+            category_scores.append(1.0)
+            filled_items.append({
+                'key': 'grades',
+                'title': f'Оцінки ({grades_filled}/{grades_total})',
+                'detail': 'Усі оцінки з предметів виставлено',
+            })
+        else:
+            category_scores.append(grades_filled / grades_total if grades_total else 1.0)
+            missing_items.append({
+                'key': 'grades',
+                'title': f'Оцінки ({grades_filled}/{grades_total})',
+                'detail': f'Не виставлено оцінок: {grades_total - grades_filled}',
+                'action_type': 'grades',
+            })
+
+        # Практики / курсові / атестація
+        if student_dict['activities_status'] == 'na':
+            filled_items.append({
+                'key': 'activities',
+                'title': 'Практика / курсові / атестація',
+                'detail': 'Активності в групі відсутні',
+                'is_na': True,
+            })
+        elif student_dict['activities_status'] == 'complete':
+            category_scores.append(1.0)
+            filled_items.append({
+                'key': 'activities',
+                'title': f'Практика / атестація ({activities_filled}/{activities_total})',
+                'detail': 'Усі оцінки виставлено',
+            })
+        else:
+            category_scores.append(activities_filled / activities_total if activities_total else 1.0)
+            missing_items.append({
+                'key': 'activities',
+                'title': f'Практика / атестація ({activities_filled}/{activities_total})',
+                'detail': f'Не виставлено оцінок: {activities_total - activities_filled}',
+                'action_type': 'activities',
+            })
+
+        # Ліцензія (у складі перевірки, якщо є група)
+        if gid:
+            if student_dict['has_license']:
+                filled_items.append({
+                    'key': 'license',
+                    'title': 'Ліцензія',
+                    'detail': student_dict['license_short_name'] or 'Привʼязано',
+                })
+            else:
+                missing_items.append({
+                    'key': 'license',
+                    'title': 'Ліцензія закладу',
+                    'detail': 'Студента не привʼязано до ліцензії в активному навчанні',
+                    'action_type': 'details',
+                })
+
+        # Короткий рядок прогалин прямо для таблиці / картки
+        short_gaps = []
+        if personal_missing:
+            short_gaps.extend(personal_missing[:2])
+            if len(personal_missing) > 2:
+                short_gaps.append(f'ще {len(personal_missing) - 2} особ. поля')
+        if not student_dict['has_photo']:
+            short_gaps.append('Фото 3×4')
+        if student_dict['passport_status'] != 'complete':
+            short_gaps.append('Паспорт' if not student_dict['has_passport'] else f"Паспорт ({student_dict['passport_filled_fields']}/{student_dict['passport_total_fields']})")
+        if student_dict['edu_doc_status'] != 'complete':
+            short_gaps.append('Док. про освіту' if not student_dict['has_education_doc'] else f"Освіта ({student_dict['edu_doc_filled_fields']}/{student_dict['edu_doc_total_fields']})")
+        if student_dict['military_status'] in ('missing', 'partial'):
+            short_gaps.append('Військові дані' if not has_military else f'Військ. ({mil_filled}/{mil_total})')
+        elif student_dict['military_applicable'] and has_military and not mil_has_pdf:
+            short_gaps.append('PDF «Резерв+»')
+        if student_dict['grades_status'] in ('missing', 'partial'):
+            short_gaps.append(f'Оцінки ({grades_filled}/{grades_total})')
+        if student_dict['activities_status'] in ('missing', 'partial'):
+            short_gaps.append(f'Практика ({activities_filled}/{activities_total})')
+        if gid and not student_dict['has_license']:
+            short_gaps.append('Ліцензія')
+
+        overall_pct = round(sum(category_scores) / len(category_scores) * 100) if category_scores else 100
+        student_dict['overall_pct'] = overall_pct
+        student_dict['missing_items'] = missing_items
+        student_dict['filled_items'] = filled_items
+        student_dict['missing_count'] = len(missing_items)
+        student_dict['short_gaps'] = short_gaps
+
+        enriched.append(student_dict)
+
+    return enriched
+
+
+def _matches_missing_filter(s, missing_key):
+    if not missing_key:
+        return True
+    if missing_key == 'any':
+        return s['missing_count'] > 0
+    if missing_key == 'personal':
+        return len(s['personal_missing']) > 0
+    if missing_key == 'photo':
+        return not s['has_photo']
+    if missing_key == 'passport':
+        return s['passport_status'] != 'complete'
+    if missing_key == 'edu_doc':
+        return s['edu_doc_status'] != 'complete'
+    if missing_key == 'military':
+        return s['military_status'] in ('missing', 'partial')
+    if missing_key == 'military_pdf':
+        return s['military_applicable'] and not s['military_has_pdf']
+    if missing_key == 'grades':
+        return s['grades_status'] in ('missing', 'partial')
+    if missing_key == 'activities':
+        return s['activities_status'] in ('missing', 'partial')
+    if missing_key == 'license':
+        return bool(s.get('group_id')) and not s['has_license']
+    return True
+
+
+def _compute_summary_counts(enriched_students):
+    return {
+        'any': sum(1 for s in enriched_students if s['missing_count'] > 0),
+        'personal': sum(1 for s in enriched_students if s['personal_missing']),
+        'photo': sum(1 for s in enriched_students if not s['has_photo']),
+        'passport': sum(1 for s in enriched_students if s['passport_status'] != 'complete'),
+        'edu_doc': sum(1 for s in enriched_students if s['edu_doc_status'] != 'complete'),
+        'military': sum(1 for s in enriched_students if s['military_status'] in ('missing', 'partial')),
+        'military_pdf': sum(1 for s in enriched_students if s['military_applicable'] and not s['military_has_pdf']),
+        'grades': sum(1 for s in enriched_students if s['grades_status'] in ('missing', 'partial')),
+        'activities': sum(1 for s in enriched_students if s['activities_status'] in ('missing', 'partial')),
+        'license': sum(1 for s in enriched_students if s.get('group_id') and not s['has_license']),
+    }
 
 
 FAQ_SECTION_PERMISSIONS = {
@@ -297,6 +982,10 @@ def student_list():
     else:
         license_id = ''
     reduced = request.args.get('reduced', '')
+    missing = request.args.get('missing', '').strip()
+    valid_missing_keys = {k for k, _ in MISSING_FILTER_OPTIONS}
+    if missing not in valid_missing_keys:
+        missing = ''
     include_frozen = '1' if request.args.get('include_frozen') == '1' else ''
     include_archived = '1' if request.args.get('include_archived') == '1' else ''
     page = max(1, request.args.get('page', 1, type=int))
@@ -307,7 +996,7 @@ def student_list():
     if per_page not in [10, 20, 50, 100]:
         per_page = 10
 
-    allowed_sort_fields = ['id', 'last_name_UA', 'first_name_UA', 'middle_name_UA', 'birth_date', 'group_id']
+    allowed_sort_fields = ['id', 'last_name_UA', 'first_name_UA', 'middle_name_UA', 'birth_date', 'group_id', 'completeness']
     if sort_by not in allowed_sort_fields:
         sort_by = 'id'
     if sort_order not in ['asc', 'desc']:
@@ -363,9 +1052,6 @@ def student_list():
                g.isced_f_en,
                g.educational_program_en,
                g.knowledge_area_en,
-               -- Список активних enrollments (паралельне навчання). Використовуємо
-               -- той самий підхід, що й в analytics.py::student_options() —
-               -- GROUP_CONCAT через ' | ' (потім у Python розбиваємо).
                (SELECT GROUP_CONCAT(g2.name, ' | ')
                 FROM student_enrollments e2
                 JOIN groups g2 ON g2.id = e2.group_id
@@ -459,7 +1145,9 @@ def student_list():
                 study_form=study_form, study_forms_available=[],
                 course=course, courses_available=[],
                 license_id=license_id, licenses_available=[],
-                reduced=reduced, include_frozen=include_frozen, include_archived=include_archived,
+                reduced=reduced, missing=missing, missing_options=MISSING_FILTER_OPTIONS,
+                summary_counts={}, summary_scope='page', summary_total=0,
+                include_frozen=include_frozen, include_archived=include_archived,
                 page=page, per_page=per_page, total_pages=0, total_students=0,
                 sort_by=sort_by, sort_order=sort_order
             )
@@ -471,7 +1159,6 @@ def student_list():
 
     if search:
         from routes.utils import normalize_phone_ua
-        # Якщо пошуковий запит виглядає як телефон — шукаємо за phone
         normalized_search_phone = normalize_phone_ua(search)
         is_phone_search = (
             normalized_search_phone
@@ -480,9 +1167,7 @@ def student_list():
         )
 
         if is_phone_search:
-            where_clauses.append(
-                "(s.phone = ? OR s.phone_backup = ?)"
-            )
+            where_clauses.append("(s.phone = ? OR s.phone_backup = ?)")
             params.extend([normalized_search_phone, normalized_search_phone])
         else:
             for word in search.split():
@@ -500,143 +1185,52 @@ def student_list():
         count_query += where_sql
 
     if sort_by == 'birth_date':
-        base_query += f" ORDER BY SUBSTR(s.birth_date, 7, 4) || SUBSTR(s.birth_date, 4, 2) || SUBSTR(s.birth_date, 1, 2) {sort_order.upper()}"
+        order_sql = f" ORDER BY SUBSTR(s.birth_date, 7, 4) || SUBSTR(s.birth_date, 4, 2) || SUBSTR(s.birth_date, 1, 2) {sort_order.upper()}"
     elif sort_by in ['last_name_UA', 'first_name_UA', 'middle_name_UA']:
-        base_query += f" ORDER BY s.{sort_by} COLLATE UKRAINIAN {sort_order.upper()}"
+        order_sql = f" ORDER BY s.{sort_by} COLLATE UKRAINIAN {sort_order.upper()}"
+    elif sort_by == 'completeness':
+        order_sql = " ORDER BY s.id DESC"
     else:
-        base_query += f" ORDER BY s.{sort_by} {sort_order.upper()}"
+        order_sql = f" ORDER BY s.{sort_by} {sort_order.upper()}"
 
-    base_query += " LIMIT ? OFFSET ?"
-    params_with_limit = params + [per_page, offset]
+    base_total = conn.execute(count_query, params).fetchone()[0]
 
-    students = conn.execute(base_query, params_with_limit).fetchall()
-    total_students = conn.execute(count_query, params).fetchone()[0]
+    # Коли активний фільтр по прогалинах, сортування за заповненістю або вибірка <= 400 студентів:
+    # завантажуємо всю базову вибірку і рахуємо зведену статистику точно по ній.
+    need_full_enrichment = bool(missing) or sort_by == 'completeness' or base_total <= 400
 
-    students_with_filled_fields = []
-    student_fields = ['last_name_UA', 'first_name_UA', 'middle_name_UA', 'last_name_ENG', 'first_name_ENG', 'birth_date', 'group_id', 'edebo_code', 'tax_id', 'phone', 'email']
-    student_total_fields = len(student_fields)
+    if need_full_enrichment:
+        all_rows = conn.execute(base_query + order_sql, params).fetchall()
+        all_enriched = _enrich_students_completeness(conn, all_rows)
+        summary_counts = _compute_summary_counts(all_enriched)
+        summary_scope = 'selection'
+        summary_total = len(all_enriched)
 
-    for student in students:
-        student_dict = dict(student)
+        filtered = [s for s in all_enriched if _matches_missing_filter(s, missing)] if missing else all_enriched
 
-        if student_dict.get('frozen_record_id'):
-            student_dict['status'] = 'frozen'
-        elif student_dict.get('archived'):
-            student_dict['status'] = 'archived'
-        else:
-            student_dict['status'] = 'active'
+        if sort_by == 'completeness':
+            filtered.sort(
+                key=lambda s: (s['overall_pct'], s['filled_fields'], -s['missing_count']),
+                reverse=(sort_order == 'desc'),
+            )
 
-        student_filled_fields = sum(1 for field in student_fields if student_dict.get(field) and str(student_dict.get(field)).strip())
-        student_dict['filled_fields'] = student_filled_fields
-        student_dict['total_fields'] = student_total_fields
-        student_dict['has_photo'] = bool(student_dict.get('photo'))
-
-        # ── Паралельне навчання: розбираємо GROUP_CONCAT у список ──
-        raw_groups = (student_dict.get('all_groups') or '').strip()
-        student_dict['all_groups_list'] = [
-            name.strip() for name in raw_groups.split('|') if name.strip()
-        ]
-        # Дублюємо primary у all_groups, якщо його там з якоїсь причини
-        # немає (наприклад, у старих даних enrollment ще не забекфілений
-        # або s.group_id змінили вручну). Це гарантує, що primary завжди
-        # присутній в all_groups_list.
-        if student_dict.get('group_name'):
-            primary_short = (student_dict['group_name'].split(' (')[0]).strip()
-            if primary_short and primary_short not in student_dict['all_groups_list']:
-                student_dict['all_groups_list'].insert(0, primary_short)
-
-        student_dict['is_parallel'] = len(student_dict['all_groups_list']) > 1
-        student_dict['extra_groups_count'] = max(0, len(student_dict['all_groups_list']) - 1)
-
-        # ── Заповненість військових даних (залежно від статусу) ──
-        military_row_for_calc = student_dict if student_dict.get('has_military') else None
-        mil_filled, mil_total = _compute_military_completeness(military_row_for_calc)
-        student_dict['military_filled_fields'] = mil_filled
-        student_dict['military_total_fields'] = mil_total
-        # Чи є PDF «Резерв+» серед сканів?
-        if student_dict.get('has_military'):
-            pdf_row = conn.execute(
-                "SELECT 1 FROM attachments "
-                "WHERE entity_type='military' AND entity_id=? "
-                "AND (original_name LIKE '%.pdf' OR file_path LIKE '%.pdf') "
-                "LIMIT 1",
-                (student_dict['has_military'],)
-            ).fetchone()
-            student_dict['military_has_pdf'] = pdf_row is not None
-        else:
-            student_dict['military_has_pdf'] = False
-
-        is_reduced = bool(student_dict['group_id']) and is_student_on_reduced_program(conn, student_dict['id'], student_dict['group_id'])
-        subjects_query = "SELECT id FROM subjects WHERE group_id = ?" + program_track_condition(is_reduced)
-        subjects = conn.execute(subjects_query, (student_dict['group_id'],)).fetchall()
-        subject_ids = [s['id'] for s in subjects]
-        student_dict['has_grades'] = len(subjects) > 0
-        if subject_ids:
-            placeholders = ','.join('?' for _ in subject_ids)
-            grades = conn.execute(
-                f"SELECT grade FROM grades WHERE student_id = ? AND subject_id IN ({placeholders})",
-                (student_dict['id'], *subject_ids)
-            ).fetchall()
-        else:
-            grades = []
-        grades_filled = sum(1 for grade in grades if grade['grade'] is not None and str(grade['grade']).strip())
-        grades_total = len(subjects)
-        student_dict['grades_filled'] = grades_filled
-        student_dict['grades_total'] = grades_total
-        student_dict['grades_fill_percentage'] = (grades_filled / grades_total * 100) if grades_total > 0 else 0
-
-        practices = conn.execute("SELECT id FROM practices WHERE group_id = ?", (student_dict['group_id'],)).fetchall()
-        courseworks = conn.execute("SELECT id FROM courseworks WHERE group_id = ?", (student_dict['group_id'],)).fetchall()
-        attestations = conn.execute("SELECT id FROM attestations WHERE group_id = ?", (student_dict['group_id'],)).fetchall()
-        student_dict['has_activities'] = len(practices) > 0 or len(courseworks) > 0 or len(attestations) > 0
-        activities_grades = conn.execute(
-            "SELECT grade FROM activity_grades WHERE student_id = ? AND entity_type IN ('practice', 'coursework', 'attestation')",
-            (student_dict['id'],)
-        ).fetchall()
-        activities_total = len(practices) + len(courseworks) + len(attestations)
-        activities_filled = sum(1 for grade in activities_grades if grade['grade'] is not None and str(grade['grade']).strip())
-        student_dict['activities_filled_fields'] = activities_filled
-        student_dict['activities_total_fields'] = activities_total
-        student_dict['activities_fill_percentage'] = (activities_filled / activities_total * 100) if activities_total > 0 else 0
-
-        passport_doc = conn.execute("""
-            SELECT document_type, series, number, issued_by, issue_date, valid_until, unique_number
-            FROM passport_documents
-            WHERE student_id = ? AND (group_id = ? OR group_id IS NULL)
-            ORDER BY id DESC LIMIT 1
-        """, (student_dict['id'], student_dict['group_id'])).fetchone()
-        student_dict['has_passport'] = passport_doc is not None
-        if passport_doc:
-            pd = dict(passport_doc)
-            if pd.get('document_type') in PASSPORT_TYPES_ID_STYLE:
-                passport_fields = ['document_type', 'number', 'issued_by', 'issue_date', 'valid_until', 'unique_number']
-            else:
-                passport_fields = ['document_type', 'series', 'number', 'issued_by', 'issue_date']
-            passport_filled = sum(1 for f in passport_fields if pd.get(f) and str(pd.get(f)).strip())
-            student_dict['passport_filled_fields'] = passport_filled
-            student_dict['passport_total_fields'] = len(passport_fields)
-        else:
-            student_dict['passport_filled_fields'] = 0
-            student_dict['passport_total_fields'] = 0
-
-        edu_doc = conn.execute("""
-            SELECT document_type, document_type_en, document_number, institution_name,
-                   institution_name_en, country, country_en, completion_date
-            FROM education_documents WHERE student_id = ? ORDER BY id DESC LIMIT 1
-        """, (student_dict['id'],)).fetchone()
-        student_dict['has_education_doc'] = edu_doc is not None
-        if edu_doc:
-            ed = dict(edu_doc)
-            edu_fields = ['document_type', 'document_type_en', 'document_number', 'institution_name',
-                          'institution_name_en', 'country', 'country_en', 'completion_date']
-            edu_filled = sum(1 for f in edu_fields if ed.get(f) and str(ed.get(f)).strip())
-            student_dict['edu_doc_filled_fields'] = edu_filled
-            student_dict['edu_doc_total_fields'] = len(edu_fields)
-        else:
-            student_dict['edu_doc_filled_fields'] = 0
-            student_dict['edu_doc_total_fields'] = 0
-
-        students_with_filled_fields.append(student_dict)
+        total_students = len(filtered)
+        total_pages = (total_students + per_page - 1) // per_page if total_students else 0
+        if total_pages and page > total_pages:
+            page = total_pages
+            offset = (page - 1) * per_page
+        students_with_filled_fields = filtered[offset:offset + per_page]
+    else:
+        total_students = base_total
+        total_pages = (total_students + per_page - 1) // per_page if total_students else 0
+        if total_pages and page > total_pages:
+            page = total_pages
+            offset = (page - 1) * per_page
+        students_rows = conn.execute(base_query + order_sql + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+        students_with_filled_fields = _enrich_students_completeness(conn, students_rows)
+        summary_counts = _compute_summary_counts(students_with_filled_fields)
+        summary_scope = 'page'
+        summary_total = len(students_with_filled_fields)
 
     groups = conn.execute("""
         SELECT id, name, start_year, study_form, degree_level, course, program_credits, specialty
@@ -669,8 +1263,6 @@ def student_list():
 
     conn.close()
 
-    total_pages = (total_students + per_page - 1) // per_page
-
     return render_template(
         'students.html',
         students=students_with_filled_fields,
@@ -680,7 +1272,9 @@ def student_list():
         study_form=study_form, study_forms_available=study_forms_available,
         course=course, courses_available=courses_available,
         license_id=license_id, licenses_available=licenses_available,
-        reduced=reduced, include_frozen=include_frozen, include_archived=include_archived,
+        reduced=reduced, missing=missing, missing_options=MISSING_FILTER_OPTIONS,
+        summary_counts=summary_counts, summary_scope=summary_scope, summary_total=summary_total,
+        include_frozen=include_frozen, include_archived=include_archived,
         page=page, per_page=per_page,
         total_pages=total_pages, total_students=total_students,
         sort_by=sort_by, sort_order=sort_order
@@ -1013,6 +1607,7 @@ def student_details(student_id):
 
     all_groups = conn.execute("""
         SELECT id,
+               study_form,
                name || ' (' || start_year || ', ' || study_form || ', ' ||
                COALESCE(degree_level, '') || ')' AS display_name
         FROM groups
