@@ -419,9 +419,10 @@ def dashboard():
     readiness_scores = []
     all_letters = []
     honor_eligible = 0
-    at_risk_students = []  # один запис на студента: {'student','group','count','worst_letter','details'}
+    reduced_program_count = 0
+    at_risk_students = []  # один запис на студента: {'student','student_id','group','group_id','count','details'}
 
-    per_group_stats = {}  # group_id -> {'personal': [...], 'grades': [...], ...}
+    per_group_stats = {}  # group_id -> {'personal': [...], 'grades': [...], 'edu_doc': [...], 'diploma': [...], 'name': ...}
     # ── Активні enrollment'и: фільтруємо за архівністю ГРУПИ (фікс багу) ──
     # Якщо enrollment активний, але його група вже в архіві (типова
     # ситуація після випуску, коли студент паралельно вчиться в іншій
@@ -446,7 +447,17 @@ def dashboard():
 
     for st in students_raw:
         gid = st['group_id']
-        per_group_stats.setdefault(gid, {'personal': [], 'grades': [], 'name': groups_by_id.get(gid, {}).get('name', '?')})
+        per_group_stats.setdefault(gid, {
+            'personal': [], 'grades': [], 'edu_doc': [], 'diploma': [],
+            'name': groups_by_id.get(gid, {}).get('name', '?'),
+        })
+        base_credits = groups_by_id.get(gid, {}).get('program_credits')
+        ovr_credits = st.get('program_credits_override')
+        try:
+            if ovr_credits and base_credits and int(ovr_credits) < int(base_credits):
+                reduced_program_count += 1
+        except (TypeError, ValueError):
+            pass
 
         personal_filled = sum(1 for f in STUDENT_FIELDS if st.get(f) and str(st.get(f)).strip())
         personal_pct = personal_filled / len(STUDENT_FIELDS) * 100
@@ -537,6 +548,8 @@ def dashboard():
         dims.append(100 if has_edu else 0)
         dims.append(100 if all_dips_filled else 0)
         readiness_scores.append(sum(dims) / len(dims))
+        per_group_stats[gid]['edu_doc'].append(100 if has_edu else 0)
+        per_group_stats[gid]['diploma'].append(100 if all_dips_filled else 0)
 
         st_grades = grades_by_student.get(st['id'], [])
         letters = [(_grade_letter(g['grade']), g) for g in st_grades]
@@ -561,7 +574,9 @@ def dashboard():
 
         if risky_items:
             at_risk_students.append({
+                'student_id': st['id'],
                 'student': f"{st['last_name_UA']} {st['first_name_UA']}",
+                'group_id': gid,
                 'group': groups_by_id.get(gid, {}).get('name', '?'),
                 'count': len(risky_items),
                 'details': risky_items,
@@ -615,9 +630,12 @@ def dashboard():
     per_group_completeness = []
     for gid, data in per_group_stats.items():
         per_group_completeness.append({
+            'group_id': gid,
             'group_name': data['name'],
             'personal_avg': _avg(data['personal']) or 0,
             'grades_avg': _avg(data['grades']) or 0,
+            'edu_doc_avg': _avg(data['edu_doc']) or 0,
+            'diploma_avg': _avg(data['diploma']) or 0,
             'students_count': len(data['personal']),
         })
     per_group_completeness.sort(key=lambda x: x['personal_avg'])
@@ -634,10 +652,22 @@ def dashboard():
         else:
             readiness_buckets['Тільки почали (<40%)'] += 1
 
+    avg_readiness_pct = round(sum(readiness_scores) / len(readiness_scores), 1) if readiness_scores else 0
+    at_risk_total_grades = sum(r['count'] for r in at_risk_students)
+
     grade_distribution = {}
     for letter in ['A', 'B', 'C', 'D', 'E', 'Незадовільно']:
         grade_distribution[letter] = all_letters.count(letter)
     total_grades = len(all_letters) or 1
+    all_numeric_grades = []
+    for _gr in all_grade_rows:
+        try:
+            all_numeric_grades.append(int(_gr['grade']))
+        except (TypeError, ValueError):
+            pass
+    overall_avg_grade = round(sum(all_numeric_grades) / len(all_numeric_grades), 1) if all_numeric_grades else None
+    passing_grades_count = sum(cnt for let, cnt in grade_distribution.items() if let != 'Незадовільно')
+    grade_pass_rate = round(passing_grades_count / len(all_letters) * 100, 1) if all_letters else None
 
     # ================= Рейтинг предметів за середнім балом =================
     subject_grades_map = {}
@@ -673,7 +703,7 @@ def dashboard():
             total_credits = (subjects_credits_by_group.get(gid, 0) + activities_credits_by_group.get(gid, 0))
             if total_credits and g['program_credits'] and total_credits != g['program_credits']:
                 credit_mismatches.append({
-                    'group': g['name'], 'expected': g['program_credits'], 'actual': total_credits,
+                    'group_id': gid, 'group': g['name'], 'expected': g['program_credits'], 'actual': total_credits,
                 })
 
         accreditation_pairs = {(row['degree'], row['specialty']) for row in
@@ -848,8 +878,15 @@ def dashboard():
 
         student_row = next((s for s in student_options if s['id'] == selected_student_id), None)
 
+        grade_avg_delta = (
+            round(student_avg - group_avg, 1)
+            if (student_avg is not None and group_avg is not None)
+            else None
+        )
+
         student_detail = {
             'id': selected_student_id,
+            'group_id': gid,
             'full_name': student_row['full_name'] if student_row else '',
             'group_name': student_row['group_name'] if student_row else '',
             'subjects': s_letters,
@@ -863,6 +900,7 @@ def dashboard():
             'missing_subjects': missing_subjects,
             'student_avg': student_avg,
             'group_avg': group_avg,
+            'grade_avg_delta': grade_avg_delta,
             'earned_credits': earned_credits,
             'required_credits': required_credits,
         }
@@ -875,6 +913,15 @@ def dashboard():
     templates_admin_only = conn.execute("SELECT COUNT(*) FROM document_templates WHERE admin_only=1").fetchone()[0]
 
     conn.close()
+
+    integrity_issues_count = (
+        len(credit_mismatches)
+        + len(missing_accreditation)
+        + len(duplicate_diploma_numbers)
+        + len(duplicate_appendix_numbers)
+        + len(specialties_missing_short_name)
+        + len(specialties_missing_name_en)
+    ) if is_admin else 0
 
     return render_template(
         'analytics.html',
@@ -891,17 +938,23 @@ def dashboard():
         completeness=completeness,
         per_group_completeness=per_group_completeness,
         readiness_buckets=readiness_buckets,
+        avg_readiness_pct=avg_readiness_pct,
+        reduced_program_count=reduced_program_count,
         total_ready_students=len(students_raw),
         grade_distribution=grade_distribution,
         total_grades=total_grades,
+        overall_avg_grade=overall_avg_grade,
+        grade_pass_rate=grade_pass_rate,
         honor_eligible=honor_eligible,
         worst_subjects=worst_subjects,
         best_subjects=best_subjects,
         at_risk_students=at_risk_students,
+        at_risk_total_grades=at_risk_total_grades,
         credit_mismatches=credit_mismatches,
         missing_accreditation=missing_accreditation,
         duplicate_diploma_numbers=duplicate_diploma_numbers,
         duplicate_appendix_numbers=duplicate_appendix_numbers,
+        integrity_issues_count=integrity_issues_count,
         frozen_students_count=frozen_students_count,
         frozen_by_degree=frozen_by_degree,
         specialties_missing_short_name=specialties_missing_short_name,

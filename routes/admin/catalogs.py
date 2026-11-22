@@ -1385,6 +1385,7 @@ def license_report():
         )
         lic = r['license_short_name'] or r['license_name'] or '—'
         by_group[gid]['students'].append({
+            'id': r['student_id'],
             'full_name': full_name,
             'program_credits_override': r['program_credits_override'],
             'archived': bool(r['student_archived']),
@@ -1428,10 +1429,46 @@ def license_report():
 
     # 5.2 Загальні підсумки по ліцензіях
     grand_totals = defaultdict(int)
+    lic_groups_count = defaultdict(int)
+    lic_forms_count = defaultdict(lambda: defaultdict(int))
     for item in groups_with_students:
+        sf = item['group'].get('study_form') or '—'
         for lic, cnt in item['counts'].items():
             grand_totals[lic] += cnt
+            if cnt > 0:
+                lic_groups_count[lic] += 1
+                lic_forms_count[lic][sf] += cnt
     grand_total_all = sum(grand_totals.values())
+    unlicensed_count = grand_totals.get('—', 0)
+    licensed_count = grand_total_all - unlicensed_count
+    license_coverage_pct = round(licensed_count / grand_total_all * 100, 1) if grand_total_all else 0
+
+    license_breakdown = []
+    for r in license_rows:
+        short_name = r['short_name_ua'] or r['name_ua']
+        cnt = grand_totals.get(short_name, 0)
+        license_breakdown.append({
+            'id': r['id'],
+            'name': short_name,
+            'full_name': r['name_ua'] or short_name,
+            'count': cnt,
+            'pct': round(cnt / grand_total_all * 100, 1) if grand_total_all else 0,
+            'groups_count': lic_groups_count.get(short_name, 0),
+            'forms': dict(lic_forms_count.get(short_name, {})),
+            'is_unlicensed': False,
+        })
+    license_breakdown.sort(key=lambda x: (-x['count'], x['name']))
+    if unlicensed_count:
+        license_breakdown.append({
+            'id': 'none',
+            'name': 'Без ліцензії',
+            'full_name': 'Студенти без призначеної ліцензії',
+            'count': unlicensed_count,
+            'pct': round(unlicensed_count / grand_total_all * 100, 1) if grand_total_all else 0,
+            'groups_count': lic_groups_count.get('—', 0),
+            'forms': dict(lic_forms_count.get('—', {})),
+            'is_unlicensed': True,
+        })
 
     # 5.3 По курсах
     course_agg = defaultdict(lambda: defaultdict(int))
@@ -1495,6 +1532,11 @@ def license_report():
         summary_rows=summary_rows,
         grand_totals=dict(grand_totals),
         grand_total_all=grand_total_all,
+        unlicensed_count=unlicensed_count,
+        licensed_count=licensed_count,
+        license_coverage_pct=license_coverage_pct,
+        total_groups_count=len(groups_with_students),
+        license_breakdown=license_breakdown,
         course_breakdown_rows=course_breakdown_rows,
         breakdown_rows=breakdown_rows,
     )
