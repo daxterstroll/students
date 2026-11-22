@@ -438,13 +438,15 @@
         const mNat  = card ? card.querySelector('.js-nat') : null;
         const mEcts = card ? card.querySelector('.js-ects') : null;
 
-        if (!dTot || !dMid || !dCur || !dExam) return;
+        if (!dTot) return;
+
+        let wasComputed = false;
 
         function syncToMobile() {
             if (!card) return;
-            if (mMid)  mMid.value = dMid.value;
-            if (mCur)  mCur.value = dCur.value;
-            if (mExam) mExam.value = dExam.value;
+            if (mMid && dMid)  mMid.value = dMid.value;
+            if (mCur && dCur)  mCur.value = dCur.value;
+            if (mExam && dExam) mExam.value = dExam.value;
             if (mTot) {
                 mTot.value = dTot.value;
                 mTot.readOnly = dTot.readOnly;
@@ -470,13 +472,18 @@
         }
 
         function recalc() {
-            const a = parseNum(dMid.value);
-            const b = parseNum(dCur.value);
-            const c = parseNum(dExam.value);
+            const a = dMid ? parseNum(dMid.value) : null;
+            const b = dCur ? parseNum(dCur.value) : null;
+            const c = dExam ? parseNum(dExam.value) : null;
             const anyFilled = (a !== null || b !== null || c !== null);
 
             if (!anyFilled) {
                 setComputedState(false);
+                if (wasComputed) {
+                    dTot.value = '';
+                    wasComputed = false;
+                    updateResult('', '');
+                }
                 syncToMobile();
                 return;
             }
@@ -486,6 +493,7 @@
 
             dTot.value = sum;
             setComputedState(true);
+            wasComputed = true;
             syncToMobile();
 
             const { nat, ects } = pointsToNationalEcts(sum, CONTROL_FORM);
@@ -495,33 +503,37 @@
         function onManualTotal(val) {
             if (dTot.readOnly) return;
             dTot.value = val;
-            dMid.value = '';
-            dCur.value = '';
-            dExam.value = '';
+            if (dMid) dMid.value = '';
+            if (dCur) dCur.value = '';
+            if (dExam) dExam.value = '';
+            wasComputed = false;
             syncToMobile();
 
             const manual = parseNum(val);
             if (manual === null) {
-                updateResult('—', '—');
+                updateResult('', '');
                 return;
             }
             const { nat, ects } = pointsToNationalEcts(manual, CONTROL_FORM);
             updateResult(nat, ects);
         }
 
-        [dMid, dCur, dExam].forEach(el => el.addEventListener('input', recalc));
+        [dMid, dCur, dExam].forEach(el => {
+            if (!el) return;
+            el.addEventListener('input', recalc);
+            el.addEventListener('change', recalc);
+        });
         dTot.addEventListener('input', () => onManualTotal(dTot.value));
+        dTot.addEventListener('change', () => onManualTotal(dTot.value));
         if (dTop && mTop) {
             dTop.addEventListener('input', () => { mTop.value = dTop.value; });
             mTop.addEventListener('input', () => { dTop.value = mTop.value; });
         }
 
-        if (mMid && mCur && mExam && mTot) {
-            mMid.addEventListener('input', () => { dMid.value = mMid.value; recalc(); });
-            mCur.addEventListener('input', () => { dCur.value = mCur.value; recalc(); });
-            mExam.addEventListener('input', () => { dExam.value = mExam.value; recalc(); });
-            mTot.addEventListener('input', () => onManualTotal(mTot.value));
-        }
+        if (mMid)  { mMid.addEventListener('input', () => { if (dMid) dMid.value = mMid.value; recalc(); }); mMid.addEventListener('change', () => { if (dMid) dMid.value = mMid.value; recalc(); }); }
+        if (mCur)  { mCur.addEventListener('input', () => { if (dCur) dCur.value = mCur.value; recalc(); }); mCur.addEventListener('change', () => { if (dCur) dCur.value = mCur.value; recalc(); }); }
+        if (mExam) { mExam.addEventListener('input', () => { if (dExam) dExam.value = mExam.value; recalc(); }); mExam.addEventListener('change', () => { if (dExam) dExam.value = mExam.value; recalc(); }); }
+        if (mTot)  { mTot.addEventListener('input', () => onManualTotal(mTot.value)); mTot.addEventListener('change', () => onManualTotal(mTot.value)); }
 
         recalc();
     });

@@ -718,7 +718,7 @@
                     </thead>
                     <tbody>
                         {% for st in students %}
-                        <tr>
+                        <tr data-sid="{{ st.student_id }}">
                             <td class="col-num">{{ st.position }}</td>
                             <td class="cell-name">
                                 <div class="name-main">{{ st.full_name }}</div>
@@ -836,7 +836,7 @@
             {# ══════════════ МОБІЛЬНИЙ: КАРТКИ ══════════════ #}
             <div class="grades-mobile">
                 {% for st in students %}
-                <div class="grade-card">
+                <div class="grade-card" data-sid="{{ st.student_id }}">
                     <div class="grade-card__header">
                         <span class="grade-card__num">{{ st.position }}.</span>
                         <div class="grade-card__name">
@@ -1002,11 +1002,11 @@
         else if (p >= 35) { ects = 'FX'; nat = 'Незадовільно / Fail'; isFail = true; }
         else              { ects = 'F';  nat = 'Незадовільно / Fail'; isFail = true; }
 
-        if (controlForm === 'Залік') {
+        if ((controlForm || '').trim() === 'Залік') {
             if (p >= 60) nat = 'Зараховано';
             else { nat = 'Незараховано'; isFail = true; }
         }
-        return { isFail, isEmpty: false, text: nat, ects };
+        return { isFail: isFail, isEmpty: false, text: nat, ects: ects };
     }
 
     function parseNum(v) {
@@ -1016,10 +1016,24 @@
         return isNaN(n) ? null : n;
     }
 
-    /* ── Оновлення комірки «Результат» (десктоп) ── */
+    function renderResultContent(targetEl, result, badgeClass) {
+        if (!targetEl) return;
+        targetEl.textContent = '';
+        if (result.isEmpty) {
+            targetEl.textContent = '—';
+            return;
+        }
+        targetEl.appendChild(document.createTextNode(result.text));
+        if (result.ects) {
+            const span = document.createElement('span');
+            span.className = badgeClass;
+            span.textContent = result.ects;
+            targetEl.appendChild(span);
+        }
+    }
+
     function updateResultCell(cell, result) {
         if (!cell) return;
-        // прибираємо старі класи статусу
         cell.classList.remove('pass', 'fail', 'empty');
         if (result.isEmpty) {
             cell.classList.add('empty');
@@ -1027,108 +1041,159 @@
             return;
         }
         cell.classList.add(result.isFail ? 'fail' : 'pass');
-        cell.innerHTML = result.text +
-            (result.ects ? '<span class="result-ects ' +
-                (result.isFail ? 'fail' : '') + '">' + result.ects + '</span>' : '');
+        renderResultContent(cell, result, 'result-ects' + (result.isFail ? ' fail' : ''));
     }
 
-    /* ── Оновлення блоку «Результат» (мобільна картка) ── */
     function updateResultCard(card, result) {
         if (!card) return;
         card.classList.remove('pass', 'fail', 'empty');
         const valueEl = card.querySelector('.grade-card__result-value');
         if (!valueEl) return;
-
         if (result.isEmpty) {
             card.classList.add('empty');
             valueEl.textContent = '—';
             return;
         }
         card.classList.add(result.isFail ? 'fail' : 'pass');
-        valueEl.innerHTML = result.text +
-            (result.ects ? '<span class="ects">' + result.ects + '</span>' : '');
+        renderResultContent(valueEl, result, 'ects');
     }
 
-    /* ── Десктоп: біндимо кожен рядок ── */
-    function bindDesktopRow(row) {
-        const mid = row.querySelector('.grade-mid');
-        const cur = row.querySelector('.grade-current');
-        const exam = row.querySelector('.grade-exam');
-        const total = row.querySelector('.grade-total');
-        if (!total || !mid || !cur || !exam) return;
-        const resultCell = row.querySelector('.cell-result');
+    function syncPair(src, dst) {
+        if (src && dst && dst.value !== src.value) {
+            dst.value = src.value;
+        }
+    }
 
-        function recalc() {
-            const a = parseNum(mid.value), b = parseNum(cur.value), c = parseNum(exam.value);
+    function setReadOnlyBoth(a, b, ro) {
+        if (a) a.readOnly = ro;
+        if (b) b.readOnly = ro;
+    }
+
+    function bindStudent(row, card) {
+        const dMid   = row ? row.querySelector('.grade-mid') : null;
+        const dCur   = row ? row.querySelector('.grade-current') : null;
+        const dExam  = row ? row.querySelector('.grade-exam') : null;
+        const dTot   = row ? row.querySelector('.grade-total') : null;
+        const dTop   = row ? row.querySelector('.topic-input') : null;
+        const dRes   = row ? row.querySelector('.cell-result') : null;
+
+        const mMid   = card ? card.querySelector('.grade-mid-mobile') : null;
+        const mCur   = card ? card.querySelector('.grade-current-mobile') : null;
+        const mExam  = card ? card.querySelector('.grade-exam-mobile') : null;
+        const mTot   = card ? card.querySelector('.grade-total-mobile') : null;
+        const mTop   = card ? card.querySelector('.grade-card__topic-input') : null;
+        const mRes   = card ? card.querySelector('.grade-card__result') : null;
+
+        if (!dTot && !mTot) return;
+
+        let wasComputed = false;
+
+        function updateBothResults(val) {
+            const result = pointsToResult(val, CONTROL_FORM);
+            updateResultCell(dRes, result);
+            updateResultCard(mRes, result);
+        }
+
+        function recalcFromParts(sourceIsMobile) {
+            if (sourceIsMobile) {
+                syncPair(mMid, dMid);
+                syncPair(mCur, dCur);
+                syncPair(mExam, dExam);
+            } else {
+                syncPair(dMid, mMid);
+                syncPair(dCur, mCur);
+                syncPair(dExam, mExam);
+            }
+
+            const a = dMid ? parseNum(dMid.value) : (mMid ? parseNum(mMid.value) : null);
+            const b = dCur ? parseNum(dCur.value) : (mCur ? parseNum(mCur.value) : null);
+            const c = dExam ? parseNum(dExam.value) : (mExam ? parseNum(mExam.value) : null);
             const anyFilled = (a !== null || b !== null || c !== null);
 
             if (!anyFilled) {
-                total.readOnly = false;
-                // Результат залишаємо як є — його оновить подія 'input' на total
+                setReadOnlyBoth(dTot, mTot, false);
+                if (wasComputed) {
+                    if (dTot) dTot.value = '';
+                    if (mTot) mTot.value = '';
+                    wasComputed = false;
+                    updateBothResults(null);
+                }
                 return;
             }
 
             let sum = (a || 0) + (b || 0) + (c || 0);
             if (sum > 100) sum = 100;
-            total.value = sum;
-            total.readOnly = true;
-
-            const result = pointsToResult(sum, CONTROL_FORM);
-            updateResultCell(resultCell, result);
+            const sumStr = String(sum);
+            if (dTot) dTot.value = sumStr;
+            if (mTot) mTot.value = sumStr;
+            setReadOnlyBoth(dTot, mTot, true);
+            wasComputed = true;
+            updateBothResults(sum);
         }
 
-        mid.addEventListener('input', recalc);
-        cur.addEventListener('input', recalc);
-        exam.addEventListener('input', recalc);
-
-        total.addEventListener('input', function () {
-            if (total.readOnly) return;
-            mid.value = '';
-            cur.value = '';
-            exam.value = '';
-            const manual = parseNum(total.value);
-            updateResultCell(resultCell, pointsToResult(manual, CONTROL_FORM));
-        });
-    }
-
-    /* ── Мобільна картка ── */
-    function bindMobileCard(card) {
-        const mid = card.querySelector('.grade-mid-mobile');
-        const cur = card.querySelector('.grade-current-mobile');
-        const exam = card.querySelector('.grade-exam-mobile');
-        const total = card.querySelector('.grade-total-mobile');
-        if (!total || !mid || !cur || !exam) return;
-        const resultBlock = card.querySelector('.grade-card__result');
-
-        function recalc() {
-            const a = parseNum(mid.value), b = parseNum(cur.value), c = parseNum(exam.value);
-            const anyFilled = (a !== null || b !== null || c !== null);
-            if (!anyFilled) { total.readOnly = false; return; }
-
-            let sum = (a || 0) + (b || 0) + (c || 0);
-            if (sum > 100) sum = 100;
-            total.value = sum;
-            total.readOnly = true;
-
-            updateResultCard(resultBlock, pointsToResult(sum, CONTROL_FORM));
+        function onTotalInput(sourceEl, otherEl) {
+            if (!sourceEl || sourceEl.readOnly) return;
+            syncPair(sourceEl, otherEl);
+            if (dMid) dMid.value = '';
+            if (dCur) dCur.value = '';
+            if (dExam) dExam.value = '';
+            if (mMid) mMid.value = '';
+            if (mCur) mCur.value = '';
+            if (mExam) mExam.value = '';
+            wasComputed = false;
+            updateBothResults(parseNum(sourceEl.value));
         }
 
-        mid.addEventListener('input', recalc);
-        cur.addEventListener('input', recalc);
-        exam.addEventListener('input', recalc);
-
-        total.addEventListener('input', function () {
-            if (total.readOnly) return;
-            mid.value = '';
-            cur.value = '';
-            exam.value = '';
-            const manual = parseNum(total.value);
-            updateResultCard(resultBlock, pointsToResult(manual, CONTROL_FORM));
+        [dMid, dCur, dExam].forEach(function (el) {
+            if (!el) return;
+            el.addEventListener('input', function () { recalcFromParts(false); });
+            el.addEventListener('change', function () { recalcFromParts(false); });
         });
+        [mMid, mCur, mExam].forEach(function (el) {
+            if (!el) return;
+            el.addEventListener('input', function () { recalcFromParts(true); });
+            el.addEventListener('change', function () { recalcFromParts(true); });
+        });
+
+        if (dTot) {
+            dTot.addEventListener('input', function () { onTotalInput(dTot, mTot); });
+            dTot.addEventListener('change', function () { onTotalInput(dTot, mTot); });
+        }
+        if (mTot) {
+            mTot.addEventListener('input', function () { onTotalInput(mTot, dTot); });
+            mTot.addEventListener('change', function () { onTotalInput(mTot, dTot); });
+        }
+
+        if (dTop && mTop) {
+            dTop.addEventListener('input', function () { syncPair(dTop, mTop); });
+            mTop.addEventListener('input', function () { syncPair(mTop, dTop); });
+        }
+
+        // Початкова ініціалізація: якщо є міжсесійні/поточні/іспит, блокуємо ручний підсумок і перераховуємо
+        const hasAnyPart = [dMid, dCur, dExam].some(function (el) {
+            return el && parseNum(el.value) !== null;
+        });
+        if (hasAnyPart) {
+            recalcFromParts(false);
+        } else if (dTot && parseNum(dTot.value) !== null) {
+            syncPair(dTot, mTot);
+            updateBothResults(parseNum(dTot.value));
+        }
     }
 
-    document.querySelectorAll('table.grades tbody tr').forEach(bindDesktopRow);
-    document.querySelectorAll('.grade-card').forEach(bindMobileCard);
+    const rowsBySid = new Map();
+    document.querySelectorAll('table.grades tbody tr[data-sid]').forEach(function (row) {
+        rowsBySid.set(row.getAttribute('data-sid'), row);
+    });
+    const cardsBySid = new Map();
+    document.querySelectorAll('.grade-card[data-sid]').forEach(function (card) {
+        cardsBySid.set(card.getAttribute('data-sid'), card);
+    });
+
+    const allSids = new Set([...rowsBySid.keys(), ...cardsBySid.keys()]);
+    allSids.forEach(function (sid) {
+        bindStudent(rowsBySid.get(sid) || null, cardsBySid.get(sid) || null);
+    });
 })();
 </script>
 {% endif %}
