@@ -3,42 +3,95 @@
 {% block title %}Нова сесія{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:640px">
-  {{ ui.page_header('bi-plus-circle', 'Нова сесія', '') }}
-  <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary mb-3">← Назад</a>
+<style>
+    .es-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .es-card__body { padding: 1.15rem; }
+    .es-card__foot {
+        background: var(--paper-2);
+        border-top: 1px solid var(--line);
+        padding: .85rem 1.15rem;
+    }
+</style>
 
-  <form method="post" class="card card-body">
+<div class="container py-4" style="max-width: 680px;">
     <div class="mb-3">
-      <label class="form-label">Група *</label>
-      <select name="group_id" class="form-select" required>
-        <option value="">— оберіть —</option>
-        {% for g in groups %}
-        <option value="{{ g.id }}">{{ g.name }} ({{ g.start_year }}, {{ g.study_form }}, курс {{ g.course }})</option>
-        {% endfor %}
-      </select>
+        <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>До списку сесій
+        </a>
     </div>
-    <div class="row g-2">
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Навчальний рік *</label>
-        <input type="text" name="academic_year" class="form-control" placeholder="2026–2027" required>
-      </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Семестр *</label>
-        <select name="semester" class="form-select" required>
-          <option value="1">1</option>
-          <option value="2">2</option>
-        </select>
-      </div>
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Назва сесії</label>
-      <input type="text" name="name" class="form-control" placeholder="Авто: Сесія N семестру РІК">
-    </div>
-    <div class="mb-3">
-      <label class="form-label">Примітки</label>
-      <textarea name="notes" class="form-control" rows="2"></textarea>
-    </div>
-    <button type="submit" class="btn btn-primary">Створити</button>
-  </form>
+
+    {{ ui.page_header('bi-plus-circle', 'Нова сесія', 'Створення екзаменаційної сесії для групи') }}
+
+    <form method="post" class="es-card">
+        <div class="es-card__body">
+            <div class="mb-3">
+                <label class="form-label fw-semibold small">Група <span class="text-danger">*</span></label>
+                <select name="group_id" class="form-select" required>
+                    <option value="">— оберіть групу —</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}" {% if request.form.get('group_id')|int == g.id %}selected{% endif %}>
+                        {{ g.name }} ({{ g.start_year }}, {{ g.study_form }}, курс {{ g.course }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-sm-7">
+                    <label class="form-label fw-semibold small">Навчальний рік <span class="text-danger">*</span></label>
+                    <input type="text" name="academic_year" id="yearInput" class="form-control"
+                           value="{{ request.form.get('academic_year') or default_year or '' }}"
+                           placeholder="2026–2027" required>
+                </div>
+                <div class="col-sm-5">
+                    <label class="form-label fw-semibold small">Семестр <span class="text-danger">*</span></label>
+                    <select name="semester" id="semesterSelect" class="form-select" required>
+                        <option value="1" {% if request.form.get('semester', '1') == '1' %}selected{% endif %}>1 семестр</option>
+                        <option value="2" {% if request.form.get('semester') == '2' %}selected{% endif %}>2 семестр</option>
+                        <option value="3" {% if request.form.get('semester') == '3' %}selected{% endif %}>3 семестр (додатковий)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label fw-semibold small">Назва сесії</label>
+                <input type="text" name="name" id="sessionNameInput" class="form-control"
+                       value="{{ request.form.get('name') or '' }}"
+                       placeholder="Авто: Сесія 1 семестру {{ default_year or '2026–2027' }}">
+                <div class="form-text">Можна залишити порожнім — назва сформується автоматично.</div>
+            </div>
+            <div class="mb-0">
+                <label class="form-label fw-semibold small">Примітки</label>
+                <textarea name="notes" class="form-control" rows="2"
+                          placeholder="Наприклад: зимова сесія або перездачі">{{ request.form.get('notes') or '' }}</textarea>
+            </div>
+        </div>
+        <div class="es-card__foot d-flex justify-content-between gap-2">
+            <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-outline-secondary">Скасувати</a>
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>Створити сесію
+            </button>
+        </div>
+    </form>
 </div>
+
+<script>
+(function () {
+    const yEl = document.getElementById('yearInput');
+    const sEl = document.getElementById('semesterSelect');
+    const nEl = document.getElementById('sessionNameInput');
+    if (!yEl || !sEl || !nEl) return;
+    function syncPlaceholder() {
+        const y = (yEl.value || '').trim() || 'РІК';
+        const s = sEl.value || '1';
+        nEl.placeholder = 'Авто: Сесія ' + s + ' семестру ' + y;
+    }
+    yEl.addEventListener('input', syncPlaceholder);
+    sEl.addEventListener('change', syncPlaceholder);
+    syncPlaceholder();
+})();
+</script>
 {% endblock %}

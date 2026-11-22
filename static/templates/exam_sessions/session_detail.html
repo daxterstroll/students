@@ -12,208 +12,519 @@
   'approved': 'Затверджено',
   'locked': 'Заблоковано'
 } %}
-{% set sheet_badge = {
-  'draft': 'secondary',
-  'sent': 'info',
-  'in_progress': 'warning',
-  'submitted': 'primary',
-  'approved': 'success',
-  'locked': 'dark'
-} %}
 {% set kind_ua = {
   'subject': 'Предмет',
   'practice': 'Практика',
   'coursework': 'Курсова',
   'attestation': 'Атестація'
 } %}
+<style>
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-ok-solid: #3d7a53;
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+        --st-warn-solid: #c8a24a;
+        --st-miss-bg: var(--stamp-soft);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: var(--stamp-semi);
+        --st-miss-solid: #a23b2e;
+        --st-info-bg: rgba(61, 104, 153, .13);
+        --st-info-fg: #274f7d;
+        --st-info-bd: rgba(61, 104, 153, .34);
+        --st-info-solid: #3d6899;
+        --es-track: rgba(31, 42, 58, .09);
+    }
+    html[data-theme="dark"] .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-ok-solid: #5aa372;
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+        --st-warn-solid: #d9b45c;
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+        --st-miss-solid: #c9584a;
+        --st-info-bg: rgba(74, 110, 168, .22);
+        --st-info-fg: #b4ccf0;
+        --st-info-bd: rgba(120, 156, 214, .38);
+        --st-info-solid: #6994cc;
+        --es-track: rgba(231, 226, 214, .11);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+    .es-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 12px;
+        padding: .8rem 1rem;
+        height: 100%;
+    }
+    .es-kpi--ok { border-top-color: var(--st-ok-solid); }
+    .es-kpi--warn { border-top-color: var(--st-miss-solid); }
+    .es-kpi--info { border-top-color: var(--st-info-solid); }
+    .es-kpi__label {
+        font-size: .72rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--muted); margin-bottom: .22rem;
+    }
+    .es-kpi__val { font-size: 1.45rem; font-weight: 800; line-height: 1.1; color: var(--ink-text); }
+    .es-kpi--ok .es-kpi__val { color: var(--st-ok-fg); }
+    .es-kpi--warn .es-kpi__val { color: var(--st-miss-fg); }
+    .es-kpi__sub { font-size: .75rem; color: var(--muted); margin-top: .25rem; }
 
-<div class="container py-4">
-  {{ ui.page_header('bi-clipboard2-check', es.name,
-     es.group_name ~ ' · ' ~ es.academic_year ~ ' · семестр ' ~ es.semester) }}
+    .es-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .es-panel__body { padding: .9rem 1rem; }
+    .es-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .8rem 1rem;
+        margin-bottom: .85rem;
+    }
+    .es-toolbar .form-control,
+    .es-toolbar .form-select,
+    .es-panel .form-control,
+    .es-panel .form-select {
+        background-color: var(--paper);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .es-toolbar .form-control,
+    html[data-theme="dark"] .es-toolbar .form-select,
+    html[data-theme="dark"] .es-panel .form-control,
+    html[data-theme="dark"] .es-panel .form-select { background-color: var(--paper-2); }
 
-<div class="d-flex flex-wrap gap-2 mb-3">
-  <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
-    ← До списку
-  </a>
-  <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
-    <i class="bi bi-person-badge me-1"></i> Картотека викладачів
-  </a>
-  {% if has_perm('view_exam_session_history') %}
-  <a href="{{ url_for('exam_sessions.session_history', session_id=es.id) }}"
-     class="btn btn-sm btn-outline-info">
-    <i class="bi bi-clock-history me-1"></i> Історія змін
-  </a>
-  <a href="{{ url_for('exam_sessions.history_index', session_id=es.id) }}"
-     class="btn btn-sm btn-outline-info"
-     title="Тільки ця сесія у загальному журналі">
-    <i class="bi bi-funnel me-1"></i> Фільтр у журналі
-  </a>
-  {% endif %}
-  <a href="{{ url_for('exam_sessions.session_copy', session_id=es.id) }}"
-     class="btn btn-sm btn-outline-secondary">
-    <i class="bi bi-copy me-1"></i> Копіювати сесію
-  </a>
-  {% if has_perm('delete_exam_sessions') %}
-  {% set linked_sheets_count = sheets | selectattr('linked_entity_id') | list | length %}
-  {% if linked_sheets_count > 0 %}
-  <button type="button" class="btn btn-sm btn-outline-danger ms-auto"
-          data-bs-toggle="modal" data-bs-target="#deleteSessionModal">
-    <i class="bi bi-trash me-1"></i> Видалити сесію
-  </button>
-  {% else %}
-  <form method="post" class="d-inline ms-auto"
-        onsubmit="return confirm('Видалити сесію «{{ es.name }}» разом з усіма її відомостями?\n\nЦю дію НЕ МОЖНА скасувати.');">
-    <input type="hidden" name="action" value="delete_session">
-    <button type="submit" class="btn btn-sm btn-outline-danger">
-      <i class="bi bi-trash me-1"></i> Видалити сесію
-    </button>
-  </form>
-  {% endif %}
-  {% endif %}
-</div>
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; border-bottom: 1px solid var(--line);
+        padding: .6rem .65rem; white-space: nowrap;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .62rem .65rem;
+        vertical-align: middle;
+    }
+    .es-track {
+        height: 7px; border-radius: 5px;
+        background: var(--es-track); overflow: hidden; min-width: 56px;
+    }
+    .es-fill { height: 100%; border-radius: 5px; }
+    .es-fill--ok { background: var(--st-ok-solid); }
+    .es-fill--warn { background: var(--st-warn-solid); }
+    .es-fill--miss { background: var(--st-miss-solid); }
 
-<div class="card mb-4">
-  <div class="card-body">
-    <form method="post" class="row g-2 align-items-end">
-      <input type="hidden" name="action" value="update_meta">
-      <div class="col-md-4">
-        <label class="form-label small mb-1">Назва</label>
-        <input type="text" name="name" class="form-control form-control-sm" value="{{ es.name }}">
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">Навч. рік</label>
-        <input type="text" name="academic_year" class="form-control form-control-sm"
-               value="{{ es.academic_year }}"
-               {% if sheets %}readonly title="Є відомості — спочатку видаліть їх"{% endif %}>
-      </div>
-      <div class="col-md-1">
-        <label class="form-label small mb-1">Сем.</label>
-        <select name="semester" class="form-select form-select-sm"
-                {% if sheets %}disabled title="Є відомості — спочатку видаліть їх"{% endif %}>
-          {% for s in (1,2,3) %}
-          <option value="{{ s }}" {% if es.semester == s %}selected{% endif %}>{{ s }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small mb-1">Статус</label>
-        <select name="status" class="form-select form-select-sm">
-          {% for s, lab in sess_status_ua.items() %}
-          <option value="{{ s }}" {% if es.status == s %}selected{% endif %}>{{ lab }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <button type="submit" class="btn btn-sm btn-outline-primary w-100">Зберегти</button>
-      </div>
-    </form>
-  </div>
-</div>
+    .es-badge {
+        display: inline-flex; align-items: center; gap: .25rem;
+        padding: .15rem .45rem; border-radius: 6px;
+        font-size: .72rem; font-weight: 700;
+        border: 1px solid transparent; white-space: nowrap;
+    }
+    .es-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .es-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .es-badge--miss { background: var(--st-miss-bg); color: var(--st-miss-fg); border-color: var(--st-miss-bd); }
+    .es-badge--info { background: var(--st-info-bg); color: var(--st-info-fg); border-color: var(--st-info-bd); }
+    .es-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
 
-  <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-    <h2 class="h5 mb-0">Відомості</h2>
-    <div class="d-flex flex-wrap gap-2">
-      <a class="btn btn-sm btn-success"
-         href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=es.id) }}">
-        <i class="bi bi-file-earmark-excel"></i> Загальна відомість (Excel)
-      </a>
-      <a class="btn btn-sm btn-outline-primary"
-         href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
-        <i class="bi bi-file-earmark-word"></i> Загальна відомість (Word)
-      </a>
-      <a class="btn btn-sm btn-primary" href="{{ url_for('exam_sessions.sheet_new', session_id=es.id) }}">
-        <i class="bi bi-plus-lg"></i> Додати відомість
-      </a>
+    .es-bulk-bar {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem;
+        padding: .65rem 1rem;
+        background: var(--brass-soft);
+        border-bottom: 1px solid var(--brass-semi);
+    }
+    .es-bulk-bar.is-visible { display: flex; }
+</style>
+
+<div class="container py-4 es-page">
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>До списку сесій
+        </a>
+        <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-person-badge me-1"></i>Картотека викладачів
+        </a>
+        {% if can_transfer %}
+        <a href="{{ url_for('exam_sessions.transfer_queue') }}" class="btn btn-sm btn-outline-warning">
+            <i class="bi bi-arrow-left-right me-1"></i>Черга переносу
+        </a>
+        {% endif %}
+        {% if has_perm('view_exam_session_history') %}
+        <a href="{{ url_for('exam_sessions.session_history', session_id=es.id) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-clock-history me-1"></i>Історія змін
+        </a>
+        <a href="{{ url_for('exam_sessions.history_index', session_id=es.id) }}"
+           class="btn btn-sm btn-outline-secondary" title="Тільки ця сесія у загальному журналі">
+            <i class="bi bi-funnel me-1"></i>Журнал
+        </a>
+        {% endif %}
+        <a href="{{ url_for('exam_sessions.session_copy', session_id=es.id) }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-copy me-1"></i>Копіювати сесію
+        </a>
+        {% if has_perm('delete_exam_sessions') %}
+        {% set linked_sheets_count = sheets | selectattr('linked_entity_id') | list | length %}
+        {% if linked_sheets_count > 0 %}
+        <button type="button" class="btn btn-sm btn-outline-danger ms-auto"
+                data-bs-toggle="modal" data-bs-target="#deleteSessionModal">
+            <i class="bi bi-trash me-1"></i>Видалити сесію
+        </button>
+        {% else %}
+        <form method="post" class="d-inline ms-auto"
+              onsubmit="return confirm('Видалити сесію «{{ es.name }}» разом з усіма її відомостями?\n\nЦю дію НЕ МОЖНА скасувати.');">
+            <input type="hidden" name="action" value="delete_session">
+            <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash me-1"></i>Видалити сесію
+            </button>
+        </form>
+        {% endif %}
+        {% endif %}
     </div>
-  </div>
 
-  {% if sheets %}
-  <div class="card">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>Дисципліна</th>
-            <th>Тип</th>
-            <th>Контроль</th>
-            <th>Викладач</th>
-            <th>Ліцензія</th>
-            <th>Студ.</th>
-            <th>Заповнено</th>
-            <th>Статус</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for s in sheets %}
-          <tr>
-            <td>{{ s.discipline_name }}</td>
-            <td class="small">{{ kind_ua.get(s.entity_kind, s.entity_kind) }}</td>
-            <td>{{ s.control_form }}</td>
-            <td class="small">
-              {% if s.teacher_short or s.teacher_full %}
-                {{ s.teacher_short or s.teacher_full }}
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-            <td>{{ s.license_name or '—' }}</td>
-            <td class="text-center">{{ s.students_count }}</td>
-            <td class="text-center">
-              {% if s.students_count > 0 %}
-                {% set pct = (s.graded_count / s.students_count * 100)|round(0)|int %}
-                <div class="d-flex align-items-center gap-1">
-                  <div class="progress flex-grow-1" style="height: 8px; min-width: 50px;">
-                    <div class="progress-bar {% if pct == 100 %}bg-success{% elif pct > 0 %}bg-warning{% else %}bg-secondary{% endif %}"
-                         style="width: {{ pct }}%;"></div>
-                  </div>
-                  <small class="text-muted" style="white-space: nowrap;">{{ s.graded_count }}/{{ s.students_count }}</small>
+    {{ ui.page_header(
+        'bi-clipboard2-check',
+        es.name,
+        es.group_name ~ ' · ' ~ es.academic_year ~ ' · семестр ' ~ es.semester ~ (' · ' ~ es.study_form if es.study_form else '')
+    ) }}
+
+    {# ── KPI по сесії ── #}
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi">
+                <div class="es-kpi__label">Відомостей у сесії</div>
+                <div class="es-kpi__val es-num">{{ session_stats.total }}</div>
+                <div class="es-kpi__sub">Затверджено: {{ session_stats.approved }} · У плані: {{ session_stats.linked }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--ok">
+                <div class="es-kpi__label">Здано викладачами</div>
+                <div class="es-kpi__val es-num">{{ session_stats.submitted }} <span class="fs-6 fw-normal text-muted">({{ session_stats.percent }}%)</span></div>
+                <div class="es-kpi__sub">Оцінок: {{ session_stats.students_graded }} / {{ session_stats.students_total }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--warn">
+                <div class="es-kpi__label">Очікують заповнення</div>
+                <div class="es-kpi__val es-num">{{ session_stats.pending }}</div>
+                <div class="es-kpi__sub">Чернетки та надіслані без балів</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--info">
+                <div class="es-kpi__label">В процесі</div>
+                <div class="es-kpi__val es-num">{{ session_stats.in_progress }}</div>
+                <div class="es-kpi__sub">Частково заповнено</div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Параметри сесії ── #}
+    <div class="es-panel">
+        <div class="es-panel__body">
+            <form method="post" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="update_meta">
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Назва сесії</label>
+                    <input type="text" name="name" class="form-control form-control-sm" value="{{ es.name }}">
                 </div>
-              {% else %}
-                <span class="text-muted">—</span>
-              {% endif %}
-            </td>
-            <td>
-              <span class="badge text-bg-{{ sheet_badge.get(s.status, 'secondary') }}">
-                {{ sheet_status_ua.get(s.status, s.status) }}
-              </span>
-            </td>
-            <td class="text-end text-nowrap">
-              <a class="btn btn-sm btn-outline-primary"
-                 href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
-              <form method="post" class="d-inline"
-                    action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">
-                <input type="hidden" name="action" value="copy_sheet">
-                <button type="submit" class="btn btn-sm btn-outline-secondary"
-                        title="Копіювати відомість у цій сесії (щоб змінити ліцензію)">
-                  <i class="bi bi-copy me-1"></i>Копіювати
-                </button>
-              </form>
-              {% if has_perm('delete_exam_sessions') and not s.linked_entity_id %}
-              <form method="post" class="d-inline"
-                    action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"
-                    onsubmit="return confirm('Видалити відомість «{{ s.discipline_name }}»?');">
-                <input type="hidden" name="action" value="delete_sheet">
-                <button type="submit" class="btn btn-sm btn-outline-danger"
-                        title="Видалити відомість">
-                  <i class="bi bi-trash"></i>
-                </button>
-              </form>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">Навч. рік</label>
+                    <input type="text" name="academic_year" class="form-control form-control-sm"
+                           value="{{ es.academic_year }}"
+                           {% if sheets %}readonly title="Є відомості — спочатку видаліть їх"{% endif %}>
+                </div>
+                <div class="col-6 col-md-1">
+                    <label class="form-label small mb-1">Сем.</label>
+                    <select name="semester" class="form-select form-select-sm"
+                            {% if sheets %}disabled title="Є відомості — спочатку видаліть їх"{% endif %}>
+                        {% for s in (1, 2, 3) %}
+                        <option value="{{ s }}" {% if es.semester == s %}selected{% endif %}>{{ s }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">Статус</label>
+                    <select name="status" class="form-select form-select-sm">
+                        {% for s, lab in sess_status_ua.items() %}
+                        <option value="{{ s }}" {% if es.status == s %}selected{% endif %}>{{ lab }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">Примітка</label>
+                    <input type="text" name="notes" class="form-control form-control-sm"
+                           value="{{ es.notes or '' }}" placeholder="Необов'язково">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-sm btn-outline-primary w-100">Зберегти</button>
+                </div>
+            </form>
+        </div>
     </div>
-  </div>
-  {% else %}
-  <div class="alert alert-light border mb-0">
-    Відомостей ще немає. Створіть окрему відомість на кожну дисципліну та ліцензію.
-    Викладача обирайте з <a href="{{ url_for('exam_sessions.teachers_list') }}">картотеки викладачів</a> —
-    відомість автоматично з'явиться в його кабінеті.
-  </div>
-  {% endif %}
+
+    {# ── Заголовок та дії відомостей ── #}
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <h2 class="h5 mb-0">Відомості <span class="text-muted small es-num">({{ sheets|length }})</span></h2>
+        <div class="d-flex flex-wrap gap-2">
+            {% if sheets %}
+            <a class="btn btn-sm btn-success" href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=es.id) }}">
+                <i class="bi bi-file-earmark-excel me-1"></i>Загальна відомість (Excel)
+            </a>
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('exam_sessions.session_summary_word', session_id=es.id) }}">
+                <i class="bi bi-file-earmark-word me-1"></i>Загальна відомість (Word)
+            </a>
+            {% endif %}
+            <a class="btn btn-sm btn-primary" href="{{ url_for('exam_sessions.sheet_new', session_id=es.id) }}">
+                <i class="bi bi-plus-lg me-1"></i>Додати відомість
+            </a>
+        </div>
+    </div>
+
+    {% if sheets %}
+    {# ── Фільтри таблиці відомостей ── #}
+    <div class="es-toolbar">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" id="sheetSearch" class="form-control" placeholder="Дисципліна, викладач або № відомості...">
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <select id="sheetStatusFilter" class="form-select form-select-sm">
+                    <option value="">Усі статуси</option>
+                    {% for k, label in sheet_status_ua.items() %}
+                    <option value="{{ k }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <select id="sheetLicenseFilter" class="form-select form-select-sm">
+                    <option value="">Усі ліцензії</option>
+                    {% for lid, lname in session_licenses %}
+                    <option value="{{ lid }}">{{ lname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <select id="sheetTeacherFilter" class="form-select form-select-sm">
+                    <option value="">Усі викладачі</option>
+                    {% for tid, tname in session_teachers %}
+                    <option value="{{ tid }}">{{ tname }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    {# Окрема форма для масових дій (без вкладених <form>, чекбокси привʼязані через form="bulkSheetsForm") #}
+    <form method="post" id="bulkSheetsForm">
+        <input type="hidden" name="action" id="bulkActionInput" value="bulk_approve">
+    </form>
+
+    <div class="es-panel">
+        <div class="es-bulk-bar" id="bulkBar">
+            <span class="small fw-semibold">
+                Обрано відомостей: <strong id="bulkCount" class="es-num">0</strong>
+            </span>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="submit" form="bulkSheetsForm" class="btn btn-sm btn-success"
+                        onclick="document.getElementById('bulkActionInput').value='bulk_approve'; return confirm('Затвердити обрані відомості (які вже надіслані, в процесі або здані)?');">
+                    <i class="bi bi-check2-all me-1"></i>Затвердити обрані
+                </button>
+                <button type="submit" form="bulkSheetsForm" class="btn btn-sm btn-outline-secondary"
+                        onclick="document.getElementById('bulkActionInput').value='bulk_refresh_students';">
+                    <i class="bi bi-arrow-repeat me-1"></i>Оновити студентів
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="clearSelectionBtn">Скасувати вибір</button>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-middle" id="sheetsTable">
+                <thead>
+                    <tr>
+                        <th style="width:2rem;" class="text-center">
+                            <input type="checkbox" class="form-check-input" id="selectAllSheets" title="Обрати всі видимі">
+                        </th>
+                        <th>Дисципліна</th>
+                        <th>Тип / Контроль</th>
+                        <th>Викладач</th>
+                        <th>Ліцензія</th>
+                        <th style="min-width:120px;">Заповнено</th>
+                        <th>Статус</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sheets %}
+                    <tr data-search="{{ (s.discipline_name ~ ' ' ~ (s.teacher_short or '') ~ ' ' ~ (s.teacher_full or '') ~ ' ' ~ (s.statement_number or '') ~ ' ' ~ (s.license_name or ''))|lower }}"
+                        data-status="{{ s.status }}"
+                        data-license="{{ s.license_id or '' }}"
+                        data-teacher="{{ s.teacher_ref_id or '' }}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input js-sheet-check"
+                                   form="bulkSheetsForm" name="sheet_ids" value="{{ s.id }}">
+                        </td>
+                        <td>
+                            <div class="fw-semibold">
+                                <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}" class="text-decoration-none">
+                                    {{ s.discipline_name }}
+                                </a>
+                            </div>
+                            {% if s.statement_number or s.exam_date or s.hours_credits %}
+                            <div class="small text-muted">
+                                {% if s.statement_number %}№ {{ s.statement_number }}{% endif %}
+                                {% if s.statement_number and s.exam_date %} · {% endif %}
+                                {% if s.exam_date %}{{ s.exam_date }}{% endif %}
+                                {% if (s.statement_number or s.exam_date) and s.hours_credits %} · {% endif %}
+                                {% if s.hours_credits %}{{ s.hours_credits }}{% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            <div>{{ kind_ua.get(s.entity_kind, s.entity_kind) }}</div>
+                            <div class="text-muted">{{ s.control_form }}</div>
+                        </td>
+                        <td class="small">
+                            {% if s.teacher_short or s.teacher_full %}
+                            <div class="d-flex align-items-center gap-1">
+                                {% if s.teacher_ref_id %}
+                                <a href="{{ url_for('exam_sessions.teacher_edit', teacher_id=s.teacher_ref_id) }}"
+                                   class="text-decoration-none">
+                                    {{ s.teacher_short or s.teacher_full }}
+                                </a>
+                                {% else %}
+                                <span>{{ s.teacher_short or s.teacher_full }}</span>
+                                {% endif %}
+                                {% if s.teacher_cabinet_url %}
+                                <button type="button" class="btn btn-sm btn-link p-0 text-muted js-copy-url"
+                                        data-url="{{ s.teacher_cabinet_url }}"
+                                        title="Копіювати посилання на кабінет викладача">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="small">{{ s.license_name or '—' }}</td>
+                        <td>
+                            {% if s.students_count > 0 %}
+                            {% set pct = (s.graded_count / s.students_count * 100)|round(0)|int %}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="es-track flex-grow-1">
+                                    <div class="es-fill {% if pct == 100 %}es-fill--ok{% elif pct > 0 %}es-fill--warn{% else %}es-fill--miss{% endif %}"
+                                         style="width: {{ pct }}%;"></div>
+                                </div>
+                                <small class="text-muted es-num text-nowrap">{{ s.graded_count }}/{{ s.students_count }}</small>
+                            </div>
+                            {% else %}
+                            <span class="text-muted small">0 студ.</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div>
+                                {% if s.status in ('approved', 'locked') %}
+                                <span class="es-badge es-badge--ok">{{ sheet_status_ua.get(s.status, s.status) }}</span>
+                                {% elif s.status == 'submitted' %}
+                                <span class="es-badge es-badge--info">{{ sheet_status_ua.get(s.status, s.status) }}</span>
+                                {% elif s.status == 'in_progress' %}
+                                <span class="es-badge es-badge--warn">{{ sheet_status_ua.get(s.status, s.status) }}</span>
+                                {% elif s.status == 'sent' %}
+                                <span class="es-badge es-badge--info">{{ sheet_status_ua.get(s.status, s.status) }}</span>
+                                {% else %}
+                                <span class="es-badge es-badge--muted">{{ sheet_status_ua.get(s.status, s.status) }}</span>
+                                {% endif %}
+                            </div>
+                            {% if s.linked_entity_id %}
+                            <div class="small mt-1" style="color:var(--st-ok-fg);">
+                                <i class="bi bi-check2-circle"></i> у плані #{{ s.linked_entity_id }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <div class="d-inline-flex gap-1">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">Відкрити</a>
+                                {% if s.status in ('submitted', 'in_progress', 'sent') %}
+                                <form method="post" class="d-inline">
+                                    <input type="hidden" name="action" value="quick_approve">
+                                    <input type="hidden" name="sheet_id" value="{{ s.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-success" title="Швидко затвердити відомість">
+                                        <i class="bi bi-check2"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if can_transfer and s.status in ('approved', 'locked') and not s.linked_entity_id %}
+                                <a class="btn btn-sm btn-outline-warning"
+                                   href="{{ url_for('exam_sessions.transfer_sheet', sheet_id=s.id) }}"
+                                   title="Перенести оцінки в навчальний план">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                </a>
+                                {% endif %}
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="{{ url_for('exam_sessions.sheet_word', sheet_id=s.id) }}"
+                                   title="Завантажити Word">
+                                    <i class="bi bi-file-earmark-word"></i>
+                                </a>
+                                <form method="post" class="d-inline"
+                                      action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}">
+                                    <input type="hidden" name="action" value="copy_sheet">
+                                    <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                            title="Копіювати відомість у цій сесії">
+                                        <i class="bi bi-copy"></i>
+                                    </button>
+                                </form>
+                                {% if has_perm('delete_exam_sessions') and not s.linked_entity_id %}
+                                <form method="post" class="d-inline"
+                                      action="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"
+                                      onsubmit="return confirm('Видалити відомість «{{ s.discipline_name }}»?');">
+                                    <input type="hidden" name="action" value="delete_sheet">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити відомість">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="sheetsEmptyFilter" class="p-4 text-center text-muted small d-none">
+            За обраними фільтрами відомостей не знайдено.
+        </div>
+    </div>
+    {% else %}
+    <div class="es-panel">
+        <div class="es-panel__body text-center py-4 text-muted">
+            <i class="bi bi-file-earmark-plus fs-2 d-block mb-2 opacity-50"></i>
+            Відомостей у цій сесії ще немає. Створіть окрему відомість на кожну дисципліну та ліцензію.
+            Викладача обирайте з <a href="{{ url_for('exam_sessions.teachers_list') }}">картотеки викладачів</a> —
+            відомість автоматично з'явиться в його кабінеті.
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% set linked_sheets = sheets | selectattr('linked_entity_id') | list %}
@@ -243,9 +554,7 @@
                                 {% for sh in linked_sheets %}
                                 <tr>
                                     <td class="small">{{ sh.discipline_name }}</td>
-                                    <td class="small">
-                                        {{ sh.linked_entity_type }} #{{ sh.linked_entity_id }}
-                                    </td>
+                                    <td class="small">{{ sh.linked_entity_type }} #{{ sh.linked_entity_id }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
@@ -258,8 +567,7 @@
                             <strong>Також видалити оцінки з плану</strong>
                             <div class="text-muted small">
                                 Всі оцінки, записані цими {{ linked_sheets|length }} відомостями,
-                                будуть <strong>видалені</strong> з відповідних предметів
-                                та активностей.
+                                будуть <strong>видалені</strong> з відповідних предметів та активностей.
                             </div>
                         </label>
                     </div>
@@ -270,12 +578,10 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
-                        Скасувати
-                    </button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
                     <button type="submit" class="btn btn-danger"
                             onclick="return confirm('Точно видалити сесію «{{ es.name }}» разом з {{ sheets|length }} відомостями?');">
-                        <i class="bi bi-trash me-1"></i> Видалити сесію
+                        <i class="bi bi-trash me-1"></i>Видалити сесію
                     </button>
                 </div>
             </form>
@@ -284,4 +590,85 @@
 </div>
 {% endif %}
 
+<script>
+(function () {
+    document.querySelectorAll('.js-copy-url').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const url = btn.dataset.url;
+            const done = () => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+                setTimeout(() => { btn.innerHTML = orig; }, 1400);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(url).then(done).catch(() => {});
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(ta);
+            }
+        });
+    });
+
+    const table = document.getElementById('sheetsTable');
+    if (!table) return;
+    const rows = Array.from(table.querySelectorAll('tbody tr'));
+    const qEl = document.getElementById('sheetSearch');
+    const stEl = document.getElementById('sheetStatusFilter');
+    const licEl = document.getElementById('sheetLicenseFilter');
+    const tEl = document.getElementById('sheetTeacherFilter');
+    const emptyEl = document.getElementById('sheetsEmptyFilter');
+
+    function filter() {
+        const q = (qEl.value || '').trim().toLowerCase();
+        const st = stEl.value;
+        const lic = licEl.value;
+        const teach = tEl.value;
+        let vis = 0;
+        rows.forEach(r => {
+            const ok = (!q || r.dataset.search.includes(q))
+                && (!st || r.dataset.status === st)
+                && (!lic || r.dataset.license === lic)
+                && (!teach || r.dataset.teacher === teach);
+            r.classList.toggle('d-none', !ok);
+            if (ok) vis++;
+        });
+        emptyEl.classList.toggle('d-none', vis > 0);
+    }
+    [qEl, stEl, licEl, tEl].forEach(el => {
+        if (el) el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', filter);
+    });
+
+    // Масовий вибір
+    const checks = Array.from(document.querySelectorAll('.js-sheet-check'));
+    const selectAll = document.getElementById('selectAllSheets');
+    const bulkBar = document.getElementById('bulkBar');
+    const bulkCount = document.getElementById('bulkCount');
+    const clearBtn = document.getElementById('clearSelectionBtn');
+
+    function syncBulk() {
+        const selected = checks.filter(c => c.checked).length;
+        bulkCount.textContent = selected;
+        bulkBar.classList.toggle('is-visible', selected > 0);
+    }
+    checks.forEach(c => c.addEventListener('change', syncBulk));
+    if (selectAll) {
+        selectAll.addEventListener('change', () => {
+            checks.forEach(c => {
+                if (!c.closest('tr').classList.contains('d-none')) c.checked = selectAll.checked;
+            });
+            syncBulk();
+        });
+    }
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            checks.forEach(c => { c.checked = false; });
+            if (selectAll) selectAll.checked = false;
+            syncBulk();
+        });
+    }
+})();
+</script>
 {% endblock %}

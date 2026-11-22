@@ -166,23 +166,93 @@ def teachers_list():
                 WHERE ss.teacher_ref_id = t.id) AS sheets_total,
                (SELECT COUNT(*) FROM session_sheets ss
                 WHERE ss.teacher_ref_id = t.id
-                  AND ss.status IN ('submitted', 'approved', 'locked')) AS sheets_submitted
+                  AND ss.status IN ('submitted', 'approved', 'locked')) AS sheets_submitted,
+               (SELECT COUNT(*) FROM session_sheets ss
+                WHERE ss.teacher_ref_id = t.id
+                  AND ss.status IN ('approved', 'locked')) AS sheets_approved,
+               (SELECT COUNT(*) FROM session_sheets ss
+                WHERE ss.teacher_ref_id = t.id
+                  AND ss.status = 'in_progress') AS sheets_in_progress,
+               (SELECT COUNT(*) FROM session_sheets ss
+                WHERE ss.teacher_ref_id = t.id
+                  AND ss.status IN ('draft', 'sent')) AS sheets_pending
         FROM teachers t
         LEFT JOIN users u ON u.id = t.user_id
         ORDER BY t.is_active DESC, t.full_name COLLATE UKRAINIAN
     """).fetchall()
 
+    base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
     teachers = []
+    departments_set = set()
+    total_sheets = 0
+    total_submitted = 0
+    total_in_progress = 0
+    total_pending = 0
+    active_count = 0
+
     for r in rows:
         d = dict(r)
         total = d['sheets_total'] or 0
         submitted = d['sheets_submitted'] or 0
-        d['sheets_pending'] = total - submitted
+        in_prog = d['sheets_in_progress'] or 0
+        pending = d['sheets_pending'] or 0
+        d['sheets_in_progress'] = in_prog
+        d['sheets_pending'] = pending
         d['percent'] = round(submitted / total * 100) if total else 0
+        d['cabinet_url'] = f"{base_url}/session-grade/teacher/{d['token']}" if d.get('token') else ''
+        if d.get('department'):
+            departments_set.add(d['department'].strip())
+        if d.get('is_active'):
+            active_count += 1
+        total_sheets += total
+        total_submitted += submitted
+        total_in_progress += in_prog
+        total_pending += pending
         teachers.append(d)
 
+    from routes.helpers import sort_ukrainian
+    departments = sort_ukrainian(list(departments_set), lambda x: x)
+
+    summary = {
+        'total_teachers': len(teachers),
+        'active_teachers': active_count,
+        'inactive_teachers': len(teachers) - active_count,
+        'total_sheets': total_sheets,
+        'submitted_sheets': total_submitted,
+        'in_progress_sheets': total_in_progress,
+        'pending_sheets': total_pending,
+        'overall_percent': round(total_submitted / total_sheets * 100) if total_sheets else 0,
+    }
+
     conn.close()
-    return render_template('exam_sessions/teachers_list.html', teachers=teachers)
+    return render_template(
+        'exam_sessions/teachers_list.html',
+        teachers=teachers, departments=departments, summary=summary,
+    )
+
+
+@exam_sessions_bp.route('/admin/teachers/<int:teacher_id>/toggle', methods=['POST'])
+@permission_required('manage_exam_sessions')
+def teacher_toggle(teacher_id):
+    conn = _conn()
+    teacher = conn.execute("SELECT id, full_name, is_active FROM teachers WHERE id = ?", (teacher_id,)).fetchone()
+    if not teacher:
+        conn.close()
+        flash("Викладача не знайдено", "error")
+        return redirect(url_for('exam_sessions.teachers_list'))
+    new_active = 0 if teacher['is_active'] else 1
+    conn.execute("UPDATE teachers SET is_active = ? WHERE id = ?", (new_active, teacher_id))
+    conn.commit()
+    log_action(
+        current_username(),
+        f"{'активував' if new_active else 'деактивував'} викладача: {teacher['full_name']} (ID {teacher_id})",
+    )
+    conn.close()
+    flash(
+        f"Викладача «{teacher['full_name']}» {'активовано' if new_active else 'деактивовано'}.",
+        "success",
+    )
+    return redirect(url_for('exam_sessions.teachers_list'))
 
 
 @exam_sessions_bp.route('/admin/teachers/new', methods=['GET', 'POST'])
@@ -223,10 +293,15 @@ def teacher_new():
     users = conn.execute(
         "SELECT id, username FROM users ORDER BY username COLLATE UKRAINIAN"
     ).fetchall()
+    departments = [
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT TRIM(department) FROM teachers WHERE TRIM(COALESCE(department, '')) != '' ORDER BY 1 COLLATE UKRAINIAN"
+        ).fetchall()
+    ]
     conn.close()
     return render_template(
         'exam_sessions/teacher_form.html',
-        teacher=None, users=users,
+        teacher=None, users=users, departments=departments, cabinet_url='',
     )
 
 
@@ -286,7 +361,7 @@ def teacher_edit(teacher_id):
             conn.close()
             flash(
                 f"Створено нове посилання для {teacher['full_name']}. "
-                f"Стара ссылка більше не працює.",
+                f"Старе посилання більше не працює.",
                 "success",
             )
             return redirect(url_for('exam_sessions.teacher_edit', teacher_id=teacher_id))
@@ -325,14 +400,40 @@ def teacher_edit(teacher_id):
     users = conn.execute(
         "SELECT id, username FROM users ORDER BY username COLLATE UKRAINIAN"
     ).fetchall()
+    departments = [
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT TRIM(department) FROM teachers WHERE TRIM(COALESCE(department, '')) != '' ORDER BY 1 COLLATE UKRAINIAN"
+        ).fetchall()
+    ]
 
-    # Отомости цього викладача (для блоку знизу)
+    # Відомості цього викладача (для блоку знизу)
     stats = teacher_stats(conn, teacher_id)
+    if stats and stats.get('sheets'):
+        sids = [s['id'] for s in stats['sheets']]
+        ph = ','.join('?' * len(sids))
+        extra_map = {
+            r['id']: dict(r)
+            for r in conn.execute(f"""
+                SELECT ss.id, ss.session_id, ss.entity_kind, ss.exam_date,
+                       ss.linked_entity_id, es.name AS session_name,
+                       l.short_name_ua AS license_name
+                FROM session_sheets ss
+                JOIN exam_sessions es ON es.id = ss.session_id
+                LEFT JOIN institution_licenses l ON l.id = ss.license_id
+                WHERE ss.id IN ({ph})
+            """, sids).fetchall()
+        }
+        for sh in stats['sheets']:
+            ex = extra_map.get(sh['id']) or {}
+            sh.update(ex)
+
+    cabinet_url = f"{PUBLIC_APPLY_BASE_URL.rstrip('/')}/session-grade/teacher/{teacher['token']}"
     conn.close()
 
     return render_template(
         'exam_sessions/teacher_form.html',
         teacher=teacher, users=users, stats=stats,
+        departments=departments, cabinet_url=cabinet_url,
     )
 
 
@@ -352,12 +453,24 @@ def sessions_list():
     filter_status = (request.args.get('status') or '').strip()
 
     rows = []
+    years = []
     if group_ids:
         ph = ','.join('?' * len(group_ids))
+        years = [
+            r[0] for r in conn.execute(
+                f"SELECT DISTINCT academic_year FROM exam_sessions WHERE group_id IN ({ph}) ORDER BY academic_year DESC",
+                group_ids,
+            ).fetchall() if r[0]
+        ]
         sql = f"""
             SELECT es.*, g.name AS group_name, g.course, g.study_form,
                    g.start_year, g.specialty,
-                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id) AS sheets_count
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id) AS sheets_count,
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id AND ss.status IN ('submitted', 'approved', 'locked')) AS sheets_submitted,
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id AND ss.status IN ('approved', 'locked')) AS sheets_approved,
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id AND ss.status = 'in_progress') AS sheets_in_progress,
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id AND ss.status IN ('draft', 'sent')) AS sheets_pending,
+                   (SELECT COUNT(*) FROM session_sheets ss WHERE ss.session_id = es.id AND ss.linked_entity_id IS NOT NULL) AS sheets_linked
             FROM exam_sessions es
             JOIN groups g ON g.id = es.group_id
             WHERE es.group_id IN ({ph})
@@ -375,13 +488,32 @@ def sessions_list():
         sql += " ORDER BY es.created_at DESC"
         rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
 
-    years = sorted({r['academic_year'] for r in rows}, reverse=True)
+    for r in rows:
+        tot = r['sheets_count'] or 0
+        sub = r['sheets_submitted'] or 0
+        r['progress_percent'] = round(sub / tot * 100) if tot else 0
+
+    total_sheets = sum(r['sheets_count'] or 0 for r in rows)
+    done_sheets = sum(r['sheets_submitted'] or 0 for r in rows)
+    pending_sheets = sum(r['sheets_pending'] or 0 for r in rows)
+    in_progress_sheets = sum(r['sheets_in_progress'] or 0 for r in rows)
+    summary = {
+        'total_sessions': len(rows),
+        'open_sessions': sum(1 for r in rows if r.get('status') == 'open'),
+        'closed_sessions': sum(1 for r in rows if r.get('status') == 'closed'),
+        'total_sheets': total_sheets,
+        'done_sheets': done_sheets,
+        'in_progress_sheets': in_progress_sheets,
+        'pending_sheets': pending_sheets,
+        'overall_percent': round(done_sheets / total_sheets * 100) if total_sheets else 0,
+    }
+    can_transfer = bool(session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or []))
     conn.close()
     return render_template(
         'exam_sessions/sessions_list.html',
         rows=rows, groups=groups, years=years,
         filter_group=filter_group, filter_year=filter_year,
-        filter_status=filter_status,
+        filter_status=filter_status, summary=summary, can_transfer=can_transfer,
     )
 
 
@@ -399,8 +531,8 @@ def session_new():
 
         if not group_id or not user_can_access_group(conn, session, group_id):
             flash('Оберіть доступну групу', 'error')
-        elif not academic_year or semester not in (1, 2):
-            flash('Вкажіть навчальний рік і семестр (1 або 2)', 'error')
+        elif not academic_year or semester not in (1, 2, 3):
+            flash('Вкажіть навчальний рік і семестр (1, 2 або 3)', 'error')
         else:
             if not name:
                 name = f"Сесія {semester} семестру {academic_year}"
@@ -427,8 +559,11 @@ def session_new():
             conn.close()
             flash('Сесію створено', 'success')
             return redirect(url_for('exam_sessions.session_detail', session_id=sid))
+    now = datetime.now()
+    start_y = now.year if now.month >= 8 else now.year - 1
+    default_year = f"{start_y}–{start_y + 1}"
     conn.close()
-    return render_template('exam_sessions/session_form.html', groups=groups, row=None)
+    return render_template('exam_sessions/session_form.html', groups=groups, row=None, default_year=default_year)
 
 
 @exam_sessions_bp.route('/admin/exam-sessions/<int:session_id>', methods=['GET', 'POST'])
@@ -592,10 +727,96 @@ def session_detail(session_id):
             )
             return redirect(url_for('exam_sessions.sessions_list'))
 
+        if action == 'quick_approve':
+            target_sheet_id = request.form.get('sheet_id', type=int)
+            sh = conn.execute(
+                "SELECT id, status, discipline_name FROM session_sheets WHERE id = ? AND session_id = ?",
+                (target_sheet_id, session_id),
+            ).fetchone()
+            if sh and sh['status'] in ('submitted', 'in_progress', 'sent'):
+                conn.execute("""
+                    UPDATE session_sheets
+                    SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
+                    WHERE id=?
+                """, (current_username(), target_sheet_id))
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=target_sheet_id,
+                    session_id=session_id, sheet_id=target_sheet_id,
+                    action='approve', old_value=sh['status'], new_value='approved',
+                )
+                conn.commit()
+                log_action(current_username(), f"затвердив відомість #{target_sheet_id} у сесії #{session_id}")
+                flash(f"Відомість «{sh['discipline_name']}» затверджено.", 'success')
+            conn.close()
+            return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+        if action == 'bulk_approve':
+            raw_ids = request.form.getlist('sheet_ids')
+            sids = [int(x) for x in raw_ids if str(x).isdigit()]
+            approved_count = 0
+            if sids:
+                ph = ','.join('?' * len(sids))
+                candidates = conn.execute(
+                    f"SELECT id, status FROM session_sheets WHERE session_id = ? AND id IN ({ph}) AND status IN ('submitted', 'in_progress', 'sent')",
+                    [session_id] + sids,
+                ).fetchall()
+                for c in candidates:
+                    conn.execute("""
+                        UPDATE session_sheets
+                        SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
+                        WHERE id=?
+                    """, (current_username(), c['id']))
+                    log_history(
+                        conn,
+                        entity_type='sheet', entity_id=c['id'],
+                        session_id=session_id, sheet_id=c['id'],
+                        action='approve', old_value=c['status'], new_value='approved',
+                    )
+                    approved_count += 1
+                if approved_count:
+                    conn.commit()
+                    log_action(current_username(), f"масово затвердив відомості ({approved_count}) у сесії #{session_id}")
+            conn.close()
+            if approved_count:
+                flash(f'Затверджено відомостей: {approved_count}.', 'success')
+            else:
+                flash('Не знайдено відомостей для затвердження серед обраних.', 'info')
+            return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+        if action == 'bulk_refresh_students':
+            raw_ids = request.form.getlist('sheet_ids')
+            sids = [int(x) for x in raw_ids if str(x).isdigit()]
+            refreshed = 0
+            if sids:
+                ph = ','.join('?' * len(sids))
+                candidates = conn.execute(
+                    f"SELECT id, license_id FROM session_sheets WHERE session_id = ? AND id IN ({ph}) AND status IN ('draft', 'sent', 'in_progress')",
+                    [session_id] + sids,
+                ).fetchall()
+                for c in candidates:
+                    n = populate_sheet_students(conn, c['id'], es['group_id'], c['license_id'])
+                    log_history(
+                        conn,
+                        entity_type='sheet', entity_id=c['id'],
+                        session_id=session_id, sheet_id=c['id'],
+                        action='refresh', details={'students_count': n},
+                    )
+                    refreshed += 1
+                if refreshed:
+                    conn.commit()
+            conn.close()
+            if refreshed:
+                flash(f'Оновлено списки студентів у відомостях: {refreshed}.', 'success')
+            else:
+                flash('Список студентів можна оновити лише у чернетках, надісланих або в процесі заповнення.', 'info')
+            return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
     sheets = [dict(r) for r in conn.execute("""
         SELECT ss.*,
                t.short_name AS teacher_short,
                t.full_name AS teacher_full,
+               t.token AS teacher_token,
                l.short_name_ua AS license_name,
                (SELECT COUNT(*) FROM session_sheet_students x WHERE x.sheet_id = ss.id) AS students_count,
                (SELECT COUNT(*) FROM session_sheet_students x
@@ -607,8 +828,40 @@ def session_detail(session_id):
         ORDER BY ss.discipline_name, ss.license_id
     """, (session_id,)).fetchall()]
 
+    base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
+    session_licenses_map = {}
+    session_teachers_map = {}
+    for s in sheets:
+        s['teacher_cabinet_url'] = f"{base_url}/session-grade/teacher/{s['teacher_token']}" if s.get('teacher_token') else ''
+        if s.get('license_id'):
+            session_licenses_map[s['license_id']] = s.get('license_name') or f"Ліцензія #{s['license_id']}"
+        if s.get('teacher_ref_id'):
+            session_teachers_map[s['teacher_ref_id']] = s.get('teacher_short') or s.get('teacher_full') or ''
+
+    total_sheets = len(sheets)
+    submitted_sheets = sum(1 for s in sheets if s['status'] in ('submitted', 'approved', 'locked'))
+    approved_sheets = sum(1 for s in sheets if s['status'] in ('approved', 'locked'))
+    in_progress_sheets = sum(1 for s in sheets if s['status'] == 'in_progress')
+    pending_sheets = sum(1 for s in sheets if s['status'] in ('draft', 'sent'))
+    linked_sheets = sum(1 for s in sheets if s.get('linked_entity_id'))
+    total_students_slots = sum(s['students_count'] or 0 for s in sheets)
+    total_graded_slots = sum(s['graded_count'] or 0 for s in sheets)
+
+    session_stats = {
+        'total': total_sheets,
+        'submitted': submitted_sheets,
+        'approved': approved_sheets,
+        'in_progress': in_progress_sheets,
+        'pending': pending_sheets,
+        'linked': linked_sheets,
+        'percent': round(submitted_sheets / total_sheets * 100) if total_sheets else 0,
+        'students_total': total_students_slots,
+        'students_graded': total_graded_slots,
+        'students_percent': round(total_graded_slots / total_students_slots * 100) if total_students_slots else 0,
+    }
+
     licenses = licenses_present_in_group(conn, es['group_id'])
-    can_transfer = session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or [])
+    can_transfer = bool(session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or []))
     teachers = conn.execute(
         "SELECT id, full_name, short_name FROM teachers "
         "WHERE is_active = 1 ORDER BY full_name COLLATE UKRAINIAN"
@@ -617,7 +870,9 @@ def session_detail(session_id):
     return render_template(
         'exam_sessions/session_detail.html',
         es=es, sheets=sheets, licenses=licenses, can_transfer=can_transfer,
-        teachers=teachers,
+        teachers=teachers, session_stats=session_stats,
+        session_licenses=list(session_licenses_map.items()),
+        session_teachers=list(session_teachers_map.items()),
     )
 
 
@@ -744,10 +999,60 @@ def sheet_new(session_id):
         "SELECT id, full_name, short_name, department FROM teachers "
         "WHERE is_active = 1 ORDER BY full_name COLLATE UKRAINIAN"
     ).fetchall()
+
+    # Підказки з навчального плану групи (щоб не набирати вручну і точно збігалось при переносі)
+    existing_disciplines = {
+        (
+            ' '.join((r['discipline_name'] or '').split()).lower(),
+            (r['entity_kind'] or 'subject').strip().lower(),
+        )
+        for r in conn.execute(
+            "SELECT discipline_name, entity_kind FROM session_sheets WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+    }
+    plan_items = []
+    for tbl, kind_key in (
+        ('subjects', 'subject'),
+        ('practices', 'practice'),
+        ('courseworks', 'coursework'),
+        ('attestations', 'attestation'),
+    ):
+        try:
+            q_rows = conn.execute(
+                f"SELECT code, name, credits, type FROM {tbl} WHERE group_id = ? ORDER BY position, name",
+                (es['group_id'],),
+            ).fetchall()
+            for r in q_rows:
+                nm = (r['name'] or '').strip()
+                if not nm:
+                    continue
+                cr = r['credits']
+                hc = ''
+                if cr is not None and str(cr).strip() != '':
+                    try:
+                        cr_f = float(cr)
+                        hrs = int(round(cr_f * 30))
+                        cr_txt = f"{cr_f:.1f}" if not cr_f.is_integer() else f"{int(cr_f)}.0"
+                        hc = f"{hrs}/{cr_txt}"
+                    except (TypeError, ValueError):
+                        pass
+                plan_items.append({
+                    'kind': kind_key,
+                    'code': r['code'] or '',
+                    'name': nm,
+                    'control_form': r['type'] if r['type'] in ('Залік', 'Екзамен') else 'Залік',
+                    'hours_credits': hc,
+                    'exists': (' '.join(nm.split()).lower(), kind_key) in existing_disciplines,
+                })
+        except Exception:
+            pass
+
     conn.close()
     return render_template(
         'exam_sessions/sheet_form.html',
         es=es, licenses=licenses, sheet=None, teachers=teachers,
+        plan_items=plan_items,
     )
 
 
@@ -1238,10 +1543,14 @@ def sheet_detail(sheet_id):
         return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
     students = _load_students(conn, sheet_id)
+    base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
     teacher_link = None
     if sheet.get('teacher_token'):
-        teacher_link = f"{PUBLIC_APPLY_BASE_URL.rstrip('/')}/session-grade/teacher/{sheet['teacher_token']}"
-    can_transfer = session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or [])
+        teacher_link = f"{base_url}/session-grade/teacher/{sheet['teacher_token']}"
+    sheet_direct_link = None
+    if sheet.get('token'):
+        sheet_direct_link = f"{base_url}/session-grade/{sheet['token']}"
+    can_transfer = bool(session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or []))
     teachers = conn.execute(
         "SELECT id, full_name, short_name FROM teachers "
         "WHERE is_active = 1 OR id = ? ORDER BY full_name COLLATE UKRAINIAN",
@@ -1265,6 +1574,7 @@ def sheet_detail(sheet_id):
     return render_template(
         'exam_sessions/sheet_detail.html',
         sheet=sheet, students=students, teacher_link=teacher_link,
+        sheet_direct_link=sheet_direct_link,
         can_transfer=can_transfer, teachers=teachers,
         group_licenses=group_licenses, other_licenses=other_licenses,
     )
@@ -1287,35 +1597,87 @@ def teacher_stats_dashboard():
             t.short_name,
             t.department,
             t.is_active,
+            t.token,
             COUNT(ss.id) AS sheets_total,
             SUM(CASE WHEN ss.status IN ('submitted', 'approved', 'locked') THEN 1 ELSE 0 END) AS sheets_submitted,
+            SUM(CASE WHEN ss.status IN ('approved', 'locked') THEN 1 ELSE 0 END) AS sheets_approved,
             SUM(CASE WHEN ss.status = 'in_progress' THEN 1 ELSE 0 END) AS sheets_in_progress,
-            SUM(CASE WHEN ss.status IN ('draft', 'sent') THEN 1 ELSE 0 END) AS sheets_pending
+            SUM(CASE WHEN ss.status IN ('draft', 'sent') THEN 1 ELSE 0 END) AS sheets_pending,
+            COALESCE((
+                SELECT COUNT(*) FROM session_sheet_students x
+                JOIN session_sheets s2 ON s2.id = x.sheet_id
+                WHERE s2.teacher_ref_id = t.id
+            ), 0) AS students_total,
+            COALESCE((
+                SELECT COUNT(*) FROM session_sheet_students x
+                JOIN session_sheets s2 ON s2.id = x.sheet_id
+                WHERE s2.teacher_ref_id = t.id AND x.points IS NOT NULL
+            ), 0) AS students_graded
         FROM teachers t
         LEFT JOIN session_sheets ss ON ss.teacher_ref_id = t.id
         GROUP BY t.id
-        ORDER BY t.is_active DESC, t.full_name COLLATE UKRAINIAN
+        ORDER BY t.is_active DESC, sheets_pending DESC, t.full_name COLLATE UKRAINIAN
     """).fetchall()
 
+    base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
     stats = []
+    departments_set = set()
+    tot_sheets = 0
+    tot_submitted = 0
+    tot_in_prog = 0
+    tot_pending = 0
+    with_pending_teachers = 0
+
     for r in rows:
         total = r['sheets_total'] or 0
         submitted = r['sheets_submitted'] or 0
+        in_prog = r['sheets_in_progress'] or 0
+        pending = r['sheets_pending'] or 0
+        st_tot = r['students_total'] or 0
+        st_grd = r['students_graded'] or 0
+        dept = (r['department'] or '').strip()
+        if dept:
+            departments_set.add(dept)
+        if pending > 0 or in_prog > 0:
+            with_pending_teachers += 1
+        tot_sheets += total
+        tot_submitted += submitted
+        tot_in_prog += in_prog
+        tot_pending += pending
         stats.append({
             'teacher_id': r['teacher_id'],
             'full_name': r['full_name'],
             'short_name': r['short_name'],
             'department': r['department'],
             'is_active': r['is_active'],
+            'cabinet_url': f"{base_url}/session-grade/teacher/{r['token']}" if r['token'] else '',
             'total': total,
             'submitted': submitted,
-            'in_progress': r['sheets_in_progress'] or 0,
-            'pending': r['sheets_pending'] or 0,
+            'approved': r['sheets_approved'] or 0,
+            'in_progress': in_prog,
+            'pending': pending,
+            'students_total': st_tot,
+            'students_graded': st_grd,
             'percent': round(submitted / total * 100) if total else 0,
         })
 
+    from routes.helpers import sort_ukrainian
+    departments = sort_ukrainian(list(departments_set), lambda x: x)
+    summary = {
+        'teachers_count': len(stats),
+        'with_pending_teachers': with_pending_teachers,
+        'total_sheets': tot_sheets,
+        'submitted_sheets': tot_submitted,
+        'in_progress_sheets': tot_in_prog,
+        'pending_sheets': tot_pending,
+        'overall_percent': round(tot_submitted / tot_sheets * 100) if tot_sheets else 0,
+    }
+
     conn.close()
-    return render_template('exam_sessions/teacher_stats.html', stats=stats)
+    return render_template(
+        'exam_sessions/teacher_stats.html',
+        stats=stats, departments=departments, summary=summary,
+    )
 
 
 @exam_sessions_bp.route('/admin/exam-sessions/teacher-stats/<int:teacher_id>')

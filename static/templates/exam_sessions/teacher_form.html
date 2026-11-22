@@ -3,142 +3,244 @@
 {% block title %}{{ 'Редагувати викладача' if teacher else 'Новий викладач' }}{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width: 900px;">
+<style>
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+        --st-miss-bg: var(--stamp-soft);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: var(--stamp-semi);
+        --st-info-bg: rgba(61, 104, 153, .13);
+        --st-info-fg: #274f7d;
+        --st-info-bd: rgba(61, 104, 153, .34);
+    }
+    html[data-theme="dark"] .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+        --st-info-bg: rgba(74, 110, 168, .22);
+        --st-info-fg: #b4ccf0;
+        --st-info-bd: rgba(120, 156, 214, .38);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+    .es-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .es-card__head {
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+        padding: .72rem 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+    .es-card__head--ok {
+        background: var(--st-ok-bg);
+        color: var(--st-ok-fg);
+    }
+    .es-card__body { padding: 1rem; }
+    .es-card__foot {
+        background: var(--paper-2);
+        border-top: 1px solid var(--line);
+        padding: .75rem 1rem;
+    }
+    .es-stat-cell {
+        padding: .75rem .5rem;
+        text-align: center;
+        border-bottom: 1px solid var(--line);
+    }
+    .es-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .25rem;
+        padding: .16rem .5rem;
+        border-radius: 6px;
+        font-size: .73rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .es-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .es-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .es-badge--miss { background: var(--st-miss-bg); color: var(--st-miss-fg); border-color: var(--st-miss-bd); }
+    .es-badge--info { background: var(--st-info-bg); color: var(--st-info-fg); border-color: var(--st-info-bd); }
+    .es-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
 
-    <div class="mb-3">
-        <a href="{{ url_for('exam_sessions.teachers_list') }}"
-           class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> До картотеки
-        </a>
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .73rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .6rem .75rem;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .6rem .75rem;
+        vertical-align: middle;
+    }
+</style>
+
+<div class="container py-4 es-page" style="max-width: 960px;">
+    <div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>До картотеки
+            </a>
+            <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-graph-up-arrow me-1"></i>Статистика
+            </a>
+        </div>
+        {% if teacher %}
+        <span class="es-badge {{ 'es-badge--ok' if teacher.is_active else 'es-badge--muted' }}">
+            {{ 'Активний у картотеці' if teacher.is_active else 'Деактивований' }}
+        </span>
+        {% endif %}
     </div>
 
     {{ ui.page_header(
         'bi-person-badge',
         'Редагувати викладача' if teacher else 'Новий викладач',
-        teacher.full_name if teacher else 'Додати до картотеки'
+        teacher.full_name if teacher else 'Додати викладача до картотеки для відображення у відомостях'
     ) }}
 
     {% if teacher %}
-    {# ── Постійна ссылка ── #}
-    <div class="card mb-3 border-success">
-        <div class="card-header bg-success-subtle">
-            <strong><i class="bi bi-link-45deg me-1"></i>Постійна ссылка викладача</strong>
+    {# ── Постійне посилання на кабінет ── #}
+    <div class="es-card">
+        <div class="es-card__head es-card__head--ok">
+            <strong><i class="bi bi-link-45deg me-1"></i>Постійне посилання викладача на кабінет</strong>
+            {% if teacher.token_created_at %}
+            <span class="small">Створено: {{ teacher.token_created_at }}</span>
+            {% endif %}
         </div>
-        <div class="card-body">
-            {% set teacher_url = request.url_root.rstrip('/') | replace('students.eu.local', 'join.e-u.edu.ua') %}
-            {% set cabinet_url = 'https://join.e-u.edu.ua/session-grade/teacher/' ~ teacher.token %}
+        <div class="es-card__body">
             <p class="small text-muted mb-2">
-                Надішліть цю ссылку викладачу <strong>один раз</strong>. За нею він бачить
-                усі свої відомості, які з'являтимуться автоматично, коли кафедра
-                їх створює.
+                Надішліть це посилання викладачу <strong>один раз</strong>. За ним він без логіну бачитиме
+                усі свої відомості, щойно кафедра привʼяже їх до нього.
             </p>
             <div class="input-group mb-2">
                 <input type="text" class="form-control font-monospace small"
-                       id="teacherLink" value="{{ cabinet_url }}" readonly onclick="this.select()">
-                <button type="button" class="btn btn-primary" onclick="copyLink()">
+                       id="teacherLinkInput" value="{{ cabinet_url }}" readonly onclick="this.select()">
+                <button type="button" class="btn btn-primary" id="copyCabinetBtn">
                     <i class="bi bi-clipboard me-1"></i>Копіювати
                 </button>
                 <a href="{{ cabinet_url }}" target="_blank"
                    class="btn btn-outline-success"
-                   title="Відкрити як викладач (подивитись з його боку)">
+                   title="Відкрити кабінет як викладач">
                     <i class="bi bi-box-arrow-up-right"></i>
                 </a>
             </div>
-            <div class="small text-muted">
-                <i class="bi bi-clock me-1"></i>
-                Створено: {{ teacher.token_created_at }}
-            </div>
-
-            <form method="POST" class="mt-3"
-                  onsubmit="return confirm('Стара ссылка перестане працювати. Ви впевнені?');">
+            <form method="POST" class="mt-2"
+                  onsubmit="return confirm('Створити нове посилання? Старе посилання перестане працювати.');">
                 <input type="hidden" name="action" value="reset_token">
                 <button type="submit" class="btn btn-sm btn-outline-warning">
-                    <i class="bi bi-arrow-clockwise me-1"></i>Скинути посилання (стара перестане працювати)
+                    <i class="bi bi-arrow-clockwise me-1"></i>Скинути токен (нове посилання)
                 </button>
             </form>
         </div>
     </div>
     {% endif %}
 
-    {# ── Форма викладача ── #}
+    {# ── Форма даних викладача ── #}
     <form method="POST">
         <input type="hidden" name="action" value="save">
-        <div class="card mb-3">
-            <div class="card-header"><strong>Дані викладача</strong></div>
-            <div class="card-body">
+        <div class="es-card">
+            <div class="es-card__head">
+                <strong><i class="bi bi-person-lines-fill me-1"></i>Дані викладача</strong>
+            </div>
+            <div class="es-card__body">
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold">
                             ПІБ (повне) <span class="text-danger">*</span>
                         </label>
-                        <input type="text" name="full_name" class="form-control"
+                        <input type="text" name="full_name" id="fullNameInput" class="form-control"
                                value="{{ teacher.full_name if teacher else '' }}"
                                placeholder="напр. Сушинський Олег Євгенович" required>
                         <div class="form-text">Для внутрішнього відображення у картотеці.</div>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label small fw-semibold">
-                            Скорочене ім'я
-                        </label>
-                        <input type="text" name="short_name" class="form-control"
+                        <label class="form-label small fw-semibold">Скорочене ім'я</label>
+                        <input type="text" name="short_name" id="shortNameInput" class="form-control"
                                value="{{ teacher.short_name if teacher else '' }}"
-                               placeholder="напр. проф. Сушинський О.Є.">
-                        <div class="form-text">Підставлятиметься у відомості (шапка документа).</div>
+                               placeholder="напр. Сушинський О.Є.">
+                        <div class="form-text">Підставляється в шапку та графу «Підпис викладача» у відомості.</div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold">Email</label>
                         <input type="email" name="email" class="form-control"
-                               value="{{ teacher.email if teacher else '' }}">
+                               value="{{ teacher.email if teacher and teacher.email else '' }}"
+                               placeholder="name@e-u.edu.ua">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold">Телефон</label>
                         <input type="text" name="phone" class="form-control"
-                               value="{{ teacher.phone if teacher else '' }}">
+                               value="{{ teacher.phone if teacher and teacher.phone else '' }}"
+                               placeholder="+380...">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label small fw-semibold">Кафедра</label>
-                        <input type="text" name="department" class="form-control"
-                               value="{{ teacher.department if teacher else '' }}"
-                               placeholder="напр. Кафедра інформаційних систем">
+                        <input type="text" name="department" class="form-control" list="departmentsList"
+                               value="{{ teacher.department if teacher and teacher.department else '' }}"
+                               placeholder="напр. Кафедра економіки та менеджменту">
+                        <datalist id="departmentsList">
+                            {% for d in departments %}
+                            <option value="{{ d }}">
+                            {% endfor %}
+                        </datalist>
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label small fw-semibold">Пов'язаний користувач</label>
+                        <label class="form-label small fw-semibold">Обліковий запис у системі</label>
                         <select name="user_id" class="form-select">
-                            <option value="">— без прив'язки —</option>
+                            <option value="">— не прив'язано —</option>
                             {% for u in users %}
-                            <option value="{{ u.id }}"
-                                    {% if teacher and teacher.user_id == u.id %}selected{% endif %}>
+                            <option value="{{ u.id }}" {% if teacher and teacher.user_id == u.id %}selected{% endif %}>
                                 {{ u.username }}
                             </option>
                             {% endfor %}
                         </select>
-                        <div class="form-text">
-                            Якщо у викладача є обліковий запис у системі — оберіть його.
-                        </div>
+                        <div class="form-text">Якщо у викладача є логін в адмін-панелі — оберіть його.</div>
                     </div>
                     <div class="col-12">
                         <label class="form-label small fw-semibold">Примітки</label>
                         <textarea name="notes" class="form-control" rows="2"
-                                  placeholder="напр. сумісник, лише парні семестри">{{ teacher.notes if teacher else '' }}</textarea>
+                                  placeholder="напр. сумісник, лише парні семестри">{{ teacher.notes if teacher and teacher.notes else '' }}</textarea>
                     </div>
                     {% if teacher %}
                     <div class="col-12">
                         <div class="form-check form-switch">
                             <input type="checkbox" name="is_active" value="1"
-                                   class="form-check-input"
-                                   id="isActive"
+                                   class="form-check-input" id="isActive"
                                    {% if teacher.is_active %}checked{% endif %}>
                             <label class="form-check-label" for="isActive">
-                                Активний (з'являється в списку при створенні відомості)
+                                Активний (доступний у випадаючому списку при створенні нової відомості)
                             </label>
                         </div>
                     </div>
                     {% endif %}
                 </div>
             </div>
-            <div class="card-footer d-flex justify-content-between flex-wrap gap-2">
-                <a href="{{ url_for('exam_sessions.teachers_list') }}"
-                   class="btn btn-outline-secondary">Скасувати</a>
+            <div class="es-card__foot d-flex justify-content-between flex-wrap gap-2">
+                <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-outline-secondary">Скасувати</a>
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-check-lg me-1"></i>
                     {{ 'Зберегти зміни' if teacher else 'Створити викладача' }}
@@ -148,117 +250,214 @@
     </form>
 
     {% if teacher and stats %}
-    {# ── Статистика викладача ── #}
-    <div class="card mb-3">
-        <div class="card-header">
-            <strong><i class="bi bi-journal-text me-1"></i>Відомості викладача</strong>
-            <span class="badge bg-primary ms-2">{{ stats.total }}</span>
-        </div>
-        <div class="card-body p-0">
+    {# ── Відомості викладача ── #}
+    <div class="es-card">
+        <div class="es-card__head">
+            <strong><i class="bi bi-journal-text me-1"></i>Відомості викладача ({{ stats.total }})</strong>
             {% if stats.sheets %}
-            <div class="row g-0 mb-3 p-3 border-bottom">
-                <div class="col-6 col-md-3 text-center">
-                    <div class="fs-4 fw-bold text-success">{{ stats.submitted }}</div>
-                    <div class="small text-muted">Заповнено</div>
-                </div>
-                <div class="col-6 col-md-3 text-center">
-                    <div class="fs-4 fw-bold text-warning">{{ stats.in_progress }}</div>
-                    <div class="small text-muted">В процесі</div>
-                </div>
-                <div class="col-6 col-md-3 text-center">
-                    <div class="fs-4 fw-bold text-danger">{{ stats.pending }}</div>
-                    <div class="small text-muted">Очікує</div>
-                </div>
-                <div class="col-6 col-md-3 text-center">
-                    <div class="fs-4 fw-bold">{{ stats.percent }}%</div>
-                    <div class="small text-muted">Прогрес</div>
-                </div>
-            </div>
-            <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Дисципліна</th>
-                            <th>Група</th>
-                            <th>Семестр</th>
-                            <th class="text-center">Студентів</th>
-                            <th class="text-center">Оцінено</th>
-                            <th>Статус</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in stats.sheets %}
-                        <tr>
-                            <td>{{ s.discipline_name }}</td>
-                            <td class="small">{{ s.group_name }}</td>
-                            <td class="small">{{ s.academic_year }} / {{ s.semester }}</td>
-                            <td class="text-center">{{ s.students_count }}</td>
-                            <td class="text-center">
-                                <span class="{% if s.graded_count == s.students_count %}text-success fw-bold{% elif s.graded_count > 0 %}text-warning fw-bold{% else %}text-muted{% endif %}">
-                                    {{ s.graded_count }} / {{ s.students_count }}
-                                </span>
-                            </td>
-                            <td>
-                                <span class="badge
-                                    {% if s.status in ('approved', 'locked') %}bg-success
-                                    {% elif s.status == 'submitted' %}bg-success
-                                    {% elif s.status == 'in_progress' %}bg-warning text-dark
-                                    {% elif s.status == 'sent' %}bg-info
-                                    {% else %}bg-secondary{% endif %}">
-                                    {% if s.status == 'draft' %}Чернетка
-                                    {% elif s.status == 'sent' %}Надіслано
-                                    {% elif s.status == 'in_progress' %}В процесі
-                                    {% elif s.status == 'submitted' %}Заповнено
-                                    {% elif s.status == 'approved' %}Затверджено
-                                    {% elif s.status == 'locked' %}Заблоковано
-                                    {% else %}{{ s.status }}{% endif %}
-                                </span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="p-4 text-center text-muted">
-                <i class="bi bi-inbox fs-4 d-block mb-2 opacity-50"></i>
-                У цього викладача ще немає відомостей. Вони з'являться тут
-                автоматично, коли кафедра створить їх із вибором цього викладача.
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <input type="search" id="sheetFilterInput" class="form-control form-control-sm"
+                       style="width: 210px;" placeholder="Пошук дисципліни / групи...">
+                <select id="sheetStatusFilter" class="form-select form-select-sm" style="width: 155px;">
+                    <option value="">Усі статуси</option>
+                    <option value="open">Очікують / В процесі</option>
+                    <option value="submitted">Здано</option>
+                    <option value="approved">Затверджено / Забл.</option>
+                </select>
             </div>
             {% endif %}
         </div>
+
+        {% if stats.sheets %}
+        <div class="row g-0">
+            <div class="col-6 col-md-3 es-stat-cell">
+                <div class="fs-4 fw-bold es-num" style="color:var(--st-ok-fg);">{{ stats.submitted }}</div>
+                <div class="small text-muted">Здано / затверджено</div>
+            </div>
+            <div class="col-6 col-md-3 es-stat-cell">
+                <div class="fs-4 fw-bold es-num" style="color:var(--st-warn-fg);">{{ stats.in_progress }}</div>
+                <div class="small text-muted">В процесі</div>
+            </div>
+            <div class="col-6 col-md-3 es-stat-cell">
+                <div class="fs-4 fw-bold es-num" style="color:var(--st-miss-fg);">{{ stats.pending }}</div>
+                <div class="small text-muted">Очікує</div>
+            </div>
+            <div class="col-6 col-md-3 es-stat-cell">
+                <div class="fs-4 fw-bold es-num">{{ stats.percent }}%</div>
+                <div class="small text-muted">Виконання</div>
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-middle" id="teacherSheetsTable">
+                <thead>
+                    <tr>
+                        <th>Дисципліна</th>
+                        <th>Група / Ліцензія</th>
+                        <th>Сесія</th>
+                        <th class="text-center">Оцінено</th>
+                        <th>Статус</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stats.sheets %}
+                    <tr data-search="{{ (s.discipline_name ~ ' ' ~ (s.group_name or '') ~ ' ' ~ (s.license_name or '') ~ ' ' ~ (s.session_name or ''))|lower }}"
+                        data-status="{{ s.status }}">
+                        <td>
+                            <div class="fw-semibold">
+                                <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}" class="text-decoration-none">
+                                    {{ s.discipline_name }}
+                                </a>
+                            </div>
+                            {% if s.exam_date or s.linked_entity_id %}
+                            <div class="small text-muted">
+                                {% if s.exam_date %}{{ s.exam_date }}{% endif %}
+                                {% if s.exam_date and s.linked_entity_id %} · {% endif %}
+                                {% if s.linked_entity_id %}<span style="color:var(--st-ok-fg);"><i class="bi bi-check2-circle"></i> у плані</span>{% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td class="small">
+                            <div>{{ s.group_name }}</div>
+                            {% if s.license_name %}<div class="text-muted">{{ s.license_name }}</div>{% endif %}
+                        </td>
+                        <td class="small">
+                            {% if s.session_id %}
+                            <a href="{{ url_for('exam_sessions.session_detail', session_id=s.session_id) }}" class="text-decoration-none">
+                                {{ s.academic_year }} / сем. {{ s.semester }}
+                            </a>
+                            {% else %}
+                            {{ s.academic_year }} / {{ s.semester }}
+                            {% endif %}
+                        </td>
+                        <td class="text-center es-num">
+                            <span class="fw-semibold"
+                                  style="color:{% if s.students_count and s.graded_count == s.students_count %}var(--st-ok-fg){% elif s.graded_count > 0 %}var(--st-warn-fg){% else %}var(--muted){% endif %};">
+                                {{ s.graded_count }} / {{ s.students_count }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if s.status in ('approved', 'locked') %}
+                            <span class="es-badge es-badge--ok">{{ 'Затверджено' if s.status == 'approved' else 'Заблоковано' }}</span>
+                            {% elif s.status == 'submitted' %}
+                            <span class="es-badge es-badge--info">Оцінки здано</span>
+                            {% elif s.status == 'in_progress' %}
+                            <span class="es-badge es-badge--warn">В процесі</span>
+                            {% elif s.status == 'sent' %}
+                            <span class="es-badge es-badge--info">Надіслано</span>
+                            {% else %}
+                            <span class="es-badge es-badge--muted">Чернетка</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}"
+                               class="btn btn-sm btn-outline-primary">Відкрити</a>
+                            <a href="{{ url_for('exam_sessions.sheet_word', sheet_id=s.id) }}"
+                               class="btn btn-sm btn-outline-secondary" title="Завантажити Word">
+                                <i class="bi bi-file-earmark-word"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted">
+            <i class="bi bi-inbox fs-4 d-block mb-2 opacity-50"></i>
+            У цього викладача ще немає відомостей. Вони з'являться тут автоматично після створення у будь-якій сесії.
+        </div>
+        {% endif %}
     </div>
 
     {# ── Видалення ── #}
-    <div class="card border-danger">
-        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="es-card" style="border-color: var(--st-miss-bd);">
+        <div class="es-card__body d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div>
-                <strong>Видалити викладача</strong>
-                <div class="small text-muted">Видалення можливе лише якщо у викладача немає відомостей і прив'язки до користувача.</div>
+                <strong style="color:var(--st-miss-fg);">Видалити викладача</strong>
+                <div class="small text-muted">
+                    {% if teacher.user_id %}
+                        Неможливо видалити, доки прив'язаний обліковий запис користувача — спершу зніміть прив'язку.
+                    {% elif stats and stats.total > 0 %}
+                        Неможливо видалити, бо у викладача є {{ stats.total }} відомостей — використайте деактивацію вище.
+                    {% else %}
+                        Видалення можливе, оскільки у викладача немає відомостей і прив'язки до користувача.
+                    {% endif %}
+                </div>
             </div>
-            <form method="POST"
-                  onsubmit="return confirm('Видалити викладача «{{ teacher.full_name }}»?');">
+            <form method="POST" onsubmit="return confirm('Видалити викладача «{{ teacher.full_name }}»?');">
                 <input type="hidden" name="action" value="delete">
-                <button type="submit" class="btn btn-outline-danger">
-                    <i class="bi bi-trash me-1"></i> Видалити
+                <button type="submit" class="btn btn-outline-danger btn-sm"
+                        {% if teacher.user_id or (stats and stats.total > 0) %}disabled{% endif %}>
+                    <i class="bi bi-trash me-1"></i>Видалити
                 </button>
             </form>
         </div>
     </div>
     {% endif %}
-
 </div>
 
 <script>
-function copyLink() {
-    const el = document.getElementById('teacherLink');
-    el.select();
-    navigator.clipboard.writeText(el.value).then(() => {
-        const btn = event.target.closest('button');
-        const old = btn.innerHTML;
-        btn.innerHTML = '<i class="bi bi-check2 me-1"></i>Скопійовано';
-        setTimeout(() => { btn.innerHTML = old; }, 1500);
-    });
-}
+(function () {
+    const copyBtn = document.getElementById('copyCabinetBtn');
+    const linkInput = document.getElementById('teacherLinkInput');
+    if (copyBtn && linkInput) {
+        copyBtn.addEventListener('click', () => {
+            const txt = linkInput.value;
+            const done = () => {
+                const old = copyBtn.innerHTML;
+                copyBtn.innerHTML = '<i class="bi bi-check2 me-1"></i>Скопійовано';
+                setTimeout(() => { copyBtn.innerHTML = old; }, 1500);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(txt).then(done).catch(() => {
+                    linkInput.select();
+                    try { document.execCommand('copy'); done(); } catch (e) {}
+                });
+            } else {
+                linkInput.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+            }
+        });
+    }
+
+    // Автопідказка скороченого імені при створенні (якщо поле ще порожнє)
+    const fullEl = document.getElementById('fullNameInput');
+    const shortEl = document.getElementById('shortNameInput');
+    if (fullEl && shortEl && !shortEl.value) {
+        let userEditedShort = false;
+        shortEl.addEventListener('input', () => { userEditedShort = true; });
+        fullEl.addEventListener('blur', () => {
+            if (userEditedShort || shortEl.value.trim()) return;
+            const parts = fullEl.value.trim().split(/\s+/);
+            if (parts.length >= 2) {
+                const ini = parts.slice(1, 3).map(p => p ? p[0].toUpperCase() + '.' : '').join('');
+                shortEl.value = parts[0] + ' ' + ini;
+            }
+        });
+    }
+
+    const filterInput = document.getElementById('sheetFilterInput');
+    const statusSelect = document.getElementById('sheetStatusFilter');
+    const tbl = document.getElementById('teacherSheetsTable');
+    if (tbl && filterInput && statusSelect) {
+        const sRows = Array.from(tbl.querySelectorAll('tbody tr'));
+        const filterSheets = () => {
+            const q = (filterInput.value || '').trim().toLowerCase();
+            const st = statusSelect.value;
+            sRows.forEach(r => {
+                const mq = !q || r.dataset.search.includes(q);
+                let mst = true;
+                const rowSt = r.dataset.status;
+                if (st === 'open') mst = (rowSt === 'draft' || rowSt === 'sent' || rowSt === 'in_progress');
+                else if (st === 'submitted') mst = (rowSt === 'submitted');
+                else if (st === 'approved') mst = (rowSt === 'approved' || rowSt === 'locked');
+                r.classList.toggle('d-none', !(mq && mst));
+            });
+        };
+        filterInput.addEventListener('input', filterSheets);
+        statusSelect.addEventListener('change', filterSheets);
+    }
+})();
 </script>
 {% endblock %}

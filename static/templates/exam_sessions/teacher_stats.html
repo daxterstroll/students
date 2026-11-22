@@ -3,90 +3,368 @@
 {% block title %}Статистика по викладачах{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4">
+<style>
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-solid: #3d7a53;
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-solid: #c8a24a;
+        --st-miss-fg: #8f2d22;
+        --st-miss-solid: #a23b2e;
+        --st-info-solid: #3d6899;
+        --es-track: rgba(31, 42, 58, .09);
+    }
+    html[data-theme="dark"] .es-page {
+        --st-ok-fg: #c2e6c5;
+        --st-ok-solid: #5aa372;
+        --st-warn-fg: #f2d687;
+        --st-warn-solid: #d9b45c;
+        --st-miss-fg: #f5b8b0;
+        --st-miss-solid: #c9584a;
+        --st-info-solid: #6994cc;
+        --es-track: rgba(231, 226, 214, .11);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+    .es-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 12px;
+        padding: .85rem 1rem;
+        height: 100%;
+    }
+    .es-kpi--ok { border-top-color: var(--st-ok-solid); }
+    .es-kpi--warn { border-top-color: var(--st-miss-solid); }
+    .es-kpi--info { border-top-color: var(--st-info-solid); }
+    .es-kpi__label {
+        font-size: .73rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--muted); margin-bottom: .25rem;
+    }
+    .es-kpi__val { font-size: 1.6rem; font-weight: 800; line-height: 1.1; color: var(--ink-text); }
+    .es-kpi--ok .es-kpi__val { color: var(--st-ok-fg); }
+    .es-kpi--warn .es-kpi__val { color: var(--st-miss-fg); }
+    .es-kpi__sub { font-size: .76rem; color: var(--muted); margin-top: .28rem; }
 
-    <div class="mb-3">
-        <a href="{{ url_for('exam_sessions.sessions_list') }}"
-           class="btn btn-sm btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i> До сесій
-        </a>
+    .es-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .es-toolbar .form-control,
+    .es-toolbar .form-select {
+        background-color: var(--paper);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .es-toolbar .form-control,
+    html[data-theme="dark"] .es-toolbar .form-select { background-color: var(--paper-2); }
+
+    .es-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .73rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .65rem .75rem;
+        white-space: nowrap;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .65rem .75rem;
+        vertical-align: middle;
+    }
+    .es-track {
+        height: 8px;
+        border-radius: 5px;
+        background: var(--es-track);
+        overflow: hidden;
+        min-width: 72px;
+    }
+    .es-fill { height: 100%; border-radius: 5px; }
+    .es-fill--ok { background: var(--st-ok-solid); }
+    .es-fill--warn { background: var(--st-warn-solid); }
+    .es-fill--miss { background: var(--st-miss-solid); }
+</style>
+
+<div class="container py-4 es-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>До сесій
+            </a>
+            <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-person-badge me-1"></i>Картотека викладачів
+            </a>
+        </div>
+        {% if stats %}
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="exportStatsCsv">
+            <i class="bi bi-download me-1"></i>Експорт CSV
+        </button>
+        {% endif %}
     </div>
 
-    {{ ui.page_header('bi-graph-up', 'Статистика по викладачах',
-        'Хто з викладачів скільки відомостей отримав і скільки заповнив') }}
+    {{ ui.page_header(
+        'bi-graph-up-arrow',
+        'Статистика по викладачах',
+        'Контроль здачі відомостей, оцінювання студентів та боргів по кафедрах'
+    ) }}
 
-    <div class="card">
-        <div class="card-body p-0">
-            {% if stats %}
-            <div class="table-responsive">
-                <table class="table table-hover mb-0 align-middle">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Викладач</th>
-                            <th>Кафедра</th>
-                            <th class="text-center">Пакетів</th>
-                            <th class="text-center">Усього відомостей</th>
-                            <th class="text-center">Заповнено</th>
-                            <th class="text-center">В процесі</th>
-                            <th class="text-center">Не заповнено</th>
-                            <th style="width: 200px;">Прогрес</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in stats %}
-                        <tr>
-                            <td class="fw-semibold">{{ s.full_name }}</td>
-                            <td class="small text-muted">{{ s.department or '—' }}</td>
-                            <td class="text-center">{{ s.total }}</td>
-                            <td class="text-center">{{ s.total }}</td>
-                            <td class="text-center text-success fw-bold">{{ s.submitted }}</td>
-                            <td class="text-center text-warning fw-bold">{{ s.in_progress or 0 }}</td>
-                            <td class="text-center {% if s.pending %}text-danger fw-bold{% endif %}">
-                                {{ s.pending }}
-                            </td>
-                            <td>
-                                <div class="progress" style="height: 20px;">
-                                    <div class="progress-bar
-                                        {% if s.percent >= 80 %}bg-success
-                                        {% elif s.percent >= 50 %}bg-warning
-                                        {% else %}bg-danger{% endif %}"
-                                        style="width: {{ s.percent }}%;">
-                                        {{ s.percent }}%
-                                    </div>
-                                </div>
-                            </td>
-                            <td class="text-end">
-                                {% if s.teacher_id %}
-                                <a href="{{ url_for('exam_sessions.teacher_stats_detail',
-                                                    teacher_id=s.teacher_id) }}"
-                                   class="btn btn-sm btn-outline-primary">
-                                    Детально
-                                </a>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    {% if not stats %}
+    {{ ui.empty_state(
+        'bi-inbox',
+        'Викладачів або відомостей ще немає',
+        'Додайте викладача в картотеку та призначте йому відомість у сесії.'
+    ) }}
+    {% else %}
+
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi">
+                <div class="es-kpi__label">Викладачів</div>
+                <div class="es-kpi__val es-num">{{ summary.teachers_count }}</div>
+                <div class="es-kpi__sub">Мають незавершені: {{ summary.with_pending_teachers }}</div>
             </div>
-            {% else %}
-            <div class="p-5 text-center text-muted">
-                <i class="bi bi-inbox fs-1 d-block mb-3 opacity-50"></i>
-                <h5 class="mb-2">Пакетів відомостей ще немає</h5>
-                <p class="mb-3 small">
-                    Щоб створити пакет для викладача — відкрийте потрібну <strong>сесію</strong>
-                    (Навчання → Сесії та відомості → конкретна сесія) і натисніть
-                    <strong>«Створити пакет для викладача»</strong>.
-                </p>
-                <a href="{{ url_for('exam_sessions.sessions_list') }}"
-                   class="btn btn-primary btn-sm">
-                    <i class="bi bi-arrow-right me-1"></i>До списку сесій
-                </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--ok">
+                <div class="es-kpi__label">Відомостей здано</div>
+                <div class="es-kpi__val es-num">{{ summary.submitted_sheets }} <span class="fs-6 fw-normal text-muted">/ {{ summary.total_sheets }}</span></div>
+                <div class="es-kpi__sub">Загальний прогрес: {{ summary.overall_percent }}%</div>
             </div>
-            {% endif %}
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--warn">
+                <div class="es-kpi__label">Очікують</div>
+                <div class="es-kpi__val es-num">{{ summary.pending_sheets }}</div>
+                <div class="es-kpi__sub">Не розпочаті викладачем</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--info">
+                <div class="es-kpi__label">В процесі</div>
+                <div class="es-kpi__val es-num">{{ summary.in_progress_sheets }}</div>
+                <div class="es-kpi__sub">Частково виставлені бали</div>
+            </div>
         </div>
     </div>
 
+    <div class="es-toolbar">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-4">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" id="statsSearch" class="form-control" placeholder="Пошук викладача або кафедри...">
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <select id="statsDept" class="form-select form-select-sm">
+                    <option value="">Усі кафедри</option>
+                    {% for d in departments %}
+                    <option value="{{ d|lower }}">{{ d }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <select id="statsSort" class="form-select form-select-sm">
+                    <option value="pending_desc">Найбільше очікує</option>
+                    <option value="percent_asc">Найнижчий % здачі</option>
+                    <option value="total_desc">За кількістю відомостей</option>
+                    <option value="name_asc">За алфавітом</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="onlyDebtCheck">
+                    <label class="form-check-label small" for="onlyDebtCheck">Лише з боргами</label>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="es-panel">
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-middle" id="statsTable">
+                <thead>
+                    <tr>
+                        <th>Викладач</th>
+                        <th>Кафедра</th>
+                        <th class="text-center">Усього</th>
+                        <th class="text-center">Здано</th>
+                        <th class="text-center">Затв.</th>
+                        <th class="text-center">В процесі</th>
+                        <th class="text-center">Очікує</th>
+                        <th class="text-center">Студентів оцінено</th>
+                        <th style="min-width:140px;">Прогрес</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stats %}
+                    <tr class="{% if not s.is_active %}opacity-75{% endif %}"
+                        data-search="{{ (s.full_name ~ ' ' ~ (s.short_name or '') ~ ' ' ~ (s.department or ''))|lower }}"
+                        data-dept="{{ (s.department or '')|trim|lower }}"
+                        data-total="{{ s.total or 0 }}"
+                        data-pending="{{ s.pending or 0 }}"
+                        data-inprogress="{{ s.in_progress or 0 }}"
+                        data-percent="{{ s.percent or 0 }}"
+                        data-name="{{ s.full_name|lower }}">
+                        <td>
+                            <div class="fw-semibold">
+                                <a href="{{ url_for('exam_sessions.teacher_stats_detail', teacher_id=s.teacher_id) }}" class="text-decoration-none">
+                                    {{ s.full_name }}
+                                </a>
+                            </div>
+                            {% if not s.is_active %}
+                            <div class="small text-muted">неактивний</div>
+                            {% endif %}
+                        </td>
+                        <td class="small text-muted">{{ s.department or '—' }}</td>
+                        <td class="text-center es-num fw-semibold">{{ s.total }}</td>
+                        <td class="text-center es-num fw-bold" style="color:var(--st-ok-fg);">{{ s.submitted }}</td>
+                        <td class="text-center es-num text-muted">{{ s.approved or 0 }}</td>
+                        <td class="text-center es-num fw-bold" style="color:var(--st-warn-fg);">{{ s.in_progress or 0 }}</td>
+                        <td class="text-center es-num fw-bold" style="{% if s.pending %}color:var(--st-miss-fg);{% else %}color:var(--muted);{% endif %}">
+                            {{ s.pending }}
+                        </td>
+                        <td class="text-center es-num small">
+                            {% if s.students_total %}
+                            {{ s.students_graded }} / {{ s.students_total }}
+                            {% else %}
+                            —
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if s.total %}
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="es-track flex-grow-1">
+                                    <div class="es-fill {% if s.percent >= 80 %}es-fill--ok{% elif s.percent >= 40 %}es-fill--warn{% else %}es-fill--miss{% endif %}"
+                                         style="width: {{ s.percent }}%;"></div>
+                                </div>
+                                <span class="small fw-semibold es-num">{{ s.percent }}%</span>
+                            </div>
+                            {% else %}
+                            <span class="small text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            {% if s.cabinet_url %}
+                            <button type="button" class="btn btn-sm btn-outline-secondary js-copy-url"
+                                    data-url="{{ s.cabinet_url }}" title="Копіювати посилання на кабінет">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            {% endif %}
+                            {% if s.teacher_id %}
+                            <a href="{{ url_for('exam_sessions.teacher_stats_detail', teacher_id=s.teacher_id) }}"
+                               class="btn btn-sm btn-outline-primary">Детально</a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="statsEmpty" class="p-4 text-center text-muted small d-none">
+            За обраними умовами записів не знайдено.
+        </div>
+    </div>
+    {% endif %}
 </div>
+
+<script>
+(function () {
+    document.querySelectorAll('.js-copy-url').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const url = btn.dataset.url;
+            const done = () => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+                setTimeout(() => { btn.innerHTML = orig; }, 1400);
+            };
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(url).then(done).catch(() => {});
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta); ta.select();
+                try { document.execCommand('copy'); done(); } catch (e) {}
+                document.body.removeChild(ta);
+            }
+        });
+    });
+
+    const table = document.getElementById('statsTable');
+    if (!table) return;
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const qEl = document.getElementById('statsSearch');
+    const deptEl = document.getElementById('statsDept');
+    const sortEl = document.getElementById('statsSort');
+    const debtEl = document.getElementById('onlyDebtCheck');
+    const emptyEl = document.getElementById('statsEmpty');
+
+    function update() {
+        const q = (qEl.value || '').trim().toLowerCase();
+        const d = (deptEl.value || '').trim().toLowerCase();
+        const sortBy = sortEl.value;
+        const onlyDebt = debtEl.checked;
+
+        rows.sort((a, b) => {
+            if (sortBy === 'pending_desc') return (+b.dataset.pending) - (+a.dataset.pending) || (+b.dataset.inprogress) - (+a.dataset.inprogress) || a.dataset.name.localeCompare(b.dataset.name, 'uk');
+            if (sortBy === 'percent_asc') return (+a.dataset.percent) - (+b.dataset.percent) || (+b.dataset.pending) - (+a.dataset.pending);
+            if (sortBy === 'total_desc') return (+b.dataset.total) - (+a.dataset.total);
+            return a.dataset.name.localeCompare(b.dataset.name, 'uk');
+        });
+        rows.forEach(r => tbody.appendChild(r));
+
+        let vis = 0;
+        rows.forEach(r => {
+            const mq = !q || r.dataset.search.includes(q);
+            const md = !d || r.dataset.dept === d;
+            const mdebt = !onlyDebt || (+r.dataset.pending > 0 || +r.dataset.inprogress > 0);
+            const ok = mq && md && mdebt;
+            r.classList.toggle('d-none', !ok);
+            if (ok) vis++;
+        });
+        emptyEl.classList.toggle('d-none', vis > 0);
+    }
+
+    qEl.addEventListener('input', update);
+    deptEl.addEventListener('change', update);
+    sortEl.addEventListener('change', update);
+    debtEl.addEventListener('change', update);
+
+    const csvBtn = document.getElementById('exportStatsCsv');
+    if (csvBtn) {
+        csvBtn.addEventListener('click', () => {
+            const header = ['Викладач', 'Кафедра', 'Усього відомостей', 'Здано', 'Затверджено', 'В процесі', 'Очікує', 'Студентів оцінено', 'Прогрес %'];
+            const lines = [header.join(';')];
+            rows.forEach(r => {
+                if (r.classList.contains('d-none')) return;
+                const td = r.querySelectorAll('td');
+                const vals = [0,1,2,3,4,5,6,7,8].map(i => '"' + (td[i]?.textContent || '').replace(/\s+/g, ' ').trim().replace(/"/g, '""') + '"');
+                lines.push(vals.join(';'));
+            });
+            const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'statystyka_vykladachiv.csv';
+            a.click();
+            URL.revokeObjectURL(a.href);
+        });
+    }
+})();
+</script>
 {% endblock %}

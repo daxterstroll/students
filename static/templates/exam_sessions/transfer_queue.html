@@ -9,56 +9,192 @@
   'coursework': 'Курсова',
   'attestation': 'Атестація'
 } %}
-<div class="container py-4">
-  {{ ui.page_header('bi-arrow-left-right', 'Перенос оцінок із сесій',
-     'Затверджені відомості → предмети / практики / курсові / атестації') }}
+<style>
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+    }
+    html[data-theme="dark"] .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+    .es-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .8rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .es-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .73rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; border-bottom: 1px solid var(--line);
+        padding: .62rem .75rem;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .62rem .75rem;
+        vertical-align: middle;
+    }
+    .es-badge {
+        display: inline-flex; align-items: center; gap: .25rem;
+        padding: .15rem .48rem; border-radius: 6px;
+        font-size: .73rem; font-weight: 700;
+        border: 1px solid transparent; white-space: nowrap;
+    }
+    .es-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .es-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+</style>
 
-  {% if rows %}
-  <div class="card">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>Дисципліна</th>
-            <th>Група</th>
-            <th>Сесія</th>
-            <th>Тип</th>
-            <th>Ліцензія</th>
-            <th>Студ.</th>
-            <th>Прив’язка</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in rows %}
-          <tr class="{% if r.linked_entity_id %}table-success{% endif %}">
-            <td>{{ r.discipline_name }}</td>
-            <td>{{ r.group_name }}</td>
-            <td class="small">{{ r.academic_year }} / сем. {{ r.semester }}</td>
-            <td class="small">{{ kind_ua.get(r.entity_kind, r.entity_kind) }}</td>
-            <td>{{ r.license_name or '—' }}</td>
-            <td class="text-center">{{ r.students_count }}</td>
-            <td class="small">
-              {% if r.linked_entity_id %}
-                {{ kind_ua.get(r.linked_entity_type, r.linked_entity_type) }} #{{ r.linked_entity_id }}
-              {% else %}
-                <span class="text-warning">не прив’язано</span>
-              {% endif %}
-            </td>
-            <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary"
-                 href="{{ url_for('exam_sessions.transfer_sheet', sheet_id=r.id) }}">
-                {% if r.linked_entity_id %}Змінити{% else %}Перенести{% endif %}
-              </a>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+<div class="container py-4 es-page">
+    <div class="mb-3 d-flex flex-wrap gap-2">
+        <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>До сесій
+        </a>
+        <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
+            <i class="bi bi-person-badge me-1"></i>Картотека викладачів
+        </a>
     </div>
-  </div>
-  {% else %}
+
+    {{ ui.page_header(
+        'bi-arrow-left-right',
+        'Перенос оцінок із сесій',
+        'Затверджені відомості → предмети / практики / курсові / атестації у навчальному плані'
+    ) }}
+
+    {% if rows %}
+    <div class="es-toolbar">
+        <div class="row g-2 align-items-center">
+            <div class="col-md-5">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" id="tqSearch" class="form-control" placeholder="Дисципліна, група або ліцензія...">
+                </div>
+            </div>
+            <div class="col-sm-6 col-md-3">
+                <select id="tqKindFilter" class="form-select form-select-sm">
+                    <option value="">Усі типи</option>
+                    {% for k, label in kind_ua.items() %}
+                    <option value="{{ k }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-sm-6 col-md-4 d-flex justify-content-between align-items-center">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="tqUnlinkedOnly">
+                    <label class="form-check-label small" for="tqUnlinkedOnly">Лише не прив'язані</label>
+                </div>
+                <span class="small text-muted es-num" id="tqCount">{{ rows|length }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="es-panel">
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-middle" id="tqTable">
+                <thead>
+                    <tr>
+                        <th>Дисципліна</th>
+                        <th>Група</th>
+                        <th>Сесія</th>
+                        <th>Тип</th>
+                        <th>Ліцензія</th>
+                        <th class="text-center">Студ.</th>
+                        <th>Прив’язка в плані</th>
+                        <th class="text-end">Дія</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr data-search="{{ (r.discipline_name ~ ' ' ~ r.group_name ~ ' ' ~ (r.license_name or '') ~ ' ' ~ (r.academic_year or ''))|lower }}"
+                        data-kind="{{ r.entity_kind }}"
+                        data-linked="{{ '1' if r.linked_entity_id else '0' }}">
+                        <td>
+                            <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=r.id) }}" class="fw-semibold text-decoration-none">
+                                {{ r.discipline_name }}
+                            </a>
+                        </td>
+                        <td>{{ r.group_name }}</td>
+                        <td class="small es-num">{{ r.academic_year }} / сем. {{ r.semester }}</td>
+                        <td class="small">{{ kind_ua.get(r.entity_kind, r.entity_kind) }}</td>
+                        <td class="small">{{ r.license_name or '—' }}</td>
+                        <td class="text-center es-num">{{ r.students_count }}</td>
+                        <td class="small">
+                            {% if r.linked_entity_id %}
+                            <span class="es-badge es-badge--ok">
+                                <i class="bi bi-check2-circle"></i>
+                                {{ kind_ua.get(r.linked_entity_type, r.linked_entity_type) }} #{{ r.linked_entity_id }}
+                            </span>
+                            {% else %}
+                            <span class="es-badge es-badge--warn">Не прив’язано</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <a class="btn btn-sm {{ 'btn-outline-secondary' if r.linked_entity_id else 'btn-primary' }}"
+                               href="{{ url_for('exam_sessions.transfer_sheet', sheet_id=r.id) }}">
+                                {% if r.linked_entity_id %}Змінити{% else %}Перенести{% endif %}
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="tqEmpty" class="p-4 text-center text-muted small d-none">
+            За обраними фільтрами відомостей не знайдено.
+        </div>
+    </div>
+    {% else %}
     {{ ui.empty_state('bi-inbox', 'Немає затверджених відомостей у вашому скоупі') }}
-  {% endif %}
+    {% endif %}
 </div>
+
+<script>
+(function () {
+    const tbl = document.getElementById('tqTable');
+    if (!tbl) return;
+    const rows = Array.from(tbl.querySelectorAll('tbody tr'));
+    const qEl = document.getElementById('tqSearch');
+    const kEl = document.getElementById('tqKindFilter');
+    const uEl = document.getElementById('tqUnlinkedOnly');
+    const cntEl = document.getElementById('tqCount');
+    const emptyEl = document.getElementById('tqEmpty');
+
+    function filter() {
+        const q = (qEl.value || '').trim().toLowerCase();
+        const k = kEl.value;
+        const unlinked = uEl.checked;
+        let vis = 0;
+        rows.forEach(r => {
+            const ok = (!q || r.dataset.search.includes(q))
+                && (!k || r.dataset.kind === k)
+                && (!unlinked || r.dataset.linked === '0');
+            r.classList.toggle('d-none', !ok);
+            if (ok) vis++;
+        });
+        cntEl.textContent = vis + ' з ' + rows.length;
+        emptyEl.classList.toggle('d-none', vis > 0);
+    }
+    qEl.addEventListener('input', filter);
+    kEl.addEventListener('change', filter);
+    uEl.addEventListener('change', filter);
+})();
+</script>
 {% endblock %}

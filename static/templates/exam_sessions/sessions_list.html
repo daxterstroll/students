@@ -4,105 +4,360 @@
 {% block main_class %}py-3{% endblock %}
 {% block content %}
 {% set status_ua = {'draft': 'Чернетка', 'open': 'Відкрита', 'closed': 'Закрита'} %}
-{% set status_badge = {'draft': 'secondary', 'open': 'success', 'closed': 'dark'} %}
-<div class="container py-4">
-  {{ ui.page_header('bi-clipboard2-check', 'Сесії та відомості', 'Екзаменаційні відомості окремо від навчального плану') }}
+<style>
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-ok-solid: #3d7a53;
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+        --st-warn-solid: #c8a24a;
+        --st-miss-bg: var(--stamp-soft);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: var(--stamp-semi);
+        --st-miss-solid: #a23b2e;
+        --st-info-bg: rgba(61, 104, 153, .13);
+        --st-info-fg: #274f7d;
+        --st-info-bd: rgba(61, 104, 153, .34);
+        --st-info-solid: #3d6899;
+        --es-track: rgba(31, 42, 58, .09);
+    }
+    html[data-theme="dark"] .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-ok-solid: #5aa372;
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+        --st-warn-solid: #d9b45c;
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+        --st-miss-solid: #c9584a;
+        --st-info-bg: rgba(74, 110, 168, .22);
+        --st-info-fg: #b4ccf0;
+        --st-info-bd: rgba(120, 156, 214, .38);
+        --st-info-solid: #6994cc;
+        --es-track: rgba(231, 226, 214, .11);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+    .es-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 12px;
+        padding: .85rem 1rem;
+        height: 100%;
+    }
+    .es-kpi--ok { border-top-color: var(--st-ok-solid); }
+    .es-kpi--warn { border-top-color: var(--st-miss-solid); }
+    .es-kpi--info { border-top-color: var(--st-info-solid); }
+    .es-kpi__label {
+        font-size: .73rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; color: var(--muted); margin-bottom: .25rem;
+    }
+    .es-kpi__val { font-size: 1.6rem; font-weight: 800; line-height: 1.1; color: var(--ink-text); }
+    .es-kpi--ok .es-kpi__val { color: var(--st-ok-fg); }
+    .es-kpi--warn .es-kpi__val { color: var(--st-miss-fg); }
+    .es-kpi__sub { font-size: .76rem; color: var(--muted); margin-top: .28rem; }
 
-  <div class="d-flex flex-wrap gap-2 justify-content-between align-items-end mb-3">
-    <form method="get" class="d-flex flex-wrap gap-2 align-items-end">
-      <div>
-        <label class="form-label small mb-0">Група</label>
-        <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="">Усі</option>
-          {% for g in groups %}
-          <option value="{{ g.id }}" {% if filter_group == g.id %}selected{% endif %}>
-            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
-          </option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label small mb-0">Рік</label>
-        <select name="academic_year" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="">Усі</option>
-          {% for y in years %}
-          <option value="{{ y }}" {% if filter_year == y %}selected{% endif %}>{{ y }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div>
-        <label class="form-label small mb-0">Статус</label>
-        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
-          <option value="">Усі</option>
-          {% for s, lab in status_ua.items() %}
-          <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ lab }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </form>
-    {% if filter_group %}
-    <a class="btn btn-outline-success btn-sm"
-       href="{{ url_for('exam_sessions.group_course_summary', group_id=filter_group, academic_year=filter_year or None) }}">
-      <i class="bi bi-file-earmark-spreadsheet me-1"></i>Зведена по групі (Excel)
-    </a>
-    {% endif %}
-    <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-outline-info btn-sm">
-      <i class="bi bi-person-badge me-1"></i>Картотека викладачів
-    </a>
-    <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}" class="btn btn-outline-info btn-sm">
-      <i class="bi bi-graph-up-arrow me-1"></i>Статистика
-    </a>
-    {% if has_perm('view_exam_session_history') %}
-    <a href="{{ url_for('exam_sessions.history_index') }}" class="btn btn-outline-info btn-sm">
-      <i class="bi bi-journal-text me-1"></i>Журнал змін
-    </a>
-    {% endif %}
-    <a href="{{ url_for('exam_sessions.session_new') }}" class="btn btn-primary btn-sm">
-      <i class="bi bi-plus-lg me-1"></i>Нова сесія
-    </a>
-  </div>
+    .es-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .es-toolbar .form-control,
+    .es-toolbar .form-select {
+        background-color: var(--paper);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .es-toolbar .form-control,
+    html[data-theme="dark"] .es-toolbar .form-select { background-color: var(--paper-2); }
 
-  {% if rows %}
-  <div class="card">
-    <div class="table-responsive">
-      <table class="table table-sm table-hover mb-0 align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>Назва</th>
-            <th>Група</th>
-            <th>Рік / сем.</th>
-            <th>Статус</th>
-            <th>Відомостей</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for r in rows %}
-          <tr>
-            <td>{{ r.name }}</td>
-            <td>{{ r.group_name }} <span class="text-muted small">курс {{ r.course }}</span></td>
-            <td>{{ r.academic_year }} / {{ r.semester }}</td>
-            <td>
-              <span class="badge text-bg-{{ status_badge.get(r.status, 'secondary') }}">
-                {{ status_ua.get(r.status, r.status) }}
-              </span>
-            </td>
-            <td>{{ r.sheets_count }}</td>
-            <td class="text-end">
-              <a class="btn btn-sm btn-outline-primary"
-                 href="{{ url_for('exam_sessions.session_detail', session_id=r.id) }}">Відкрити</a>
-			<a href="{{ url_for('exam_sessions.session_copy', session_id=r.id) }}" class="btn btn-sm btn-outline-secondary">
-				<i class="bi bi-copy"></i> Копіювати
-			</a>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+    .es-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .73rem; font-weight: 700; text-transform: uppercase;
+        letter-spacing: .04em; border-bottom: 1px solid var(--line);
+        padding: .65rem .75rem; white-space: nowrap;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .68rem .75rem;
+        vertical-align: middle;
+    }
+    .es-track {
+        height: 8px;
+        border-radius: 5px;
+        background: var(--es-track);
+        overflow: hidden;
+        min-width: 72px;
+    }
+    .es-fill { height: 100%; border-radius: 5px; }
+    .es-fill--ok { background: var(--st-ok-solid); }
+    .es-fill--warn { background: var(--st-warn-solid); }
+    .es-fill--miss { background: var(--st-miss-solid); }
+
+    .es-badge {
+        display: inline-flex; align-items: center; gap: .25rem;
+        padding: .16rem .48rem; border-radius: 6px;
+        font-size: .73rem; font-weight: 700;
+        border: 1px solid transparent; white-space: nowrap;
+    }
+    .es-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .es-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .es-badge--info { background: var(--st-info-bg); color: var(--st-info-fg); border-color: var(--st-info-bd); }
+    .es-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+</style>
+
+<div class="container py-4 es-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('exam_sessions.teachers_list') }}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-person-badge me-1"></i>Картотека викладачів
+            </a>
+            <a href="{{ url_for('exam_sessions.teacher_stats_dashboard') }}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-graph-up-arrow me-1"></i>Статистика викладачів
+            </a>
+            {% if can_transfer %}
+            <a href="{{ url_for('exam_sessions.transfer_queue') }}" class="btn btn-sm btn-outline-warning">
+                <i class="bi bi-arrow-left-right me-1"></i>Перенос у план
+            </a>
+            {% endif %}
+            {% if has_perm('view_exam_session_history') %}
+            <a href="{{ url_for('exam_sessions.history_index') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-journal-text me-1"></i>Журнал змін
+            </a>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% if filter_group %}
+            <a class="btn btn-outline-success btn-sm"
+               href="{{ url_for('exam_sessions.group_course_summary', group_id=filter_group, academic_year=filter_year or None) }}">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Зведена по групі (Excel)
+            </a>
+            {% endif %}
+            <a href="{{ url_for('exam_sessions.session_new') }}" class="btn btn-primary btn-sm">
+                <i class="bi bi-plus-lg me-1"></i>Нова сесія
+            </a>
+        </div>
     </div>
-  </div>
-  {% else %}
-    {{ ui.empty_state('bi-clipboard2', 'Сесій ще немає або немає доступу до груп') }}
-  {% endif %}
+
+    {{ ui.page_header(
+        'bi-clipboard2-check',
+        'Сесії та відомості',
+        'Екзаменаційні відомості груп, заповнення викладачами та експорт зведених звітів'
+    ) }}
+
+    {% if rows %}
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi">
+                <div class="es-kpi__label">Сесій у вибірці</div>
+                <div class="es-kpi__val es-num">{{ summary.total_sessions }}</div>
+                <div class="es-kpi__sub">Відкритих: {{ summary.open_sessions }} · Закритих: {{ summary.closed_sessions }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--ok">
+                <div class="es-kpi__label">Відомостей здано</div>
+                <div class="es-kpi__val es-num">{{ summary.done_sheets }} <span class="fs-6 fw-normal text-muted">/ {{ summary.total_sheets }}</span></div>
+                <div class="es-kpi__sub">Загальне виконання: {{ summary.overall_percent }}%</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--warn">
+                <div class="es-kpi__label">Очікують заповнення</div>
+                <div class="es-kpi__val es-num">{{ summary.pending_sheets }}</div>
+                <div class="es-kpi__sub">Чернетки та надіслані викладачам</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--info">
+                <div class="es-kpi__label">В процесі</div>
+                <div class="es-kpi__val es-num">{{ summary.in_progress_sheets }}</div>
+                <div class="es-kpi__sub">Оцінювання триває</div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="es-toolbar">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Група</label>
+                <select name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі групи</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}" {% if filter_group == g.id %}selected{% endif %}>
+                        {{ g.name }} ({{ g.start_year }}, {{ g.study_form }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Навчальний рік</label>
+                <select name="academic_year" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі роки</option>
+                    {% for y in years %}
+                    <option value="{{ y }}" {% if filter_year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Статус</label>
+                <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі статуси</option>
+                    {% for s, lab in status_ua.items() %}
+                    <option value="{{ s }}" {% if filter_status == s %}selected{% endif %}>{{ lab }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small mb-1">Швидкий пошук</label>
+                <div class="d-flex gap-2">
+                    <input type="search" id="sessionQuickSearch" class="form-control form-control-sm"
+                           placeholder="Назва сесії або групи...">
+                    {% if filter_group or filter_year or filter_status %}
+                    <a href="{{ url_for('exam_sessions.sessions_list') }}"
+                       class="btn btn-sm btn-outline-secondary text-nowrap" title="Скинути фільтри">
+                        <i class="bi bi-x-lg"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if rows %}
+    <div class="es-panel">
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-middle" id="sessionsTable">
+                <thead>
+                    <tr>
+                        <th>Сесія</th>
+                        <th>Група</th>
+                        <th>Рік / сем.</th>
+                        <th>Статус</th>
+                        <th style="min-width:170px;">Відомості та прогрес</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr data-search="{{ (r.name ~ ' ' ~ r.group_name ~ ' ' ~ (r.academic_year or '') ~ ' ' ~ (r.notes or ''))|lower }}">
+                        <td>
+                            <div class="fw-semibold">
+                                <a href="{{ url_for('exam_sessions.session_detail', session_id=r.id) }}" class="text-decoration-none">
+                                    {{ r.name }}
+                                </a>
+                            </div>
+                            {% if r.notes %}
+                            <div class="small text-muted">{{ r.notes }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="fw-medium">{{ r.group_name }}</div>
+                            <div class="small text-muted">{{ r.course }} курс{% if r.study_form %} · {{ r.study_form }}{% endif %}</div>
+                        </td>
+                        <td class="es-num small text-nowrap">{{ r.academic_year }} · сем. {{ r.semester }}</td>
+                        <td>
+                            {% if r.status == 'open' %}
+                            <span class="es-badge es-badge--ok">Відкрита</span>
+                            {% elif r.status == 'closed' %}
+                            <span class="es-badge es-badge--muted">Закрита</span>
+                            {% else %}
+                            <span class="es-badge es-badge--warn">Чернетка</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.sheets_count %}
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <div class="es-track flex-grow-1">
+                                    <div class="es-fill {% if r.progress_percent == 100 %}es-fill--ok{% elif r.progress_percent >= 40 %}es-fill--warn{% else %}es-fill--miss{% endif %}"
+                                         style="width: {{ r.progress_percent }}%;"></div>
+                                </div>
+                                <span class="small fw-semibold es-num">{{ r.sheets_submitted }}/{{ r.sheets_count }}</span>
+                            </div>
+                            <div class="small text-muted es-num">
+                                {% if r.sheets_approved %}затв. {{ r.sheets_approved }}{% endif %}
+                                {% if r.sheets_linked %} · у плані {{ r.sheets_linked }}{% endif %}
+                                {% if r.sheets_pending %}
+                                    {% if r.sheets_approved or r.sheets_linked %} · {% endif %}
+                                    <span style="color:var(--st-miss-fg);">очікує {{ r.sheets_pending }}</span>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <span class="small text-muted">0 відомостей</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <div class="d-inline-flex gap-1">
+                                <a class="btn btn-sm btn-outline-primary"
+                                   href="{{ url_for('exam_sessions.session_detail', session_id=r.id) }}">Відкрити</a>
+                                {% if r.sheets_count %}
+                                <a class="btn btn-sm btn-outline-success"
+                                   href="{{ url_for('exam_sessions.session_summary_xlsx', session_id=r.id) }}"
+                                   title="Загальна відомість (Excel)">
+                                    <i class="bi bi-file-earmark-excel"></i>
+                                </a>
+                                <a class="btn btn-sm btn-outline-secondary"
+                                   href="{{ url_for('exam_sessions.session_summary_word', session_id=r.id) }}"
+                                   title="Загальна відомість (Word)">
+                                    <i class="bi bi-file-earmark-word"></i>
+                                </a>
+                                {% endif %}
+                                <a href="{{ url_for('exam_sessions.session_copy', session_id=r.id) }}"
+                                   class="btn btn-sm btn-outline-secondary"
+                                   title="Копіювати сесію для іншої групи">
+                                    <i class="bi bi-copy"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div id="sessionsEmptyFilter" class="p-4 text-center text-muted small d-none">
+            За пошуковим запитом сесій не знайдено.
+        </div>
+    </div>
+    {% else %}
+    {{ ui.empty_state('bi-clipboard2', 'Сесій ще немає або немає доступу до обраних груп') }}
+    {% endif %}
 </div>
+
+<script>
+(function () {
+    const qEl = document.getElementById('sessionQuickSearch');
+    const tbl = document.getElementById('sessionsTable');
+    const emptyEl = document.getElementById('sessionsEmptyFilter');
+    if (!qEl || !tbl) return;
+    const rows = Array.from(tbl.querySelectorAll('tbody tr'));
+    qEl.addEventListener('input', () => {
+        const q = (qEl.value || '').trim().toLowerCase();
+        let vis = 0;
+        rows.forEach(r => {
+            const ok = !q || r.dataset.search.includes(q);
+            r.classList.toggle('d-none', !ok);
+            if (ok) vis++;
+        });
+        if (emptyEl) emptyEl.classList.toggle('d-none', vis > 0);
+    });
+})();
+</script>
 {% endblock %}

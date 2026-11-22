@@ -3,98 +3,269 @@
 {% block title %}Нова відомість{% endblock %}
 {% block main_class %}py-3{% endblock %}
 {% block content %}
-<div class="container py-4" style="max-width:720px">
-  {{ ui.page_header('bi-file-earmark-plus', 'Нова відомість', es.name) }}
-  <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}"
-     class="btn btn-sm btn-outline-secondary mb-3">← До сесії</a>
+{% set kind_ua = {
+  'subject': 'Предмет',
+  'practice': 'Практика',
+  'coursework': 'Курсова',
+  'attestation': 'Атестація'
+} %}
+<style>
+    .es-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .es-card__head {
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+        padding: .72rem 1rem;
+        font-weight: 700;
+        font-size: .92rem;
+    }
+    .es-card__body { padding: 1.1rem; }
+    .es-card__foot {
+        background: var(--paper-2);
+        border-top: 1px solid var(--line);
+        padding: .85rem 1.1rem;
+    }
+    .es-plan-list {
+        max-height: 430px;
+        overflow-y: auto;
+    }
+    .es-plan-item {
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        border-bottom: 1px solid var(--line);
+        padding: .6rem .85rem;
+        color: var(--ink-text);
+        transition: background-color .12s ease;
+    }
+    .es-plan-item:last-child { border-bottom: none; }
+    .es-plan-item:hover { background: var(--brass-soft); }
+    .es-plan-item.is-selected {
+        background: var(--brass-soft);
+        outline: 2px solid var(--brass);
+        outline-offset: -2px;
+    }
+    .es-plan-meta {
+        font-size: .75rem;
+        color: var(--muted);
+    }
+    .es-num { font-variant-numeric: tabular-nums; }
+</style>
 
-  <form method="post" class="card card-body">
+<div class="container py-4" style="max-width: {{ '1040px' if plan_items else '740px' }};">
     <div class="mb-3">
-      <label class="form-label">Назва дисципліни *</label>
-      <input type="text" name="discipline_name" class="form-control" required
-             placeholder="Наприклад: Мови програмування для аналітичних досліджень">
-    </div>
-
-    <div class="row g-2">
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Тип (для переносу в план)</label>
-        <select name="entity_kind" class="form-select">
-          <option value="subject">Предмет</option>
-          <option value="practice">Практика</option>
-          <option value="coursework">Курсова</option>
-          <option value="attestation">Атестація</option>
-        </select>
-        <div class="form-text">Для курсової/атестації тему вкажете кожному студенту у відомості.</div>
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Форма контролю</label>
-        <select name="control_form" class="form-select">
-          <option value="Залік">Залік</option>
-          <option value="Екзамен">Екзамен</option>
-        </select>
-      </div>
-      <div class="col-md-4 mb-3">
-        <label class="form-label">Години / кредити</label>
-        <input type="text" name="hours_credits" class="form-control" placeholder="150/5.0">
-      </div>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Викладач *</label>
-      <div class="input-group">
-        <select name="teacher_ref_id" class="form-select" required>
-          <option value="">— оберіть викладача —</option>
-          {% for t in teachers %}
-            <option value="{{ t.id }}" {% if request.form.get('teacher_ref_id')|int == t.id %}selected{% endif %}>
-              {{ t.short_name or t.full_name }}{% if t.department %} — {{ t.department }}{% endif %}
-            </option>
-          {% endfor %}
-        </select>
-        <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank"
-           class="btn btn-outline-secondary" title="Додати нового викладача в картотеку">
-          <i class="bi bi-person-plus"></i>
+        <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>До сесії
         </a>
-      </div>
-      <div class="form-text">
-        <i class="bi bi-info-circle me-1"></i>
-        Список з картотеки. Відомість автоматично з'явиться в кабінеті викладача за його постійним посиланням.
-        Якщо викладача немає в списку — додайте його через <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank">картотеку</a>.
-      </div>
     </div>
 
-    <div class="row g-2">
-      <div class="col-md-3 mb-3">
-        <label class="form-label">Дата проведення</label>
-        <input type="date" name="exam_date" class="form-control">
-      </div>
-      <div class="col-md-3 mb-3">
-        <label class="form-label">№ відомості</label>
-        <input type="text" name="statement_number" class="form-control" placeholder="26">
-      </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Ліцензія *</label>
-        <select name="license_id" class="form-select" required>
-          <option value="">— оберіть ліцензію —</option>
-          {% if licenses|length > 1 %}
-          <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
-            Усі ліцензії групи (створити для кожної, {{ licenses|length }})
-          </option>
-          {% elif licenses|length == 1 %}
-          <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
-            Усі ліцензії групи ({{ licenses|length }})
-          </option>
-          {% endif %}
-          {% for l in licenses %}
-          <option value="{{ l.id }}" {% if request.form.get('license_id') == (l.id|string) %}selected{% endif %}>{{ l.name }}</option>
-          {% endfor %}
-        </select>
-        <div class="form-text">
-          Студенти з різними ліцензіями — окремі відомості. Оберіть конкретну ліцензію або «Усі ліцензії групи».
+    {{ ui.page_header('bi-file-earmark-plus', 'Нова відомість', es.name) }}
+
+    <div class="row g-3">
+        <div class="{{ 'col-lg-7' if plan_items else 'col-12' }}">
+            <form method="post" class="es-card" id="sheetCreateForm">
+                <div class="es-card__head">
+                    <i class="bi bi-card-checklist me-1"></i>Параметри відомості
+                </div>
+                <div class="es-card__body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">
+                            Назва дисципліни <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" name="discipline_name" id="discNameInput" class="form-control" required
+                               value="{{ request.form.get('discipline_name') or '' }}"
+                               placeholder="Наприклад: Мови програмування для аналітичних досліджень">
+                        {% if plan_items %}
+                        <div class="form-text">Можна ввести вручну або обрати зі списку навчального плану праворуч — усі поля підставляться автоматично.</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row g-2 mb-3">
+                        <div class="col-sm-4">
+                            <label class="form-label fw-semibold small">Тип (для переносу в план)</label>
+                            <select name="entity_kind" id="entityKindSelect" class="form-select">
+                                <option value="subject" {% if request.form.get('entity_kind', 'subject') == 'subject' %}selected{% endif %}>Предмет</option>
+                                <option value="practice" {% if request.form.get('entity_kind') == 'practice' %}selected{% endif %}>Практика</option>
+                                <option value="coursework" {% if request.form.get('entity_kind') == 'coursework' %}selected{% endif %}>Курсова</option>
+                                <option value="attestation" {% if request.form.get('entity_kind') == 'attestation' %}selected{% endif %}>Атестація</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label fw-semibold small">Форма контролю</label>
+                            <select name="control_form" id="controlFormSelect" class="form-select">
+                                <option value="Залік" {% if request.form.get('control_form', 'Залік') == 'Залік' %}selected{% endif %}>Залік</option>
+                                <option value="Екзамен" {% if request.form.get('control_form') == 'Екзамен' %}selected{% endif %}>Екзамен</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label fw-semibold small">Години / кредити</label>
+                            <input type="text" name="hours_credits" id="hoursCreditsInput" class="form-control es-num"
+                                   value="{{ request.form.get('hours_credits') or '' }}" placeholder="150/5.0">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <label class="form-label fw-semibold small mb-0">
+                                Викладач <span class="text-danger">*</span>
+                            </label>
+                            <input type="search" id="teacherQuickSearch" class="form-control form-control-sm"
+                                   style="max-width: 220px;" placeholder="Фільтр викладача...">
+                        </div>
+                        <div class="input-group">
+                            <select name="teacher_ref_id" id="teacherSelect" class="form-select" required>
+                                <option value="">— оберіть викладача —</option>
+                                {% for t in teachers %}
+                                <option value="{{ t.id }}"
+                                        data-search="{{ ((t.full_name or '') ~ ' ' ~ (t.short_name or '') ~ ' ' ~ (t.department or ''))|lower }}"
+                                        {% if request.form.get('teacher_ref_id')|int == t.id %}selected{% endif %}>
+                                    {{ t.short_name or t.full_name }}{% if t.department %} — {{ t.department }}{% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <a href="{{ url_for('exam_sessions.teacher_new') }}" target="_blank"
+                               class="btn btn-outline-secondary" title="Додати нового викладача в картотеку">
+                                <i class="bi bi-person-plus"></i>
+                            </a>
+                        </div>
+                        <div class="form-text">
+                            Відомість автоматично з'явиться в кабінеті обраного викладача.
+                        </div>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-sm-4 mb-2 mb-sm-0">
+                            <label class="form-label fw-semibold small">Дата проведення</label>
+                            <input type="date" name="exam_date" class="form-control"
+                                   value="{{ request.form.get('exam_date') or '' }}">
+                        </div>
+                        <div class="col-sm-3 mb-2 mb-sm-0">
+                            <label class="form-label fw-semibold small">№ відомості</label>
+                            <input type="text" name="statement_number" class="form-control es-num"
+                                   value="{{ request.form.get('statement_number') or '' }}" placeholder="26">
+                        </div>
+                        <div class="col-sm-5">
+                            <label class="form-label fw-semibold small">
+                                Ліцензія <span class="text-danger">*</span>
+                            </label>
+                            <select name="license_id" class="form-select" required>
+                                <option value="">— оберіть ліцензію —</option>
+                                {% if licenses|length > 1 %}
+                                <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
+                                    Усі ліцензії групи ({{ licenses|length }})
+                                </option>
+                                {% elif licenses|length == 1 %}
+                                <option value="all" {% if request.form.get('license_id') == 'all' %}selected{% endif %}>
+                                    Усі ліцензії групи ({{ licenses|length }})
+                                </option>
+                                {% endif %}
+                                {% for l in licenses %}
+                                <option value="{{ l.id }}" {% if request.form.get('license_id') == (l.id|string) %}selected{% endif %}>
+                                    {{ l.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="es-card__foot d-flex justify-content-between gap-2 flex-wrap">
+                    <a href="{{ url_for('exam_sessions.session_detail', session_id=es.id) }}" class="btn btn-outline-secondary">Скасувати</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-1"></i>Створити і сформувати студентів
+                    </button>
+                </div>
+            </form>
         </div>
-      </div>
-    </div>
 
-    <button type="submit" class="btn btn-primary">Створити і сформувати список студентів</button>
-  </form>
+        {% if plan_items %}
+        <div class="col-lg-5">
+            <div class="es-card">
+                <div class="es-card__head d-flex justify-content-between align-items-center gap-2">
+                    <span><i class="bi bi-book me-1"></i>З навчального плану ({{ plan_items|length }})</span>
+                </div>
+                <div class="p-2 border-bottom">
+                    <input type="search" id="planSearch" class="form-control form-control-sm"
+                           placeholder="Пошук дисципліни в плані...">
+                </div>
+                <div class="es-plan-list" id="planList">
+                    {% for item in plan_items %}
+                    <button type="button" class="es-plan-item"
+                            data-name="{{ item.name }}"
+                            data-kind="{{ item.kind }}"
+                            data-ctrl="{{ item.control_form }}"
+                            data-hc="{{ item.hours_credits }}"
+                            data-search="{{ (item.name ~ ' ' ~ item.code ~ ' ' ~ kind_ua.get(item.kind, item.kind))|lower }}">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <span class="fw-semibold small">{{ item.name }}</span>
+                            {% if item.exists %}
+                            <span class="small text-success text-nowrap"><i class="bi bi-check2"></i> є в сесії</span>
+                            {% endif %}
+                        </div>
+                        <div class="es-plan-meta es-num mt-1">
+                            {{ kind_ua.get(item.kind, item.kind) }}
+                            · {{ item.control_form }}
+                            {% if item.hours_credits %} · {{ item.hours_credits }}{% endif %}
+                            {% if item.code %} · {{ item.code }}{% endif %}
+                        </div>
+                    </button>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
 </div>
+
+<script>
+(function () {
+    // Фільтр викладача в <select>
+    const tSearch = document.getElementById('teacherQuickSearch');
+    const tSelect = document.getElementById('teacherSelect');
+    if (tSearch && tSelect) {
+        const opts = Array.from(tSelect.querySelectorAll('option')).filter(o => o.value);
+        tSearch.addEventListener('input', () => {
+            const q = (tSearch.value || '').trim().toLowerCase();
+            opts.forEach(o => {
+                const match = !q || (o.dataset.search || o.textContent.toLowerCase()).includes(q);
+                o.hidden = !match;
+            });
+        });
+    }
+
+    // Вибір дисципліни з навчального плану
+    const pSearch = document.getElementById('planSearch');
+    const pItems = Array.from(document.querySelectorAll('.es-plan-item'));
+    const discInput = document.getElementById('discNameInput');
+    const kindSel = document.getElementById('entityKindSelect');
+    const ctrlSel = document.getElementById('controlFormSelect');
+    const hcInput = document.getElementById('hoursCreditsInput');
+
+    if (pSearch) {
+        pSearch.addEventListener('input', () => {
+            const q = (pSearch.value || '').trim().toLowerCase();
+            pItems.forEach(btn => {
+                btn.classList.toggle('d-none', !!q && !btn.dataset.search.includes(q));
+            });
+        });
+    }
+    pItems.forEach(btn => {
+        btn.addEventListener('click', () => {
+            pItems.forEach(b => b.classList.remove('is-selected'));
+            btn.classList.add('is-selected');
+            if (discInput) discInput.value = btn.dataset.name || '';
+            if (kindSel && btn.dataset.kind) kindSel.value = btn.dataset.kind;
+            if (ctrlSel && btn.dataset.ctrl) ctrlSel.value = btn.dataset.ctrl;
+            if (hcInput) hcInput.value = btn.dataset.hc || '';
+            discInput?.focus();
+        });
+    });
+})();
+</script>
 {% endblock %}
