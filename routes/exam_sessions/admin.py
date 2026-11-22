@@ -91,6 +91,64 @@ def _load_students(conn, sheet_id):
     """, (sheet_id,)).fetchall()]
 
 
+def _sheet_row_has_grade(st):
+    pts = st.get('points')
+    nat = (st.get('national_grade') or '').strip()
+    ects = (st.get('ects') or '').strip()
+    return (pts is not None and str(pts).strip() != '') or bool(nat) or bool(ects)
+
+
+def _merge_summary_sheets_by_discipline(sheets, by_students):
+    """Об'єднує відомості однієї дисципліни (створені під різними ліцензіями)
+    в одну спільну колонку для загальної відомості сесії.
+    """
+    from routes.helpers import sort_ukrainian
+
+    merged_sheets = []
+    merged_by_students = {}
+    groups_by_key = {}
+
+    for sh in (sheets or []):
+        sh_dict = dict(sh) if not isinstance(sh, dict) else dict(sh)
+        name_norm = ' '.join((sh_dict.get('discipline_name') or '').split()).lower()
+        ctrl_norm = ' '.join((sh_dict.get('control_form') or '').split()).lower()
+        kind_norm = (sh_dict.get('entity_kind') or 'subject').strip().lower()
+        key = (name_norm, ctrl_norm, kind_norm)
+
+        if key not in groups_by_key:
+            canon = sh_dict
+            groups_by_key[key] = canon
+            merged_sheets.append(canon)
+            merged_by_students[canon['id']] = {}
+        else:
+            canon = groups_by_key[key]
+            if not canon.get('hours_credits') and sh_dict.get('hours_credits'):
+                canon['hours_credits'] = sh_dict.get('hours_credits')
+
+        stu_map = merged_by_students[canon['id']]
+        for st in (by_students.get(sh_dict['id']) or []):
+            st_dict = dict(st) if not isinstance(st, dict) else dict(st)
+            raw_sid = st_dict.get('student_id')
+            if raw_sid is not None and str(raw_sid).strip() != '':
+                try:
+                    sid_key = ('id', int(raw_sid))
+                except (TypeError, ValueError):
+                    sid_key = ('id', str(raw_sid).strip())
+            else:
+                sid_key = ('name', ' '.join((st_dict.get('full_name') or '').split()).lower())
+            if sid_key not in stu_map:
+                stu_map[sid_key] = st_dict
+            elif not _sheet_row_has_grade(stu_map[sid_key]) and _sheet_row_has_grade(st_dict):
+                stu_map[sid_key] = st_dict
+
+    out_by_students = {}
+    for sh in merged_sheets:
+        cid = sh['id']
+        rows = list(merged_by_students[cid].values())
+        out_by_students[cid] = sort_ukrainian(rows, lambda r: r.get('full_name') or '')
+    return merged_sheets, out_by_students
+
+
 # ═══════════════════════════════════════════════════════════════════
 # КАРТОТЕКА ВИКЛАДАЧІВ
 # ═══════════════════════════════════════════════════════════════════
@@ -1308,24 +1366,30 @@ def group_course_summary():
     student_map = {}
 
     for es in sessions:
-        sheets = [dict(r) for r in conn.execute("""
-            SELECT ss.id, ss.discipline_name, ss.control_form, ss.hours_credits, ss.license_id,
-                   l.short_name_ua AS license_name
+        raw_sheets = [dict(r) for r in conn.execute("""
+            SELECT ss.id, ss.discipline_name, ss.control_form, ss.hours_credits,
+                   ss.entity_kind, ss.license_id, l.short_name_ua AS license_name
             FROM session_sheets ss
             LEFT JOIN institution_licenses l ON l.id = ss.license_id
             WHERE ss.session_id=?
             ORDER BY ss.discipline_name, ss.license_id
         """, (es['id'],)).fetchall()]
 
-        grades = {}
-        for sh in sheets:
-            rows = conn.execute("""
+        raw_by_students = {}
+        for sh in raw_sheets:
+            rows = [dict(r) for r in conn.execute("""
                 SELECT student_id, full_name, points, national_grade, ects
                 FROM session_sheet_students
                 WHERE sheet_id=?
                 ORDER BY position, full_name
-            """, (sh['id'],)).fetchall()
-            for r in rows:
+            """, (sh['id'],)).fetchall()]
+            raw_by_students[sh['id']] = rows
+
+        sheets, merged_by_students = _merge_summary_sheets_by_discipline(raw_sheets, raw_by_students)
+
+        grades = {}
+        for sh in sheets:
+            for r in merged_by_students.get(sh['id'], []):
                 sid = r['student_id']
                 if sid not in student_map:
                     student_map[sid] = r['full_name']
@@ -1334,10 +1398,6 @@ def group_course_summary():
                     'points': r['points'],
                     'ects': r['ects'],
                 }
-
-        for sh in sheets:
-            if sh.get('license_name'):
-                sh['discipline_name'] = f"{sh['discipline_name']} ({sh['license_name']})"
 
         sessions_blocks.append({
             'academic_year': es.get('academic_year'),
@@ -1348,8 +1408,9 @@ def group_course_summary():
 
     conn.close()
 
+    from routes.helpers import sort_ukrainian
     students = [{'id': sid, 'full_name': name} for sid, name in student_map.items()]
-    students.sort(key=lambda x: (x['full_name'] or '').lower())
+    students = sort_ukrainian(students, lambda x: x['full_name'] or '')
 
     meta = dict(g)
     meta['group_name'] = g['name']
@@ -1477,6 +1538,7 @@ def session_summary_word(session_id):
     by_students = {}
     for sh in sheets:
         by_students[sh['id']] = _load_students(conn, sh['id'])
+    sheets, by_students = _merge_summary_sheets_by_discipline(sheets, by_students)
     meta = dict(es)
     conn.close()
 
@@ -1522,6 +1584,7 @@ def session_summary_xlsx(session_id):
     by_students = {}
     for sh in sheets:
         by_students[sh['id']] = _load_students(conn, sh['id'])
+    sheets, by_students = _merge_summary_sheets_by_discipline(sheets, by_students)
 
     meta = dict(es)
     conn.close()

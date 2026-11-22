@@ -1832,6 +1832,12 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
                 'ects': ects or '',
             }
 
+    try:
+        from routes.helpers import sort_ukrainian
+        order = sort_ukrainian(order, lambda sid: names.get(sid, ''))
+    except Exception:
+        pass
+
     form = session_meta.get('study_form') or ''
     ctx = {
         'institution': session_meta.get('institution_name_and_status')

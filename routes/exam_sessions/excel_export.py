@@ -737,6 +737,12 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
                 'ects': _g(st, 'ects') or '',
             }
 
+    try:
+        from routes.helpers import sort_ukrainian
+        order = sort_ukrainian(order, lambda sid: names.get(sid, ''))
+    except Exception:
+        pass
+
     n_disc = len(sheets)
     n_students = len(order)
     # № + ПІБ + 3×n_disc + Середній бал
