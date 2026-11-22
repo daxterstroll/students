@@ -396,26 +396,39 @@
                 {% if session.get('is_admin') %}
                 <div class="col-12 col-lg-4">
                     <label class="form-label small text-muted mb-1">Група</label>
-                    <div class="dropdown group-picker">
-                        <button type="button" class="form-select form-select-sm text-start" id="groupPickerBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
-                            {% if group_id %}
-                                {% for g in groups %}{% if g.id == group_id %}{{ g.name }} ({{ g.start_year }}, {{ g.study_form }}){% endif %}{% endfor %}
-                            {% else %}
-                                Всі групи
-                            {% endif %}
+                    <div class="dropdown eu-group-picker" data-eu-gp="custom" data-target-input="groupIdInput">
+                        <button type="button" class="form-select form-select-sm text-start eu-group-picker-btn" id="groupPickerBtn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+                            <span class="eu-group-picker-label">
+                                {%- if group_id -%}
+                                    {%- for g in groups -%}{%- if g.id == group_id -%}{{ g.name }} ({{ g.start_year }}, {{ g.study_form }}){%- endif -%}{%- endfor -%}
+                                {%- else -%}
+                                    Всі групи
+                                {%- endif -%}
+                            </span>
                         </button>
-                        <div class="dropdown-menu p-2 group-picker-menu" aria-labelledby="groupPickerBtn">
-                            <input type="text" class="form-control form-control-sm mb-2" id="groupPickerSearch" placeholder="Пошук групи…" autocomplete="off">
-                            <div class="group-picker-list">
-                                <button type="button" class="dropdown-item group-picker-item small fw-semibold" data-group-id="" data-group-label="Всі групи">Всі групи</button>
+                        <button type="button" class="eu-group-picker-clear" aria-label="Скинути групу" title="Скинути" {% if not group_id %}hidden{% endif %}>
+                            <i class="bi bi-x-lg" aria-hidden="true"></i>
+                        </button>
+                        <div class="dropdown-menu eu-group-picker-menu p-0" aria-labelledby="groupPickerBtn">
+                            <div class="eu-group-picker-list">
+                                <button type="button" class="dropdown-item eu-group-picker-item fw-semibold" data-group-id="" data-group-label="Всі групи">
+                                    <span class="eu-gp-item-content">
+                                        <span class="eu-gp-item-title">Всі групи</span>
+                                    </span>
+                                    <i class="bi bi-check2 eu-group-picker-check" aria-hidden="true"></i>
+                                </button>
                                 {% for degree_level_g, glist in groups_by_degree.items() %}
-                                <div class="group-picker-degree small fw-semibold text-muted px-2 pt-2 pb-1">{{ degree_level_g }}</div>
+                                <div class="eu-group-picker-degree">{{ degree_level_g }}</div>
                                 {% for g in glist %}
-                                <button type="button" class="dropdown-item group-picker-item"
+                                <button type="button" class="dropdown-item eu-group-picker-item"
                                         data-group-id="{{ g.id }}"
                                         data-group-label="{{ g.name }} ({{ g.start_year }}, {{ g.study_form }})"
-                                        data-search="{{ (g.name ~ ' ' ~ g.study_form ~ ' ' ~ g.start_year ~ ' ' ~ (g.specialty or ''))|lower }}">
-                                    {{ g.name }} <span class="text-muted small">({{ g.start_year }}, {{ g.study_form }}, {{ g.specialty }})</span>
+                                        data-search="{{ (g.name ~ ' ' ~ g.study_form ~ ' ' ~ g.start_year ~ ' ' ~ (g.course ~ ' курс ' if g.course else '') ~ degree_level_g ~ ' ' ~ (g.specialty or ''))|lower }}">
+                                    <span class="eu-gp-item-content">
+                                        <span class="eu-gp-item-title">{{ g.name }}</span>
+                                        <span class="eu-gp-item-meta">{{ g.start_year }} · {{ g.study_form }}{% if g.course %} · {{ g.course }} курс{% endif %}{% if g.specialty %} · {{ g.specialty }}{% endif %}</span>
+                                    </span>
+                                    <i class="bi bi-check2 eu-group-picker-check" aria-hidden="true"></i>
                                 </button>
                                 {% endfor %}
                                 {% endfor %}
@@ -897,58 +910,7 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    // Пошуковий випадаючий список груп: фільтрує пункти по мірі
-    // набору тексту, клік по пункту виставляє group_id і одразу
-    // надсилає форму фільтрів.
-    const pickerSearch = document.getElementById('groupPickerSearch');
-    const groupIdInput = document.getElementById('groupIdInput');
-    const pickerBtn = document.getElementById('groupPickerBtn');
-    const filterForm = document.getElementById('filterForm');
-
-    if (pickerSearch) {
-        pickerSearch.addEventListener('input', function () {
-            const q = this.value.trim().toLowerCase();
-            document.querySelectorAll('.group-picker-item[data-search]').forEach(item => {
-                item.style.display = (!q || item.getAttribute('data-search').includes(q)) ? '' : 'none';
-            });
-            document.querySelectorAll('.group-picker-degree').forEach(header => {
-                let node = header.nextElementSibling;
-                let hasVisible = false;
-                while (node && node.classList.contains('group-picker-item')) {
-                    if (node.style.display !== 'none') { hasVisible = true; break; }
-                    node = node.nextElementSibling;
-                }
-                header.style.display = (!q || hasVisible) ? '' : 'none';
-            });
-        });
-        // Не закривати меню кліком усередині поля пошуку
-        pickerSearch.addEventListener('click', e => e.stopPropagation());
-    }
-
-    document.querySelectorAll('.group-picker-item').forEach(item => {
-        item.addEventListener('click', function () {
-            groupIdInput.value = this.getAttribute('data-group-id') || '';
-            pickerBtn.textContent = this.getAttribute('data-group-label');
-            filterForm.submit();
-        });
-    });
-
-    // Автофокус на пошук групи одразу при відкритті меню
-    const groupPickerDropdown = document.querySelector('.group-picker');
-    if (groupPickerDropdown) {
-        groupPickerDropdown.addEventListener('shown.bs.dropdown', function () {
-            if (pickerSearch) pickerSearch.focus();
-        });
-    }
-});
-</script>
-
 <style>
-.group-picker-menu { width: min(340px, calc(100vw - 2.5rem)); max-height: 360px; overflow-y: auto; }
-.group-picker-item { cursor: pointer; white-space: normal; }
-#groupPickerBtn { cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-panel .form-label { margin-bottom: .15rem; }
 </style>
 {% endblock %}

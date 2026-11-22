@@ -1797,7 +1797,7 @@
                     {% if groups_data|length > 1 %}
                     <div class="mb-3">
                         <label class="form-label">У якій групі заморозити <span class="text-danger">*</span></label>
-                        <select name="group_id" class="form-select" required>
+                        <select name="group_id" class="form-select" required data-no-group-picker="1">
                             {% for g in groups_data %}
                                 {% if g.status == 'active' %}
                                 <option value="{{ g.group_id }}">
