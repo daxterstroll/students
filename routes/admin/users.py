@@ -26,7 +26,9 @@ PERMISSION_DEFINITIONS = [
     ('manage_templates',            'Шаблони документів',                        'system'),
 
     # ─── Студенти (базове) ──────────────────────────────────────
-    ('manage_students',             'Студенти — список і картка',                'students'),
+    ('manage_students',             'Студенти — редагування, додавання, видалення', 'students'),
+    ('view_student_card',           'Картка студента (перегляд)',                  'students'),
+    ('view_student_completeness',   'Заповненість профілів (колонка, фільтр і прогалини)', 'students'),
     ('manage_pending_students',     'Заявки на реєстрацію',                      'students'),
     ('manage_update_requests',      'Заявки на оновлення даних',                 'students'),
     ('manage_passport_documents',   'Паспортні дані',                            'students'),

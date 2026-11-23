@@ -144,7 +144,7 @@
 {% if 'students' in (faq_sections or []) %}
 <div class="faq-category-title"><i class="bi bi-people-fill me-1"></i>Студенти</div>
 
-    {% if has_perm('manage_students') %}
+    {% if has_perm('manage_students') or has_perm('view_student_completeness') or has_perm('view_student_card') %}
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-students">
@@ -153,11 +153,13 @@
         </h2>
         <div id="p-students" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
             <div class="accordion-body small">
-                Список усіх студентів з пошуком за ПІБ, фільтром по групі та індикаторами заповненості. Не-адміністратори бачать лише студентів своїх груп. Звідси відкривається картка студента — центральна точка для всіх подальших дій із конкретною людиною.<br>
+                Список усіх студентів з пошуком за ПІБ та фільтрами. Не-адміністратори бачать лише студентів своїх груп.<br>
                 <strong>Фільтр «Ліцензія»</strong> — показує студентів, які мають <strong>хоч один активний enrollment</strong> під цією ліцензією. Студент, що вчиться одночасно під Львівською і Польською, знайдеться в обох фільтрах. Пункт <em>«— без ліцензії —»</em> показує студентів, чиї enrollments ще не мають проставленої ліцензії.<br>
-                <strong>Паралельне навчання:</strong> якщо студент вчиться у двох і більше групах — біля основної групи бейдж <em>«+N»</em> із підказкою, у яких ще групах він перебуває.<br>
-                <strong>Заповненість:</strong> смужка «особисті дані» + значки статусу (червоний — не все заповнено, зелений — повністю): фото, оцінки, практика/курсові/атестація, військові дані, паспортні дані, документ про освіту.<br>
-                <strong>Військова заповненість залежить від статусу:</strong> «Військовозобов'язаний»/«Резервіст» — 14 полів, «Призовник» — 9, «Знято з обліку» — 8.
+                <strong>Паралельне навчання:</strong> якщо студент вчиться у двох і більше групах — біля основної групи бейдж <em>«+N»</em> із підказкою, у яких ще групах він перебуває.
+                {% if has_perm('manage_students') or has_perm('view_student_completeness') %}
+                <br><strong>Заповненість (за окремим правом):</strong> смужка «особисті дані» + значки статусу (червоний — не все заповнено, зелений — повністю): фото, оцінки, практика/курсові/атестація, військові дані, паспортні дані, документ про освіту.
+                <br><strong>Військова заповненість залежить від статусу:</strong> «Військовозобов'язаний»/«Резервіст» — 14 полів, «Призовник» — 9, «Знято з обліку» — 8.
+                {% endif %}
             </div>
         </div>
     </div>
@@ -205,7 +207,7 @@
     </div>
     {% endif %}
 
-    {% if has_perm('manage_students') %}
+    {% if has_perm('manage_students') or has_perm('view_student_card') %}
     <div class="accordion-item">
         <h2 class="accordion-header">
             <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#p-student-card">

@@ -478,27 +478,27 @@ def authorize_and_serve_static():
         elif top_folder == 'military_records':
             if has_any_permission('manage_military_reports'):
                 allowed = True
-            elif has_any_permission('manage_students'):
+            elif has_any_permission('manage_students', 'view_student_card'):
                 sid = _attachment_student_id(conn, subpath)
                 allowed = (sid is not None and user_can_access_student(conn, sid))
         elif top_folder == 'passport_documents':
             if has_any_permission('manage_passport_documents'):
                 allowed = True
-            elif has_any_permission('manage_students'):
+            elif has_any_permission('manage_students', 'view_student_card'):
                 sid = _attachment_student_id(conn, subpath)
                 allowed = (sid is not None and user_can_access_student(conn, sid))
         elif top_folder == 'education_documents':
             if has_any_permission('manage_education_documents'):
                 allowed = True
-            elif has_any_permission('manage_students'):
+            elif has_any_permission('manage_students', 'view_student_card'):
                 sid = _attachment_student_id(conn, subpath)
                 allowed = (sid is not None and user_can_access_student(conn, sid))
         elif top_folder in ('orders', 'course_transfer_orders'):
             allowed = has_any_permission('manage_orders', 'manage_students')
         elif top_folder == 'frozen_students':
-            if has_any_permission('manage_students'):
+            if has_any_permission('manage_students', 'view_student_card'):
                 sid = _attachment_student_id(conn, subpath)
-                allowed = (sid is None or user_can_access_student(conn, sid))
+                allowed = (sid is None and has_any_permission('manage_students')) or (sid is not None and user_can_access_student(conn, sid))
         elif top_folder in ('pending_students', 'pending_pdfs'):
             allowed = has_any_permission('manage_pending_students')
         elif top_folder == 'pending_photos':

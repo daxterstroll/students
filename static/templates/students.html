@@ -589,9 +589,11 @@
 
     {% set can_edit_stu = has_perm('manage_students') %}
     {% set can_mil = has_perm('manage_students') or has_perm('manage_military_reports') %}
-    {% set can_view_card = has_perm('manage_students') or has_perm('manage_military_reports') or has_perm('study_periods') or has_perm('group_export') or has_perm('manage_education_documents') or has_perm('manage_passport_documents') or has_perm('manage_orders') or has_perm('edit_grades') %}
+    {% set can_view_card = has_perm('manage_students') or has_perm('view_student_card') or has_perm('manage_military_reports') or has_perm('study_periods') or has_perm('group_export') or has_perm('manage_education_documents') or has_perm('manage_passport_documents') or has_perm('manage_orders') or has_perm('edit_grades') %}
+    {% set can_view_completeness = has_perm('manage_students') or has_perm('view_student_completeness') %}
+    {% set has_any_row_action = can_view_card or can_edit_stu or has_perm('group_export') %}
 
-    {{ ui.page_header('bi-person-vcard', 'Список студентів', 'Реєстр студентів, заповненість профілів, документи та військовий облік') }}
+    {{ ui.page_header('bi-person-vcard', 'Список студентів', 'Реєстр студентів, заповненість профілів, документи та військовий облік' if can_view_completeness else 'Реєстр студентів, документи та військовий облік') }}
 
     {% if has_perm('manage_students') %}
     <div class="d-flex justify-content-end mb-3">
@@ -619,7 +621,7 @@
                 <input type="hidden" name="sort_by" id="sortByInput" value="{{ sort_by }}">
                 <input type="hidden" name="sort_order" id="sortOrderInput" value="{{ sort_order }}">
 
-                <div class="col-12 {% if session.get('is_admin') %}col-lg-4{% else %}col-lg-6{% endif %}">
+                <div class="col-12 {% if session.get('is_admin') %}{{ 'col-lg-4' if can_view_completeness else 'col-lg-7' }}{% else %}{{ 'col-lg-6' if can_view_completeness else 'col-lg-10' }}{% endif %}">
                     <label class="form-label small text-muted mb-1">Пошук (ПІБ або телефон)</label>
                     <div class="input-group input-group-sm">
                         <input type="text" name="search" placeholder="Прізвище, ім'я або +380…" class="form-control" value="{{ search }}">
@@ -672,6 +674,7 @@
                 </div>
                 {% endif %}
 
+                {% if can_view_completeness %}
                 <div class="col-12 col-md-6 {% if session.get('is_admin') %}col-lg-3{% else %}col-lg-4{% endif %}">
                     <label class="form-label small text-muted mb-1">Чого не вистачає</label>
                     <select name="missing" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -681,6 +684,7 @@
                         {% endfor %}
                     </select>
                 </div>
+                {% endif %}
 
                 <div class="col-12 col-lg-2">
                     <button type="button" class="btn btn-outline-secondary btn-sm w-100 d-flex align-items-center justify-content-center gap-2" data-bs-toggle="collapse" data-bs-target="#advancedFilters" aria-expanded="{{ 'true' if extra_filters_open else 'false' }}" aria-controls="advancedFilters">
@@ -756,8 +760,10 @@
                                 {% set sort_val = sort_by ~ ':' ~ sort_order %}
                                 <option value="id:desc" {% if sort_val == 'id:desc' %}selected{% endif %}>Нові спочатку (ID ↓)</option>
                                 <option value="id:asc" {% if sort_val == 'id:asc' %}selected{% endif %}>Старі спочатку (ID ↑)</option>
+                                {% if can_view_completeness %}
                                 <option value="completeness:asc" {% if sort_val == 'completeness:asc' %}selected{% endif %}>Заповненість: спочатку з прогалинами ↑</option>
                                 <option value="completeness:desc" {% if sort_val == 'completeness:desc' %}selected{% endif %}>Заповненість: спочатку заповнені ↓</option>
+                                {% endif %}
                                 <option value="last_name_UA:asc" {% if sort_val == 'last_name_UA:asc' %}selected{% endif %}>Прізвище (А → Я)</option>
                                 <option value="last_name_UA:desc" {% if sort_val == 'last_name_UA:desc' %}selected{% endif %}>Прізвище (Я → А)</option>
                                 <option value="group_id:asc" {% if sort_val == 'group_id:asc' %}selected{% endif %}>Група ↑</option>
@@ -780,7 +786,7 @@
     </div>
 
     <!-- Зведена стрічка прогалин по вибірці / сторінці -->
-    {% if summary_total > 0 %}
+    {% if can_view_completeness and summary_total > 0 %}
     {% set summary_pills = [
         ('any', 'З прогалинами', 'bi-exclamation-circle', 'summary-pill--alert'),
         ('personal', 'Неповні особ. дані', 'bi-person-lines-fill', 'summary-pill--warn'),
@@ -893,14 +899,19 @@
                     <th>{{ sort_link('last_name_UA', 'Прізвище') }}<span class="sort-sep">·</span>{{ sort_link('first_name_UA', 'Імʼя') }}</th>
                     <th class="text-center">{{ sort_link('birth_date', 'Дата нар.') }}</th>
                     <th>{{ sort_link('group_id', 'Група') }}</th>
+                    {% if can_view_completeness %}
                     <th>{{ sort_link('completeness', 'Заповненість та прогалини') }}</th>
+                    {% endif %}
                     <th class="text-center">Військові</th>
+                    {% if has_any_row_action %}
                     <th class="text-center">Дії</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
+                {% set table_cols = 4 + (1 if session.get('is_admin') else 0) + (1 if can_view_completeness else 0) + (1 if has_any_row_action else 0) %}
                 {% for student in students %}
-                {% set bar_cls = 'fill-bar__inner--high' if student.overall_pct >= 85 else ('fill-bar__inner--mid' if student.overall_pct >= 55 else 'fill-bar__inner--low') %}
+                {% set bar_cls = 'fill-bar__inner--high' if (student.overall_pct|default(0)) >= 85 else ('fill-bar__inner--mid' if (student.overall_pct|default(0)) >= 55 else 'fill-bar__inner--low') %}
                 <tr>
                     {% if session.get('is_admin') %}
                     <td class="text-center font-monospace">{{ student.id }}</td>
@@ -951,6 +962,7 @@
                         <div><span class="license-warn-badge"><i class="bi bi-exclamation-triangle"></i> без ліцензії</span></div>
                         {% endif %}
                     </td>
+                    {% if can_view_completeness %}
                     <td class="comp-box">
                         <div class="comp-top">
                             <div class="fill-bar" title="Особисті дані: {{ student.filled_fields }} з {{ student.total_fields }}">
@@ -1040,6 +1052,7 @@
                         </div>
                         {% endif %}
                     </td>
+                    {% endif %}
 
                     <td class="text-center text-nowrap">
                         {% if can_mil %}
@@ -1061,12 +1074,15 @@
                         {% endif %}
                     </td>
 
+                    {% if has_any_row_action %}
                     <td>
                         <div class="chip-group">
+                            {% if can_view_card %}
                             <a href="{{ url_for('students.student_details', student_id=student.id) }}"
                                class="btn-chip btn-chip--view" title="Переглянути картку студента">
                                 <i class="bi bi-eye"></i>
                             </a>
+                            {% endif %}
                             {% if can_edit_stu %}
                             <a href="{{ url_for('students.edit_student', student_id=student.id) }}"
                                class="btn-chip btn-chip--edit" title="Редагувати дані студента">
@@ -1102,10 +1118,11 @@
                             {% endif %}
                         </div>
                     </td>
+                    {% endif %}
                 </tr>
                 {% else %}
                 <tr>
-                    <td colspan="{{ 7 if session.get('is_admin') else 6 }}" class="text-center py-5 text-muted">
+                    <td colspan="{{ table_cols }}" class="text-center py-5 text-muted">
                         <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
                         <div class="fw-semibold">Студентів за обраними параметрами не знайдено</div>
                         {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
@@ -1121,7 +1138,7 @@
     <!-- Картки для мобільної та планшетної версії -->
     <div class="student-cards-container mt-3">
         {% for student in students %}
-        {% set bar_cls = 'fill-bar__inner--high' if student.overall_pct >= 85 else ('fill-bar__inner--mid' if student.overall_pct >= 55 else 'fill-bar__inner--low') %}
+        {% set bar_cls = 'fill-bar__inner--high' if (student.overall_pct|default(0)) >= 85 else ('fill-bar__inner--mid' if (student.overall_pct|default(0)) >= 55 else 'fill-bar__inner--low') %}
         <div class="student-card">
             <div class="mc-header">
                 <div class="mc-name">
@@ -1132,12 +1149,14 @@
                     <span class="badge bg-secondary-subtle text-secondary-emphasis font-monospace ms-1">#{{ student.id }}</span>
                     {% endif %}
                 </div>
+                {% if can_view_completeness %}
                 <button type="button"
                         class="comp-details-btn {{ 'comp-details-btn--ok' if student.missing_count == 0 else 'comp-details-btn--gap' }} js-open-completeness"
                         data-sid="{{ student.id }}">
                     {{ student.overall_pct }}%
                     {% if student.missing_count > 0 %} · −{{ student.missing_count }}{% else %} ✓{% endif %}
                 </button>
+                {% endif %}
             </div>
 
             <div class="mc-meta">
@@ -1167,6 +1186,7 @@
                 {% endif %}
             </div>
 
+            {% if can_view_completeness %}
             <div class="mc-comp-panel">
                 <div class="mc-comp-head">
                     <span class="mc-comp-label">Заповненість профілю</span>
@@ -1238,12 +1258,16 @@
                 </div>
                 {% endif %}
             </div>
+            {% endif %}
 
+            {% if has_any_row_action or can_mil %}
             <div class="mc-actions">
                 <div class="d-flex gap-2 flex-wrap">
+                    {% if can_view_card %}
                     <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
                         <i class="bi bi-eye me-1"></i>Картка
                     </a>
+                    {% endif %}
                     {% if can_mil %}
                         {% if student.has_military %}
                             <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-military">
@@ -1257,14 +1281,17 @@
                     {% endif %}
                 </div>
 
+                {% if has_any_row_action %}
                 <div class="dropdown">
                     <button class="btn btn-sm btn-military dropdown-toggle" type="button" data-bs-toggle="dropdown">
                         Дії
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
+                        {% if can_view_card %}
                         <li><a class="dropdown-item" href="{{ url_for('students.student_details', student_id=student.id) }}">
                             <i class="bi bi-eye me-2"></i>Переглянути картку
                         </a></li>
+                        {% endif %}
                         {% if can_edit_stu %}
                         <li><a class="dropdown-item" href="{{ url_for('students.edit_student', student_id=student.id) }}">
                             <i class="bi bi-pencil me-2"></i>Редагувати дані
@@ -1298,7 +1325,9 @@
                         {% endif %}
                     </ul>
                 </div>
+                {% endif %}
             </div>
+            {% endif %}
         </div>
         {% else %}
         <div class="student-card text-center py-4 text-muted">
@@ -1359,6 +1388,7 @@
     {% endif %}
 </div>
 
+{% if can_view_completeness %}
 <!-- Модальне вікно деталізації заповненості -->
 <div class="modal fade" id="completenessModal" tabindex="-1" aria-labelledby="cmStudentTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-lg">
@@ -1404,6 +1434,7 @@
     }) %}
 {% endfor %}
 <script type="application/json" id="studentsCompletenessData">{{ completeness_payload | tojson }}</script>
+{% endif %}
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {

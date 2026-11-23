@@ -317,8 +317,11 @@
             <div class="fw-semibold mb-1">Студент в архіві</div>
             <div class="small text-muted mb-2">
                 Звичайно сюди потрапляють після відрахування або випуску.
+                {% if has_perm('manage_students') %}
                 Якщо потрапив помилково — поверніть нижче, вказавши групу.
+                {% endif %}
             </div>
+            {% if has_perm('manage_students') %}
             <form method="POST"
                   action="{{ url_for('students.unarchive_student', student_id=student.id) }}"
                   class="row g-2 align-items-end"
@@ -338,6 +341,7 @@
                     </button>
                 </div>
             </form>
+            {% endif %}
         </div>
     </div>
     {% endif %}
@@ -922,7 +926,7 @@
                                         </tbody>
                                     </table>
                                 </div>
-                                {% if military_history|length > 5 %}
+                                {% if military_history|length > 5 and (has_perm('manage_students') or has_perm('manage_military_reports')) %}
                                 <div class="text-end mb-3">
                                     <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="small">
                                         Показати всі {{ military_history|length }} змін →
@@ -1568,6 +1572,7 @@
     html[data-theme="dark"] .grade-pill--warn { color: var(--brass-lt); }
 </style>
 
+{% if has_perm('manage_students') %}
 <!-- Модальне вікно завантаження/обрізки фото -->
 <div class="modal fade" id="photoUploadModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -1936,6 +1941,7 @@
         </div>
     </div>
 </div>
+{% endif %}
 
 <script>
 document.querySelectorAll('select[name="target_type"]').forEach(function (typeSelect) {

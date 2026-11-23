@@ -239,6 +239,59 @@ def _chunked(items, size=400):
         yield seq[i:i + size]
 
 
+def _enrich_students_basic(conn, students):
+    """Легке збагачення списку студентів (статус, групи, ліцензія) без розрахунку заповненості."""
+    if not students:
+        return []
+
+    student_dicts = [dict(s) for s in students]
+    student_ids = [s['id'] for s in student_dicts]
+
+    enrollments_by_sid = {}
+    for chunk in _chunked(student_ids):
+        ph = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"""
+            SELECT e.student_id, e.group_id, e.license_id,
+                   il.short_name_ua AS license_short_name
+            FROM student_enrollments e
+            LEFT JOIN institution_licenses il ON il.id = e.license_id
+            WHERE e.student_id IN ({ph}) AND e.status = 'active'
+            """,
+            chunk,
+        ).fetchall()
+        for r in rows:
+            enrollments_by_sid.setdefault(r['student_id'], []).append(dict(r))
+
+    for student_dict in student_dicts:
+        sid = student_dict['id']
+        if student_dict.get('frozen_record_id'):
+            student_dict['status'] = 'frozen'
+        elif student_dict.get('archived'):
+            student_dict['status'] = 'archived'
+        else:
+            student_dict['status'] = 'active'
+
+        raw_groups = (student_dict.get('all_groups') or '').strip()
+        student_dict['all_groups_list'] = [
+            name.strip() for name in raw_groups.split('|') if name.strip()
+        ]
+        if student_dict.get('group_name'):
+            primary_short = (student_dict['group_name'].split(' (')[0]).strip()
+            if primary_short and primary_short not in student_dict['all_groups_list']:
+                student_dict['all_groups_list'].insert(0, primary_short)
+        student_dict['is_parallel'] = len(student_dict['all_groups_list']) > 1
+        student_dict['extra_groups_count'] = max(0, len(student_dict['all_groups_list']) - 1)
+
+        sid_enrs = enrollments_by_sid.get(sid, [])
+        lic_enr = next((e for e in sid_enrs if e.get('license_id') is not None), None)
+        student_dict['has_license'] = bool(lic_enr)
+        student_dict['license_short_name'] = lic_enr['license_short_name'] if lic_enr else None
+        student_dict['overall_pct'] = 0
+
+    return student_dicts
+
+
 def _enrich_students_completeness(conn, students):
     """Батчевий розрахунок заповненості профілю (без N+1 запитів)."""
     if not students:
@@ -849,6 +902,8 @@ FAQ_SECTION_PERMISSIONS = {
     # ═══ СЕКЦІЯ 1: СТУДЕНТИ (nav: 'students') ═══
     'students': [
         'manage_students',
+        'view_student_card',
+        'view_student_completeness',
         'manage_pending_students',
         'manage_update_requests',
         'manage_frozen_students',
@@ -966,6 +1021,26 @@ def faq():
 @login_required('')
 def student_list():
     """Головна сторінка списку студентів."""
+    _refresh_session_permissions()
+    can_view_completeness = bool(
+        session.get('is_admin')
+        or has_any_permission('manage_students', 'view_student_completeness')
+    )
+    can_view_card = bool(
+        session.get('is_admin')
+        or has_any_permission(
+            'manage_students',
+            'view_student_card',
+            'manage_military_reports',
+            'study_periods',
+            'group_export',
+            'manage_education_documents',
+            'manage_passport_documents',
+            'manage_orders',
+            'edit_grades',
+        )
+    )
+
     search = request.args.get('search', '')
     group_id = request.args.get('group_id', type=int)
     degree_level = request.args.get('degree_level', '')
@@ -982,7 +1057,7 @@ def student_list():
     else:
         license_id = ''
     reduced = request.args.get('reduced', '')
-    missing = request.args.get('missing', '').strip()
+    missing = request.args.get('missing', '').strip() if can_view_completeness else ''
     valid_missing_keys = {k for k, _ in MISSING_FILTER_OPTIONS}
     if missing not in valid_missing_keys:
         missing = ''
@@ -996,7 +1071,9 @@ def student_list():
     if per_page not in [10, 20, 50, 100]:
         per_page = 10
 
-    allowed_sort_fields = ['id', 'last_name_UA', 'first_name_UA', 'middle_name_UA', 'birth_date', 'group_id', 'completeness']
+    allowed_sort_fields = ['id', 'last_name_UA', 'first_name_UA', 'middle_name_UA', 'birth_date', 'group_id']
+    if can_view_completeness:
+        allowed_sort_fields.append('completeness')
     if sort_by not in allowed_sort_fields:
         sort_by = 'id'
     if sort_order not in ['asc', 'desc']:
@@ -1149,7 +1226,9 @@ def student_list():
                 summary_counts={}, summary_scope='page', summary_total=0,
                 include_frozen=include_frozen, include_archived=include_archived,
                 page=page, per_page=per_page, total_pages=0, total_students=0,
-                sort_by=sort_by, sort_order=sort_order
+                sort_by=sort_by, sort_order=sort_order,
+                can_view_completeness=can_view_completeness,
+                can_view_card=can_view_card,
             )
 
     if role != 'admin' and group_id and group_id not in group_ids:
@@ -1195,42 +1274,54 @@ def student_list():
 
     base_total = conn.execute(count_query, params).fetchone()[0]
 
-    # Коли активний фільтр по прогалинах, сортування за заповненістю або вибірка <= 400 студентів:
-    # завантажуємо всю базову вибірку і рахуємо зведену статистику точно по ній.
-    need_full_enrichment = bool(missing) or sort_by == 'completeness' or base_total <= 400
-
-    if need_full_enrichment:
-        all_rows = conn.execute(base_query + order_sql, params).fetchall()
-        all_enriched = _enrich_students_completeness(conn, all_rows)
-        summary_counts = _compute_summary_counts(all_enriched)
-        summary_scope = 'selection'
-        summary_total = len(all_enriched)
-
-        filtered = [s for s in all_enriched if _matches_missing_filter(s, missing)] if missing else all_enriched
-
-        if sort_by == 'completeness':
-            filtered.sort(
-                key=lambda s: (s['overall_pct'], s['filled_fields'], -s['missing_count']),
-                reverse=(sort_order == 'desc'),
-            )
-
-        total_students = len(filtered)
-        total_pages = (total_students + per_page - 1) // per_page if total_students else 0
-        if total_pages and page > total_pages:
-            page = total_pages
-            offset = (page - 1) * per_page
-        students_with_filled_fields = filtered[offset:offset + per_page]
-    else:
+    if not can_view_completeness:
         total_students = base_total
         total_pages = (total_students + per_page - 1) // per_page if total_students else 0
         if total_pages and page > total_pages:
             page = total_pages
             offset = (page - 1) * per_page
         students_rows = conn.execute(base_query + order_sql + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
-        students_with_filled_fields = _enrich_students_completeness(conn, students_rows)
-        summary_counts = _compute_summary_counts(students_with_filled_fields)
+        students_with_filled_fields = _enrich_students_basic(conn, students_rows)
+        summary_counts = {}
         summary_scope = 'page'
-        summary_total = len(students_with_filled_fields)
+        summary_total = 0
+    else:
+        # Коли активний фільтр по прогалинах, сортування за заповненістю або вибірка <= 400 студентів:
+        # завантажуємо всю базову вибірку і рахуємо зведену статистику точно по ній.
+        need_full_enrichment = bool(missing) or sort_by == 'completeness' or base_total <= 400
+
+        if need_full_enrichment:
+            all_rows = conn.execute(base_query + order_sql, params).fetchall()
+            all_enriched = _enrich_students_completeness(conn, all_rows)
+            summary_counts = _compute_summary_counts(all_enriched)
+            summary_scope = 'selection'
+            summary_total = len(all_enriched)
+
+            filtered = [s for s in all_enriched if _matches_missing_filter(s, missing)] if missing else all_enriched
+
+            if sort_by == 'completeness':
+                filtered.sort(
+                    key=lambda s: (s['overall_pct'], s['filled_fields'], -s['missing_count']),
+                    reverse=(sort_order == 'desc'),
+                )
+
+            total_students = len(filtered)
+            total_pages = (total_students + per_page - 1) // per_page if total_students else 0
+            if total_pages and page > total_pages:
+                page = total_pages
+                offset = (page - 1) * per_page
+            students_with_filled_fields = filtered[offset:offset + per_page]
+        else:
+            total_students = base_total
+            total_pages = (total_students + per_page - 1) // per_page if total_students else 0
+            if total_pages and page > total_pages:
+                page = total_pages
+                offset = (page - 1) * per_page
+            students_rows = conn.execute(base_query + order_sql + " LIMIT ? OFFSET ?", params + [per_page, offset]).fetchall()
+            students_with_filled_fields = _enrich_students_completeness(conn, students_rows)
+            summary_counts = _compute_summary_counts(students_with_filled_fields)
+            summary_scope = 'page'
+            summary_total = len(students_with_filled_fields)
 
     groups = conn.execute("""
         SELECT id, name, start_year, study_form, degree_level, course, program_credits, specialty
@@ -1277,7 +1368,9 @@ def student_list():
         include_frozen=include_frozen, include_archived=include_archived,
         page=page, per_page=per_page,
         total_pages=total_pages, total_students=total_students,
-        sort_by=sort_by, sort_order=sort_order
+        sort_by=sort_by, sort_order=sort_order,
+        can_view_completeness=can_view_completeness,
+        can_view_card=can_view_card,
     )
 
 
@@ -1285,8 +1378,10 @@ def student_list():
 @login_required('')
 def student_details(student_id):
     """Картка студента."""
+    _refresh_session_permissions()
     if not has_any_permission(
         'manage_students',
+        'view_student_card',
         'manage_military_reports',
         'study_periods',
         'group_export',
