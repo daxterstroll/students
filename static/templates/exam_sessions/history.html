@@ -1,164 +1,758 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
-{% block title %}Історія змін{% endblock %}
-{% block main_class %}py-3{% endblock %}
-{% block content %}
 
+{% if context_sheet %}
+    {% set page_title = 'Історія відомості: ' ~ context_sheet.discipline_name %}
+    {% set page_subtitle = context_sheet.session_name ~ ' · ' ~ context_sheet.group_name ~ (' · ' ~ context_sheet.license_name if context_sheet.license_name else '') %}
+{% elif context_session %}
+    {% set page_title = 'Історія сесії: ' ~ context_session.name %}
+    {% set page_subtitle = context_session.group_name ~ ' · ' ~ context_session.academic_year ~ ' · семестр ' ~ context_session.semester %}
+{% elif deleted_session_meta %}
+    {% set page_title = 'Історія видаленої сесії: ' ~ deleted_session_meta.name %}
+    {% set page_subtitle = (deleted_session_meta.group_name ~ ' · ' if deleted_session_meta.group_name else '') ~ 'сесію видалено з бази даних' %}
+{% elif fixed_sheet_id %}
+    {% set page_title = 'Історія видаленої відомості #' ~ fixed_sheet_id %}
+    {% set page_subtitle = 'Архів подій по відомості, яку було видалено' %}
+{% else %}
+    {% set page_title = 'Журнал змін сесій та відомостей' %}
+    {% set page_subtitle = 'Повна історія створення, редагування, оцінювання, переносу в план та видалень' %}
+{% endif %}
+
+{% block title %}{{ page_title }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
+{% block content %}
 <style>
-    .hist-row {
-        border-bottom: 1px solid var(--line);
-        padding: .7rem .9rem;
+    .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-ok-solid: #3d7a53;
+
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+        --st-warn-solid: #c8a24a;
+
+        --st-miss-bg: rgba(162, 59, 46, .12);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: rgba(162, 59, 46, .34);
+        --st-miss-solid: #a23b2e;
+
+        --st-info-bg: rgba(61, 104, 153, .13);
+        --st-info-fg: #274f7d;
+        --st-info-bd: rgba(61, 104, 153, .34);
+        --st-info-solid: #3d6899;
+
+        --diff-old-bg: rgba(162, 59, 46, .10);
+        --diff-old-fg: #8a291f;
+        --diff-new-bg: rgba(43, 91, 61, .11);
+        --diff-new-fg: #245235;
     }
-    .hist-row:last-child { border-bottom: none; }
-    .hist-row:hover { background: rgba(0,0,0,.02); }
-    html[data-theme="dark"] .hist-row:hover { background: rgba(255,255,255,.03); }
-    .hist-action {
+    html[data-theme="dark"] .es-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-ok-solid: #5aa372;
+
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+        --st-warn-solid: #d9b45c;
+
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+        --st-miss-solid: #c9584a;
+
+        --st-info-bg: rgba(74, 110, 168, .22);
+        --st-info-fg: #b4ccf0;
+        --st-info-bd: rgba(120, 156, 214, .38);
+        --st-info-solid: #6994cc;
+
+        --diff-old-bg: rgba(201, 88, 74, .22);
+        --diff-old-fg: #f5bcb4;
+        --diff-new-bg: rgba(90, 163, 114, .22);
+        --diff-new-fg: #bfe8c6;
+    }
+
+    .es-num { font-variant-numeric: tabular-nums; }
+
+    .es-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 12px;
+        padding: .8rem 1rem;
+        height: 100%;
+    }
+    .es-kpi--ok { border-top-color: var(--st-ok-solid); }
+    .es-kpi--warn { border-top-color: var(--st-miss-solid); }
+    .es-kpi--info { border-top-color: var(--st-info-solid); }
+    .es-kpi__label {
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        margin-bottom: .22rem;
+    }
+    .es-kpi__val {
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--ink-text);
+    }
+    .es-kpi--ok .es-kpi__val { color: var(--st-ok-fg); }
+    .es-kpi--warn .es-kpi__val { color: var(--st-miss-fg); }
+    .es-kpi--info .es-kpi__val { color: var(--st-info-fg); }
+    .es-kpi__sub {
+        font-size: .75rem;
+        color: var(--muted);
+        margin-top: .25rem;
+    }
+
+    .es-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .9rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .es-toolbar .form-control,
+    .es-toolbar .form-select {
+        background-color: var(--paper);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .es-toolbar .form-control,
+    html[data-theme="dark"] .es-toolbar .form-select {
+        background-color: var(--paper-2);
+    }
+
+    .es-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .es-table { margin-bottom: 0; color: var(--ink-text); }
+    .es-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .65rem .75rem;
+        white-space: nowrap;
+    }
+    .es-table tbody td {
+        border-color: var(--line);
+        padding: .72rem .75rem;
+        vertical-align: top;
+    }
+
+    .es-badge {
         display: inline-flex;
         align-items: center;
-        gap: .3rem;
-        padding: .18rem .55rem;
+        gap: .28rem;
+        padding: .16rem .5rem;
         border-radius: 6px;
-        font-size: .72rem;
+        font-size: .73rem;
         font-weight: 700;
         border: 1px solid transparent;
         white-space: nowrap;
     }
-    .hist-action--create       { background: rgba(79,122,82,.16); color: #3f7556; border-color: rgba(79,122,82,.35); }
-    .hist-action--update       { background: var(--brass-soft); color: #8a6a1a; border-color: var(--brass-semi); }
-    .hist-action--delete       { background: var(--stamp-soft); color: var(--stamp); border-color: var(--stamp-semi); }
-    .hist-action--grade_set    { background: rgba(74,110,168,.16); color: #2f5f87; border-color: rgba(74,110,168,.35); }
-    .hist-action--approve      { background: rgba(79,122,82,.20); color: #3f7556; border-color: rgba(79,122,82,.4); }
-    .hist-action--lock         { background: var(--ink); color: var(--brass-lt); border-color: var(--ink); }
-    .hist-action--token_issued { background: rgba(200,162,74,.20); color: #8a6a1a; border-color: var(--brass-semi); }
-    .hist-action--transfer     { background: rgba(74,110,168,.20); color: #2f5f87; border-color: rgba(74,110,168,.4); }
-    .hist-action--refresh      { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+    .es-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .es-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .es-badge--miss { background: var(--st-miss-bg); color: var(--st-miss-fg); border-color: var(--st-miss-bd); }
+    .es-badge--info { background: var(--st-info-bg); color: var(--st-info-fg); border-color: var(--st-info-bd); }
+    .es-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
 
-.hist-action--unlink { background: rgba(162,59,46,.12); color: #7a2b21; border-color: var(--stamp-semi); }
-html[data-theme="dark"] .hist-action--unlink { color: #f0b3ab; }
+    .hist-actor {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        font-size: .84rem;
+        font-weight: 600;
+        color: var(--ink-text);
+        word-break: break-word;
+    }
+    .hist-actor--teacher { color: var(--st-info-fg); }
+    .hist-actor--system { color: var(--muted); font-weight: 500; }
 
-    html[data-theme="dark"] .hist-action--create,
-    html[data-theme="dark"] .hist-action--approve { color: #bfe3c2; }
-    html[data-theme="dark"] .hist-action--update,
-    html[data-theme="dark"] .hist-action--token_issued { color: var(--brass-lt); }
-    html[data-theme="dark"] .hist-action--grade_set,
-    html[data-theme="dark"] .hist-action--transfer { color: #a9c2e8; }
+    .hist-diff-box {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .3rem .4rem;
+        font-size: .84rem;
+    }
+    .hist-diff-val {
+        display: inline-block;
+        padding: .1rem .42rem;
+        border-radius: 5px;
+        font-weight: 600;
+        word-break: break-word;
+    }
+    .hist-diff-val--old {
+        background: var(--diff-old-bg);
+        color: var(--diff-old-fg);
+        text-decoration: line-through;
+        text-decoration-thickness: 1px;
+    }
+    .hist-diff-val--new {
+        background: var(--diff-new-bg);
+        color: var(--diff-new-fg);
+    }
 
-    .hist-old { color: var(--stamp); text-decoration: line-through; }
-    .hist-new { color: #3f7556; font-weight: 600; }
-    html[data-theme="dark"] .hist-new { color: #bfe3c2; }
+    .hist-details-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: .22rem;
+        font-size: .82rem;
+    }
+    .hist-details-list li {
+        color: var(--ink-text);
+        line-height: 1.35;
+    }
+    .hist-details-key {
+        color: var(--muted);
+    }
+
+    .hist-deleted-toggle {
+        margin-top: .35rem;
+        font-size: .8rem;
+    }
+    .hist-deleted-toggle summary {
+        cursor: pointer;
+        color: var(--st-miss-fg);
+        font-weight: 600;
+        user-select: none;
+    }
+    .hist-deleted-toggle ul {
+        margin: .35rem 0 0;
+        padding-left: 1.15rem;
+        color: var(--muted);
+    }
+
+    .hist-mobile-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .85rem .95rem;
+    }
+    .hist-mobile-card__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .5rem;
+        padding-bottom: .55rem;
+        margin-bottom: .55rem;
+        border-bottom: 1px solid var(--line);
+    }
+    .hist-mobile-card__foot {
+        padding-top: .5rem;
+        margin-top: .55rem;
+        border-top: 1px solid var(--line);
+    }
+
+    .pagination .page-link {
+        background-color: var(--surface);
+        border-color: var(--line);
+        color: var(--ink-text);
+    }
+    .pagination .page-item.active .page-link {
+        background-color: var(--brass, #8b6f32);
+        border-color: var(--brass, #8b6f32);
+        color: #fff;
+    }
+    .pagination .page-item.disabled .page-link {
+        background-color: var(--paper-2);
+        color: var(--muted);
+        border-color: var(--line);
+    }
 </style>
 
-<div class="container py-4">
+<div class="container py-4 es-page">
 
-    {% if mode == 'session' %}
-    {{ ui.page_header(
-        'bi-clock-history',
-        'Історія змін: ' ~ entity.name,
-        entity.group_name ~ ' · ' ~ entity.academic_year ~ ' · семестр ' ~ entity.semester
-    ) }}
-    <div class="mb-3">
-        <a href="{{ url_for('exam_sessions.session_detail', session_id=entity.id) }}"
-           class="btn btn-sm btn-outline-secondary">← До сесії</a>
+    {# ── Навігація зверху ── #}
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        {% if has_perm('manage_exam_sessions') %}
+        <a href="{{ url_for('exam_sessions.sessions_list') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Сесії та відомості
+        </a>
+        {% endif %}
+        {% if context_session and has_perm('manage_exam_sessions') %}
+        <a href="{{ url_for('exam_sessions.session_detail', session_id=context_session.id) }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-clipboard2-check me-1"></i>До сесії
+        </a>
+        {% endif %}
+        {% if context_sheet and has_perm('manage_exam_sessions') %}
+        <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=context_sheet.id) }}" class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-file-earmark-text me-1"></i>До відомості
+        </a>
+        {% endif %}
+        {% if fixed_session_id or fixed_sheet_id %}
+        <a href="{{ url_for('exam_sessions.history_index') }}" class="btn btn-sm btn-outline-secondary ms-auto">
+            <i class="bi bi-journal-text me-1"></i>Увесь журнал змін
+        </a>
+        {% endif %}
     </div>
-    {% else %}
-    {{ ui.page_header(
-        'bi-clock-history',
-        'Історія змін: ' ~ entity.discipline_name,
-        entity.session_name ~ ' · ' ~ entity.group_name
-    ) }}
-    <div class="mb-3">
-        <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=entity.id) }}"
-           class="btn btn-sm btn-outline-secondary">← До відомості</a>
-    </div>
-    {% endif %}
 
-    {% if not rows %}
-    <div class="alert alert-light border text-center py-4">
-        <i class="bi bi-clock-history fs-2 d-block mb-2 opacity-50"></i>
-        Історія поки порожня — тут з'являться всі зміни, зроблені після впровадження модуля.
-    </div>
-    {% else %}
-    <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <span><i class="bi bi-journal-text me-1"></i>Усього записів: <strong>{{ rows|length }}</strong></span>
-            <span class="text-muted small">Найновіші — згори</span>
+    {{ ui.page_header('bi-journal-text', page_title, page_subtitle) }}
+
+    {# ── KPI-зведення по поточній вибірці ── #}
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi">
+                <div class="es-kpi__label">Записів у вибірці</div>
+                <div class="es-kpi__val es-num">{{ summary.total }}</div>
+                <div class="es-kpi__sub">Знайдено подій аудиту</div>
+            </div>
         </div>
-        <div class="card-body p-0">
-            {% for r in rows %}
-            <div class="hist-row">
-                <div class="d-flex align-items-start gap-3 flex-wrap">
-                    <div class="text-muted small font-monospace" style="white-space:nowrap;">
-                        {{ r.changed_at }}
-                    </div>
-                    <div>
-                        <span class="hist-action hist-action--{{ r.action }}">
-                            {{ action_labels.get(r.action, r.action) }}
-                        </span>
-                        <span class="text-muted small ms-2">
-                            {{ entity_labels.get(r.entity_type, r.entity_type) }} #{{ r.entity_id }}
-                        </span>
-                        <span class="text-muted small ms-2">
-                            <i class="bi bi-person"></i> {{ r.changed_by }}
-                        </span>
-                    </div>
-                </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--info">
+                <div class="es-kpi__label">Змін за сьогодні</div>
+                <div class="es-kpi__val es-num">{{ summary.today }}</div>
+                <div class="es-kpi__sub">Події поточної доби</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--ok">
+                <div class="es-kpi__label">Оцінки та затвердження</div>
+                <div class="es-kpi__val es-num">{{ summary.grades_and_approvals }}</div>
+                <div class="es-kpi__sub">Бали, затвердження, переноси</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="es-kpi es-kpi--warn">
+                <div class="es-kpi__label">Видалення</div>
+                <div class="es-kpi__val es-num">{{ summary.deletes }}</div>
+                <div class="es-kpi__sub">Сесії та відомості</div>
+            </div>
+        </div>
+    </div>
 
-                {# Изменения поля (если есть) #}
-                {% if r.field_name %}
-                <div class="ms-4 mt-1 small">
-                    <strong>{{ r.field_name }}:</strong>
-                    {% if r.old_value is not none and r.old_value != '' %}
-                    <span class="hist-old">{{ r.old_value }}</span>
-                    <i class="bi bi-arrow-right mx-1"></i>
-                    {% endif %}
-                    {% if r.new_value is not none and r.new_value != '' %}
-                    <span class="hist-new">{{ r.new_value }}</span>
+    {# ── Панель фільтрів ── #}
+    {% set has_active_filters = filters.q or filters.entity_type or filters.action or filters.actor or filters.group_id or (not fixed_session_id and filters.session_id) or filters.date_from or filters.date_to %}
+    <div class="es-toolbar">
+        <form method="get" class="row g-2 align-items-end">
+            <div class="col-12 col-md-4 col-lg-3">
+                <label class="form-label small fw-semibold mb-1" for="histSearch">Пошук</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" id="histSearch" name="q" class="form-control"
+                           value="{{ filters.q }}" placeholder="Студент, дисципліна, оцінка...">
+                </div>
+            </div>
+
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histEntityType">Тип обʼєкта</label>
+                <select id="histEntityType" name="entity_type" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі типи</option>
+                    {% for code, label in entity_options %}
+                    <option value="{{ code }}" {% if filters.entity_type == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histAction">Дія</label>
+                <select id="histAction" name="action" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі дії</option>
+                    {% for code, label in action_options %}
+                    <option value="{{ code }}" {% if filters.action == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histActor">Хто змінив</label>
+                <select id="histActor" name="actor" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі користувачі</option>
+                    {% for a in actor_options %}
+                    <option value="{{ a }}" {% if filters.actor == a %}selected{% endif %}>{{ a }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            {% if not fixed_session_id and not fixed_sheet_id %}
+            <div class="col-6 col-md-4 col-lg-3">
+                <label class="form-label small fw-semibold mb-1" for="histGroup">Група</label>
+                <select id="histGroup" name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі доступні групи</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}" {% if filters.group_id == g.id %}selected{% endif %}>
+                        {{ g.name }}{% if g.study_form %} ({{ g.study_form }}){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label small fw-semibold mb-1" for="histSession">Сесія</label>
+                <select id="histSession" name="session_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі сесії (включно з видаленими)</option>
+                    {% for s in sessions %}
+                    <option value="{{ s.id }}" {% if filters.session_id == s.id %}selected{% endif %}>
+                        {{ s.name }} · {{ s.group_name }} ({{ s.academic_year }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+
+            <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histDateFrom">Дата з</label>
+                <input type="date" id="histDateFrom" name="date_from" class="form-control form-control-sm"
+                       value="{{ filters.date_from }}">
+            </div>
+
+            <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histDateTo">Дата по</label>
+                <input type="date" id="histDateTo" name="date_to" class="form-control form-control-sm"
+                       value="{{ filters.date_to }}">
+            </div>
+
+            <div class="col-6 col-md-3 col-lg-2">
+                <label class="form-label small fw-semibold mb-1" for="histPerPage">На сторінці</label>
+                <select id="histPerPage" name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for n in (25, 50, 100) %}
+                    <option value="{{ n }}" {% if filters.per_page == n %}selected{% endif %}>{{ n }} записів</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-3 col-lg-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                    <i class="bi bi-funnel me-1"></i>Фільтр
+                </button>
+                {% if has_active_filters %}
+                    {% if fixed_sheet_id %}
+                        {% set reset_url = url_for('exam_sessions.sheet_history', sheet_id=fixed_sheet_id) %}
+                    {% elif fixed_session_id %}
+                        {% set reset_url = url_for('exam_sessions.session_history', session_id=fixed_session_id) %}
                     {% else %}
-                    <span class="text-muted fst-italic">— очищено —</span>
+                        {% set reset_url = url_for('exam_sessions.history_index') %}
                     {% endif %}
-                </div>
-                {% endif %}
-
-                {# details (если есть) #}
-                {% if r.details %}
-                {% set det = r.details | fromjson %}
-                {% if det %}
-                <div class="ms-4 mt-1 small text-muted">
-                    {% if det.student_name %}
-                    <div><i class="bi bi-person me-1"></i>Студент: <strong>{{ det.student_name }}</strong></div>
-                    {% endif %}
-                    {% if det.discipline_name %}
-                    <div><i class="bi bi-book me-1"></i>Дисципліна: {{ det.discipline_name }}</div>
-                    {% endif %}
-                    {% if det.students_count is defined %}
-                    <div><i class="bi bi-people me-1"></i>Студентів: {{ det.students_count }}</div>
-                    {% endif %}
-                    {% if det.days %}
-                    <div><i class="bi bi-clock me-1"></i>Термін дії токена: {{ det.days }} днів</div>
-                    {% endif %}
-                    {% if det.target_kind %}
-                    <div><i class="bi bi-arrow-right-circle me-1"></i>Перенесено в: {{ det.target_kind }} #{{ det.target_id }} (оцінок: {{ det.written_grades }})</div>
-                    {% endif %}
-                    {% if det.sheets_count is defined %}
-                    <div><i class="bi bi-file-earmark me-1"></i>Відомостей у сесії: {{ det.sheets_count }}</div>
-                    {% endif %}
-                    {% if det.sheets %}
-                    <details class="mt-1">
-                        <summary class="small text-muted" style="cursor:pointer;">Перелік відомостей</summary>
-                        <ul class="small mb-0">
-                            {% for sh in det.sheets %}
-                            <li>#{{ sh.id }} — {{ sh.discipline }}</li>
-                            {% endfor %}
-                        </ul>
-                    </details>
-                    {% endif %}
-                </div>
-                {% endif %}
+                <a href="{{ reset_url }}" class="btn btn-sm btn-outline-secondary" title="Скинути фільтри">
+                    <i class="bi bi-x-lg"></i>
+                </a>
                 {% endif %}
             </div>
-            {% endfor %}
+        </form>
+    </div>
+
+    {% if rows %}
+
+    {# ── Десктопна таблиця ── #}
+    <div class="es-panel d-none d-lg-block">
+        <div class="table-responsive">
+            <table class="table es-table table-hover align-top">
+                <thead>
+                    <tr>
+                        <th style="width: 118px;">Дата і час</th>
+                        <th style="width: 185px;">Хто змінив</th>
+                        <th style="min-width: 260px;">Подія та обʼєкт</th>
+                        <th style="min-width: 220px;">Що змінилось</th>
+                        <th style="min-width: 230px;">Деталі</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr>
+                        <td class="es-num text-nowrap">
+                            <div class="fw-semibold small">{{ r.date_ua }}</div>
+                            {% if r.time_ua %}
+                            <div class="text-muted font-monospace" style="font-size: .76rem;">{{ r.time_ua }}</div>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            <div class="hist-actor {% if r.actor_kind == 'teacher' %}hist-actor--teacher{% elif r.actor_kind == 'system' %}hist-actor--system{% endif %}">
+                                {% if r.actor_kind == 'teacher' %}
+                                    <i class="bi bi-person-badge"></i>
+                                {% elif r.actor_kind == 'system' %}
+                                    <i class="bi bi-gear"></i>
+                                {% else %}
+                                    <i class="bi bi-person-circle"></i>
+                                {% endif %}
+                                <span>{{ r.actor_label }}</span>
+                            </div>
+                        </td>
+
+                        <td>
+                            <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+                                <span class="es-badge es-badge--{{ r.action_tone }}">{{ r.action_label }}</span>
+                                <span class="small text-muted fw-medium">{{ r.entity_label }}</span>
+                            </div>
+
+                            {% if r.student_name %}
+                            <div class="fw-semibold small mb-1">
+                                <i class="bi bi-person me-1 text-muted"></i>{{ r.student_name }}
+                            </div>
+                            {% endif %}
+
+                            {% if r.discipline_name %}
+                            <div class="small">
+                                {% if r.sheet_exists and has_perm('manage_exam_sessions') %}
+                                <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=r.sheet_id) }}" class="fw-semibold text-decoration-none">
+                                    {{ r.discipline_name }}
+                                </a>
+                                {% else %}
+                                <span class="fw-semibold">{{ r.discipline_name }}</span>
+                                {% if r.sheet_id and not r.sheet_exists %}
+                                <span class="text-muted">(видалена)</span>
+                                {% endif %}
+                                {% endif %}
+                                {% if r.license_name %}
+                                <span class="text-muted">· {{ r.license_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if r.session_name or r.group_name %}
+                            <div class="small text-muted mt-1">
+                                {% if r.session_name %}
+                                    {% if r.session_exists and has_perm('manage_exam_sessions') %}
+                                    <a href="{{ url_for('exam_sessions.session_detail', session_id=r.session_id) }}" class="text-decoration-none text-muted">
+                                        {{ r.session_name }}
+                                    </a>
+                                    {% else %}
+                                    <span>{{ r.session_name }}</span>
+                                    {% if r.session_id and not r.session_exists and r.entity_type == 'session' %}
+                                    <span>(видалена)</span>
+                                    {% endif %}
+                                    {% endif %}
+                                {% endif %}
+                                {% if r.group_name %}
+                                    {% if r.session_name %} · {% endif %}
+                                    <span class="fw-medium">{{ r.group_name }}</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if r.field_ua or r.old_ua or r.new_ua %}
+                                {% if r.field_ua %}
+                                <div class="small fw-semibold mb-1">{{ r.field_ua }}</div>
+                                {% endif %}
+                                <div class="hist-diff-box es-num">
+                                    {% if r.old_ua and r.new_ua %}
+                                        <span class="hist-diff-val hist-diff-val--old">{{ r.old_ua }}</span>
+                                        <i class="bi bi-arrow-right text-muted small"></i>
+                                        <span class="hist-diff-val hist-diff-val--new">{{ r.new_ua }}</span>
+                                    {% elif r.new_ua %}
+                                        <span class="small text-muted">Встановлено:</span>
+                                        <span class="hist-diff-val hist-diff-val--new">{{ r.new_ua }}</span>
+                                    {% elif r.old_ua %}
+                                        <span class="small text-muted">Очищено:</span>
+                                        <span class="hist-diff-val hist-diff-val--old">{{ r.old_ua }}</span>
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <span class="small text-muted">—</span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if r.detail_items or r.deleted_sheets %}
+                            <ul class="hist-details-list">
+                                {% for d in r.detail_items %}
+                                <li>
+                                    <span class="hist-details-key">{{ d.label }}:</span>
+                                    <span class="fw-medium">{{ d.value }}</span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% if r.deleted_sheets %}
+                            <details class="hist-deleted-toggle">
+                                <summary>Видалені відомості ({{ r.deleted_sheets|length }})</summary>
+                                <ul>
+                                    {% for ds in r.deleted_sheets %}
+                                    <li><span class="es-num text-muted">#{{ ds.id }}</span> {{ ds.discipline }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </details>
+                            {% endif %}
+                            {% else %}
+                            <span class="small text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
+
+    {# ── Мобільні картки ── #}
+    <div class="d-lg-none d-flex flex-column gap-2">
+        {% for r in rows %}
+        <div class="hist-mobile-card">
+            <div class="hist-mobile-card__head">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="es-badge es-badge--{{ r.action_tone }}">{{ r.action_label }}</span>
+                    <span class="small text-muted fw-medium">{{ r.entity_label }}</span>
+                </div>
+                <div class="text-end es-num text-nowrap">
+                    <div class="small fw-semibold">{{ r.date_ua }}</div>
+                    {% if r.time_ua %}
+                    <div class="text-muted font-monospace" style="font-size: .74rem;">{{ r.time_ua }}</div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if r.student_name %}
+            <div class="fw-semibold small mb-1">
+                <i class="bi bi-person me-1 text-muted"></i>{{ r.student_name }}
+            </div>
+            {% endif %}
+
+            {% if r.discipline_name %}
+            <div class="small mb-1">
+                {% if r.sheet_exists and has_perm('manage_exam_sessions') %}
+                <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=r.sheet_id) }}" class="fw-semibold text-decoration-none">
+                    {{ r.discipline_name }}
+                </a>
+                {% else %}
+                <span class="fw-semibold">{{ r.discipline_name }}</span>
+                {% if r.sheet_id and not r.sheet_exists %}<span class="text-muted">(видалена)</span>{% endif %}
+                {% endif %}
+                {% if r.license_name %}<span class="text-muted">· {{ r.license_name }}</span>{% endif %}
+            </div>
+            {% endif %}
+
+            {% if r.session_name or r.group_name %}
+            <div class="small text-muted mb-2">
+                {{ r.session_name }}{% if r.group_name %}{% if r.session_name %} · {% endif %}{{ r.group_name }}{% endif %}
+            </div>
+            {% endif %}
+
+            {% if r.field_ua or r.old_ua or r.new_ua %}
+            <div class="mb-2">
+                {% if r.field_ua %}<div class="small fw-semibold mb-1">{{ r.field_ua }}</div>{% endif %}
+                <div class="hist-diff-box es-num">
+                    {% if r.old_ua and r.new_ua %}
+                        <span class="hist-diff-val hist-diff-val--old">{{ r.old_ua }}</span>
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="hist-diff-val hist-diff-val--new">{{ r.new_ua }}</span>
+                    {% elif r.new_ua %}
+                        <span class="small text-muted">Встановлено:</span>
+                        <span class="hist-diff-val hist-diff-val--new">{{ r.new_ua }}</span>
+                    {% elif r.old_ua %}
+                        <span class="small text-muted">Очищено:</span>
+                        <span class="hist-diff-val hist-diff-val--old">{{ r.old_ua }}</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            {% if r.detail_items or r.deleted_sheets %}
+            <ul class="hist-details-list mb-2">
+                {% for d in r.detail_items %}
+                <li>
+                    <span class="hist-details-key">{{ d.label }}:</span>
+                    <span class="fw-medium">{{ d.value }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% if r.deleted_sheets %}
+            <details class="hist-deleted-toggle mb-2">
+                <summary>Видалені відомості ({{ r.deleted_sheets|length }})</summary>
+                <ul>
+                    {% for ds in r.deleted_sheets %}
+                    <li><span class="es-num text-muted">#{{ ds.id }}</span> {{ ds.discipline }}</li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+            {% endif %}
+
+            <div class="hist-mobile-card__foot d-flex justify-content-between align-items-center small">
+                <div class="hist-actor {% if r.actor_kind == 'teacher' %}hist-actor--teacher{% elif r.actor_kind == 'system' %}hist-actor--system{% endif %}">
+                    {% if r.actor_kind == 'teacher' %}
+                        <i class="bi bi-person-badge"></i>
+                    {% elif r.actor_kind == 'system' %}
+                        <i class="bi bi-gear"></i>
+                    {% else %}
+                        <i class="bi bi-person-circle"></i>
+                    {% endif %}
+                    <span>{{ r.actor_label }}</span>
+                </div>
+                <span class="text-muted es-num">#{{ r.id }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {# ── Пагінація ── #}
+    {% if total_pages > 1 or total_count > 0 %}
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+        <div class="small text-muted es-num">
+            {% set start_num = (page - 1) * per_page + 1 %}
+            {% set end_num = [page * per_page, total_count] | min %}
+            Показано {{ start_num }}–{{ end_num }} з {{ total_count }} записів
+        </div>
+
+        {% if total_pages > 1 %}
+        {% macro page_href(p) -%}
+            {%- if fixed_sheet_id -%}
+                {{ url_for('exam_sessions.sheet_history', sheet_id=fixed_sheet_id, entity_type=filters.entity_type or None, action=filters.action or None, actor=filters.actor or None, date_from=filters.date_from or None, date_to=filters.date_to or None, q=filters.q or None, per_page=filters.per_page, page=p) }}
+            {%- elif fixed_session_id -%}
+                {{ url_for('exam_sessions.session_history', session_id=fixed_session_id, entity_type=filters.entity_type or None, action=filters.action or None, actor=filters.actor or None, date_from=filters.date_from or None, date_to=filters.date_to or None, q=filters.q or None, per_page=filters.per_page, page=p) }}
+            {%- else -%}
+                {{ url_for('exam_sessions.history_index', session_id=filters.session_id or None, group_id=filters.group_id or None, entity_type=filters.entity_type or None, action=filters.action or None, actor=filters.actor or None, date_from=filters.date_from or None, date_to=filters.date_to or None, q=filters.q or None, per_page=filters.per_page, page=p) }}
+            {%- endif -%}
+        {%- endmacro %}
+
+        <nav aria-label="Навігація по сторінках журналу">
+            <ul class="pagination pagination-sm mb-0 es-num">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ page_href(page - 1) }}" aria-label="Попередня">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% set win_start = [1, page - 2] | max %}
+                {% set win_end = [total_pages, page + 2] | min %}
+                {% if win_start > 1 %}
+                <li class="page-item"><a class="page-link" href="{{ page_href(1) }}">1</a></li>
+                {% if win_start > 2 %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+                {% endif %}
+                {% for p in range(win_start, win_end + 1) %}
+                <li class="page-item {% if p == page %}active{% endif %}">
+                    <a class="page-link" href="{{ page_href(p) }}">{{ p }}</a>
+                </li>
+                {% endfor %}
+                {% if win_end < total_pages %}
+                {% if win_end < total_pages - 1 %}<li class="page-item disabled"><span class="page-link">…</span></li>{% endif %}
+                <li class="page-item"><a class="page-link" href="{{ page_href(total_pages) }}">{{ total_pages }}</a></li>
+                {% endif %}
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ page_href(page + 1) }}" aria-label="Наступна">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
     {% endif %}
+
+    {% else %}
+    {{ ui.empty_state(
+        'bi-clock-history',
+        'Записів в історії не знайдено',
+        'Спробуйте змінити або скинути фільтри пошуку.' if has_active_filters else 'Події зʼявляться автоматично після створення сесій, відомостей або виставлення оцінок.'
+    ) }}
+    {% endif %}
+
 </div>
 {% endblock %}
