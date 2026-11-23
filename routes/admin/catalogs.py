@@ -1737,6 +1737,126 @@ def license_report_export_word():
     return send_file(output_path, as_attachment=True, download_name=download_name)
 
 
+def _table_exists(conn, table_name):
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
+def _ensure_catalog_year_sync_table(conn):
+    if not _table_exists(conn, 'catalog_year_sync_suppressed'):
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS catalog_year_sync_suppressed (
+                catalog_type TEXT NOT NULL,
+                specialty_code TEXT NOT NULL,
+                degree_level TEXT NOT NULL,
+                year INTEGER NOT NULL,
+                PRIMARY KEY (catalog_type, specialty_code, degree_level, year)
+            )
+        """)
+
+
+def auto_fill_catalog_for_year(conn, table_name, target_year=None, force=False, commit=True):
+    """
+    Автоматично створює записи в `educational_programs` або `qualification_names`
+    для поточного (або вказаного) року за найновішими доступними даними
+    попередніх років для кожної активної пари (specialty_code, degree_level).
+    """
+    if table_name not in ('educational_programs', 'qualification_names'):
+        raise ValueError(f"Unsupported catalog table: {table_name}")
+
+    if target_year is None:
+        target_year = datetime.now().year
+    target_year = int(target_year)
+
+    orig_rf = conn.row_factory
+    conn.row_factory = sqlite3.Row
+    try:
+        if not (_table_exists(conn, table_name) and _table_exists(conn, 'specialties')):
+            return 0
+
+        _ensure_catalog_year_sync_table(conn)
+
+        has_degree_levels = _table_exists(conn, 'degree_levels')
+        if has_degree_levels:
+            prev_rows = conn.execute(f"""
+                SELECT t.specialty_code, t.degree_level, t.start_year, t.name_ua, t.name_en
+                FROM {table_name} t
+                JOIN specialties s ON s.code = t.specialty_code
+                LEFT JOIN degree_levels dl ON dl.name_ua = t.degree_level
+                WHERE t.start_year < ?
+                  AND COALESCE(s.is_active, 1) = 1
+                  AND COALESCE(dl.is_active, 1) = 1
+                ORDER BY t.specialty_code, t.degree_level, t.start_year DESC, t.id DESC
+            """, (target_year,)).fetchall()
+        else:
+            prev_rows = conn.execute(f"""
+                SELECT t.specialty_code, t.degree_level, t.start_year, t.name_ua, t.name_en
+                FROM {table_name} t
+                JOIN specialties s ON s.code = t.specialty_code
+                WHERE t.start_year < ?
+                  AND COALESCE(s.is_active, 1) = 1
+                ORDER BY t.specialty_code, t.degree_level, t.start_year DESC, t.id DESC
+            """, (target_year,)).fetchall()
+
+        latest_by_pair = {}
+        for r in prev_rows:
+            key = (r['specialty_code'], r['degree_level'])
+            if key not in latest_by_pair and (r['name_ua'] or '').strip():
+                latest_by_pair[key] = r
+
+        if not latest_by_pair:
+            return 0
+
+        existing_rows = conn.execute(
+            f"SELECT specialty_code, degree_level FROM {table_name} WHERE start_year = ?",
+            (target_year,),
+        ).fetchall()
+        existing_keys = {(r['specialty_code'], r['degree_level']) for r in existing_rows}
+
+        suppressed_keys = set()
+        if not force:
+            sup_rows = conn.execute(
+                "SELECT specialty_code, degree_level FROM catalog_year_sync_suppressed "
+                "WHERE catalog_type = ? AND year = ?",
+                (table_name, target_year),
+            ).fetchall()
+            suppressed_keys = {(r['specialty_code'], r['degree_level']) for r in sup_rows}
+
+        created = 0
+        for key, src in latest_by_pair.items():
+            if key in existing_keys or key in suppressed_keys:
+                continue
+            cur = conn.execute(
+                f"INSERT OR IGNORE INTO {table_name} "
+                f"(specialty_code, start_year, degree_level, name_ua, name_en) "
+                f"VALUES (?, ?, ?, ?, ?)",
+                (
+                    src['specialty_code'],
+                    target_year,
+                    src['degree_level'],
+                    src['name_ua'],
+                    src['name_en'],
+                ),
+            )
+            if cur.rowcount:
+                created += 1
+
+        if force:
+            conn.execute(
+                "DELETE FROM catalog_year_sync_suppressed WHERE catalog_type = ? AND year = ?",
+                (table_name, target_year),
+            )
+
+        if commit and (created > 0 or force):
+            conn.commit()
+        return created
+    finally:
+        conn.row_factory = orig_rf
+
+
 @admin_bp.route('/admin/manage_educational_programs', methods=['GET', 'POST'])
 @permission_required('manage_educational_programs')
 def manage_educational_programs():
@@ -1750,6 +1870,7 @@ def manage_educational_programs():
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    current_year = datetime.now().year
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -1771,6 +1892,12 @@ def manage_educational_programs():
                         "INSERT INTO educational_programs (specialty_code, start_year, degree_level, name_ua, name_en) VALUES (?, ?, ?, ?, ?)",
                         (specialty_code, int(start_year), degree_level, name_ua, name_en)
                     )
+                    if _table_exists(conn, 'catalog_year_sync_suppressed'):
+                        conn.execute(
+                            "DELETE FROM catalog_year_sync_suppressed "
+                            "WHERE catalog_type = 'educational_programs' AND specialty_code = ? AND degree_level = ? AND year = ?",
+                            (specialty_code, degree_level, int(start_year)),
+                        )
                     conn.commit()
                     flash(f"Освітню програму для {specialty_code} ({degree_level}, {start_year}) додано.", "success")
                     log_action(current_username(), f"додав освітню програму: {specialty_code} {degree_level} {start_year} - {name_ua}")
@@ -1806,10 +1933,40 @@ def manage_educational_programs():
             if in_use > 0:
                 flash(f"Неможливо видалити - є {in_use} груп(и), що використовують цю програму.", "error")
             else:
+                if row and int(row['start_year']) == current_year:
+                    _ensure_catalog_year_sync_table(conn)
+                    conn.execute(
+                        "INSERT OR IGNORE INTO catalog_year_sync_suppressed "
+                        "(catalog_type, specialty_code, degree_level, year) VALUES (?, ?, ?, ?)",
+                        ('educational_programs', row['specialty_code'], row['degree_level'], current_year),
+                    )
                 conn.execute("DELETE FROM educational_programs WHERE id = ?", (program_id,))
                 conn.commit()
                 flash("Освітню програму видалено.", "success")
                 log_action(current_username(), f"видалив освітню програму: {row['name_ua'] if row else ''}")
+
+        elif action == 'autofill_year':
+            created = auto_fill_catalog_for_year(
+                conn, 'educational_programs', target_year=current_year, force=True
+            )
+            if created:
+                flash(f"Створено {created} освітніх програм на {current_year} рік за даними попередніх років.", "success")
+                log_action(current_username(), f"синхронізував освітні програми на {current_year} рік ({created} шт.)")
+            else:
+                flash(f"Усі доступні освітні програми для {current_year} року вже актуальні.", "info")
+
+    auto_created = auto_fill_catalog_for_year(
+        conn, 'educational_programs', target_year=current_year
+    )
+    if auto_created > 0:
+        flash(
+            f"Автоматично створено {auto_created} освітніх програм на {current_year} рік за попередніми доступними даними.",
+            "success",
+        )
+        log_action(
+            current_username() or 'system',
+            f"автоматично створив освітні програми на {current_year} рік ({auto_created} шт.)",
+        )
 
     specialties = conn.execute("""
         SELECT s.code, s.name_ua, k.name_ua AS field_name
@@ -1856,6 +2013,7 @@ def manage_qualification_names():
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    current_year = datetime.now().year
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -1877,6 +2035,12 @@ def manage_qualification_names():
                         "INSERT INTO qualification_names (specialty_code, start_year, degree_level, name_ua, name_en) VALUES (?, ?, ?, ?, ?)",
                         (specialty_code, int(start_year), degree_level, name_ua, name_en)
                     )
+                    if _table_exists(conn, 'catalog_year_sync_suppressed'):
+                        conn.execute(
+                            "DELETE FROM catalog_year_sync_suppressed "
+                            "WHERE catalog_type = 'qualification_names' AND specialty_code = ? AND degree_level = ? AND year = ?",
+                            (specialty_code, degree_level, int(start_year)),
+                        )
                     conn.commit()
                     flash(f"Назву кваліфікації для {specialty_code} ({degree_level}, {start_year}) додано.", "success")
                     log_action(current_username(), f"додав назву кваліфікації: {specialty_code} {degree_level} {start_year} - {name_ua}")
@@ -1912,10 +2076,40 @@ def manage_qualification_names():
             if in_use > 0:
                 flash(f"Неможливо видалити - є {in_use} груп(и), що використовують цю назву кваліфікації.", "error")
             else:
+                if row and int(row['start_year']) == current_year:
+                    _ensure_catalog_year_sync_table(conn)
+                    conn.execute(
+                        "INSERT OR IGNORE INTO catalog_year_sync_suppressed "
+                        "(catalog_type, specialty_code, degree_level, year) VALUES (?, ?, ?, ?)",
+                        ('qualification_names', row['specialty_code'], row['degree_level'], current_year),
+                    )
                 conn.execute("DELETE FROM qualification_names WHERE id = ?", (qual_id,))
                 conn.commit()
                 flash("Назву кваліфікації видалено.", "success")
                 log_action(current_username(), f"видалив назву кваліфікації: {row['name_ua'] if row else ''}")
+
+        elif action == 'autofill_year':
+            created = auto_fill_catalog_for_year(
+                conn, 'qualification_names', target_year=current_year, force=True
+            )
+            if created:
+                flash(f"Створено {created} назв кваліфікацій на {current_year} рік за даними попередніх років.", "success")
+                log_action(current_username(), f"синхронізував назви кваліфікацій на {current_year} рік ({created} шт.)")
+            else:
+                flash(f"Усі доступні назви кваліфікацій для {current_year} року вже актуальні.", "info")
+
+    auto_created = auto_fill_catalog_for_year(
+        conn, 'qualification_names', target_year=current_year
+    )
+    if auto_created > 0:
+        flash(
+            f"Автоматично створено {auto_created} назв кваліфікацій на {current_year} рік за попередніми доступними даними.",
+            "success",
+        )
+        log_action(
+            current_username() or 'system',
+            f"автоматично створив назви кваліфікацій на {current_year} рік ({auto_created} шт.)",
+        )
 
     specialties = conn.execute("""
         SELECT s.code, s.name_ua, k.name_ua AS field_name

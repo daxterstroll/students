@@ -38,7 +38,7 @@ def login():
 
         ok_ip, retry_ip = check_rate_limit('login_ip', ip, limit=20, window_seconds=300)
         ok_acct, retry_acct = check_rate_limit(
-            'login_acct', f"{ip}:{username.lower()}", limit=8, window_seconds=300
+            'login_acct', f"{ip}:{username.casefold()}", limit=8, window_seconds=300
         )
         if not ok_ip or not ok_acct:
             wait_sec = max(retry_ip, retry_acct)
@@ -56,23 +56,40 @@ def login():
         conn = None
         try:
             conn = get_db()
-            user = conn.execute(
-                "SELECT id, password_hash, role, is_admin, permissions FROM users WHERE username = ?",
-                (username,)
-            ).fetchone()
+            uname_fold = username.casefold()
+            all_users = conn.execute(
+                "SELECT id, username, password_hash, role, is_admin, permissions FROM users"
+            ).fetchall()
 
-            if user and check_password_hash(user['password_hash'], password):
+            exact_matches = [
+                u for u in all_users
+                if (u['username'] or '').strip() == username
+            ]
+            ci_matches = [
+                u for u in all_users
+                if (u['username'] or '').strip() != username
+                and (u['username'] or '').strip().casefold() == uname_fold
+            ]
+
+            user = None
+            for cand in exact_matches + ci_matches:
+                if check_password_hash(cand['password_hash'], password):
+                    user = cand
+                    break
+
+            if user:
+                canonical_username = user['username']
                 group_ids = get_allowed_group_ids(conn, user['id'])
                 session.clear()
                 session.permanent = True
                 session['user_id'] = user['id']
                 session['role'] = user['role']
                 session['group_ids'] = group_ids
-                session['username'] = username
+                session['username'] = canonical_username
                 session['is_admin'] = bool(user['is_admin']) or (user['role'] == 'admin')
                 session['permissions'] = json.loads(user['permissions'] or '[]')
                 log_action(
-                    username,
+                    canonical_username,
                     "ввійшов у систему",
                     group_ids=group_ids,
                     details=f"роль: {user['role']}, груп: {len(group_ids)}, IP: {ip}"

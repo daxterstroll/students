@@ -1,10 +1,11 @@
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="docxcompose")
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 import argparse
 import json
 import os
+import threading
 import time
 
 from flask import Flask, render_template, request, abort, session, redirect, url_for
@@ -154,6 +155,53 @@ def refresh_session_permissions():
 
     session['perm_check_at'] = now
     session.modified = True
+
+
+_CATALOG_SYNC_LOCK = threading.Lock()
+_CATALOG_SYNCED_YEAR = None
+
+
+@app.before_request
+def ensure_annual_catalogs():
+    """
+    Раз на календарний рік (або після перезапуску сервера) гарантує, що
+    довідники `educational_programs` та `qualification_names` автоматично
+    поповнені записами на поточний рік за даними попередніх років — навіть
+    якщо адміністратор одразу відкриває «Групи», не заходячи у довідники.
+    """
+    global _CATALOG_SYNCED_YEAR
+    if not session.get('user_id'):
+        return
+
+    current_year = datetime.now().year
+    if _CATALOG_SYNCED_YEAR == current_year:
+        return
+
+    with _CATALOG_SYNC_LOCK:
+        if _CATALOG_SYNCED_YEAR == current_year:
+            return
+        from routes.db import get_db
+        from routes.admin.catalogs import auto_fill_catalog_for_year
+        conn = None
+        try:
+            conn = get_db()
+            c_prog = auto_fill_catalog_for_year(
+                conn, 'educational_programs', target_year=current_year
+            )
+            c_qual = auto_fill_catalog_for_year(
+                conn, 'qualification_names', target_year=current_year
+            )
+            if c_prog or c_qual:
+                logger.info(
+                    f"Автосинхронізація довідників на {current_year} рік: "
+                    f"освітні програми={c_prog}, назви кваліфікацій={c_qual}"
+                )
+            _CATALOG_SYNCED_YEAR = current_year
+        except Exception as e:
+            logger.warning(f"Не вдалося автосинхронізувати довідники за {current_year} рік: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════
