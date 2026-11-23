@@ -675,9 +675,19 @@ main.container {
             border-color: var(--line);
             --bs-btn-color: var(--ink-text);
             --bs-btn-border-color: var(--line);
-            --bs-btn-hover-color: var(--ink);
+            --bs-btn-hover-bg: var(--surface);
+            --bs-btn-hover-border-color: var(--brass-semi);
+            --bs-btn-hover-color: var(--brass-lt);
+            --bs-btn-active-bg: var(--surface);
+            --bs-btn-active-border-color: var(--brass);
+            --bs-btn-active-color: var(--brass-lt);
         }
-        html[data-theme="dark"] .btn-outline-secondary:hover { background-color: var(--paper-2); }
+        html[data-theme="dark"] .btn-outline-secondary:hover,
+        html[data-theme="dark"] .btn-outline-secondary:focus-visible {
+            background-color: var(--surface);
+            color: var(--brass-lt);
+            border-color: var(--brass-semi);
+        }
 
         /* Bootstrap nav-tabs: за замовчуванням активна вкладка отримує
            СУЦІЛЬНИЙ білий фон (`.nav-tabs .nav-link.active`) - на темному
@@ -1064,6 +1074,16 @@ html[data-theme="dark"] .progress-stacked {
 }
 
 /* ── Outline-кнопки у темній темі ──────────────────────────────────── */
+html[data-theme="dark"] .btn-outline-primary {
+    --bs-btn-color: #a9c2e8;
+    --bs-btn-border-color: rgba(169,194,232,.48);
+    --bs-btn-hover-bg: #a9c2e8;
+    --bs-btn-hover-border-color: #a9c2e8;
+    --bs-btn-hover-color: #0e1b2c;
+    --bs-btn-active-bg: #a9c2e8;
+    --bs-btn-active-border-color: #a9c2e8;
+    --bs-btn-active-color: #0e1b2c;
+}
 html[data-theme="dark"] .btn-outline-success {
     --bs-btn-color: #a8d4ad;
     --bs-btn-border-color: rgba(79,122,82,.55);

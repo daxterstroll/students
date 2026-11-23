@@ -73,6 +73,114 @@ translation_cache = {}
 # закритий в app.py (block_templates_static_access).
 TEMP_PREVIEW_FOLDER = os.path.join('static', 'uploads', 'tmp', 'preview')
 
+def _load_attachments_map(conn, entity_type, entity_ids):
+    """Пакетно завантажує вкладення для списку entity_id одним (або кількома) SQL-запитом замість N+1."""
+    ids = [int(eid) for eid in set(entity_ids or ()) if eid is not None]
+    if not ids:
+        return {}
+    result = {}
+    CHUNK = 500
+    for i in range(0, len(ids), CHUNK):
+        chunk = ids[i:i + CHUNK]
+        placeholders = ','.join('?' for _ in chunk)
+        rows = conn.execute(
+            f"SELECT id, entity_id, file_path, original_name, uploaded_at, uploaded_by "
+            f"FROM attachments WHERE entity_type = ? AND entity_id IN ({placeholders}) ORDER BY id",
+            [entity_type] + chunk,
+        ).fetchall()
+        for r in rows:
+            result.setdefault(r['entity_id'], []).append(dict(r))
+    return result
+
+
+def _compute_group_doc_stats(cursor, table_name, entity_type):
+    """Швидкий агрегат по групах без важких багатотабличних JOIN/DISTINCT (4 прості плоскі запити)."""
+    groups_rows = cursor.execute("""
+        SELECT id, name, start_year, study_form
+        FROM groups
+        WHERE COALESCE(archived, 0) = 0
+        ORDER BY name COLLATE UKRAINIAN
+    """).fetchall()
+
+    active_students = set()
+    group_students = {}
+    for r in cursor.execute("""
+        SELECT id, group_id FROM students
+        WHERE COALESCE(archived, 0) = 0
+    """).fetchall():
+        active_students.add(r['id'])
+        if r['group_id'] is not None:
+            group_students.setdefault(r['group_id'], set()).add(r['id'])
+
+    for r in cursor.execute("""
+        SELECT e.student_id, e.group_id
+        FROM student_enrollments e
+        JOIN students s ON s.id = e.student_id
+        WHERE COALESCE(s.archived, 0) = 0 AND e.status = 'active' AND e.group_id IS NOT NULL
+    """).fetchall():
+        group_students.setdefault(r['group_id'], set()).add(r['student_id'])
+
+    att_doc_ids = {
+        r['entity_id']
+        for r in cursor.execute(
+            "SELECT DISTINCT entity_id FROM attachments WHERE entity_type = ?",
+            (entity_type,),
+        ).fetchall()
+    }
+
+    # Збираємо документи: загальна кількість, зі сканами, та покриття по групах
+    all_docs = cursor.execute(f"SELECT id, student_id, group_id FROM {table_name}").fetchall()
+    docs_count_by_group = {}
+    scans_count_by_group = {}
+    general_students = set()
+    specific_by_group = {}
+    active_docs_total = 0
+    active_with_scans_total = 0
+
+    for d in all_docs:
+        sid = d['student_id']
+        if sid not in active_students:
+            continue
+        active_docs_total += 1
+        has_scan = d['id'] in att_doc_ids
+        if has_scan:
+            active_with_scans_total += 1
+        dgid = d['group_id']
+        if dgid is None:
+            general_students.add(sid)
+        else:
+            docs_count_by_group[dgid] = docs_count_by_group.get(dgid, 0) + 1
+            if has_scan:
+                scans_count_by_group[dgid] = scans_count_by_group.get(dgid, 0) + 1
+            specific_by_group.setdefault(dgid, set()).add(sid)
+
+    group_stats = []
+    for g in groups_rows:
+        gid = g['id']
+        st_set = group_students.get(gid, set())
+        covered = len(st_set & (specific_by_group.get(gid, set()) | general_students))
+        d_cnt = docs_count_by_group.get(gid, 0) + len(st_set & general_students)
+        group_stats.append({
+            'id': gid,
+            'name': g['name'],
+            'start_year': g['start_year'],
+            'study_form': g['study_form'],
+            'students_count': len(st_set),
+            'covered_count': covered,
+            'docs_count': d_cnt,
+            'with_scans_count': scans_count_by_group.get(gid, 0),
+        })
+
+    summary_totals = {
+        'total_docs': active_docs_total,
+        'total_with_scans': active_with_scans_total,
+        'total_without_scans': max(0, active_docs_total - active_with_scans_total),
+        'total_groups': len(group_stats),
+        'active_students': len(active_students),
+    }
+    return group_stats, summary_totals
+
+
 @admin_bp.route('/admin/manage_education_documents', methods=['GET', 'POST'])
 @permission_required('manage_education_documents')
 def manage_education_documents():
@@ -81,151 +189,22 @@ def manage_education_documents():
     cursor = db.cursor()
     MAX_FILES = 5
 
-    cursor.execute("""
-        SELECT id, last_name_UA, first_name_UA FROM students
-        WHERE archived = FALSE ORDER BY last_name_UA, first_name_UA
-    """)
-    students = cursor.fetchall()
-
-    cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
-    groups = cursor.fetchall()
-
-    # --- Отримуємо студента, якщо перейшли з картки ---
-    student = None
-    student_id_param = request.args.get('student_id', type=int)
-    if student_id_param:
-        cursor.execute("""
-            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
-            FROM students WHERE id = ?
-        """, (student_id_param,))
-        srow = cursor.fetchone()
-        if srow:
-            student = dict(srow)
-            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
-            grow = cursor.fetchone()
-            student['group_name'] = grow['name'] if grow else ''
-
-    selected_group_id = request.args.get('group_id', type=int)
-    if not selected_group_id and student:
-        selected_group_id = student['group_id']
-
-    students_without_docs = []
-    if selected_group_id:
-        cursor.execute("""
-            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
-            FROM students s
-            LEFT JOIN student_enrollments e
-                   ON e.student_id = s.id
-                  AND e.group_id = ?
-                  AND e.status = 'active'
-            WHERE COALESCE(s.archived, 0) = 0
-              AND (e.id IS NOT NULL OR s.group_id = ?)
-              AND s.id NOT IN (
-                  SELECT student_id FROM education_documents
-                  WHERE group_id = ? OR group_id IS NULL
-              )
-            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
-        """, (selected_group_id, selected_group_id, selected_group_id))
-        students_without_docs = cursor.fetchall()
-
-    # Основний запит документів
-    cursor.execute("""
-        SELECT COALESCE(ed.group_id, s.group_id) AS group_id,
-               g.name AS group_name, s.id AS student_id,
-               s.last_name_UA, s.first_name_UA,
-               ed.id AS doc_id, ed.group_id AS doc_group_id,
-               ed.document_type, ed.document_type_en, ed.document_number,
-               ed.institution_name, ed.institution_name_en, ed.country, ed.country_en, ed.completion_date,
-               fed.reference_number, fed.reference_institution, fed.reference_institution_en,
-               fed.reference_country, fed.reference_country_en, fed.reference_issue_date,
-               fed.recognition_certificate_number, fed.recognition_issuer,
-               fed.recognition_issuer_en, fed.recognition_date
-        FROM education_documents ed
-        INNER JOIN students s ON ed.student_id = s.id
-        LEFT JOIN groups g ON g.id = COALESCE(ed.group_id, s.group_id)
-        LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
-        WHERE s.archived = FALSE AND (g.archived = FALSE OR g.archived IS NULL)
-        ORDER BY g.name, s.last_name_UA, s.first_name_UA, ed.id
-    """)
-    rows = cursor.fetchall()
-    
-        # Enrollment'и обраного студента — для випадаючого списку груп
-    # у формі додавання/редагування документа (щоб при паралельному
-    # навчанні документ можна було прив'язати до конкретної групи).
-    student_enrollments = []
-    if student:
-        try:
-            from routes.enrollments_service import list_student_enrollments
-            student_enrollments = [
-                e for e in list_student_enrollments(student['id'], conn=db)
-                if e.get('group_id')
-            ]
-        except Exception as logger_exc:
-            logger.warning(f"Не вдалося завантажити enrollments: {logger_exc}")
-
-    documents_by_group = {}
-    for row in rows:
-        gid = row['group_id']
-        if gid not in documents_by_group:
-            documents_by_group[gid] = {
-                'group_name': row['group_name'] or 'Без групи',
-                'docs': [],
-            }
-        doc = dict(row)
-        doc['attachments'] = get_attachments(db, 'education_document', doc['doc_id'])
-        documents_by_group[gid]['docs'].append(doc)
-
-    # ── Безпечне сортування ──
-    # group_name може бути None, якщо:
-    #   - студент без групи (заморожений, в архіві), і
-    #   - документ не прив'язаний до групи (group_id IS NULL у education_documents);
-    #   - групу, до якої був прив'язаний документ, видалили, а FK не спрацював.
-    # Без цього `sorted` падає з TypeError: '<' not supported between str and None.
-    sorted_documents_by_group = sorted(
-        documents_by_group.items(),
-        key=lambda x: (x[1]['group_name'] or '').lower(),
-    )
-
-    student_doc_id = None
-    if student:
-        want_doc_id = request.args.get('doc_id', type=int)
-        want_group_id = request.args.get('group_id', type=int)
-
-        student_docs = [
-            doc
-            for gdata in documents_by_group.values()
-            for doc in gdata['docs']
-            if doc['student_id'] == student['id']
-        ]
-
-        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
-            # Явно вказаний документ — відкриваємо його
-            student_doc_id = want_doc_id
-        elif want_group_id is not None:
-            # Конкретна група: тільки її документ, БЕЗ fallback на іншу групу
-            for doc in student_docs:
-                if doc.get('doc_group_id') == want_group_id:
-                    student_doc_id = doc['doc_id']
-                    break
-            # немає документа цієї групи → student_doc_id лишається None
-            # (модалка не відкриється — зручно для «Додати для цієї групи»)
-        else:
-            # Лише student_id: основна група, інакше перший
-            primary_gid = next(
-                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
-                student.get('group_id'),
-            )
-            if primary_gid is not None:
-                for doc in student_docs:
-                    if doc.get('doc_group_id') == primary_gid:
-                        student_doc_id = doc['doc_id']
-                        break
-            if student_doc_id is None and student_docs:
-                student_doc_id = student_docs[0]['doc_id']
-
-    # ====================== POST ======================
+    # ====================== POST (виконується ДО важких GET-запитів) ======================
     if request.method == 'POST':
         action = request.form.get('action')
+        ret_group_id = request.form.get('return_group_id', type=int) or request.args.get('group_id', type=int)
+        ret_q = (request.form.get('return_q') or request.args.get('q') or '').strip() or None
+        ret_all = '1' if (request.form.get('return_all') == '1' or request.args.get('all') == '1') else None
+        ret_no_scans = '1' if (request.form.get('return_no_scans') == '1' or request.args.get('no_scans') == '1') else None
+
+        def _redirect_back():
+            return redirect(url_for(
+                'admin.manage_education_documents',
+                group_id=ret_group_id,
+                q=ret_q,
+                all=ret_all,
+                no_scans=ret_no_scans,
+            ))
 
         if action == 'delete':
             doc_id = request.form.get('doc_id')
@@ -244,6 +223,7 @@ def manage_education_documents():
                 db.rollback()
                 logger.error(f"Помилка видалення документа про освіту (ID {doc_id}): {e}", exc_info=True)
                 flash('Помилка видалення документа', 'danger')
+            return _redirect_back()
 
         elif action == 'delete_attachment':
             attachment_id = request.form.get('attachment_id', type=int)
@@ -271,12 +251,11 @@ def manage_education_documents():
                 db.rollback()
                 logger.error(f"Помилка видалення вкладення (ID {attachment_id}): {e}", exc_info=True)
                 flash('Помилка видалення файлу', 'danger')
-            return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+            return _redirect_back()
 
         elif action == 'edit':
             doc_id = request.form.get('doc_id')
             student_id = request.form.get('student_id')
-
             country = request.form.get('country') or ''
             country_en = request.form.get('country_en') or ''
 
@@ -285,17 +264,16 @@ def manage_education_documents():
                 existing = cursor.fetchone()
                 if not existing:
                     flash('Документ не знайдено', 'danger')
-                    return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+                    return _redirect_back()
 
                 if student_id:
-                    cursor.execute("SELECT id FROM students WHERE id = ? AND archived = FALSE", (student_id,))
+                    cursor.execute("SELECT id FROM students WHERE id = ? AND COALESCE(archived, 0) = 0", (student_id,))
                     if not cursor.fetchone():
                         flash('Обраний студент не існує або заархівований', 'danger')
-                        return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+                        return _redirect_back()
                 else:
                     student_id = existing[0]
 
-                # Оновлення основного документа (зберігаємо country як ввели)
                 doc_group_id = request.form.get('doc_group_id', type=int)
 
                 cursor.execute("""
@@ -308,7 +286,6 @@ def manage_education_documents():
                       request.form.get('institution_name_en'), country, country_en,
                       request.form.get('completion_date'), doc_id))
 
-                # Foreign fields
                 reference_number = request.form.get('reference_number') or None
                 reference_institution = request.form.get('reference_institution') or None
                 reference_institution_en = request.form.get('reference_institution_en') or None
@@ -320,9 +297,6 @@ def manage_education_documents():
                 recognition_issuer_en = request.form.get('recognition_issuer_en') or None
                 recognition_date = request.form.get('recognition_date') or None
 
-                # Рішення приймаємо тільки на основі того, чи заповнені самі поля довідки/визнання,
-                # а НЕ на основі значення country. Це прибирає випадкове видалення довідки
-                # через неправильно передане/незмінене поле "Країна".
                 has_foreign_data = any([
                     reference_number, reference_institution, reference_country,
                     reference_issue_date, recognition_certificate_number,
@@ -346,7 +320,6 @@ def manage_education_documents():
                               recognition_certificate_number, recognition_issuer,
                               recognition_issuer_en, recognition_date, doc_id))
                     else:
-                        # Видаляємо запис тільки якщо користувач сам очистив усі поля довідки/визнання
                         cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 else:
                     if has_foreign_data:
@@ -388,7 +361,7 @@ def manage_education_documents():
                 logger.error(f"Непередбачена помилка при редагуванні документа про освіту (ID {doc_id}): {e}", exc_info=True)
                 flash('Непередбачена помилка при редагуванні документа', 'danger')
 
-            return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+            return _redirect_back()
 
         # === Додавання нового документа ===
         else:
@@ -467,7 +440,194 @@ def manage_education_documents():
                 db.rollback()
                 flash(f'Помилка при додаванні: {str(e)}', 'danger')
 
-        return redirect(url_for('admin.manage_education_documents', group_id=selected_group_id))
+            return _redirect_back()
+
+    # ====================== GET ======================
+    cursor.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.group_id, g.name AS group_name
+        FROM students s
+        LEFT JOIN groups g ON g.id = s.group_id
+        WHERE COALESCE(s.archived, 0) = 0
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+    """)
+    students = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT id, name FROM groups WHERE COALESCE(archived, 0) = 0 ORDER BY name COLLATE UKRAINIAN")
+    groups = [dict(r) for r in cursor.fetchall()]
+
+    # Отримуємо студента, якщо перейшли з картки
+    student = None
+    student_id_param = request.args.get('student_id', type=int)
+    if student_id_param:
+        cursor.execute("""
+            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
+            FROM students WHERE id = ?
+        """, (student_id_param,))
+        srow = cursor.fetchone()
+        if srow:
+            student = dict(srow)
+            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
+            grow = cursor.fetchone()
+            student['group_name'] = grow['name'] if grow else ''
+
+    selected_group_id = request.args.get('group_id', type=int)
+    if not selected_group_id and student:
+        selected_group_id = student['group_id']
+
+    search_query = (request.args.get('q') or '').strip()
+    show_all = request.args.get('all') == '1'
+    no_scans_only = request.args.get('no_scans') == '1'
+    should_load_docs = bool(selected_group_id or student or search_query or show_all or no_scans_only)
+
+    group_stats, summary_totals = _compute_group_doc_stats(cursor, 'education_documents', 'education_document')
+
+    students_without_docs = []
+    if selected_group_id:
+        cursor.execute("""
+            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+              AND s.id NOT IN (
+                  SELECT student_id FROM education_documents
+                  WHERE group_id = ? OR group_id IS NULL
+              )
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+        """, (selected_group_id, selected_group_id, selected_group_id))
+        students_without_docs = [dict(r) for r in cursor.fetchall()]
+
+    student_enrollments = []
+    if student:
+        try:
+            from routes.enrollments_service import list_student_enrollments
+            student_enrollments = [
+                e for e in list_student_enrollments(student['id'], conn=db)
+                if e.get('group_id')
+            ]
+        except Exception as logger_exc:
+            logger.warning(f"Не вдалося завантажити enrollments: {logger_exc}")
+
+    documents_by_group = {}
+    docs_by_id = {}
+    enrollments_by_student = {}
+
+    if should_load_docs:
+        where_clauses = ["COALESCE(s.archived, 0) = 0", "(g.archived = 0 OR g.archived IS NULL)"]
+        params = []
+        if selected_group_id:
+            if student:
+                where_clauses.append("(COALESCE(ed.group_id, s.group_id) = ? OR ed.student_id = ?)")
+                params.extend([selected_group_id, student['id']])
+            else:
+                where_clauses.append("COALESCE(ed.group_id, s.group_id) = ?")
+                params.append(selected_group_id)
+        elif student:
+            where_clauses.append("ed.student_id = ?")
+            params.append(student['id'])
+
+        sql = f"""
+            SELECT COALESCE(ed.group_id, s.group_id) AS group_id,
+                   g.name AS group_name, s.id AS student_id,
+                   s.last_name_UA, s.first_name_UA,
+                   ed.id AS doc_id, ed.group_id AS doc_group_id,
+                   ed.document_type, ed.document_type_en, ed.document_number,
+                   ed.institution_name, ed.institution_name_en, ed.country, ed.country_en, ed.completion_date,
+                   fed.reference_number, fed.reference_institution, fed.reference_institution_en,
+                   fed.reference_country, fed.reference_country_en, fed.reference_issue_date,
+                   fed.recognition_certificate_number, fed.recognition_issuer,
+                   fed.recognition_issuer_en, fed.recognition_date
+            FROM education_documents ed
+            INNER JOIN students s ON ed.student_id = s.id
+            LEFT JOIN groups g ON g.id = COALESCE(ed.group_id, s.group_id)
+            LEFT JOIN foreign_education_docs fed ON ed.id = fed.education_doc_id
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY g.name COLLATE UKRAINIAN, s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN, ed.id
+        """
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+
+        if search_query:
+            q_low = search_query.lower()
+            filtered_rows = []
+            for r in rows:
+                hay = ' '.join(str(x or '') for x in (
+                    r['last_name_UA'], r['first_name_UA'], r['group_name'],
+                    r['document_type'], r['document_number'], r['institution_name'], r['country'],
+                )).lower()
+                if q_low in hay:
+                    filtered_rows.append(r)
+            rows = filtered_rows
+
+        doc_ids = [r['doc_id'] for r in rows]
+        atts_map = _load_attachments_map(db, 'education_document', doc_ids)
+
+        student_ids_in_view = set()
+        for row in rows:
+            atts = atts_map.get(row['doc_id'], [])
+            if no_scans_only and atts:
+                continue
+            gid = row['group_id']
+            if gid not in documents_by_group:
+                documents_by_group[gid] = {
+                    'group_name': row['group_name'] or 'Без групи',
+                    'docs': [],
+                }
+            doc = dict(row)
+            doc['attachments'] = atts
+            documents_by_group[gid]['docs'].append(doc)
+            docs_by_id[str(doc['doc_id'])] = doc
+            student_ids_in_view.add(doc['student_id'])
+
+        if student_ids_in_view:
+            s_ids = list(student_ids_in_view)
+            for i in range(0, len(s_ids), 500):
+                chunk = s_ids[i:i + 500]
+                ph = ','.join('?' * len(chunk))
+                enroll_rows = db.execute(f"""
+                    SELECT e.student_id, e.group_id, e.is_primary, e.status,
+                           g.name AS group_name
+                    FROM student_enrollments e
+                    JOIN groups g ON g.id = e.group_id
+                    WHERE e.student_id IN ({ph})
+                    ORDER BY e.is_primary DESC, e.id
+                """, chunk).fetchall()
+                for er in enroll_rows:
+                    enrollments_by_student.setdefault(str(er['student_id']), []).append(dict(er))
+
+    sorted_documents_by_group = sorted(
+        documents_by_group.items(),
+        key=lambda x: (x[1]['group_name'] or '').lower(),
+    )
+
+    student_doc_id = None
+    if student and docs_by_id:
+        want_doc_id = request.args.get('doc_id', type=int)
+        want_group_id = request.args.get('group_id', type=int)
+        student_docs = [d for d in docs_by_id.values() if d['student_id'] == student['id']]
+
+        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
+            student_doc_id = want_doc_id
+        elif want_group_id is not None:
+            for doc in student_docs:
+                if doc.get('doc_group_id') == want_group_id:
+                    student_doc_id = doc['doc_id']
+                    break
+        else:
+            primary_gid = next(
+                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
+                student.get('group_id'),
+            )
+            if primary_gid is not None:
+                for doc in student_docs:
+                    if doc.get('doc_group_id') == primary_gid:
+                        student_doc_id = doc['doc_id']
+                        break
+            if student_doc_id is None and student_docs:
+                student_doc_id = student_docs[0]['doc_id']
 
     cursor.close()
     return render_template(
@@ -476,10 +636,19 @@ def manage_education_documents():
         selected_group_id=selected_group_id,
         students_without_docs=students_without_docs,
         documents_by_group=sorted_documents_by_group,
+        docs_by_id=docs_by_id,
         students=students,
         student=student,
         student_doc_id=student_doc_id,
         student_enrollments=student_enrollments,
+        enrollments_by_student=enrollments_by_student,
+        group_stats=group_stats,
+        summary_totals=summary_totals,
+        should_load_docs=should_load_docs,
+        search_query=search_query,
+        show_all=show_all,
+        no_scans_only=no_scans_only,
+        max_files=MAX_FILES,
     )
 
 def _normalize_name_for_match(s):
@@ -576,162 +745,24 @@ def manage_passport_documents():
     без підтаблиці "іноземний документ" і з лімітом 5 сканів на запис."""
     db = get_db()
     cursor = db.cursor()
-    # Ліміт лише на ОДНУ загрузку. Загальна кількість сканів на
-    # запис не обмежується — можна додавати новими партіями.
     MAX_FILES = 5
 
-    cursor.execute("""
-        SELECT id, last_name_UA, first_name_UA FROM students
-        WHERE archived = FALSE ORDER BY last_name_UA, first_name_UA
-    """)
-    students = cursor.fetchall()
-
-    cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
-    groups = cursor.fetchall()
-
-    student = None
-    student_id_param = request.args.get('student_id', type=int)
-    if student_id_param:
-        cursor.execute("""
-            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
-            FROM students WHERE id = ?
-        """, (student_id_param,))
-        srow = cursor.fetchone()
-        if srow:
-            student = dict(srow)
-            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
-            grow = cursor.fetchone()
-            student['group_name'] = grow['name'] if grow else ''
-
-    selected_group_id = request.args.get('group_id', type=int)
-    if not selected_group_id and student:
-        selected_group_id = student['group_id']
-
-    students_without_docs = []
-    if selected_group_id:
-        # УВАГА: паспорти прив'язані до студента (passport_documents.student_id),
-        # а не до групи — тому перевіряємо наявність БУДЬ-ЯКОГО паспорта.
-        # Раніше тут помилково запитувалась education_documents (копіпаст),
-        # через що дропдаун показував не тих студентів.
-        cursor.execute("""
-            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
-            FROM students s
-            LEFT JOIN student_enrollments e
-                   ON e.student_id = s.id
-                  AND e.group_id = ?
-                  AND e.status = 'active'
-            WHERE COALESCE(s.archived, 0) = 0
-              AND (e.id IS NOT NULL OR s.group_id = ?)
-              AND s.id NOT IN (
-                  SELECT student_id FROM passport_documents
-                  WHERE group_id = ? OR group_id IS NULL
-              )
-            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA
-        """, (selected_group_id, selected_group_id, selected_group_id))
-        students_without_docs = cursor.fetchall()
-
-    cursor.execute("""
-        SELECT COALESCE(pd.group_id, s.group_id) AS group_id,
-               g.name AS group_name, s.id AS student_id,
-               s.last_name_UA, s.first_name_UA,
-               pd.id AS doc_id, pd.group_id AS doc_group_id,
-               pd.document_type, pd.series, pd.number,
-               pd.issued_by, pd.issue_date, pd.valid_until, pd.unique_number
-        FROM passport_documents pd
-        INNER JOIN students s ON pd.student_id = s.id
-        LEFT JOIN groups g ON g.id = COALESCE(pd.group_id, s.group_id)
-        WHERE s.archived = FALSE AND (g.archived = FALSE OR g.archived IS NULL)
-        ORDER BY g.name, s.last_name_UA, s.first_name_UA, pd.id
-    """)
-    rows = cursor.fetchall()
-
-    documents_by_group = {}
-    for row in rows:
-        gid = row['group_id']
-        if gid not in documents_by_group:
-            documents_by_group[gid] = {
-                'group_name': row['group_name'] or 'Без групи',
-                'docs': [],
-            }
-        doc = dict(row)
-        doc['attachments'] = get_attachments(db, 'passport_document', doc['doc_id'])
-        documents_by_group[gid]['docs'].append(doc)
-
-    # group_name може бути None: паспорт прив'язаний до групи, якої вже
-    # немає (видалена), або у студента немає основної групи (архівний/
-    # заморожений без enrollment'ів). Без `or ''` sorted() падає з
-    # TypeError: '<' not supported between instances of 'str' and 'NoneType'.
-    sorted_documents_by_group = sorted(
-        documents_by_group.items(),
-        key=lambda x: (x[1]['group_name'] or '').lower(),
-    )
-
-    # Enrollments усіх студентів у поточному списку — для селектора
-    # «Для якої групи» в модалках редагування.
-    student_ids_in_view = set()
-    for gdata in documents_by_group.values():
-        for doc in gdata['docs']:
-            student_ids_in_view.add(doc['student_id'])
-
-    enrollments_by_student = {}
-    if student_ids_in_view:
-        placeholders = ','.join('?' * len(student_ids_in_view))
-        enroll_rows = db.execute(f"""
-            SELECT e.student_id, e.group_id, e.is_primary, e.status,
-                   g.name AS group_name
-            FROM student_enrollments e
-            JOIN groups g ON g.id = e.group_id
-            WHERE e.student_id IN ({placeholders})
-            ORDER BY e.is_primary DESC, e.id
-        """, list(student_ids_in_view)).fetchall()
-        for r in enroll_rows:
-            enrollments_by_student.setdefault(r['student_id'], []).append(dict(r))
-
-    # Для add-форми (коли прийшли з картки студента)
-    student_enrollments = []
-    if student:
-        student_enrollments = enrollments_by_student.get(student['id'], [])
-    
-    student_doc_id = None
-    if student:
-        want_doc_id = request.args.get('doc_id', type=int)
-        want_group_id = request.args.get('group_id', type=int)
-
-        student_docs = [
-            doc
-            for gdata in documents_by_group.values()
-            for doc in gdata['docs']
-            if doc['student_id'] == student['id']
-        ]
-
-        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
-            # Явно вказаний документ — відкриваємо його
-            student_doc_id = want_doc_id
-        elif want_group_id is not None:
-            # Конкретна група: тільки її документ, БЕЗ fallback на іншу групу
-            for doc in student_docs:
-                if doc.get('doc_group_id') == want_group_id:
-                    student_doc_id = doc['doc_id']
-                    break
-            # немає документа цієї групи → student_doc_id лишається None
-            # (модалка не відкриється — зручно для «Додати для цієї групи»)
-        else:
-            # Лише student_id: основна група, інакше перший
-            primary_gid = next(
-                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
-                student.get('group_id'),
-            )
-            if primary_gid is not None:
-                for doc in student_docs:
-                    if doc.get('doc_group_id') == primary_gid:
-                        student_doc_id = doc['doc_id']
-                        break
-            if student_doc_id is None and student_docs:
-                student_doc_id = student_docs[0]['doc_id']
-
-    # ====================== POST ======================
+    # ====================== POST (виконується ДО важких GET-запитів) ======================
     if request.method == 'POST':
         action = request.form.get('action')
+        ret_group_id = request.form.get('return_group_id', type=int) or request.args.get('group_id', type=int)
+        ret_q = (request.form.get('return_q') or request.args.get('q') or '').strip() or None
+        ret_all = '1' if (request.form.get('return_all') == '1' or request.args.get('all') == '1') else None
+        ret_no_scans = '1' if (request.form.get('return_no_scans') == '1' or request.args.get('no_scans') == '1') else None
+
+        def _redirect_back():
+            return redirect(url_for(
+                'admin.manage_passport_documents',
+                group_id=ret_group_id,
+                q=ret_q,
+                all=ret_all,
+                no_scans=ret_no_scans,
+            ))
 
         if action == 'delete':
             doc_id = request.form.get('doc_id')
@@ -749,6 +780,7 @@ def manage_passport_documents():
                 db.rollback()
                 logger.error(f"Помилка видалення паспортних даних (ID {doc_id}): {e}", exc_info=True)
                 flash('Помилка видалення запису', 'danger')
+            return _redirect_back()
 
         elif action == 'delete_attachment':
             attachment_id = request.form.get('attachment_id', type=int)
@@ -776,7 +808,7 @@ def manage_passport_documents():
                 db.rollback()
                 logger.error(f"Помилка видалення вкладення (ID {attachment_id}): {e}", exc_info=True)
                 flash('Помилка видалення файлу', 'danger')
-            return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+            return _redirect_back()
 
         elif action == 'edit':
             doc_id = request.form.get('doc_id')
@@ -787,12 +819,12 @@ def manage_passport_documents():
                 existing = cursor.execute("SELECT student_id FROM passport_documents WHERE id = ?", (doc_id,)).fetchone()
                 if not existing:
                     flash('Запис не знайдено', 'danger')
-                    return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+                    return _redirect_back()
 
                 if student_id:
-                    if not cursor.execute("SELECT id FROM students WHERE id = ? AND archived = FALSE", (student_id,)).fetchone():
+                    if not cursor.execute("SELECT id FROM students WHERE id = ? AND COALESCE(archived, 0) = 0", (student_id,)).fetchone():
                         flash('Обраний студент не існує або заархівований', 'danger')
-                        return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+                        return _redirect_back()
                 else:
                     student_id = existing[0]
 
@@ -800,19 +832,11 @@ def manage_passport_documents():
                     raise ValueError("Невірний тип документа")
 
                 new_scans = [f for f in request.files.getlist('document_scans') if f and f.filename]
-                # Ліміт — лише на одноразову загрузку (не більше
-                # MAX_FILES нових файлів за раз). Загальна кількість
-                # сканів на запис не обмежується.
                 if len(new_scans) > MAX_FILES:
                     flash(f'Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку (обрано {len(new_scans)}).', 'error')
-                    return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+                    return _redirect_back()
 
-                # "Дійсний до" стосується лише ID-картки (книжка в Україні
-                # безстрокова) - JS ховає поле для книжки, але сервер не
-                # повинен покладатись лише на це (форму можна надіслати і
-                # з вимкненим JS), тому підстраховуємось і тут.
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
-
                 doc_group_id = request.form.get('doc_group_id', type=int)
 
                 cursor.execute("""
@@ -841,7 +865,7 @@ def manage_passport_documents():
                 logger.error(f"Помилка редагування паспортних даних (ID {doc_id}): {e}", exc_info=True)
                 flash(f'Помилка при редагуванні: {e}', 'danger')
 
-            return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+            return _redirect_back()
 
         # === Додавання нового запису ===
         else:
@@ -859,7 +883,6 @@ def manage_passport_documents():
                     raise ValueError(f"Забагато файлів за раз - максимум {MAX_FILES} за одну загрузку")
 
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
-
                 doc_group_id = request.form.get('doc_group_id', type=int)
 
                 cursor.execute("""
@@ -887,7 +910,191 @@ def manage_passport_documents():
                 db.rollback()
                 flash(f'Помилка при додаванні: {str(e)}', 'danger')
 
-        return redirect(url_for('admin.manage_passport_documents', group_id=selected_group_id))
+            return _redirect_back()
+
+    # ====================== GET ======================
+    cursor.execute("""
+        SELECT s.id, s.last_name_UA, s.first_name_UA, s.group_id, g.name AS group_name
+        FROM students s
+        LEFT JOIN groups g ON g.id = s.group_id
+        WHERE COALESCE(s.archived, 0) = 0
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+    """)
+    students = [dict(r) for r in cursor.fetchall()]
+
+    cursor.execute("SELECT id, name FROM groups WHERE COALESCE(archived, 0) = 0 ORDER BY name COLLATE UKRAINIAN")
+    groups = [dict(r) for r in cursor.fetchall()]
+
+    student = None
+    student_id_param = request.args.get('student_id', type=int)
+    if student_id_param:
+        cursor.execute("""
+            SELECT id, last_name_UA, first_name_UA, middle_name_UA, group_id
+            FROM students WHERE id = ?
+        """, (student_id_param,))
+        srow = cursor.fetchone()
+        if srow:
+            student = dict(srow)
+            cursor.execute("SELECT name FROM groups WHERE id = ?", (student['group_id'],))
+            grow = cursor.fetchone()
+            student['group_name'] = grow['name'] if grow else ''
+
+    selected_group_id = request.args.get('group_id', type=int)
+    if not selected_group_id and student:
+        selected_group_id = student['group_id']
+
+    search_query = (request.args.get('q') or '').strip()
+    show_all = request.args.get('all') == '1'
+    no_scans_only = request.args.get('no_scans') == '1'
+    should_load_docs = bool(selected_group_id or student or search_query or show_all or no_scans_only)
+
+    group_stats, summary_totals = _compute_group_doc_stats(cursor, 'passport_documents', 'passport_document')
+
+    students_without_docs = []
+    if selected_group_id:
+        cursor.execute("""
+            SELECT DISTINCT s.id, s.last_name_UA, s.first_name_UA
+            FROM students s
+            LEFT JOIN student_enrollments e
+                   ON e.student_id = s.id
+                  AND e.group_id = ?
+                  AND e.status = 'active'
+            WHERE COALESCE(s.archived, 0) = 0
+              AND (e.id IS NOT NULL OR s.group_id = ?)
+              AND s.id NOT IN (
+                  SELECT student_id FROM passport_documents
+                  WHERE group_id = ? OR group_id IS NULL
+              )
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+        """, (selected_group_id, selected_group_id, selected_group_id))
+        students_without_docs = [dict(r) for r in cursor.fetchall()]
+
+    student_enrollments = []
+    if student:
+        try:
+            from routes.enrollments_service import list_student_enrollments
+            student_enrollments = [
+                e for e in list_student_enrollments(student['id'], conn=db)
+                if e.get('group_id')
+            ]
+        except Exception as logger_exc:
+            logger.warning(f"Не вдалося завантажити enrollments: {logger_exc}")
+
+    documents_by_group = {}
+    docs_by_id = {}
+    enrollments_by_student = {}
+
+    if should_load_docs:
+        where_clauses = ["COALESCE(s.archived, 0) = 0", "(g.archived = 0 OR g.archived IS NULL)"]
+        params = []
+        if selected_group_id:
+            if student:
+                where_clauses.append("(COALESCE(pd.group_id, s.group_id) = ? OR pd.student_id = ?)")
+                params.extend([selected_group_id, student['id']])
+            else:
+                where_clauses.append("COALESCE(pd.group_id, s.group_id) = ?")
+                params.append(selected_group_id)
+        elif student:
+            where_clauses.append("pd.student_id = ?")
+            params.append(student['id'])
+
+        cursor.execute(f"""
+            SELECT COALESCE(pd.group_id, s.group_id) AS group_id,
+                   g.name AS group_name, s.id AS student_id,
+                   s.last_name_UA, s.first_name_UA,
+                   pd.id AS doc_id, pd.group_id AS doc_group_id,
+                   pd.document_type, pd.series, pd.number,
+                   pd.issued_by, pd.issue_date, pd.valid_until, pd.unique_number
+            FROM passport_documents pd
+            INNER JOIN students s ON pd.student_id = s.id
+            LEFT JOIN groups g ON g.id = COALESCE(pd.group_id, s.group_id)
+            WHERE {' AND '.join(where_clauses)}
+            ORDER BY g.name COLLATE UKRAINIAN, s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN, pd.id
+        """, params)
+        rows = cursor.fetchall()
+
+        if search_query:
+            q_low = search_query.lower()
+            filtered_rows = []
+            for r in rows:
+                hay = ' '.join(str(x or '') for x in (
+                    r['last_name_UA'], r['first_name_UA'], r['group_name'],
+                    r['document_type'], r['series'], r['number'],
+                    r['issued_by'], r['unique_number'],
+                )).lower()
+                if q_low in hay:
+                    filtered_rows.append(r)
+            rows = filtered_rows
+
+        doc_ids = [r['doc_id'] for r in rows]
+        atts_map = _load_attachments_map(db, 'passport_document', doc_ids)
+
+        student_ids_in_view = set()
+        for row in rows:
+            atts = atts_map.get(row['doc_id'], [])
+            if no_scans_only and atts:
+                continue
+            gid = row['group_id']
+            if gid not in documents_by_group:
+                documents_by_group[gid] = {
+                    'group_name': row['group_name'] or 'Без групи',
+                    'docs': [],
+                }
+            doc = dict(row)
+            doc['attachments'] = atts
+            documents_by_group[gid]['docs'].append(doc)
+            docs_by_id[str(doc['doc_id'])] = doc
+            student_ids_in_view.add(doc['student_id'])
+
+        if student_ids_in_view:
+            s_ids = list(student_ids_in_view)
+            for i in range(0, len(s_ids), 500):
+                chunk = s_ids[i:i + 500]
+                ph = ','.join('?' * len(chunk))
+                enroll_rows = db.execute(f"""
+                    SELECT e.student_id, e.group_id, e.is_primary, e.status,
+                           g.name AS group_name
+                    FROM student_enrollments e
+                    JOIN groups g ON g.id = e.group_id
+                    WHERE e.student_id IN ({ph})
+                    ORDER BY e.is_primary DESC, e.id
+                """, chunk).fetchall()
+                for er in enroll_rows:
+                    enrollments_by_student.setdefault(str(er['student_id']), []).append(dict(er))
+
+        if student and not student_enrollments:
+            student_enrollments = enrollments_by_student.get(str(student['id']), [])
+
+    sorted_documents_by_group = sorted(
+        documents_by_group.items(),
+        key=lambda x: (x[1]['group_name'] or '').lower(),
+    )
+
+    student_doc_id = None
+    if student and docs_by_id:
+        want_doc_id = request.args.get('doc_id', type=int)
+        want_group_id = request.args.get('group_id', type=int)
+        student_docs = [d for d in docs_by_id.values() if d['student_id'] == student['id']]
+
+        if want_doc_id and any(d['doc_id'] == want_doc_id for d in student_docs):
+            student_doc_id = want_doc_id
+        elif want_group_id is not None:
+            for doc in student_docs:
+                if doc.get('doc_group_id') == want_group_id:
+                    student_doc_id = doc['doc_id']
+                    break
+        else:
+            primary_gid = next(
+                (e['group_id'] for e in (student_enrollments or []) if e.get('is_primary')),
+                student.get('group_id'),
+            )
+            if primary_gid is not None:
+                for doc in student_docs:
+                    if doc.get('doc_group_id') == primary_gid:
+                        student_doc_id = doc['doc_id']
+                        break
+            if student_doc_id is None and student_docs:
+                student_doc_id = student_docs[0]['doc_id']
 
     cursor.close()
     return render_template(
@@ -896,12 +1103,19 @@ def manage_passport_documents():
         selected_group_id=selected_group_id,
         students_without_docs=students_without_docs,
         documents_by_group=sorted_documents_by_group,
+        docs_by_id=docs_by_id,
         students=students,
         student=student,
         student_doc_id=student_doc_id,
         max_files=MAX_FILES,
         student_enrollments=student_enrollments,
         enrollments_by_student=enrollments_by_student,
+        group_stats=group_stats,
+        summary_totals=summary_totals,
+        should_load_docs=should_load_docs,
+        search_query=search_query,
+        show_all=show_all,
+        no_scans_only=no_scans_only,
         **passport_template_context(),
     )
 

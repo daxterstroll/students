@@ -135,8 +135,19 @@ def manage_study_periods_bulk_assign():
                               mode=mode))
 
     # -------------------- GET --------------------
-    cursor.execute("SELECT id, name FROM groups WHERE archived = FALSE ORDER BY name")
-    groups = cursor.fetchall()
+    cursor.execute("SELECT id, name FROM groups WHERE COALESCE(archived, 0) = 0 ORDER BY name COLLATE UKRAINIAN")
+    groups = [dict(r) for r in cursor.fetchall()]
+
+    # Активні enrollment'и для кожного студента (щоб паралельні студенти теж
+    # потрапляли у вибірку «Обрані з групи» без зайвих запитів).
+    cursor.execute("""
+        SELECT student_id, group_id
+        FROM student_enrollments
+        WHERE status = 'active' AND group_id IS NOT NULL
+    """)
+    enroll_map = {}
+    for er in cursor.fetchall():
+        enroll_map.setdefault(er['student_id'], set()).add(er['group_id'])
 
     # Всі студенти з інформацією про групу (для JS-фільтрації)
     cursor.execute("""
@@ -144,13 +155,22 @@ def manage_study_periods_bulk_assign():
                s.group_id, g.name AS group_name
         FROM students s
         LEFT JOIN groups g ON s.group_id = g.id
-        WHERE s.archived = FALSE
-        ORDER BY s.last_name_UA, s.first_name_UA
+        WHERE COALESCE(s.archived, 0) = 0
+        ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
     """)
-    all_students = cursor.fetchall()
+    all_students = []
+    for r in cursor.fetchall():
+        sd = dict(r)
+        gids = set(enroll_map.get(sd['id'], ()))
+        if sd.get('group_id'):
+            gids.add(sd['group_id'])
+        sd['enrollment_group_ids'] = sorted(gids)
+        all_students.append(sd)
 
     # Параметри
     mode = request.args.get('mode', 'any_students')
+    if mode not in ('whole_group', 'some_from_group', 'any_students'):
+        mode = 'any_students'
     group_id = request.args.get('group_id', type=int)
     student_ids_param = request.args.get('student_ids', '')
     extra_student_ids = [int(x) for x in student_ids_param.split(',') if x.strip().isdigit()]
@@ -180,12 +200,12 @@ def manage_study_periods_bulk_assign():
             FROM students s
             LEFT JOIN groups g ON s.group_id = g.id
             WHERE s.id IN ({placeholders})
-            ORDER BY s.last_name_UA, s.first_name_UA
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
         """, tuple(target_student_ids))
         target_students_rows = cursor.fetchall()
 
         cursor.execute(f"""
-            SELECT student_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
+            SELECT student_id, group_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note
             FROM student_study_periods
             WHERE student_id IN ({placeholders})
             ORDER BY student_id, period_order ASC, start_date ASC
@@ -194,7 +214,7 @@ def manage_study_periods_bulk_assign():
 
         periods_by_student = {}
         for p in periods_rows:
-            periods_by_student.setdefault(p['student_id'], []).append(p)
+            periods_by_student.setdefault(p['student_id'], []).append(dict(p))
 
         for s in target_students_rows:
             s_dict = dict(s)

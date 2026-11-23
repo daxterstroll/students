@@ -1,475 +1,1468 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
 {% block title %}Паспортні дані{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block main_class %}py-3{% endblock %}
+
 {% block content %}
-<div class="container py-4">
-
-    {{ ui.page_header('bi-person-vcard-fill', 'Паспортні дані', 'Паспорти, ID-картки та свідоцтва про народження студентів, до ' ~ max_files ~ ' сканів на запис') }}
-
-    {% if student %}
-        <div class="alert alert-info d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
-            <div>
-                <strong>Студент:</strong> {{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA }}
-                <span class="badge bg-secondary ms-2">{{ student.group_name | default('') }}</span>
-            </div>
-            <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-secondary">
-                ← Назад до картки студента
-            </a>
-        </div>
-    {% endif %}
-
-    <div class="card mb-4">
-        <div class="card-body">
-            <form method="GET" class="row g-3 align-items-end">
-                <div class="col-md-6">
-                    <label for="group_id" class="form-label">Група</label>
-                    <select name="group_id" id="group_id" class="form-select" onchange="this.form.submit()" required>
-                        <option value="">— оберіть групу —</option>
-                        {% for group in groups %}
-                            <option value="{{ group.id }}" {% if group.id == selected_group_id %}selected{% endif %}>{{ group.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                {% if selected_group_id and students_without_docs %}
-                    <div class="col-md-6">
-                        <label for="student_id_select" class="form-label">Студент (без паспортних даних)</label>
-                        <!-- НЕ name="student_id" - те саме поле вже є прихованим у
-                             addDocumentForm (заповнене, коли сторінка відкрита з картки
-                             студента); з однаковим ім'ям на сервер йшло б порожнє
-                             значення цього select замість id студента з картки. -->
-                        <select id="student_id_select" class="form-select">
-                            <option value="">— оберіть студента —</option>
-                            {% for s in students_without_docs %}
-                                <option value="{{ s.id }}" {% if student and s.id == student.id %}selected{% endif %}>{{ s.last_name_UA }} {{ s.first_name_UA }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                {% endif %}
-            </form>
-        </div>
-    </div>
-
-    <!-- Форма додавання -->
-    <div class="card mb-5">
-        <div class="card-header py-3">
-            <h5 class="mb-0 section-title"><i class="bi bi-plus-lg me-2"></i>Додати паспортні дані</h5>
-        </div>
-        <div class="card-body">
-            <form id="addDocumentForm" method="POST" enctype="multipart/form-data">
-                <input type="hidden" name="student_id" id="hidden_student_id" value="{{ student.id if student else '' }}">
-                {% if student_enrollments %}
-                <div class="row g-3 mb-3">
-                    <div class="col-md-6">
-                        <label for="doc_group_id" class="form-label">Для якої групи</label>
-                        <select name="doc_group_id" id="doc_group_id" class="form-select">
-                            <option value="">— загальний (для всіх груп) —</option>
-                            {% for e in student_enrollments %}
-                            <option value="{{ e.group_id }}">
-                                {{ e.group_name or ('#' ~ e.group_id) }}
-                                {% if e.is_primary %} (основна){% endif %}
-                            </option>
-                            {% endfor %}
-                        </select>
-                        <div class="form-text">При паралельному навчанні для кожної групи — свій паспорт.</div>
-                    </div>
-                </div>
-                {% endif %}
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label for="document_type" class="form-label">Тип документа</label>
-						<select name="document_type" id="document_type" class="form-select" required>
-							{% for t in passport_types %}
-							<option value="{{ t }}" {% if t == passport_type_default %}selected{% endif %}>{{ t }}</option>
-							{% endfor %}
-						</select>
-                    </div>
-                    <div class="col-md-6" id="series_wrap">
-                        <label for="series" class="form-label">Серія (для документів книжкового типу)</label>
-                        <input type="text" name="series" id="series" class="form-control" placeholder="Напр., АА">
-                    </div>
-                    <div class="col-md-12">
-                        <label for="number" class="form-label">Номер документа</label>
-                        <input type="text" name="number" id="number" class="form-control" placeholder="Напр., 123456" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label for="issued_by" class="form-label">Ким видано</label>
-                        <input type="text" name="issued_by" id="issued_by" class="form-control" placeholder="Напр., Шевченківським РУ ГУ ДМС України">
-                    </div>
-                    <div class="col-md-6" id="unique_number_wrap">
-                        <label for="unique_number" class="form-label">Номер запису в ЄДДР (для ID-типу)</label>
-                        <input type="text" name="unique_number" id="unique_number" class="form-control">
-                    </div>
-                    <div class="col-md-6">
-                        <label for="issue_date" class="form-label">Дата видачі</label>
-                        <input type="text" name="issue_date" id="issue_date" class="form-control" placeholder="Напр., 19.06.2020">
-                    </div>
-                    <div class="col-md-6" id="valid_until_wrap">
-                        <label for="valid_until" class="form-label">Дійсний до (для ID-типу)</label>
-                        <input type="text" name="valid_until" id="valid_until" class="form-control" placeholder="Напр., 19.06.2030">
-                    </div>
-                    <div class="col-md-12">
-                        <label for="document_scans" class="form-label">Скановані копії (необов'язково, до {{ max_files }} за раз)</label>
-                        <input type="file" name="document_scans" id="document_scans" class="form-control" accept="image/*,.pdf" multiple>
-                        <div class="form-text">Можна кілька файлів (фото сторінок або PDF), не більше {{ max_files }} за одну загрузку. Загальна кількість сканів не обмежена — можна додавати новими партіями.</div>
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end">
-                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle me-2"></i>Додати</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Список -->
-    {{ ui.section_title('Список паспортних даних') }}
-    {% if documents_by_group %}
-        <div class="accordion" id="groupsAccordion">
-            {% for group_id, group_data in documents_by_group %}
-                <div class="accordion-item">
-                    <h2 class="accordion-header" id="heading{{ group_id }}">
-                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ group_id }}">
-                            {{ group_data.group_name }}
-                            <span class="badge bg-secondary ms-2">{{ group_data.docs|length }}</span>
-                        </button>
-                    </h2>
-                    <div id="collapse{{ group_id }}" class="accordion-collapse collapse" data-bs-parent="#groupsAccordion">
-                        <div class="accordion-body p-0">
-                            <div class="table-responsive">
-                                <table class="table table-bordered table-hover mb-0">
-                                    <thead class="table-light">
-                                        <tr>
-                                            <th>Студент</th>
-                                            <th>Група документа</th>
-                                            <th>Тип</th>
-                                            <th>Номер</th>
-                                            <th>Дійсний до</th>
-                                            <th style="width: 40px;"></th>
-                                            <th style="width: 180px;">Дії</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% for doc in group_data.docs %}
-                                            <tr data-student-id="{{ doc.student_id }}">
-                                                <td>{{ doc.last_name_UA }} {{ doc.first_name_UA }}</td>
-                                                <td class="small">
-                                                    {% if doc.doc_group_id %}
-                                                        {{ doc.group_name or ('Група #' ~ doc.doc_group_id) }}
-                                                    {% else %}
-                                                        <em class="text-muted">— загальний —</em>
-                                                    {% endif %}
-                                                </td>
-                                                <td>{{ doc.document_type }}</td>
-                                                <td>{{ (doc.series ~ ' ' if doc.series else '') ~ doc.number }}</td>
-                                                <td>{{ doc.valid_until or '—' }}</td>
-                                                <td>
-                                                    {% if doc.attachments %}
-                                                    <i class="bi bi-paperclip text-muted" title="{{ doc.attachments|length }} скан(ів)"></i>
-                                                    {% endif %}
-                                                </td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-outline-primary me-1" data-bs-toggle="modal" data-bs-target="#detailsModal{{ doc.doc_id }}">
-                                                        <i class="bi bi-info-circle"></i>
-                                                    </button>
-                                                    <button class="btn btn-sm btn-outline-warning me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ doc.doc_id }}">
-                                                        <i class="bi bi-pencil"></i>
-                                                    </button>
-                                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Видалити цей запис?');">
-                                                        <input type="hidden" name="action" value="delete">
-                                                        <input type="hidden" name="doc_id" value="{{ doc.doc_id }}">
-                                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
-                                                    </form>
-                                                </td>
-                                            </tr>
-
-                                            <!-- Деталі -->
-                                            <div class="modal fade" id="detailsModal{{ doc.doc_id }}" tabindex="-1">
-                                                <div class="modal-dialog modal-lg">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Паспортні дані</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <div class="row g-3">
-                                                                <div class="col-12"><strong>Студент:</strong> {{ doc.last_name_UA }} {{ doc.first_name_UA }}</div>
-                                                                <div class="col-md-6"><strong>Тип:</strong> {{ doc.document_type }}</div>
-                                                                <div class="col-md-6"><strong>Серія:</strong> {{ doc.series or '—' }}</div>
-                                                                <div class="col-md-6"><strong>Номер:</strong> {{ doc.number }}</div>
-                                                                <div class="col-md-6"><strong>Ким видано:</strong> {{ doc.issued_by or '—' }}</div>
-                                                                <div class="col-md-6"><strong>Дата видачі:</strong> {{ doc.issue_date or '—' }}</div>
-                                                                <div class="col-md-6"><strong>Дійсний до:</strong> {{ doc.valid_until or '—' }}</div>
-                                                                <div class="col-12"><strong>Номер запису в ЄДДР:</strong> {{ doc.unique_number or '—' }}</div>
-                                                                {% if doc.attachments %}
-                                                                <div class="col-12 mt-3 border-top pt-3"><h6>Скановані копії</h6></div>
-                                                                <div class="col-12">
-                                                                    {% for a in doc.attachments %}
-                                                                    <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary me-1 mb-1">
-                                                                        <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-                                                                    </a>
-                                                                    {% endfor %}
-                                                                </div>
-                                                                {% endif %}
-                                                            </div>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрити</button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <!-- Редагувати -->
-                                            <div class="modal fade" id="editModal{{ doc.doc_id }}" data-student-id="{{ doc.student_id }}" tabindex="-1">
-                                                <div class="modal-dialog modal-lg">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Редагувати паспортні дані</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" enctype="multipart/form-data">
-                                                                <input type="hidden" name="action" value="edit">
-                                                                <input type="hidden" name="doc_id" value="{{ doc.doc_id }}">
-                                                                <input type="hidden" name="student_id" value="{{ doc.student_id }}">
-                                                                <div class="row g-3">
-                                                                    {% set _enrolls = enrollments_by_student.get(doc.student_id, []) %}
-                                                                    {% if _enrolls %}
-                                                                    <div class="col-md-12">
-                                                                        <label class="form-label">Для якої групи</label>
-                                                                        <select name="doc_group_id" class="form-select">
-                                                                            <option value="">— загальний (для всіх груп) —</option>
-                                                                            {% for e in _enrolls %}
-                                                                            <option value="{{ e.group_id }}" {% if doc.doc_group_id == e.group_id %}selected{% endif %}>
-                                                                                {{ e.group_name or ('#' ~ e.group_id) }}
-                                                                                {% if e.is_primary %} (основна){% endif %}
-                                                                            </option>
-                                                                            {% endfor %}
-                                                                        </select>
-                                                                    </div>
-                                                                    {% endif %}
-                                                                    <div class="col-md-6">
-                                                                        <label class="form-label">Тип документа</label>
-																		<select name="document_type" class="form-select edit-doctype">
-																			{% for t in passport_types %}
-																			<option value="{{ t }}" {% if doc.document_type == t %}selected{% endif %}>{{ t }}</option>
-																			{% endfor %}
-																		</select>
-                                                                    </div>
-                                                                    <div class="col-md-6 edit-series-wrap">
-                                                                        <label class="form-label">Серія (для документів книжкового типу)</label>
-                                                                        <input type="text" name="series" class="form-control" value="{{ doc.series or '' }}">
-                                                                    </div>
-                                                                    <div class="col-md-12">
-                                                                        <label class="form-label">Номер документа</label>
-                                                                        <input type="text" name="number" class="form-control" value="{{ doc.number }}" required>
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label class="form-label">Ким видано</label>
-                                                                        <input type="text" name="issued_by" class="form-control" value="{{ doc.issued_by or '' }}">
-                                                                    </div>
-                                                                    <div class="col-md-6 edit-unique-wrap">
-                                                                        <label class="form-label">Номер запису в ЄДДР</label>
-                                                                        <input type="text" name="unique_number" class="form-control" value="{{ doc.unique_number or '' }}">
-                                                                    </div>
-                                                                    <div class="col-md-6">
-                                                                        <label class="form-label">Дата видачі</label>
-                                                                        <input type="text" name="issue_date" class="form-control" value="{{ doc.issue_date or '' }}">
-                                                                    </div>
-                                                                    <div class="col-md-6 edit-valid-until-wrap">
-                                                                        <label class="form-label">Дійсний до</label>
-                                                                        <input type="text" name="valid_until" class="form-control" value="{{ doc.valid_until or '' }}">
-                                                                    </div>
-                                                                    <div class="col-12 mt-3 border-top pt-3">
-                                                                        <label class="form-label">Скановані копії ({{ doc.attachments|length }})</label>
-                                                                        {% if doc.attachments %}
-                                                                        <div class="mb-2">
-                                                                            {% for a in doc.attachments %}
-                                                                            <span class="badge bg-secondary d-inline-flex align-items-center gap-1 me-1 mb-1 p-2">
-                                                                                <a href="{{ url_for('static', filename=a.file_path) }}" target="_blank" class="text-white text-decoration-none">
-                                                                                    <i class="bi bi-file-earmark-arrow-down"></i> {{ a.original_name or ('файл ' ~ loop.index) }}
-                                                                                </a>
-                                                                                <button type="button" class="btn-close btn-close-white" style="font-size:.6rem;"
-                                                                                        title="Видалити файл"
-                                                                                        onclick="deleteAttachment({{ a.id }}, '{{ url_for('admin.manage_passport_documents') }}')"></button>
-                                                                            </span>
-                                                                            {% endfor %}
-                                                                        </div>
-                                                                        {% else %}
-                                                                        <div class="small text-muted mb-2">Немає доданих сканів.</div>
-                                                                        {% endif %}
-                                                                        <input type="file" name="document_scans" class="form-control form-control-sm" accept="image/*,.pdf" multiple>
-                                                                        <div class="form-text">Додати ще файли — не більше {{ max_files }} за одну загрузку.</div>
-                                                                    </div>
-                                                                    <div class="col-12 mt-3">
-                                                                        <button type="submit" class="btn btn-primary"><i class="bi bi-save me-2"></i>Зберегти</button>
-                                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Скасувати</button>
-                                                                    </div>
-                                                                </div>
-                                                            </form>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        {% endfor %}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        {{ ui.empty_state('bi-person-vcard', 'Паспортних даних ще немає (або не вибрано групу)') }}
-    {% endif %}
-
-    <div class="mb-1 pb-1">&nbsp;</div>
-</div>
-
 <style>
-    .accordion-button:not(.collapsed) { background-color: var(--paper-2) !important; color: var(--brass) !important; }
-    .accordion-button:focus { box-shadow: none; }
+    .pdocs-page {
+        --doc-ok-bg: rgba(79, 122, 82, .14);
+        --doc-ok-fg: #265436;
+        --doc-ok-bd: rgba(79, 122, 82, .35);
+        --doc-ok-solid: #3d7a53;
+        --doc-warn-bg: rgba(200, 162, 74, .18);
+        --doc-warn-fg: #75550c;
+        --doc-warn-bd: rgba(200, 162, 74, .46);
+        --doc-warn-solid: #c8a24a;
+        --doc-miss-bg: var(--stamp-soft);
+        --doc-miss-fg: #8f2d22;
+        --doc-miss-bd: var(--stamp-semi);
+        --doc-info-bg: rgba(61, 104, 153, .13);
+        --doc-info-fg: #274f7d;
+        --doc-info-bd: rgba(61, 104, 153, .34);
+        --doc-info-solid: #3d6899;
+    }
+    html[data-theme="dark"] .pdocs-page {
+        --doc-ok-bg: rgba(79, 122, 82, .25);
+        --doc-ok-fg: #c2e6c5;
+        --doc-ok-bd: rgba(117, 173, 122, .42);
+        --doc-ok-solid: #5aa372;
+        --doc-warn-bg: rgba(200, 162, 74, .20);
+        --doc-warn-fg: #f2d687;
+        --doc-warn-bd: rgba(227, 200, 122, .38);
+        --doc-warn-solid: #d9b45c;
+        --doc-miss-bg: rgba(162, 59, 46, .28);
+        --doc-miss-fg: #f5b8b0;
+        --doc-miss-bd: rgba(216, 108, 95, .42);
+        --doc-info-bg: rgba(74, 110, 168, .22);
+        --doc-info-fg: #b4ccf0;
+        --doc-info-bd: rgba(120, 156, 214, .38);
+        --doc-info-solid: #6994cc;
+    }
 
-    /* table-hover домальовує поверх наведеного рядка напівпрозорий
-       box-shadow (окрема властивість, не background-color) - inline-
-       колір підсвіченого рядка (студент, на якого прийшли з картки)
-       це не перебиває, тому при наведенні колір "змішувався" і псував
-       вигляд. Прибираємо саме цей box-shadow для підсвіченого рядка. */
-    html[data-theme="dark"] tr.table-warning:hover > td,
-    html[data-theme="dark"] tr.table-warning:hover > th {
-        box-shadow: none !important;
+    .doc-num { font-variant-numeric: tabular-nums; }
+
+    /* KPI-смуга */
+    .doc-kpi {
+        display: block;
+        text-decoration: none;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 10px;
+        padding: .8rem 1rem;
+        height: 100%;
+        color: inherit;
+        transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+    }
+    a.doc-kpi:hover {
+        border-color: var(--brass-semi);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px -12px rgba(0, 0, 0, .28);
+        color: inherit;
+    }
+    .doc-kpi--ok { border-top-color: var(--doc-ok-solid); }
+    .doc-kpi--warn { border-top-color: var(--doc-warn-solid); }
+    .doc-kpi--info { border-top-color: var(--doc-info-solid); }
+    .doc-kpi__label {
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        margin-bottom: .25rem;
+    }
+    .doc-kpi__val {
+        font-size: 1.5rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--ink-text);
+    }
+    .doc-kpi--ok .doc-kpi__val { color: var(--doc-ok-fg); }
+    .doc-kpi--warn .doc-kpi__val { color: var(--doc-warn-fg); }
+    .doc-kpi--info .doc-kpi__val { color: var(--doc-info-fg); }
+    .doc-kpi__hint {
+        font-size: .74rem;
+        color: var(--muted);
+        margin-top: .2rem;
+    }
+
+    /* Панелі */
+    .doc-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .doc-panel__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        padding: .8rem 1.05rem;
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    .doc-panel__title {
+        font-family: 'Lora', serif;
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin: 0;
+    }
+
+    /* Статус-бейджи */
+    .doc-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .48rem;
+        border-radius: 6px;
+        font-size: .74rem;
+        font-weight: 700;
+        line-height: 1.25;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .doc-badge--ok { background: var(--doc-ok-bg); color: var(--doc-ok-fg); border-color: var(--doc-ok-bd); }
+    .doc-badge--warn { background: var(--doc-warn-bg); color: var(--doc-warn-fg); border-color: var(--doc-warn-bd); }
+    .doc-badge--miss { background: var(--doc-miss-bg); color: var(--doc-miss-fg); border-color: var(--doc-miss-bd); }
+    .doc-badge--info { background: var(--doc-info-bg); color: var(--doc-info-fg); border-color: var(--doc-info-bd); }
+    .doc-badge--muted { background: var(--paper-2); color: var(--ink-text); border-color: var(--line); }
+
+    /* Прогрес-смуга */
+    .doc-prog {
+        height: 6px;
+        border-radius: 4px;
+        background: var(--paper-2);
+        border: 1px solid var(--line);
+        overflow: hidden;
+        min-width: 72px;
+    }
+    .doc-prog__bar {
+        height: 100%;
+        background: var(--doc-ok-solid);
+        transition: width .25s ease;
+    }
+    .doc-prog__bar--warn { background: var(--doc-warn-solid); }
+
+    .doc-mobile-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .85rem .95rem;
+    }
+    .doc-mobile-card--active {
+        border-color: var(--brass);
+        background: var(--brass-soft);
+    }
+
+    .doc-missing-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .28rem .6rem;
+        border-radius: 6px;
+        border: 1px solid var(--doc-warn-bd);
+        background: var(--doc-warn-bg);
+        color: var(--doc-warn-fg);
+        font-size: .8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform .12s ease, filter .15s ease;
+    }
+    .doc-missing-btn:hover {
+        filter: brightness(0.96);
+        transform: translateY(-1px);
+    }
+    html[data-theme="dark"] .doc-missing-btn:hover {
+        filter: brightness(1.12);
+    }
+
+    .doc-scan-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .46rem;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        font-size: .76rem;
+        font-weight: 600;
+        text-decoration: none;
+        max-width: 210px;
+        transition: border-color .15s ease, background-color .15s ease;
+    }
+    html[data-theme="dark"] .doc-scan-link {
+        background: var(--paper-2);
+        color: var(--ink-text);
+    }
+    .doc-scan-link:hover {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--ink);
+    }
+    html[data-theme="dark"] .doc-scan-link:hover {
+        color: var(--brass-lt);
+    }
+    .doc-scan-link__name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .doc-student-picker {
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper);
+        overflow: hidden;
+    }
+    html[data-theme="dark"] .doc-student-picker {
+        background: var(--paper-2);
+    }
+    .doc-student-picker__list {
+        max-height: 210px;
+        overflow-y: auto;
+        border-top: 1px solid var(--line);
+    }
+    .doc-student-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink-text);
+        padding: .45rem .7rem;
+        font-size: .85rem;
+        cursor: pointer;
+    }
+    .doc-student-item:last-child { border-bottom: 0; }
+    .doc-student-item:hover { background: var(--brass-soft); }
+    .doc-student-item.is-selected {
+        background: var(--brass-soft);
+        font-weight: 700;
+    }
+    .doc-student-selected {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        padding: .5rem .75rem;
+        border-radius: 8px;
+        border: 1px solid var(--doc-info-bd);
+        background: var(--doc-info-bg);
+        color: var(--doc-info-fg);
+        font-size: .88rem;
+        font-weight: 700;
+    }
+
+    .doc-att-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        padding: .48rem .7rem;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+    }
+    html[data-theme="dark"] .doc-att-row {
+        background: var(--paper-2);
+    }
+
+    .doc-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .34rem .68rem;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        font-size: .82rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: none;
+    }
+    html[data-theme="dark"] .doc-filter-chip {
+        background: var(--paper-2);
+        color: var(--ink-text);
+    }
+    .doc-filter-chip.is-active {
+        background: var(--ink);
+        color: var(--brass-lt);
+        border-color: var(--ink);
+    }
+    html[data-theme="dark"] .doc-filter-chip.is-active {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+
+    html[data-theme="dark"] .pdocs-page .btn-outline-danger {
+        color: #f0b3ab;
+        border-color: rgba(216, 108, 95, .48);
+        --bs-btn-color: #f0b3ab;
+        --bs-btn-border-color: rgba(216, 108, 95, .48);
+        --bs-btn-hover-bg: var(--stamp);
+        --bs-btn-hover-border-color: var(--stamp);
+        --bs-btn-hover-color: #fff;
+    }
+    html[data-theme="dark"] .pdocs-page .btn-outline-warning {
+        color: var(--brass-lt);
+        border-color: var(--brass-semi);
+        --bs-btn-color: var(--brass-lt);
+        --bs-btn-border-color: var(--brass-semi);
+        --bs-btn-hover-bg: var(--brass);
+        --bs-btn-hover-border-color: var(--brass);
+        --bs-btn-hover-color: var(--ink);
     }
 </style>
 
-<script>
-    // ── Перенос выбора студента с picker-select в hidden-поле формы ──
-    (function () {
-        var picker = document.getElementById('student_id_select');
-        var hidden = document.getElementById('hidden_student_id');
-        if (picker && hidden) {
-            picker.addEventListener('change', function () { hidden.value = this.value; });
-        }
-    })();
+<div class="container py-4 pdocs-page">
 
-    // ── Управление видимостью полей в зависимости от типа паспорта ──
-    const PASSPORT_TYPES_ID_STYLE = {{ passport_types_id_style | tojson }};
-    function isIdStyle(value) {
-        return PASSPORT_TYPES_ID_STYLE.includes(value);
-    }
+    {# Верхня навігація #}
+    <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>До студентів
+            </a>
+            {% if student %}
+            <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-person-badge me-1"></i>Картка: {{ student.last_name_UA }} {{ student.first_name_UA }}
+            </a>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% if has_perm('import_passport_documents') %}
+            <a href="{{ url_for('admin.import_passport_documents') }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-file-earmark-excel me-1"></i>Імпорт з Excel
+            </a>
+            {% endif %}
+            <button type="button" class="btn btn-sm btn-primary" id="openAddDocBtn">
+                <i class="bi bi-plus-circle me-1"></i>Додати паспорт
+            </button>
+        </div>
+    </div>
 
-    function syncSeriesVisibility(selectEl, wrapEl) {
-        wrapEl.style.display = isIdStyle(selectEl.value) ? 'none' : '';
-    }
-    function syncUniqueNumberVisibility(selectEl, wrapEl) {
-        wrapEl.style.display = isIdStyle(selectEl.value) ? '' : 'none';
-    }
-    function syncValidUntilVisibility(selectEl, wrapEl) {
-        const isBookStyle = !isIdStyle(selectEl.value);
-        wrapEl.style.display = isBookStyle ? 'none' : '';
-        if (isBookStyle) {
-            const input = wrapEl.querySelector('input');
-            if (input) input.value = '';
-        }
-    }
+    {{ ui.page_header(
+        'bi-person-vcard-fill',
+        'Паспортні дані',
+        'ID-картки, паспорти-книжки, записи в ЄДДР та скановані копії'
+    ) }}
 
-    // Форма добавления
-    const addDoctypeSelect = document.getElementById('document_type');
-    const seriesWrapAdd = document.getElementById('series_wrap');
-    const uniqueWrapAdd = document.getElementById('unique_number_wrap');
-    const validUntilWrapAdd = document.getElementById('valid_until_wrap');
+    {# KPI-смуга #}
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-lg-3">
+            <a href="{{ url_for('admin.manage_passport_documents', all='1') }}" class="doc-kpi">
+                <div class="doc-kpi__label">Всього записів</div>
+                <div class="doc-kpi__val doc-num">{{ summary_totals.total_docs }}</div>
+                <div class="doc-kpi__hint">Натисніть, щоб показати всі</div>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="doc-kpi doc-kpi--ok">
+                <div class="doc-kpi__label">Зі сканами</div>
+                <div class="doc-kpi__val doc-num">{{ summary_totals.total_with_scans }}</div>
+                <div class="doc-kpi__hint">
+                    {% if summary_totals.total_docs %}
+                        {{ ((summary_totals.total_with_scans / summary_totals.total_docs) * 100) | round(0) | int }}% записів
+                    {% else %}
+                        0% записів
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a href="{{ url_for('admin.manage_passport_documents', group_id=selected_group_id or none, q=search_query or none, no_scans='1') }}"
+               class="doc-kpi doc-kpi--warn">
+                <div class="doc-kpi__label">Без сканів</div>
+                <div class="doc-kpi__val doc-num">{{ summary_totals.total_without_scans }}</div>
+                <div class="doc-kpi__hint">Відфільтрувати без вкладень</div>
+            </a>
+        </div>
+        <div class="col-6 col-lg-3">
+            <a href="{{ url_for('admin.manage_passport_documents') }}" class="doc-kpi doc-kpi--info">
+                <div class="doc-kpi__label">Активних груп</div>
+                <div class="doc-kpi__val doc-num">{{ summary_totals.total_groups }}</div>
+                <div class="doc-kpi__hint">{{ summary_totals.active_students }} активних студентів</div>
+            </a>
+        </div>
+    </div>
 
-    addDoctypeSelect.addEventListener('change', function () {
-        syncSeriesVisibility(this, seriesWrapAdd);
-        syncUniqueNumberVisibility(this, uniqueWrapAdd);
-        syncValidUntilVisibility(this, validUntilWrapAdd);
-    });
-    syncSeriesVisibility(addDoctypeSelect, seriesWrapAdd);
-    syncUniqueNumberVisibility(addDoctypeSelect, uniqueWrapAdd);
-    syncValidUntilVisibility(addDoctypeSelect, validUntilWrapAdd);
+    {# Панель фільтрів #}
+    <div class="doc-panel mb-3">
+        <div class="p-3">
+            <form method="GET" action="{{ url_for('admin.manage_passport_documents') }}" id="docsFilterForm" class="row g-2 align-items-end">
+                {% if show_all and not selected_group_id and not search_query and not no_scans_only %}
+                <input type="hidden" name="all" value="1">
+                {% endif %}
+                <div class="col-12 col-md-5 col-lg-4">
+                    <label for="filterGroupSelect" class="form-label small mb-1">
+                        <i class="bi bi-people me-1"></i>Група
+                    </label>
+                    <select name="group_id" id="filterGroupSelect" class="form-select form-select-sm">
+                        <option value="">— Усі групи (огляд) —</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}" {% if selected_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-5 col-lg-4">
+                    <label for="filterQueryInput" class="form-label small mb-1">
+                        <i class="bi bi-search me-1"></i>Пошук
+                    </label>
+                    <input type="search" name="q" id="filterQueryInput" class="form-control form-control-sm"
+                           value="{{ search_query }}" placeholder="ПІБ, серія/номер, орган видачі, ЄДДР...">
+                </div>
+                <div class="col-12 col-md-2 col-lg-4 d-flex flex-wrap align-items-center justify-content-md-end gap-2">
+                    <div class="form-check form-switch mb-0 me-auto me-md-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="filterNoScans"
+                               name="no_scans" value="1" {% if no_scans_only %}checked{% endif %}>
+                        <label class="form-check-label small fw-semibold" for="filterNoScans">Без сканів</label>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                        <i class="bi bi-funnel me-1"></i>Знайти
+                    </button>
+                    {% if should_load_docs %}
+                    <a href="{{ url_for('admin.manage_passport_documents') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-x-lg me-1"></i>Огляд груп
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('admin.manage_passport_documents', all='1') }}" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-list-ul me-1"></i>Всі ({{ summary_totals.total_docs }})
+                    </a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
 
-    // Все модальные окна редактирования
-    document.querySelectorAll('.edit-doctype').forEach(function (sel) {
-        const seriesWrap = sel.closest('.row').querySelector('.edit-series-wrap');
-        const uniqueWrap = sel.closest('.row').querySelector('.edit-unique-wrap');
-        const validUntilWrap = sel.closest('.row').querySelector('.edit-valid-until-wrap');
+    {% if not should_load_docs %}
+    {# ==================== РЕЖИМ 1: ШВИДКИЙ ОГЛЯД ПО ГРУПАХ ==================== #}
+    <div class="doc-panel">
+        <div class="doc-panel__head">
+            <div>
+                <h5 class="doc-panel__title">
+                    <i class="bi bi-grid me-1"></i>Огляд паспортних даних по групах
+                </h5>
+                <div class="small text-muted">
+                    Оберіть групу нижче або скористайтеся пошуком — сторінка відкривається без навантаження на базу.
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <input type="search" id="overviewGroupFilter" class="form-control form-control-sm"
+                       style="min-width: 210px;" placeholder="Швидкий фільтр групи...">
+                <button type="button" class="doc-filter-chip" id="overviewMissingOnlyBtn">
+                    <i class="bi bi-exclamation-circle"></i>Є прогалини
+                </button>
+            </div>
+        </div>
 
-        sel.addEventListener('change', function () {
-            syncSeriesVisibility(this, seriesWrap);
-            syncUniqueNumberVisibility(this, uniqueWrap);
-            syncValidUntilVisibility(this, validUntilWrap);
-        });
+        {% if group_stats %}
+        <div class="d-none d-lg-block table-responsive">
+            <table class="table align-middle mb-0" id="overviewGroupsTable">
+                <thead>
+                    <tr>
+                        <th>Група</th>
+                        <th class="text-center">Студентів</th>
+                        <th>Покриття паспортами</th>
+                        <th class="text-center">Записів</th>
+                        <th class="text-center">Зі сканами</th>
+                        <th class="text-end">Дія</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for gs in group_stats %}
+                    {% set pct = ((gs.covered_count / gs.students_count) * 100)|round(0)|int if gs.students_count else 0 %}
+                    {% set has_gap = (gs.covered_count < gs.students_count) or (gs.with_scans_count < gs.docs_count) %}
+                    <tr class="js-ov-row"
+                        data-name="{{ gs.name | lower }}"
+                        data-gap="{{ '1' if has_gap else '0' }}">
+                        <td>
+                            <a href="{{ url_for('admin.manage_passport_documents', group_id=gs.id) }}"
+                               class="fw-bold text-decoration-none">
+                                {{ gs.name }}
+                            </a>
+                            <div class="small text-muted">
+                                {% if gs.start_year %}{{ gs.start_year }} р.{% endif %}
+                                {% if gs.study_form %} · {{ gs.study_form }}{% endif %}
+                            </div>
+                        </td>
+                        <td class="text-center doc-num fw-semibold">{{ gs.students_count }}</td>
+                        <td style="min-width: 190px;">
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="doc-prog flex-grow-1">
+                                    <div class="doc-prog__bar {% if gs.covered_count < gs.students_count %}doc-prog__bar--warn{% endif %}"
+                                         style="width: {{ pct }}%;"></div>
+                                </div>
+                                <span class="doc-badge doc-num {% if gs.students_count and gs.covered_count >= gs.students_count %}doc-badge--ok{% elif gs.covered_count > 0 %}doc-badge--warn{% else %}doc-badge--muted{% endif %}">
+                                    {{ gs.covered_count }}/{{ gs.students_count }}
+                                </span>
+                            </div>
+                        </td>
+                        <td class="text-center doc-num fw-semibold">{{ gs.docs_count }}</td>
+                        <td class="text-center">
+                            {% if gs.docs_count == 0 %}
+                                <span class="doc-badge doc-badge--muted">0</span>
+                            {% elif gs.with_scans_count == gs.docs_count %}
+                                <span class="doc-badge doc-badge--ok doc-num">{{ gs.with_scans_count }}/{{ gs.docs_count }}</span>
+                            {% else %}
+                                <span class="doc-badge doc-badge--warn doc-num">{{ gs.with_scans_count }}/{{ gs.docs_count }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url_for('admin.manage_passport_documents', group_id=gs.id) }}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-folder2-open me-1"></i>Відкрити
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
 
-        // Инициализация без очистки - чтобы не затирать существующее
-        // значение valid_until при первом открытии модалки.
-        seriesWrap.style.display = isIdStyle(sel.value) ? 'none' : '';
-        uniqueWrap.style.display = isIdStyle(sel.value) ? '' : 'none';
-        validUntilWrap.style.display = isIdStyle(sel.value) ? '' : 'none';
-    });
-
-    // ── Submit формы добавления ──
-    document.getElementById('addDocumentForm').addEventListener('submit', function (e) {
-        const studentSelect = document.getElementById('student_id_select');
-        const hiddenInput = document.getElementById('hidden_student_id');
-        if (studentSelect && studentSelect.value) {
-            hiddenInput.value = studentSelect.value;
-        } else if (!hiddenInput.value) {
-            e.preventDefault();
-            alert('Будь ласка, оберіть групу та студента');
-        }
-    });
-
-    // ── Автопереход от карточки студента (?student_id=…) ──
-    window.addEventListener('load', function () {
-        {% if student %}
-            const targetStudentId = {{ student.id }};
-            const studentDocId = {{ student_doc_id | default('null') }};
-            if (studentDocId) {
-                const modalEl = document.getElementById('editModal' + studentDocId);
-                if (modalEl) {
-                    const accordionBody = modalEl.closest('.accordion-collapse');
-                    if (accordionBody && !accordionBody.classList.contains('show')) {
-                        new bootstrap.Collapse(accordionBody, { toggle: true });
-                    }
-                    setTimeout(function () { new bootstrap.Modal(modalEl).show(); }, 350);
-                    const row = document.querySelector('tr[data-student-id="' + targetStudentId + '"]');
-                    if (row) {
-                        row.classList.add('table-warning');
-                        if (document.documentElement.getAttribute('data-theme') === 'dark') {
-                            row.querySelectorAll('td, th').forEach(function (cell) {
-                                cell.style.setProperty('background-color', 'rgba(200,162,74,.22)', 'important');
-                                cell.style.setProperty('color', 'var(--brass-lt)', 'important');
-                                cell.style.setProperty('border-color', 'rgba(200,162,74,.4)', 'important');
-                            });
-                        }
-                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                    }
-                }
-            } else {
-                const sel = document.getElementById('student_id_select');
-                const hiddenInput = document.getElementById('hidden_student_id');
-                if (sel) { sel.value = targetStudentId; }
-                if (hiddenInput) { hiddenInput.value = targetStudentId; }
-                const formCard = document.getElementById('addDocumentForm');
-                if (formCard) {
-                    formCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                    formCard.classList.add('border', 'border-primary', 'rounded-3', 'p-3');
-                }
-            }
+        <div class="d-lg-none p-2 d-flex flex-column gap-2" id="overviewGroupsMobile">
+            {% for gs in group_stats %}
+            {% set has_gap = (gs.covered_count < gs.students_count) or (gs.with_scans_count < gs.docs_count) %}
+            <div class="doc-mobile-card js-ov-card"
+                 data-name="{{ gs.name | lower }}"
+                 data-gap="{{ '1' if has_gap else '0' }}">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                    <div>
+                        <div class="fw-bold">{{ gs.name }}</div>
+                        <div class="small text-muted">
+                            Студентів: <strong class="doc-num">{{ gs.students_count }}</strong>
+                            {% if gs.study_form %} · {{ gs.study_form }}{% endif %}
+                        </div>
+                    </div>
+                    <a href="{{ url_for('admin.manage_passport_documents', group_id=gs.id) }}"
+                       class="btn btn-sm btn-outline-primary">Відкрити</a>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <span class="doc-badge doc-num {% if gs.students_count and gs.covered_count >= gs.students_count %}doc-badge--ok{% else %}doc-badge--warn{% endif %}">
+                        Покриття: {{ gs.covered_count }}/{{ gs.students_count }}
+                    </span>
+                    <span class="doc-badge doc-badge--info doc-num">Записів: {{ gs.docs_count }}</span>
+                    <span class="doc-badge doc-num {% if gs.docs_count and gs.with_scans_count == gs.docs_count %}doc-badge--ok{% else %}doc-badge--muted{% endif %}">
+                        Скани: {{ gs.with_scans_count }}/{{ gs.docs_count }}
+                    </span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        {{ ui.empty_state('bi-collection', 'Активних груп не знайдено', 'Створіть групу або відкрийте повний список записів') }}
         {% endif %}
+    </div>
+
+    {% else %}
+    {# ==================== РЕЖИМ 2: ЗАВАНТАЖЕНІ ПАСПОРТНІ ДАНІ ==================== #}
+
+    {% if student %}
+    <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+            <i class="bi bi-person-check-fill me-1"></i>
+            Перехід із картки студента: <strong>{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}</strong>
+            {% if student.group_name %}<span class="text-muted">({{ student.group_name }})</span>{% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-primary js-quick-add-student"
+                    data-student-id="{{ student.id }}"
+                    data-group-id="{{ selected_group_id or student.group_id or '' }}">
+                <i class="bi bi-plus-circle me-1"></i>Додати паспорт для студента
+            </button>
+            <a href="{{ url_for('admin.manage_passport_documents', group_id=selected_group_id or none) }}"
+               class="btn btn-sm btn-outline-secondary">Показати всю групу</a>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if selected_group_id and students_without_docs %}
+    <div class="doc-panel mb-3">
+        <div class="doc-panel__head">
+            <div>
+                <h6 class="doc-panel__title">
+                    <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+                    Без паспортних даних у цій групі ({{ students_without_docs|length }})
+                </h6>
+                <div class="small text-muted">Натисніть на студента, щоб одразу додати паспорт</div>
+            </div>
+        </div>
+        <div class="p-3 d-flex flex-wrap gap-2">
+            {% for sw in students_without_docs %}
+            <button type="button" class="doc-missing-btn js-quick-add-student"
+                    data-student-id="{{ sw.id }}"
+                    data-group-id="{{ selected_group_id }}">
+                <i class="bi bi-plus-circle"></i>{{ sw.last_name_UA }} {{ sw.first_name_UA }}
+            </button>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if documents_by_group %}
+        {% for gid, grp in documents_by_group %}
+        <div class="doc-panel mb-3">
+            <div class="doc-panel__head">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <h5 class="doc-panel__title">
+                        <i class="bi bi-folder2-open me-1"></i>{{ grp.group_name }}
+                    </h5>
+                    <span class="doc-badge doc-badge--info doc-num">{{ grp.docs|length }} зап.</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary js-quick-add-group"
+                        data-group-id="{{ gid or '' }}">
+                    <i class="bi bi-plus-circle me-1"></i>Додати в групу
+                </button>
+            </div>
+
+            {# Десктопна таблиця #}
+            <div class="d-none d-lg-block table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Студент</th>
+                            <th>Тип документа</th>
+                            <th>Серія / Номер</th>
+                            <th>Ким видано</th>
+                            <th>Дати</th>
+                            <th>ЄДДР</th>
+                            <th>Скани</th>
+                            <th class="text-end" style="width: 135px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for doc in grp.docs %}
+                        {% set is_target = student and doc.student_id == student.id %}
+                        {% set is_id = doc.document_type in passport_types_id_style %}
+                        <tr class="{% if is_target %}table-warning{% endif %}">
+                            <td>
+                                <a href="{{ url_for('students.student_details', student_id=doc.student_id) }}"
+                                   class="fw-bold text-decoration-none">
+                                    {{ doc.last_name_UA }} {{ doc.first_name_UA }}
+                                </a>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    {% if doc.doc_group_id is none %}
+                                    <span class="doc-badge doc-badge--muted" title="Без прив'язки до конкретної групи">загальний</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-semibold">{{ doc.document_type or '—' }}</div>
+                                {% if is_id %}
+                                <span class="doc-badge doc-badge--info mt-1">ID-формат</span>
+                                {% endif %}
+                            </td>
+                            <td class="font-monospace small text-nowrap">
+                                {{ (doc.series ~ ' ' if doc.series else '') ~ (doc.number or '—') }}
+                            </td>
+                            <td class="small">{{ doc.issued_by or '—' }}</td>
+                            <td class="doc-num small text-nowrap">
+                                <div>Вид.: {{ doc.issue_date or '—' }}</div>
+                                {% if doc.valid_until %}
+                                <div class="text-muted">До: {{ doc.valid_until }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="font-monospace small text-nowrap">{{ doc.unique_number or '—' }}</td>
+                            <td>
+                                {% if doc.attachments %}
+                                <div class="d-flex flex-wrap gap-1">
+                                    {% for att in doc.attachments %}
+                                    <a href="{{ url_for('static', filename=att.file_path) }}" target="_blank" rel="noopener"
+                                       class="doc-scan-link" title="{{ att.original_name or 'Скан' }}">
+                                        <i class="bi bi-paperclip"></i>
+                                        <span class="doc-scan-link__name">{{ att.original_name or ('Скан ' ~ loop.index) }}</span>
+                                    </a>
+                                    {% endfor %}
+                                </div>
+                                {% else %}
+                                <span class="doc-badge doc-badge--warn">Немає</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <button type="button" class="btn btn-sm btn-outline-primary js-edit-doc"
+                                        data-doc-id="{{ doc.doc_id }}" title="Редагувати">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger js-delete-doc"
+                                        data-doc-id="{{ doc.doc_id }}"
+                                        data-doc-label="{{ doc.last_name_UA }} {{ doc.first_name_UA }} — {{ doc.document_type or 'Паспорт' }} {{ (doc.series ~ ' ' if doc.series else '') ~ (doc.number or '') }}"
+                                        title="Видалити">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# Мобільні картки #}
+            <div class="d-lg-none p-2 d-flex flex-column gap-2">
+                {% for doc in grp.docs %}
+                {% set is_target = student and doc.student_id == student.id %}
+                {% set is_id = doc.document_type in passport_types_id_style %}
+                <div class="doc-mobile-card {% if is_target %}doc-mobile-card--active{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <div>
+                            <a href="{{ url_for('students.student_details', student_id=doc.student_id) }}"
+                               class="fw-bold text-decoration-none">
+                                {{ doc.last_name_UA }} {{ doc.first_name_UA }}
+                            </a>
+                            <div class="small fw-semibold mt-1">{{ doc.document_type or 'Паспорт' }}</div>
+                        </div>
+                        <div class="d-flex flex-wrap gap-1 justify-content-end">
+                            {% if doc.doc_group_id is none %}
+                            <span class="doc-badge doc-badge--muted">загальний</span>
+                            {% endif %}
+                            {% if is_id %}
+                            <span class="doc-badge doc-badge--info">ID-формат</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="small text-muted mb-2">
+                        <div><strong>Серія/номер:</strong> <span class="font-monospace">{{ (doc.series ~ ' ' if doc.series else '') ~ (doc.number or '—') }}</span></div>
+                        <div><strong>Видано:</strong> {{ doc.issued_by or '—' }} ({{ doc.issue_date or '—' }})</div>
+                        {% if doc.valid_until %}<div><strong>Дійсний до:</strong> {{ doc.valid_until }}</div>{% endif %}
+                        {% if doc.unique_number %}<div><strong>ЄДДР:</strong> <span class="font-monospace">{{ doc.unique_number }}</span></div>{% endif %}
+                    </div>
+                    <div class="mb-2">
+                        {% if doc.attachments %}
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for att in doc.attachments %}
+                            <a href="{{ url_for('static', filename=att.file_path) }}" target="_blank" rel="noopener" class="doc-scan-link">
+                                <i class="bi bi-paperclip"></i>
+                                <span class="doc-scan-link__name">{{ att.original_name or ('Скан ' ~ loop.index) }}</span>
+                            </a>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <span class="doc-badge doc-badge--warn">Скани відсутні</span>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary flex-grow-1 js-edit-doc"
+                                data-doc-id="{{ doc.doc_id }}">
+                            <i class="bi bi-pencil me-1"></i>Редагувати
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger js-delete-doc"
+                                data-doc-id="{{ doc.doc_id }}"
+                                data-doc-label="{{ doc.last_name_UA }} {{ doc.first_name_UA }} — {{ doc.document_type or 'Паспорт' }}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="doc-panel">
+            {{ ui.empty_state('bi-person-vcard', 'Паспортних даних не знайдено', 'Спробуйте змінити параметри пошуку або додайте новий запис') }}
+        </div>
+    {% endif %}
+    {% endif %}
+</div>
+
+{# Спільна форма видалення скану (поза модальним вікном, без вкладених форм) #}
+<form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" id="deleteAttachmentForm" class="d-none">
+    <input type="hidden" name="action" value="delete_attachment">
+    <input type="hidden" name="attachment_id" id="deleteAttachmentId">
+    <input type="hidden" name="return_group_id" value="{{ selected_group_id or '' }}">
+    <input type="hidden" name="return_q" value="{{ search_query }}">
+    <input type="hidden" name="return_all" value="{{ '1' if show_all else '' }}">
+    <input type="hidden" name="return_no_scans" value="{{ '1' if no_scans_only else '' }}">
+</form>
+
+{# Спільна модалка ДОДАВАННЯ паспорта #}
+<div class="modal fade" id="addDocModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" enctype="multipart/form-data" id="addDocForm">
+                <input type="hidden" name="action" value="add">
+                <input type="hidden" name="return_group_id" value="{{ selected_group_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_query }}">
+                <input type="hidden" name="return_all" value="{{ '1' if show_all else '' }}">
+                <input type="hidden" name="return_no_scans" value="{{ '1' if no_scans_only else '' }}">
+
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Додати паспортні дані</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div id="addFormAlert" class="alert alert-danger py-2 small d-none mb-3"></div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label small mb-1">Студент <span class="text-danger">*</span></label>
+                            <input type="hidden" name="student_id" id="addStudentId">
+                            <div id="addStudentSelected" class="doc-student-selected d-none mb-2">
+                                <span id="addStudentSelectedName"></span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="addStudentResetBtn">Змінити</button>
+                            </div>
+                            <div id="addStudentPickerWrap" class="doc-student-picker">
+                                <input type="search" id="addStudentSearch" class="form-control form-control-sm border-0"
+                                       placeholder="Пошук студента за ПІБ або групою...">
+                                <div id="addStudentList" class="doc-student-picker__list"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="addDocGroupId" class="form-label small mb-1">Прив'язка до групи навчання</label>
+                            <select name="doc_group_id" id="addDocGroupId" class="form-select form-select-sm">
+                                <option value="">— Загальний (усі групи студента) —</option>
+                            </select>
+                            <div class="form-text small">Для паралельного навчання вказує конкретну групу.</div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label for="addPassportType" class="form-label small mb-1">Тип документа <span class="text-danger">*</span></label>
+                            <select name="document_type" id="addPassportType" class="form-select form-select-sm" required>
+                                {% for pt in passport_types %}
+                                <option value="{{ pt }}" {% if pt == passport_type_default %}selected{% endif %}>{{ pt }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="addSeriesWrap">
+                            <label for="addSeries" class="form-label small mb-1">Серія</label>
+                            <input type="text" name="series" id="addSeries" class="form-control form-control-sm font-monospace" placeholder="напр. КС">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="addNumber" class="form-label small mb-1">Номер документа</label>
+                            <input type="text" name="number" id="addNumber" class="form-control form-control-sm font-monospace">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="addIssuedBy" class="form-label small mb-1">Ким видано</label>
+                            <input type="text" name="issued_by" id="addIssuedBy" class="form-control form-control-sm" placeholder="Орган / код підрозділу">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="addIssueDate" class="form-label small mb-1">Дата видачі</label>
+                            <input type="text" name="issue_date" id="addIssueDate" class="form-control form-control-sm" placeholder="ДД.ММ.РРРР">
+                        </div>
+                        <div class="col-md-6" id="addValidUntilWrap">
+                            <label for="addValidUntil" class="form-label small mb-1">Дійсний до</label>
+                            <input type="text" name="valid_until" id="addValidUntil" class="form-control form-control-sm" placeholder="ДД.ММ.РРРР">
+                        </div>
+                        <div class="col-md-6" id="addUniqueWrap">
+                            <label for="addUniqueNumber" class="form-label small mb-1">Запис № (ЄДДР)</label>
+                            <input type="text" name="unique_number" id="addUniqueNumber" class="form-control form-control-sm font-monospace" placeholder="РРРРММДД-XXXXX">
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="form-label small mb-1">Скановані копії (до {{ max_files }} файлів за раз)</label>
+                        <input type="file" name="document_scans" id="addDocScans" class="form-control form-control-sm"
+                               multiple accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2-circle me-1"></i>Зберегти паспорт
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# Спільна модалка РЕДАГУВАННЯ паспорта (одна на всю сторінку) #}
+<div class="modal fade" id="editDocModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" enctype="multipart/form-data" id="editDocForm">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="doc_id" id="editDocId">
+                <input type="hidden" name="return_group_id" value="{{ selected_group_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_query }}">
+                <input type="hidden" name="return_all" value="{{ '1' if show_all else '' }}">
+                <input type="hidden" name="return_no_scans" value="{{ '1' if no_scans_only else '' }}">
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editDocModalTitle">Редагувати паспортні дані</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div id="editFormAlert" class="alert alert-danger py-2 small d-none mb-3"></div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-7">
+                            <label class="form-label small mb-1">Студент</label>
+                            <input type="hidden" name="student_id" id="editStudentId">
+                            <div id="editStudentSelected" class="doc-student-selected mb-2">
+                                <span id="editStudentSelectedName"></span>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="editStudentToggleBtn">Змінити</button>
+                            </div>
+                            <div id="editStudentPickerWrap" class="doc-student-picker d-none">
+                                <input type="search" id="editStudentSearch" class="form-control form-control-sm border-0"
+                                       placeholder="Пошук студента за ПІБ або групою...">
+                                <div id="editStudentList" class="doc-student-picker__list"></div>
+                            </div>
+                        </div>
+                        <div class="col-md-5">
+                            <label for="editDocGroupId" class="form-label small mb-1">Прив'язка до групи навчання</label>
+                            <select name="doc_group_id" id="editDocGroupId" class="form-select form-select-sm">
+                                <option value="">— Загальний (усі групи студента) —</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label for="editPassportType" class="form-label small mb-1">Тип документа <span class="text-danger">*</span></label>
+                            <select name="document_type" id="editPassportType" class="form-select form-select-sm" required>
+                                {% for pt in passport_types %}
+                                <option value="{{ pt }}">{{ pt }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="editSeriesWrap">
+                            <label for="editSeries" class="form-label small mb-1">Серія</label>
+                            <input type="text" name="series" id="editSeries" class="form-control form-control-sm font-monospace">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="editNumber" class="form-label small mb-1">Номер документа</label>
+                            <input type="text" name="number" id="editNumber" class="form-control form-control-sm font-monospace">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="editIssuedBy" class="form-label small mb-1">Ким видано</label>
+                            <input type="text" name="issued_by" id="editIssuedBy" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editIssueDate" class="form-label small mb-1">Дата видачі</label>
+                            <input type="text" name="issue_date" id="editIssueDate" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6" id="editValidUntilWrap">
+                            <label for="editValidUntil" class="form-label small mb-1">Дійсний до</label>
+                            <input type="text" name="valid_until" id="editValidUntil" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-6" id="editUniqueWrap">
+                            <label for="editUniqueNumber" class="form-label small mb-1">Запис № (ЄДДР)</label>
+                            <input type="text" name="unique_number" id="editUniqueNumber" class="form-control form-control-sm font-monospace">
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <div class="form-label small mb-1">Наявні скановані копії</div>
+                        <div id="editAttachmentsList" class="d-flex flex-column gap-2 mb-2"></div>
+                        <label class="form-label small mb-1">Додати нові скани (до {{ max_files }} файлів за раз)</label>
+                        <input type="file" name="document_scans" id="editDocScans" class="form-control form-control-sm"
+                               multiple accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check2-circle me-1"></i>Зберегти зміни
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{# Спільна модалка ПІДТВЕРДЖЕННЯ ВИДАЛЕННЯ паспорта #}
+<div class="modal fade" id="deleteDocModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.manage_passport_documents') }}" id="deleteDocForm">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="doc_id" id="deleteDocId">
+                <input type="hidden" name="return_group_id" value="{{ selected_group_id or '' }}">
+                <input type="hidden" name="return_q" value="{{ search_query }}">
+                <input type="hidden" name="return_all" value="{{ '1' if show_all else '' }}">
+                <input type="hidden" name="return_no_scans" value="{{ '1' if no_scans_only else '' }}">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger"><i class="bi bi-trash me-2"></i>Видалити запис?</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Ви впевнені, що хочете видалити цей запис паспортних даних та всі скани?</p>
+                    <div class="p-2 rounded border bg-body-secondary small fw-semibold" id="deleteDocLabel"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-danger">Так, видалити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script id="studentsJson" type="application/json">{{ students | tojson }}</script>
+<script id="docsMapJson" type="application/json">{{ docs_by_id | tojson }}</script>
+<script id="enrollmentsMapJson" type="application/json">{{ enrollments_by_student | tojson }}</script>
+<script id="studentEnrollmentsJson" type="application/json">{{ student_enrollments | tojson }}</script>
+<script id="missingStudentsJson" type="application/json">{{ (students_without_docs | map(attribute='id') | list) | tojson }}</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const MAX_FILES = {{ max_files | int }};
+    const STATIC_URL_BASE = {{ url_for('static', filename='') | tojson }};
+    const PASSPORT_TYPES_ID_STYLE = {{ passport_types_id_style | tojson }};
+    const PASSPORT_TYPE_DEFAULT = {{ passport_type_default | tojson }};
+    const SELECTED_GROUP_ID = {{ selected_group_id | tojson }};
+    const ACTIVE_STUDENT = {{ student | tojson }};
+    const AUTO_EDIT_DOC_ID = {{ student_doc_id | tojson }};
+
+    const studentsList = JSON.parse(document.getElementById('studentsJson').textContent || '[]');
+    const docsById = JSON.parse(document.getElementById('docsMapJson').textContent || '{}');
+    const enrollmentsByStudent = JSON.parse(document.getElementById('enrollmentsMapJson').textContent || '{}');
+    const activeStudentEnrollments = JSON.parse(document.getElementById('studentEnrollmentsJson').textContent || '[]');
+    const missingIds = new Set(JSON.parse(document.getElementById('missingStudentsJson').textContent || '[]').map(String));
+
+    const studentsById = new Map();
+    studentsList.forEach(s => studentsById.set(String(s.id), s));
+
+    // 1. Автосабміт фільтра при зміні групи або перемикача "Без сканів"
+    const filterForm = document.getElementById('docsFilterForm');
+    const filterGroupSelect = document.getElementById('filterGroupSelect');
+    const filterNoScans = document.getElementById('filterNoScans');
+    if (filterForm && filterGroupSelect) {
+        filterGroupSelect.addEventListener('change', () => filterForm.submit());
+    }
+    if (filterForm && filterNoScans) {
+        filterNoScans.addEventListener('change', () => filterForm.submit());
+    }
+
+    // 2. Швидкий клієнтський фільтр огляду груп
+    const ovInput = document.getElementById('overviewGroupFilter');
+    const ovGapBtn = document.getElementById('overviewMissingOnlyBtn');
+    let ovGapOnly = false;
+    function filterOverview() {
+        const q = (ovInput ? ovInput.value : '').trim().toLowerCase();
+        document.querySelectorAll('.js-ov-row, .js-ov-card').forEach(el => {
+            const nameMatch = !q || (el.dataset.name || '').includes(q);
+            const gapMatch = !ovGapOnly || el.dataset.gap === '1';
+            el.classList.toggle('d-none', !(nameMatch && gapMatch));
+        });
+    }
+    if (ovInput) ovInput.addEventListener('input', filterOverview);
+    if (ovGapBtn) {
+        ovGapBtn.addEventListener('click', () => {
+            ovGapOnly = !ovGapOnly;
+            ovGapBtn.classList.toggle('is-active', ovGapOnly);
+            filterOverview();
+        });
+    }
+
+    // 3. Перемикання полів Серія / Дійсний до / ЄДДР залежно від типу паспорта
+    function syncPassportTypeFields(selectEl, seriesWrap, validWrap, uniqueWrap, clearIfHidden) {
+        if (!selectEl) return;
+        const val = selectEl.value;
+        const isId = PASSPORT_TYPES_ID_STYLE.includes(val);
+        if (seriesWrap) {
+            seriesWrap.classList.toggle('d-none', isId);
+            if (clearIfHidden && isId) {
+                const inp = seriesWrap.querySelector('input');
+                if (inp) inp.value = '';
+            }
+        }
+        if (validWrap) {
+            validWrap.classList.toggle('d-none', !isId);
+            if (clearIfHidden && !isId) {
+                const inp = validWrap.querySelector('input');
+                if (inp) inp.value = '';
+            }
+        }
+        if (uniqueWrap) {
+            uniqueWrap.classList.toggle('d-none', !isId);
+        }
+    }
+
+    // 4. Помічник заповнення select прив'язки групи студента
+    function fillEnrollmentSelect(selectEl, studentId, preferredGroupId) {
+        if (!selectEl) return;
+        selectEl.innerHTML = '';
+        const optGeneral = document.createElement('option');
+        optGeneral.value = '';
+        optGeneral.textContent = '— Загальний (усі групи студента) —';
+        selectEl.appendChild(optGeneral);
+
+        const sid = String(studentId || '');
+        let list = enrollmentsByStudent[sid];
+        if ((!list || !list.length) && ACTIVE_STUDENT && String(ACTIVE_STUDENT.id) === sid && activeStudentEnrollments.length) {
+            list = activeStudentEnrollments;
+        }
+        const seen = new Set();
+        if (list && list.length) {
+            list.forEach(enr => {
+                if (!enr.group_id || seen.has(String(enr.group_id))) return;
+                seen.add(String(enr.group_id));
+                const opt = document.createElement('option');
+                opt.value = String(enr.group_id);
+                opt.textContent = (enr.group_name || ('Група #' + enr.group_id)) + (enr.is_primary ? ' (основна)' : '');
+                selectEl.appendChild(opt);
+            });
+        } else if (sid && studentsById.has(sid)) {
+            const st = studentsById.get(sid);
+            if (st.group_id) {
+                seen.add(String(st.group_id));
+                const opt = document.createElement('option');
+                opt.value = String(st.group_id);
+                opt.textContent = (st.group_name || ('Група #' + st.group_id)) + ' (основна)';
+                selectEl.appendChild(opt);
+            }
+        }
+        if (preferredGroupId !== undefined && preferredGroupId !== null && String(preferredGroupId) !== '') {
+            const targetVal = String(preferredGroupId);
+            if (!seen.has(targetVal)) {
+                const optExtra = document.createElement('option');
+                optExtra.value = targetVal;
+                const grpOpt = filterGroupSelect && filterGroupSelect.querySelector(`option[value="${targetVal}"]`);
+                optExtra.textContent = grpOpt ? grpOpt.textContent : ('Група #' + targetVal);
+                selectEl.appendChild(optExtra);
+            }
+            selectEl.value = targetVal;
+        } else {
+            selectEl.value = '';
+        }
+    }
+
+    // 5. Легкий пошуковий пікер студента
+    function renderStudentPickerList(container, query, selectedId, onPick) {
+        if (!container) return;
+        const q = (query || '').trim().toLowerCase();
+        const matches = [];
+        for (let i = 0; i < studentsList.length; i++) {
+            const s = studentsList[i];
+            const fullName = `${s.last_name_UA || ''} ${s.first_name_UA || ''}`.trim();
+            const gName = s.group_name || '';
+            if (q) {
+                if (!(`${fullName} ${gName}`.toLowerCase().includes(q))) continue;
+            } else if (SELECTED_GROUP_ID) {
+                if (String(s.group_id) !== String(SELECTED_GROUP_ID) && !missingIds.has(String(s.id))) continue;
+            }
+            matches.push(s);
+            if (matches.length >= 60) break;
+        }
+        container.innerHTML = '';
+        if (!matches.length) {
+            const empty = document.createElement('div');
+            empty.className = 'p-2 small text-muted text-center';
+            empty.textContent = q ? 'Студентів не знайдено' : 'Введіть ПІБ або групу для пошуку';
+            container.appendChild(empty);
+            return;
+        }
+        matches.forEach(s => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'doc-student-item' + (String(s.id) === String(selectedId) ? ' is-selected' : '');
+            const left = document.createElement('span');
+            left.textContent = `${s.last_name_UA || ''} ${s.first_name_UA || ''}`.trim();
+            const right = document.createElement('span');
+            right.className = 'small text-muted';
+            right.textContent = s.group_name || 'Без групи';
+            btn.append(left, right);
+            btn.addEventListener('click', () => onPick(s));
+            container.appendChild(btn);
+        });
+    }
+
+    // 6. Модалка ДОДАВАННЯ
+    const addModalEl = document.getElementById('addDocModal');
+    const addModal = new bootstrap.Modal(addModalEl);
+    const addForm = document.getElementById('addDocForm');
+    const addAlert = document.getElementById('addFormAlert');
+    const addStudentIdInp = document.getElementById('addStudentId');
+    const addStudentSelectedBox = document.getElementById('addStudentSelected');
+    const addStudentSelectedName = document.getElementById('addStudentSelectedName');
+    const addStudentResetBtn = document.getElementById('addStudentResetBtn');
+    const addStudentPickerWrap = document.getElementById('addStudentPickerWrap');
+    const addStudentSearch = document.getElementById('addStudentSearch');
+    const addStudentList = document.getElementById('addStudentList');
+    const addDocGroupSelect = document.getElementById('addDocGroupId');
+    const addPassportType = document.getElementById('addPassportType');
+    const addSeriesWrap = document.getElementById('addSeriesWrap');
+    const addValidUntilWrap = document.getElementById('addValidUntilWrap');
+    const addUniqueWrap = document.getElementById('addUniqueWrap');
+    const addDocScans = document.getElementById('addDocScans');
+
+    if (addPassportType) {
+        addPassportType.addEventListener('change', () => {
+            syncPassportTypeFields(addPassportType, addSeriesWrap, addValidUntilWrap, addUniqueWrap, true);
+        });
+        syncPassportTypeFields(addPassportType, addSeriesWrap, addValidUntilWrap, addUniqueWrap, false);
+    }
+
+    function setAddStudent(studentObj, preferredGroupId) {
+        if (!studentObj) {
+            addStudentIdInp.value = '';
+            addStudentSelectedBox.classList.add('d-none');
+            addStudentPickerWrap.classList.remove('d-none');
+            renderStudentPickerList(addStudentList, addStudentSearch.value, '', s => setAddStudent(s, SELECTED_GROUP_ID));
+            fillEnrollmentSelect(addDocGroupSelect, '', '');
+            return;
+        }
+        addStudentIdInp.value = String(studentObj.id);
+        addStudentSelectedName.textContent = `${studentObj.last_name_UA || ''} ${studentObj.first_name_UA || ''}`.trim() +
+            (studentObj.group_name ? ` (${studentObj.group_name})` : '');
+        addStudentSelectedBox.classList.remove('d-none');
+        addStudentPickerWrap.classList.add('d-none');
+        const targetGroup = preferredGroupId !== undefined && preferredGroupId !== null && String(preferredGroupId) !== ''
+            ? preferredGroupId
+            : (SELECTED_GROUP_ID || studentObj.group_id || '');
+        fillEnrollmentSelect(addDocGroupSelect, studentObj.id, targetGroup);
+    }
+
+    if (addStudentResetBtn) {
+        addStudentResetBtn.addEventListener('click', () => {
+            setAddStudent(null);
+            addStudentSearch.focus();
+        });
+    }
+    if (addStudentSearch) {
+        addStudentSearch.addEventListener('input', () => {
+            renderStudentPickerList(addStudentList, addStudentSearch.value, addStudentIdInp.value, s => setAddStudent(s, SELECTED_GROUP_ID));
+        });
+    }
+
+    function openAddModal(presetStudentId, presetGroupId) {
+        addForm.reset();
+        addAlert.classList.add('d-none');
+        addAlert.textContent = '';
+        if (PASSPORT_TYPE_DEFAULT) addPassportType.value = PASSPORT_TYPE_DEFAULT;
+        syncPassportTypeFields(addPassportType, addSeriesWrap, addValidUntilWrap, addUniqueWrap, false);
+        addStudentSearch.value = '';
+
+        const st = presetStudentId ? studentsById.get(String(presetStudentId)) : null;
+        if (st) {
+            setAddStudent(st, presetGroupId);
+        } else {
+            setAddStudent(null);
+            if (presetGroupId) {
+                const grpOpt = filterGroupSelect && filterGroupSelect.querySelector(`option[value="${presetGroupId}"]`);
+                if (grpOpt) addStudentSearch.value = grpOpt.textContent;
+                renderStudentPickerList(addStudentList, addStudentSearch.value, '', s => setAddStudent(s, presetGroupId));
+            }
+        }
+        addModal.show();
+    }
+
+    const openAddBtn = document.getElementById('openAddDocBtn');
+    if (openAddBtn) {
+        openAddBtn.addEventListener('click', () => openAddModal(ACTIVE_STUDENT ? ACTIVE_STUDENT.id : null, SELECTED_GROUP_ID));
+    }
+    document.querySelectorAll('.js-quick-add-student').forEach(btn => {
+        btn.addEventListener('click', () => openAddModal(btn.dataset.studentId, btn.dataset.groupId || SELECTED_GROUP_ID));
+    });
+    document.querySelectorAll('.js-quick-add-group').forEach(btn => {
+        btn.addEventListener('click', () => openAddModal(null, btn.dataset.groupId || SELECTED_GROUP_ID));
     });
 
-    function deleteAttachment(attachmentId, actionUrl) {
-        if (!confirm('Видалити цей файл?')) return;
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = actionUrl;
-        form.innerHTML = '<input type="hidden" name="action" value="delete_attachment">' +
-                          '<input type="hidden" name="attachment_id" value="' + attachmentId + '">';
-        document.body.appendChild(form);
-        form.submit();
+    addForm.addEventListener('submit', e => {
+        if (!addStudentIdInp.value) {
+            e.preventDefault();
+            addAlert.textContent = 'Будь ласка, оберіть студента зі списку.';
+            addAlert.classList.remove('d-none');
+            addStudentPickerWrap.classList.remove('d-none');
+            addStudentSearch.focus();
+            return;
+        }
+        if (addDocScans.files && addDocScans.files.length > MAX_FILES) {
+            e.preventDefault();
+            addAlert.textContent = `Забагато файлів: максимум ${MAX_FILES} за одне завантаження.`;
+            addAlert.classList.remove('d-none');
+        }
+    });
+
+    // 7. Модалка РЕДАГУВАННЯ
+    const editModalEl = document.getElementById('editDocModal');
+    const editModal = new bootstrap.Modal(editModalEl);
+    const editForm = document.getElementById('editDocForm');
+    const editAlert = document.getElementById('editFormAlert');
+    const editStudentIdInp = document.getElementById('editStudentId');
+    const editStudentSelectedName = document.getElementById('editStudentSelectedName');
+    const editStudentToggleBtn = document.getElementById('editStudentToggleBtn');
+    const editStudentPickerWrap = document.getElementById('editStudentPickerWrap');
+    const editStudentSearch = document.getElementById('editStudentSearch');
+    const editStudentList = document.getElementById('editStudentList');
+    const editDocGroupSelect = document.getElementById('editDocGroupId');
+    const editPassportType = document.getElementById('editPassportType');
+    const editSeriesWrap = document.getElementById('editSeriesWrap');
+    const editValidUntilWrap = document.getElementById('editValidUntilWrap');
+    const editUniqueWrap = document.getElementById('editUniqueWrap');
+    const editAttachmentsList = document.getElementById('editAttachmentsList');
+    const editDocScans = document.getElementById('editDocScans');
+    const deleteAttForm = document.getElementById('deleteAttachmentForm');
+    const deleteAttIdInp = document.getElementById('deleteAttachmentId');
+
+    if (editPassportType) {
+        editPassportType.addEventListener('change', () => {
+            syncPassportTypeFields(editPassportType, editSeriesWrap, editValidUntilWrap, editUniqueWrap, true);
+        });
     }
+
+    function setEditStudent(studentObj, preferredGroupId) {
+        if (!studentObj) return;
+        editStudentIdInp.value = String(studentObj.id);
+        editStudentSelectedName.textContent = `${studentObj.last_name_UA || ''} ${studentObj.first_name_UA || ''}`.trim() +
+            (studentObj.group_name ? ` (${studentObj.group_name})` : '');
+        editStudentPickerWrap.classList.add('d-none');
+        fillEnrollmentSelect(editDocGroupSelect, studentObj.id, preferredGroupId);
+    }
+
+    if (editStudentToggleBtn) {
+        editStudentToggleBtn.addEventListener('click', () => {
+            const hidden = editStudentPickerWrap.classList.toggle('d-none');
+            if (!hidden) {
+                editStudentSearch.value = '';
+                renderStudentPickerList(editStudentList, '', editStudentIdInp.value, s => setEditStudent(s, s.group_id || ''));
+                editStudentSearch.focus();
+            }
+        });
+    }
+    if (editStudentSearch) {
+        editStudentSearch.addEventListener('input', () => {
+            renderStudentPickerList(editStudentList, editStudentSearch.value, editStudentIdInp.value, s => setEditStudent(s, s.group_id || ''));
+        });
+    }
+
+    function renderEditAttachments(attachments) {
+        editAttachmentsList.innerHTML = '';
+        if (!attachments || !attachments.length) {
+            const empty = document.createElement('div');
+            empty.className = 'small text-muted';
+            empty.textContent = 'Скановані копії ще не прикріплені.';
+            editAttachmentsList.appendChild(empty);
+            return;
+        }
+        attachments.forEach((att, idx) => {
+            const row = document.createElement('div');
+            row.className = 'doc-att-row';
+
+            const linkWrap = document.createElement('div');
+            linkWrap.className = 'd-flex align-items-center gap-2 min-w-0';
+            const link = document.createElement('a');
+            link.href = STATIC_URL_BASE + String(att.file_path || '').replace(/^\/+/, '');
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.className = 'doc-scan-link';
+            link.innerHTML = '<i class="bi bi-file-earmark-arrow-down"></i>';
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'doc-scan-link__name';
+            nameSpan.textContent = att.original_name || ('Скан ' + (idx + 1));
+            link.appendChild(nameSpan);
+            linkWrap.appendChild(link);
+
+            if (att.uploaded_at || att.uploaded_by) {
+                const meta = document.createElement('span');
+                meta.className = 'small text-muted d-none d-sm-inline';
+                meta.textContent = [att.uploaded_at, att.uploaded_by].filter(Boolean).join(' · ');
+                linkWrap.appendChild(meta);
+            }
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn btn-sm btn-outline-danger flex-shrink-0';
+            delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            delBtn.title = 'Видалити скан';
+            delBtn.addEventListener('click', () => {
+                if (delBtn.dataset.armed !== '1') {
+                    delBtn.dataset.armed = '1';
+                    delBtn.textContent = 'Підтвердити?';
+                    setTimeout(() => {
+                        if (delBtn.isConnected && delBtn.dataset.armed === '1') {
+                            delBtn.dataset.armed = '0';
+                            delBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                        }
+                    }, 4000);
+                    return;
+                }
+                deleteAttIdInp.value = String(att.id);
+                deleteAttForm.submit();
+            });
+
+            row.append(linkWrap, delBtn);
+            editAttachmentsList.appendChild(row);
+        });
+    }
+
+    function openEditModal(docId) {
+        const doc = docsById[String(docId)];
+        if (!doc) return;
+        editAlert.classList.add('d-none');
+        editAlert.textContent = '';
+        editDocScans.value = '';
+        editStudentPickerWrap.classList.add('d-none');
+
+        document.getElementById('editDocId').value = String(doc.doc_id);
+        document.getElementById('editDocModalTitle').textContent =
+            `Редагувати паспорт — ${doc.last_name_UA || ''} ${doc.first_name_UA || ''}`.trim();
+
+        const st = studentsById.get(String(doc.student_id)) || {
+            id: doc.student_id,
+            last_name_UA: doc.last_name_UA,
+            first_name_UA: doc.first_name_UA,
+            group_name: doc.group_name,
+            group_id: doc.group_id,
+        };
+        setEditStudent(st, doc.doc_group_id !== null && doc.doc_group_id !== undefined ? doc.doc_group_id : '');
+
+        if (doc.document_type) {
+            if (!Array.from(editPassportType.options).some(o => o.value === doc.document_type)) {
+                const opt = document.createElement('option');
+                opt.value = doc.document_type;
+                opt.textContent = doc.document_type;
+                editPassportType.appendChild(opt);
+            }
+            editPassportType.value = doc.document_type;
+        }
+        document.getElementById('editSeries').value = doc.series || '';
+        document.getElementById('editNumber').value = doc.number || '';
+        document.getElementById('editIssuedBy').value = doc.issued_by || '';
+        document.getElementById('editIssueDate').value = doc.issue_date || '';
+        document.getElementById('editValidUntil').value = doc.valid_until || '';
+        document.getElementById('editUniqueNumber').value = doc.unique_number || '';
+
+        syncPassportTypeFields(editPassportType, editSeriesWrap, editValidUntilWrap, editUniqueWrap, false);
+        renderEditAttachments(doc.attachments || []);
+        editModal.show();
+    }
+
+    document.querySelectorAll('.js-edit-doc').forEach(btn => {
+        btn.addEventListener('click', () => openEditModal(btn.dataset.docId));
+    });
+
+    editForm.addEventListener('submit', e => {
+        if (editDocScans.files && editDocScans.files.length > MAX_FILES) {
+            e.preventDefault();
+            editAlert.textContent = `Забагато файлів: максимум ${MAX_FILES} за одне завантаження.`;
+            editAlert.classList.remove('d-none');
+        }
+    });
+
+    // 8. Модалка видалення запису
+    const deleteDocModal = new bootstrap.Modal(document.getElementById('deleteDocModal'));
+    const deleteDocIdInp = document.getElementById('deleteDocId');
+    const deleteDocLabel = document.getElementById('deleteDocLabel');
+    document.querySelectorAll('.js-delete-doc').forEach(btn => {
+        btn.addEventListener('click', () => {
+            deleteDocIdInp.value = btn.dataset.docId;
+            deleteDocLabel.textContent = btn.dataset.docLabel || ('Запис #' + btn.dataset.docId);
+            deleteDocModal.show();
+        });
+    });
+
+    // 9. Авто-відкриття при переході з картки студента (?student_id=...&doc_id=...)
+    if (AUTO_EDIT_DOC_ID && docsById[String(AUTO_EDIT_DOC_ID)]) {
+        openEditModal(AUTO_EDIT_DOC_ID);
+    } else if (ACTIVE_STUDENT && !AUTO_EDIT_DOC_ID) {
+        openAddModal(ACTIVE_STUDENT.id, SELECTED_GROUP_ID || ACTIVE_STUDENT.group_id);
+    }
+});
 </script>
-
-
 {% endblock %}

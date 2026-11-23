@@ -1,218 +1,923 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
-{% block title %}Періоди навчання — масове присвоєння{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block title %}Масове призначення періодів навчання{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
 {% block content %}
 <style>
-    @media (max-width: 576px) {
-        #filterForm .btn-group[role="group"] {
-            flex-direction: column;
-            width: 100%;
-            gap: .5rem;
-        }
-        #filterForm .btn-group[role="group"] .btn {
-            border-radius: 10px !important;
-            width: 100%;
-        }
+    .spb-page {
+        --spb-ok-bg: rgba(79, 122, 82, .14);
+        --spb-ok-fg: #265436;
+        --spb-ok-bd: rgba(79, 122, 82, .35);
+        --spb-warn-bg: rgba(200, 162, 74, .18);
+        --spb-warn-fg: #75550c;
+        --spb-warn-bd: rgba(200, 162, 74, .46);
+        --spb-info-bg: rgba(61, 104, 153, .13);
+        --spb-info-fg: #274f7d;
+        --spb-info-bd: rgba(61, 104, 153, .34);
+    }
+    html[data-theme="dark"] .spb-page {
+        --spb-ok-bg: rgba(79, 122, 82, .25);
+        --spb-ok-fg: #c2e6c5;
+        --spb-ok-bd: rgba(117, 173, 122, .42);
+        --spb-warn-bg: rgba(200, 162, 74, .20);
+        --spb-warn-fg: #f2d687;
+        --spb-warn-bd: rgba(227, 200, 122, .38);
+        --spb-info-bg: rgba(74, 110, 168, .22);
+        --spb-info-fg: #b4ccf0;
+        --spb-info-bd: rgba(120, 156, 214, .38);
+    }
+
+    .spb-num { font-variant-numeric: tabular-nums; }
+
+    .spb-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .spb-panel__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+        padding: .85rem 1.1rem;
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    .spb-panel__title {
+        font-family: 'Lora', serif;
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin: 0;
+    }
+
+    /* Перемикач режимів */
+    .spb-modes {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: .5rem;
+    }
+    @media (max-width: 767.98px) {
+        .spb-modes { grid-template-columns: 1fr; }
+    }
+    .spb-mode-card {
+        display: flex;
+        flex-direction: column;
+        gap: .2rem;
+        text-align: left;
+        padding: .65rem .8rem;
+        border-radius: 9px;
+        border: 1.5px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        cursor: pointer;
+        transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+    }
+    html[data-theme="dark"] .spb-mode-card {
+        background: var(--paper-2);
+    }
+    .spb-mode-card:hover:not(.is-active) {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+    }
+    .spb-mode-card.is-active {
+        background: var(--ink);
+        color: var(--brass-lt);
+        border-color: var(--ink);
+    }
+    html[data-theme="dark"] .spb-mode-card.is-active {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    .spb-mode-card__title {
+        font-size: .85rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: .4rem;
+    }
+    .spb-mode-card__desc {
+        font-size: .74rem;
+        opacity: .82;
+        line-height: 1.3;
+    }
+
+    /* Підказка щодо прив'язки */
+    .spb-mode-note {
+        border-left: 3px solid var(--brass);
+        background: var(--brass-soft);
+        color: var(--ink-text);
+        padding: .55rem .8rem;
+        border-radius: 0 8px 8px 0;
+        font-size: .82rem;
+    }
+
+    /* Список вибору студентів */
+    .spb-picker-list {
+        max-height: 290px;
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper);
+    }
+    html[data-theme="dark"] .spb-picker-list {
+        background: var(--paper-2);
+    }
+    .spb-student-opt {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        padding: .48rem .75rem;
+        border-bottom: 1px solid var(--line);
+        cursor: pointer;
+        transition: background-color .12s ease;
+        margin: 0;
+    }
+    .spb-student-opt:last-child { border-bottom: 0; }
+    .spb-student-opt:hover { background: var(--brass-soft); }
+    .spb-student-opt.is-selected {
+        background: rgba(200, 162, 74, .18);
+    }
+    .spb-student-opt__name {
+        font-size: .86rem;
+        font-weight: 600;
+        color: var(--ink-text);
+    }
+    .spb-student-opt__grp {
+        font-size: .75rem;
+        color: var(--muted);
+        white-space: nowrap;
+    }
+
+    /* Чіпи обраних студентів */
+    .spb-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem;
+        max-height: 115px;
+        overflow-y: auto;
+    }
+    .spb-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        padding: .2rem .5rem;
+        border-radius: 6px;
+        background: var(--spb-info-bg);
+        color: var(--spb-info-fg);
+        border: 1px solid var(--spb-info-bd);
+        font-size: .76rem;
+        font-weight: 600;
+    }
+    .spb-chip__rm {
+        border: 0;
+        background: transparent;
+        color: inherit;
+        padding: 0;
+        line-height: 1;
+        cursor: pointer;
+        opacity: .78;
+    }
+    .spb-chip__rm:hover { opacity: 1; }
+
+    /* Бейджі статусів */
+    .spb-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        padding: .16rem .48rem;
+        border-radius: 6px;
+        font-size: .73rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .spb-badge--ok { background: var(--spb-ok-bg); color: var(--spb-ok-fg); border-color: var(--spb-ok-bd); }
+    .spb-badge--warn { background: var(--spb-warn-bg); color: var(--spb-warn-fg); border-color: var(--spb-warn-bd); }
+    .spb-badge--info { background: var(--spb-info-bg); color: var(--spb-info-fg); border-color: var(--spb-info-bd); }
+    .spb-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+
+    /* Швидкі пресети філій */
+    .spb-preset-btn {
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        border-radius: 7px;
+        padding: .26rem .6rem;
+        font-size: .76rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+    }
+    html[data-theme="dark"] .spb-preset-btn {
+        background: var(--paper-2);
+    }
+    .spb-preset-btn:hover {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--ink);
+    }
+    html[data-theme="dark"] .spb-preset-btn:hover {
+        color: var(--brass-lt);
+    }
+
+    /* Прев'ю таблиця */
+    .spb-table { margin-bottom: 0; color: var(--ink-text); }
+    .spb-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .65rem .85rem;
+        white-space: nowrap;
+    }
+    .spb-table tbody td {
+        border-color: var(--line);
+        padding: .7rem .85rem;
+        vertical-align: top;
+    }
+    .spb-period-item {
+        padding: .32rem .5rem;
+        border-radius: 6px;
+        background: var(--paper);
+        border: 1px solid var(--line);
+        font-size: .8rem;
+        margin-bottom: .3rem;
+    }
+    html[data-theme="dark"] .spb-period-item {
+        background: var(--paper-2);
+    }
+    .spb-period-item:last-child { margin-bottom: 0; }
+
+    .spb-mcard {
+        border-bottom: 1px solid var(--line);
+        padding: .85rem 1rem;
+    }
+    .spb-mcard:last-child { border-bottom: 0; }
+
+    .spb-page .btn-outline-secondary {
+        --bs-btn-color: var(--ink-text);
+        --bs-btn-border-color: var(--line);
+        --bs-btn-bg: var(--surface);
+        --bs-btn-hover-bg: var(--brass-soft);
+        --bs-btn-hover-border-color: var(--brass-semi);
+        --bs-btn-hover-color: var(--ink);
+    }
+    html[data-theme="dark"] .spb-page .btn-outline-secondary {
+        --bs-btn-color: var(--ink-text);
+        --bs-btn-border-color: var(--line);
+        --bs-btn-bg: var(--paper-2);
+        --bs-btn-hover-bg: var(--surface);
+        --bs-btn-hover-border-color: var(--brass-semi);
+        --bs-btn-hover-color: var(--brass-lt);
     }
 </style>
-<div class="container py-4">
 
-{{ ui.page_header('bi-calendar2-date-fill', 'Присвоєння періоду навчання кільком студентам', 'Оберіть, кому саме буде присвоєно період навчання') }}
+<div class="container py-4 spb-page">
 
-<div class="card mb-4">
-<div class="card-body">
-<form method="get" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" class="row g-3" id="filterForm">
-
-    <div class="col-12">
-        <label class="form-label fw-bold">Кому присвоїти період?</label>
-        <div class="btn-group w-100" role="group">
-            <input type="radio" name="mode" id="mode_whole" value="whole_group" class="btn-check" 
-                   {% if selected_mode == 'whole_group' %}checked{% endif %}>
-            <label class="btn btn-outline-primary" for="mode_whole">Усій групі</label>
-
-            <input type="radio" name="mode" id="mode_some" value="some_from_group" class="btn-check" 
-                   {% if selected_mode == 'some_from_group' %}checked{% endif %}>
-            <label class="btn btn-outline-primary" for="mode_some">Кільком зі групи</label>
-
-            <input type="radio" name="mode" id="mode_any" value="any_students" class="btn-check" 
-                   {% if selected_mode == 'any_students' %}checked{% endif %}>
-            <label class="btn btn-outline-primary" for="mode_any">Будь-яким студентам</label>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>До списку студентів
+            </a>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('students.faq') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-question-circle me-1"></i>Довідка
+            </a>
         </div>
     </div>
 
-    <div class="col-md-5" id="group_block">
-        <label class="form-label">Група</label>
-        <select name="group_id" id="group_select" class="form-select">
-            <option value="">— оберіть групу —</option>
-            {% for g in groups %}
-                <option value="{{ g.id }}" {% if selected_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
-            {% endfor %}
-        </select>
-    </div>
+    {{ ui.page_header(
+        'bi-signpost-split-fill',
+        'Масове призначення періодів навчання',
+        'Додавання запису до історії навчання групи або довільного списку студентів із перевіркою наявних періодів'
+    ) }}
 
-    <div class="col-md-7" id="students_block">
-        <label class="form-label" id="students_label">Студенти</label>
-        <select name="student_ids" class="form-select" multiple size="7" id="studentPicker"></select>
-        <small class="text-muted">Утримуйте Ctrl/Cmd для вибору кількох</small>
-    </div>
+    <div class="row g-3 g-lg-4 align-items-start">
 
-    <div class="col-12">
-        <button type="submit" class="btn btn-outline-primary">Показати, кого торкнеться</button>
-    </div>
-</form>
-</div>
-</div>
-
-{% if not target_students %}
-    {{ ui.empty_state('bi-people', 'Оберіть режим та студентів/групу вище') }}
-{% else %}
-    <div class="card mb-4">
-        <div class="card-header">
-            Буде застосовано до <strong>{{ target_students|length }}</strong> студент(ів):
-        </div>
-        <ul class="list-group list-group-flush">
-            {% for s in target_students %}
-            <li class="list-group-item">
-                <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-                    <span>{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</span>
-                    <span class="text-muted small">{{ s.group_name or 'без групи' }}</span>
+        {# ════════════════════════════════════════════════════════════════
+           ЛІВА КОЛОНКА: ВИБІР АУДИТОРІЇ (РЕЖИМ, ГРУПА, СТУДЕНТИ)
+           ════════════════════════════════════════════════════════════════ #}
+        <div class="col-12 col-lg-6">
+            <div class="spb-panel">
+                <div class="spb-panel__head">
+                    <h2 class="spb-panel__title">
+                        <i class="bi bi-people-fill me-2" style="color: var(--brass);"></i>1. Кому призначити період
+                    </h2>
+                    <span class="spb-badge spb-badge--info spb-num" id="audienceCountBadge">Обрано: 0</span>
                 </div>
-                {% if s.existing_periods %}
-                    <div class="mt-2 ps-3 border-start border-2">
-                        <div class="text-muted small mb-1">Вже присвоєні періоди:</div>
+
+                <div class="p-3 p-md-4">
+                    <form method="GET" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" id="filterPreviewForm">
+                        <input type="hidden" name="mode" id="filterModeInput" value="{{ selected_mode or 'any_students' }}">
+                        <input type="hidden" name="student_ids" id="filterStudentIdsInput" value="{{ selected_student_ids|join(',') }}">
+
+                        {# 3 режими вибору #}
+                        <label class="form-label small fw-semibold mb-2">Режим вибору студентів</label>
+                        <div class="spb-modes mb-3" role="radiogroup" aria-label="Режим вибору">
+                            <button type="button"
+                                    class="spb-mode-card js-mode-btn {% if selected_mode == 'any_students' %}is-active{% endif %}"
+                                    data-mode="any_students">
+                                <span class="spb-mode-card__title"><i class="bi bi-person-check"></i> Довільні студенти</span>
+                                <span class="spb-mode-card__desc">Пошук із усіх студентів бази (до основної групи кожного)</span>
+                            </button>
+                            <button type="button"
+                                    class="spb-mode-card js-mode-btn {% if selected_mode == 'whole_group' %}is-active{% endif %}"
+                                    data-mode="whole_group">
+                                <span class="spb-mode-card__title"><i class="bi bi-collection"></i> Уся група</span>
+                                <span class="spb-mode-card__desc">Основні + паралельні студенти обраної групи</span>
+                            </button>
+                            <button type="button"
+                                    class="spb-mode-card js-mode-btn {% if selected_mode == 'some_from_group' %}is-active{% endif %}"
+                                    data-mode="some_from_group">
+                                <span class="spb-mode-card__title"><i class="bi bi-ui-checks"></i> Частина групи</span>
+                                <span class="spb-mode-card__desc">Обрати конкретних студентів у межах групи</span>
+                            </button>
+                        </div>
+
+                        <div class="spb-mode-note mb-3" id="modeNoteBox"></div>
+
+                        {# Вибір групи (активний у whole_group та some_from_group) #}
+                        <div class="mb-3" id="groupSelectWrap">
+                            <label for="groupIdSelect" class="form-label small fw-semibold">
+                                Група <span class="text-danger">*</span>
+                            </label>
+                            <select name="group_id" id="groupIdSelect" class="form-select">
+                                <option value="">— оберіть групу —</option>
+                                {% for g in groups %}
+                                <option value="{{ g.id }}" {% if selected_group_id == g.id %}selected{% endif %}>{{ g.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text">Пошук підтримує назву групи, рік, форму навчання та спеціальність.</div>
+                        </div>
+
+                        {# Пошуковий пікер студентів #}
+                        <div class="mb-3" id="studentPickerWrap">
+                            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                                <label for="studentSearchInput" class="form-label small fw-semibold mb-0" id="studentPickerLabel">
+                                    Вибір студентів
+                                </label>
+                                <div class="d-flex gap-1">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="selectVisibleStudentsBtn" title="Позначити показаних у списку">
+                                        <i class="bi bi-check2-all me-1"></i>Показаних
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="clearSelectedStudentsBtn" title="Очистити вибір студентів">
+                                        Очистити
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="input-group input-group-sm mb-2">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" id="studentSearchInput" class="form-control"
+                                       placeholder="Пошук за прізвищем, іменем або назвою групи...">
+                                <button type="button" class="btn btn-outline-secondary d-none" id="studentSearchClear" title="Очистити пошук">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                            </div>
+
+                            <div class="spb-picker-list" id="studentPickerList"></div>
+                            <div class="d-flex justify-content-between align-items-center small text-muted mt-1">
+                                <span id="pickerStatsText" class="spb-num">Показано: 0</span>
+                                <span id="selectedExtraText" class="spb-num">Позначено вручну: 0</span>
+                            </div>
+                        </div>
+
+                        {# Чіпи вручну обраних студентів #}
+                        <div class="mb-3 d-none" id="selectedChipsWrap">
+                            <div class="small fw-semibold mb-1">Обрані вручну (<span id="chipsCount" class="spb-num">0</span>):</div>
+                            <div class="spb-chips" id="selectedChipsContainer"></div>
+                        </div>
+
+                        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 pt-2 border-top">
+                            <span class="small text-muted">Оновіть прев'ю, щоб перевірити попередні періоди в базі</span>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-arrow-clockwise me-1"></i>Оновити прев'ю
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        {# ════════════════════════════════════════════════════════════════
+           ПРАВА КОЛОНКА: ФОРМА ПАРАМЕТРІВ ПЕРІОДУ (POST)
+           ════════════════════════════════════════════════════════════════ #}
+        <div class="col-12 col-lg-6">
+            <div class="spb-panel">
+                <div class="spb-panel__head">
+                    <h2 class="spb-panel__title">
+                        <i class="bi bi-calendar-plus me-2" style="color: var(--brass);"></i>2. Дані нового періоду
+                    </h2>
+                    <span class="small text-muted">Додається в кінець черги (<code>period_order + 1</code>)</span>
+                </div>
+
+                <div class="p-3 p-md-4">
+                    <div class="mb-3">
+                        <div class="small text-muted mb-1">Швидка підстановка закладу:</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            <button type="button" class="spb-preset-btn js-filiya-preset"
+                                    data-ua="Львівська філія Приватного вищого навчального закладу «Європейський університет»"
+                                    data-en="Lviv Branch of Private Higher Education Establishment «European University»">
+                                <i class="bi bi-lightning-charge me-1"></i>Львівська філія ПВНЗ «ЄУ»
+                            </button>
+                            <button type="button" class="spb-preset-btn js-filiya-preset"
+                                    data-ua="Приватний вищий навчальний заклад «Європейський університет»"
+                                    data-en="Private Higher Education Establishment «European University»">
+                                <i class="bi bi-building me-1"></i>ПВНЗ «Європейський університет»
+                            </button>
+                        </div>
+                    </div>
+
+                    <form method="POST" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}" id="bulkAssignPostForm">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="mode" id="postModeInput" value="{{ selected_mode or 'any_students' }}">
+                        <input type="hidden" name="group_id" id="postGroupIdInput" value="{{ selected_group_id or '' }}">
+                        <input type="hidden" name="student_ids_hidden" id="postStudentIdsInput" value="{{ selected_student_ids|join(',') }}">
+
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="filiya" class="form-label small fw-semibold">
+                                    Назва закладу / філії (укр.) <span class="text-danger">*</span>
+                                </label>
+                                <input type="text" name="filiya" id="filiya" class="form-control" required
+                                       placeholder="Львівська філія Приватного вищого навчального закладу «Європейський університет»">
+                            </div>
+
+                            <div class="col-12">
+                                <label for="filiya_en" class="form-label small fw-semibold">
+                                    Institution / Branch name (англ.)
+                                </label>
+                                <input type="text" name="filiya_en" id="filiya_en" class="form-control"
+                                       placeholder="Lviv Branch of Private Higher Education Establishment «European University»">
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label for="group_name" class="form-label small fw-semibold">Група в періоді</label>
+                                <div class="input-group">
+                                    <input type="text" name="group_name" id="group_name" class="form-control"
+                                           placeholder="Напр., КН-24">
+                                    <button type="button" class="btn btn-outline-secondary d-none" id="fillGroupNameBtn" title="Підставити назву обраної групи">
+                                        <i class="bi bi-magic"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="col-6 col-md-4">
+                                <label for="start_date" class="form-label small fw-semibold">Дата початку</label>
+                                <input type="date" name="start_date" id="start_date" class="form-control">
+                            </div>
+
+                            <div class="col-6 col-md-4">
+                                <label for="end_date" class="form-label small fw-semibold">Дата закінчення</label>
+                                <input type="date" name="end_date" id="end_date" class="form-control">
+                                <div class="form-text mt-1">Порожньо = «т.ч.»</div>
+                            </div>
+
+                            <div class="col-12">
+                                <label for="note" class="form-label small fw-semibold">Примітка (внутрішня)</label>
+                                <input type="text" name="note" id="note" class="form-control"
+                                       placeholder="Напр.: поновлення, переведення з іншої філії, попередній курс">
+                            </div>
+                        </div>
+
+                        <div class="mt-4 pt-3 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
+                            <div class="small" id="submitTargetSummary">
+                                <span class="text-muted">Оберіть групу або студентів ліворуч</span>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="bulkSubmitBtn">
+                                <i class="bi bi-check2-circle me-2"></i>Призначити період
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ════════════════════════════════════════════════════════════════
+       ПОПЕРЕДНІЙ ПЕРЕГЛЯД ІСНУЮЧИХ ПЕРІОДІВ ЦІЛЬОВИХ СТУДЕНТІВ
+       ════════════════════════════════════════════════════════════════ #}
+    <div class="spb-panel mt-4">
+        <div class="spb-panel__head">
+            <h2 class="spb-panel__title">
+                <i class="bi bi-list-check me-2" style="color: var(--brass);"></i>Попередній перегляд студентів та їхніх періодів
+            </h2>
+            <span class="spb-badge {% if target_students %}spb-badge--ok{% else %}spb-badge--muted{% endif %} spb-num">
+                Студентів у прев'ю: {{ target_students|length }}
+            </span>
+        </div>
+
+        {% if target_students %}
+            {# Десктопна таблиця #}
+            <div class="table-responsive d-none d-md-block">
+                <table class="table spb-table align-top">
+                    <thead>
+                        <tr>
+                            <th style="width: 48px;">№</th>
+                            <th style="min-width: 220px;">Студент</th>
+                            <th style="min-width: 120px;">Основна група</th>
+                            <th>Наявні періоди навчання</th>
+                            <th class="text-end" style="width: 110px;">Картка</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in target_students %}
+                        <tr>
+                            <td class="spb-num text-muted">{{ loop.index }}</td>
+                            <td>
+                                <div class="fw-semibold">{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</div>
+                                <div class="small text-muted spb-num">ID {{ s.id }}</div>
+                            </td>
+                            <td>
+                                {% if s.group_name %}
+                                <span class="spb-badge spb-badge--muted">{{ s.group_name }}</span>
+                                {% else %}
+                                <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if s.existing_periods %}
+                                    {% for p in s.existing_periods %}
+                                    <div class="spb-period-item">
+                                        <div class="d-flex flex-wrap justify-content-between gap-2">
+                                            <span class="fw-semibold">
+                                                <span class="spb-badge spb-badge--info me-1 spb-num">#{{ p.period_order or loop.index }}</span>
+                                                {{ p.filiya }}
+                                            </span>
+                                            <span class="tpl-mono small text-nowrap spb-num">
+                                                {{ p.start_date or '—' }} — {{ p.end_date or 'т.ч.' }}
+                                            </span>
+                                        </div>
+                                        {% if p.group_name or p.note %}
+                                        <div class="small text-muted mt-1">
+                                            {% if p.group_name %}Група: <strong>{{ p.group_name }}</strong>{% endif %}
+                                            {% if p.group_name and p.note %} · {% endif %}
+                                            {% if p.note %}{{ p.note }}{% endif %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% endfor %}
+                                {% else %}
+                                    <span class="spb-badge spb-badge--warn"><i class="bi bi-dash-circle"></i> Періодів ще немає</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                <a href="{{ url_for('students.manage_study_periods', student_id=s.id) }}"
+                                   class="btn btn-sm btn-outline-secondary" title="Редагувати періоди студента">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# Мобільні картки #}
+            <div class="d-md-none">
+                {% for s in target_students %}
+                <div class="spb-mcard">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <div>
+                            <div class="fw-semibold">{{ loop.index }}. {{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}</div>
+                            <div class="small text-muted">
+                                {% if s.group_name %}Група: {{ s.group_name }} · {% endif %}ID {{ s.id }}
+                            </div>
+                        </div>
+                        <a href="{{ url_for('students.manage_study_periods', student_id=s.id) }}"
+                           class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                    </div>
+                    {% if s.existing_periods %}
                         {% for p in s.existing_periods %}
-                        <div class="small">
-                            <span class="fw-semibold">{{ p.filiya }}</span>
-                            — <span class="font-monospace">{{ p.start_date or '?' }} – {{ p.end_date or 'т.ч.' }}</span>
+                        <div class="spb-period-item">
+                            <div class="fw-semibold">#{{ p.period_order or loop.index }} · {{ p.filiya }}</div>
+                            <div class="small text-muted spb-num">{{ p.start_date or '—' }} — {{ p.end_date or 'т.ч.' }}{% if p.group_name %} · {{ p.group_name }}{% endif %}</div>
+                            {% if p.note %}<div class="small text-muted">{{ p.note }}</div>{% endif %}
                         </div>
                         {% endfor %}
-                    </div>
-                {% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-    </div>
-
-    <div class="card">
-        <div class="card-header">
-            <i class="bi bi-signpost-split"></i> Дані періоду (однакові для всіх)
-        </div>
-        <div class="card-body">
-            <form method="post" action="{{ url_for('admin.manage_study_periods_bulk_assign') }}"
-                  onsubmit="return confirm('Присвоїти період {{ target_students|length }} студентам?');">
-                
-                <input type="hidden" name="mode" value="{{ selected_mode }}">
-                <input type="hidden" name="group_id" value="{{ selected_group_id or '' }}">
-                <input type="hidden" name="student_ids_hidden" value="{{ selected_student_ids|join(',') }}">
-
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Філія (укр) <span class="text-danger">*</span></label>
-                        <input type="text" name="filiya" class="form-control" required>
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Filiya (en)</label>
-                        <input type="text" name="filiya_en" class="form-control">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Група в той період</label>
-                        <input type="text" name="group_name" class="form-control">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Дата початку</label>
-                        <input type="text" name="start_date" class="form-control" placeholder="ДД/ММ/РРРР">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Дата закінчення</label>
-                        <input type="text" name="end_date" class="form-control" placeholder="порожньо = поточний">
-                    </div>
-                    <div class="col-md-12">
-                        <label class="form-label">Примітка</label>
-                        <input type="text" name="note" class="form-control">
-                    </div>
+                    {% else %}
+                        <span class="spb-badge spb-badge--warn">Періодів ще немає</span>
+                    {% endif %}
                 </div>
-
-                <div class="mt-4">
-                    <button type="submit" class="btn btn-primary btn-lg">
-                        <i class="bi bi-check2-all me-2"></i>Застосувати до {{ target_students|length }} студент(ів)
-                    </button>
-                    <a href="{{ url_for('admin.manage_education_documents') }}" class="btn btn-outline-secondary">Скасувати</a>
-                </div>
-            </form>
-        </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            {{ ui.empty_state('bi-people', 'Оберіть групу або студентів і натисніть «Оновити прев\'ю», щоб перевірити наявні періоди навчання') }}
+        {% endif %}
     </div>
-{% endif %}
 
 </div>
 
+<script id="bulkSpStudentsData" type="application/json">{{ all_students|tojson }}</script>
+<script id="bulkSpGroupsData" type="application/json">{{ groups|tojson }}</script>
+
 <script>
-document.addEventListener('DOMContentLoaded', () => {
-    const modeRadios = document.querySelectorAll('input[name="mode"]');
-    const groupSelect = document.getElementById('group_select');
-    const studentPicker = document.getElementById('studentPicker');
-    const studentsLabel = document.getElementById('students_label');
-    const groupBlock = document.getElementById('group_block');
+document.addEventListener('DOMContentLoaded', function () {
+    const ALL_STUDENTS = JSON.parse(document.getElementById('bulkSpStudentsData').textContent || '[]');
+    const GROUPS_LIST = JSON.parse(document.getElementById('bulkSpGroupsData').textContent || '[]');
+    const GROUP_NAME_BY_ID = {};
+    GROUPS_LIST.forEach(g => { GROUP_NAME_BY_ID[String(g.id)] = g.name; });
 
-    const allStudentsData = [
-        {% for s in all_students %}
-        {
-            id: {{ s.id }},
-            name: "{{ s.last_name_UA }} {{ s.first_name_UA }} {{ s.middle_name_UA or '' }}",
-            group_id: {{ s.group_id or 'null' }}
-        }{% if not loop.last %},{% endif %}
-        {% endfor %}
-    ];
+    const STUDENT_BY_ID = {};
+    ALL_STUDENTS.forEach(s => { STUDENT_BY_ID[String(s.id)] = s; });
 
-    function filterStudents() {
-        const mode = document.querySelector('input[name="mode"]:checked').value;
-        const selectedGroupId = groupSelect.value ? parseInt(groupSelect.value) : null;
+    let currentMode = {{ (selected_mode or 'any_students')|tojson }};
+    const selectedIds = new Set({{ selected_student_ids|tojson }}.map(String));
 
-        studentPicker.innerHTML = '';
+    const filterModeInput = document.getElementById('filterModeInput');
+    const filterStudentIdsInput = document.getElementById('filterStudentIdsInput');
+    const postModeInput = document.getElementById('postModeInput');
+    const postGroupIdInput = document.getElementById('postGroupIdInput');
+    const postStudentIdsInput = document.getElementById('postStudentIdsInput');
 
-        if (mode === 'any_students') {
-            studentsLabel.textContent = 'Виберіть студентів';
-            groupBlock.style.display = 'none';
-        } else {
-            groupBlock.style.display = 'block';
-            if (mode === 'whole_group') {
-                studentsLabel.textContent = 'Додати студентів з інших груп (опціонально)';
-            } else {
-                studentsLabel.textContent = 'Виберіть студентів з групи';
-            }
-        }
+    const groupSelectWrap = document.getElementById('groupSelectWrap');
+    const groupSelect = document.getElementById('groupIdSelect');
+    const studentPickerWrap = document.getElementById('studentPickerWrap');
+    const studentPickerLabel = document.getElementById('studentPickerLabel');
+    const studentSearchInput = document.getElementById('studentSearchInput');
+    const studentSearchClear = document.getElementById('studentSearchClear');
+    const studentPickerList = document.getElementById('studentPickerList');
+    const pickerStatsText = document.getElementById('pickerStatsText');
+    const selectedExtraText = document.getElementById('selectedExtraText');
+    const selectVisibleBtn = document.getElementById('selectVisibleStudentsBtn');
+    const clearSelectedBtn = document.getElementById('clearSelectedStudentsBtn');
 
-        allStudentsData.forEach(student => {
-            const option = document.createElement('option');
-            option.value = student.id;
-            option.textContent = student.name;
+    const selectedChipsWrap = document.getElementById('selectedChipsWrap');
+    const selectedChipsContainer = document.getElementById('selectedChipsContainer');
+    const chipsCount = document.getElementById('chipsCount');
 
-            if (mode === 'any_students') {
-                studentPicker.appendChild(option);
-            } else if (selectedGroupId && student.group_id === selectedGroupId) {
-                studentPicker.appendChild(option);
-            } else if (!selectedGroupId) {
-                studentPicker.appendChild(option);
-            }
+    const modeNoteBox = document.getElementById('modeNoteBox');
+    const audienceCountBadge = document.getElementById('audienceCountBadge');
+    const submitTargetSummary = document.getElementById('submitTargetSummary');
+    const bulkSubmitBtn = document.getElementById('bulkSubmitBtn');
+    const fillGroupNameBtn = document.getElementById('fillGroupNameBtn');
+    const groupNameInput = document.getElementById('group_name');
+
+    const MODE_NOTES = {
+        any_students: '<strong>Прив\'язка до групи:</strong> кожному обраному студенту новий період автоматично прив\'яжеться до його <strong>основної групи</strong>.',
+        whole_group: '<strong>Прив\'язка до групи:</strong> період отримають <strong>усі активні студенти</strong> обраної групи (основні та паралельні) + додатково позначені нижче.',
+        some_from_group: '<strong>Прив\'язка до групи:</strong> період отримають <strong>лише позначені нижче студенти</strong> із прив\'язкою до обраної групи.'
+    };
+
+    function getStudentsInSelectedGroup(gidStr) {
+        if (!gidStr) return [];
+        const gidNum = Number(gidStr);
+        return ALL_STUDENTS.filter(s => {
+            if (String(s.group_id || '') === gidStr) return true;
+            return Array.isArray(s.enrollment_group_ids) && s.enrollment_group_ids.includes(gidNum);
         });
     }
 
-    modeRadios.forEach(radio => radio.addEventListener('change', filterStudents));
-    groupSelect.addEventListener('change', filterStudents);
+    function getPoolStudents() {
+        const gidStr = groupSelect ? String(groupSelect.value || '') : '';
+        if (currentMode === 'some_from_group') {
+            return gidStr ? getStudentsInSelectedGroup(gidStr) : [];
+        }
+        return ALL_STUDENTS;
+    }
 
-    filterStudents(); // initial load
+    function getFilteredPool() {
+        const q = (studentSearchInput.value || '').trim().toLowerCase();
+        const pool = getPoolStudents();
+        if (!q) return pool;
+        return pool.filter(s => {
+            const full = `${s.last_name_UA || ''} ${s.first_name_UA || ''} ${s.middle_name_UA || ''} ${s.group_name || ''}`.toLowerCase();
+            return full.includes(q);
+        });
+    }
 
-    // Передача вибраних студентів
-    const filterForm = document.getElementById('filterForm');
-    filterForm.addEventListener('submit', () => {
-        const selected = Array.from(studentPicker.selectedOptions).map(o => o.value);
-        const hidden = document.createElement('input');
-        hidden.type = 'hidden';
-        hidden.name = 'student_ids';
-        hidden.value = selected.join(',');
-        filterForm.appendChild(hidden);
-        studentPicker.removeAttribute('name');
+    function syncHiddenFieldsAndSummary() {
+        const gidStr = (currentMode === 'any_students') ? '' : String(groupSelect.value || '');
+        const idsCsv = Array.from(selectedIds).join(',');
+
+        filterModeInput.value = currentMode;
+        filterStudentIdsInput.value = idsCsv;
+        postModeInput.value = currentMode;
+        postGroupIdInput.value = gidStr;
+        postStudentIdsInput.value = idsCsv;
+
+        let effectiveCount = 0;
+        if (currentMode === 'whole_group') {
+            const eff = new Set(getStudentsInSelectedGroup(gidStr).map(s => String(s.id)));
+            selectedIds.forEach(id => eff.add(id));
+            effectiveCount = eff.size;
+        } else {
+            effectiveCount = selectedIds.size;
+        }
+
+        audienceCountBadge.textContent = `Обрано: ${effectiveCount}`;
+        selectedExtraText.textContent = `Позначено вручну: ${selectedIds.size}`;
+
+        if (gidStr && GROUP_NAME_BY_ID[gidStr] && currentMode !== 'any_students') {
+            fillGroupNameBtn.classList.remove('d-none');
+            fillGroupNameBtn.title = `Підставити «${GROUP_NAME_BY_ID[gidStr]}»`;
+        } else {
+            fillGroupNameBtn.classList.add('d-none');
+        }
+
+        if (effectiveCount > 0) {
+            const grpHint = gidStr && GROUP_NAME_BY_ID[gidStr]
+                ? ` · група <strong>${GROUP_NAME_BY_ID[gidStr]}</strong>`
+                : ' · до основної групи кожного';
+            submitTargetSummary.innerHTML = `<span class="spb-badge spb-badge--ok"><i class="bi bi-check2"></i> Цільових студентів: <strong class="ms-1 spb-num">${effectiveCount}</strong></span><span class="small text-muted ms-1">${grpHint}</span>`;
+            bulkSubmitBtn.disabled = false;
+        } else {
+            submitTargetSummary.innerHTML = '<span class="text-muted">Оберіть групу або студентів ліворуч</span>';
+            bulkSubmitBtn.disabled = true;
+        }
+    }
+
+    function renderChips() {
+        const arr = Array.from(selectedIds);
+        chipsCount.textContent = arr.length;
+        if (!arr.length) {
+            selectedChipsWrap.classList.add('d-none');
+            selectedChipsContainer.innerHTML = '';
+            return;
+        }
+        selectedChipsWrap.classList.remove('d-none');
+        selectedChipsContainer.innerHTML = '';
+        arr.forEach(idStr => {
+            const s = STUDENT_BY_ID[idStr];
+            const label = s ? `${s.last_name_UA || ''} ${s.first_name_UA || ''}`.trim() : `ID ${idStr}`;
+            const chip = document.createElement('span');
+            chip.className = 'spb-chip';
+            const textSpan = document.createElement('span');
+            textSpan.textContent = label;
+            const rmBtn = document.createElement('button');
+            rmBtn.type = 'button';
+            rmBtn.className = 'spb-chip__rm';
+            rmBtn.title = 'Прибрати';
+            rmBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
+            rmBtn.addEventListener('click', () => {
+                selectedIds.delete(idStr);
+                renderStudentPickerList();
+                renderChips();
+                syncHiddenFieldsAndSummary();
+            });
+            chip.appendChild(textSpan);
+            chip.appendChild(rmBtn);
+            selectedChipsContainer.appendChild(chip);
+        });
+    }
+
+    function renderStudentPickerList() {
+        const gidStr = groupSelect ? String(groupSelect.value || '') : '';
+        const filtered = getFilteredPool();
+        const MAX_RENDER = 150;
+        const slice = filtered.slice(0, MAX_RENDER);
+
+        studentPickerList.innerHTML = '';
+        if (currentMode === 'some_from_group' && !gidStr) {
+            studentPickerList.innerHTML = '<div class="p-3 text-center small text-muted">Спочатку оберіть групу вище.</div>';
+            pickerStatsText.textContent = 'Показано: 0';
+            return;
+        }
+        if (!slice.length) {
+            studentPickerList.innerHTML = '<div class="p-3 text-center small text-muted">За вашим запитом студентів не знайдено.</div>';
+            pickerStatsText.textContent = 'Показано: 0';
+            return;
+        }
+
+        const frag = document.createDocumentFragment();
+        slice.forEach(s => {
+            const idStr = String(s.id);
+            const checked = selectedIds.has(idStr);
+            const row = document.createElement('label');
+            row.className = 'spb-student-opt' + (checked ? ' is-selected' : '');
+
+            const left = document.createElement('div');
+            left.className = 'd-flex align-items-center gap-2 min-w-0';
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'form-check-input m-0 flex-shrink-0';
+            cb.checked = checked;
+            cb.addEventListener('change', () => {
+                if (cb.checked) selectedIds.add(idStr);
+                else selectedIds.delete(idStr);
+                row.classList.toggle('is-selected', cb.checked);
+                renderChips();
+                syncHiddenFieldsAndSummary();
+            });
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'spb-student-opt__name text-truncate';
+            nameSpan.textContent = `${s.last_name_UA || ''} ${s.first_name_UA || ''} ${s.middle_name_UA || ''}`.trim();
+            left.appendChild(cb);
+            left.appendChild(nameSpan);
+
+            const grpSpan = document.createElement('span');
+            grpSpan.className = 'spb-student-opt__grp';
+            grpSpan.textContent = s.group_name || 'Без групи';
+
+            row.appendChild(left);
+            row.appendChild(grpSpan);
+            frag.appendChild(row);
+        });
+        studentPickerList.appendChild(frag);
+
+        pickerStatsText.textContent = filtered.length > MAX_RENDER
+            ? `Показано ${MAX_RENDER} з ${filtered.length} (уточніть пошук)`
+            : `Показано: ${filtered.length}`;
+    }
+
+    function applyModeUI() {
+        document.querySelectorAll('.js-mode-btn').forEach(btn => {
+            btn.classList.toggle('is-active', btn.dataset.mode === currentMode);
+        });
+        modeNoteBox.innerHTML = MODE_NOTES[currentMode] || '';
+
+        if (currentMode === 'any_students') {
+            groupSelectWrap.classList.add('d-none');
+            studentPickerLabel.textContent = 'Пошук і вибір студентів';
+        } else if (currentMode === 'whole_group') {
+            groupSelectWrap.classList.remove('d-none');
+            studentPickerLabel.textContent = 'Додаткові студенти (необов’язково)';
+        } else {
+            groupSelectWrap.classList.remove('d-none');
+            studentPickerLabel.textContent = 'Студенти обраної групи';
+        }
+
+        renderStudentPickerList();
+        renderChips();
+        syncHiddenFieldsAndSummary();
+    }
+
+    document.querySelectorAll('.js-mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentMode = btn.dataset.mode;
+            applyModeUI();
+        });
     });
+
+    if (groupSelect) {
+        groupSelect.addEventListener('change', () => {
+            applyModeUI();
+        });
+    }
+
+    studentSearchInput.addEventListener('input', () => {
+        studentSearchClear.classList.toggle('d-none', !studentSearchInput.value.trim());
+        renderStudentPickerList();
+    });
+    studentSearchClear.addEventListener('click', () => {
+        studentSearchInput.value = '';
+        studentSearchClear.classList.add('d-none');
+        renderStudentPickerList();
+        studentSearchInput.focus();
+    });
+
+    selectVisibleBtn.addEventListener('click', () => {
+        const filtered = getFilteredPool().slice(0, 150);
+        filtered.forEach(s => selectedIds.add(String(s.id)));
+        renderStudentPickerList();
+        renderChips();
+        syncHiddenFieldsAndSummary();
+    });
+
+    clearSelectedBtn.addEventListener('click', () => {
+        selectedIds.clear();
+        renderStudentPickerList();
+        renderChips();
+        syncHiddenFieldsAndSummary();
+    });
+
+    document.querySelectorAll('.js-filiya-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('filiya').value = btn.dataset.ua || '';
+            document.getElementById('filiya_en').value = btn.dataset.en || '';
+        });
+    });
+
+    fillGroupNameBtn.addEventListener('click', () => {
+        const gidStr = String(groupSelect.value || '');
+        if (gidStr && GROUP_NAME_BY_ID[gidStr]) {
+            groupNameInput.value = GROUP_NAME_BY_ID[gidStr];
+        }
+    });
+
+    document.getElementById('bulkAssignPostForm').addEventListener('submit', (e) => {
+        syncHiddenFieldsAndSummary();
+        if (currentMode !== 'any_students' && !groupSelect.value) {
+            e.preventDefault();
+            submitTargetSummary.innerHTML = '<span class="spb-badge spb-badge--warn"><i class="bi bi-exclamation-triangle"></i> Спочатку оберіть групу у кроці 1</span>';
+            groupSelect.focus();
+        }
+    });
+
+    applyModeUI();
 });
 </script>
 {% endblock %}

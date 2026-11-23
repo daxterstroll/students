@@ -1,294 +1,1871 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
-{% block title %}Управління шаблонами документів{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block title %}Шаблони документів{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
 {% block content %}
-<div class="container py-4">
+<style>
+    .tpl-page {
+        --tpl-ok-bg: rgba(79, 122, 82, .14);
+        --tpl-ok-fg: #265436;
+        --tpl-ok-bd: rgba(79, 122, 82, .35);
+        --tpl-ok-solid: #3d7a53;
+        --tpl-warn-bg: rgba(200, 162, 74, .18);
+        --tpl-warn-fg: #75550c;
+        --tpl-warn-bd: rgba(200, 162, 74, .46);
+        --tpl-warn-solid: #c8a24a;
+        --tpl-miss-bg: var(--stamp-soft);
+        --tpl-miss-fg: #8f2d22;
+        --tpl-miss-bd: var(--stamp-semi);
+        --tpl-miss-solid: #a23b2e;
+        --tpl-info-bg: rgba(61, 104, 153, .13);
+        --tpl-info-fg: #274f7d;
+        --tpl-info-bd: rgba(61, 104, 153, .34);
+        --tpl-info-solid: #3d6899;
+        --tpl-code-bg: #152130;
+        --tpl-code-fg: #eef2f6;
+        --tpl-code-muted: #9eb1c7;
+        --tpl-code-border: rgba(200, 162, 74, .28);
+    }
+    html[data-theme="dark"] .tpl-page {
+        --tpl-ok-bg: rgba(79, 122, 82, .25);
+        --tpl-ok-fg: #c2e6c5;
+        --tpl-ok-bd: rgba(117, 173, 122, .42);
+        --tpl-ok-solid: #5aa372;
+        --tpl-warn-bg: rgba(200, 162, 74, .20);
+        --tpl-warn-fg: #f2d687;
+        --tpl-warn-bd: rgba(227, 200, 122, .38);
+        --tpl-warn-solid: #d9b45c;
+        --tpl-miss-bg: rgba(162, 59, 46, .28);
+        --tpl-miss-fg: #f5b8b0;
+        --tpl-miss-bd: rgba(216, 108, 95, .42);
+        --tpl-miss-solid: #c9584a;
+        --tpl-info-bg: rgba(74, 110, 168, .22);
+        --tpl-info-fg: #b4ccf0;
+        --tpl-info-bd: rgba(120, 156, 214, .38);
+        --tpl-info-solid: #6994cc;
+        --tpl-code-bg: #0c1218;
+        --tpl-code-fg: #e7e2d6;
+        --tpl-code-muted: #9aa3ad;
+        --tpl-code-border: rgba(200, 162, 74, .32);
+    }
 
-    {{ ui.page_header('bi-file-earmark-arrow-up-fill', 'Шаблони документів', 'Завантаження та управління Word-шаблонами для генерації документів') }}
+    .tpl-num { font-variant-numeric: tabular-nums; }
+    .tpl-mono { font-family: 'JetBrains Mono', monospace; }
 
-    <div class="card mb-4">
-        <div class="card-header py-3">
-            <h5 class="mb-0 section-title"><i class="bi bi-upload me-2"></i>Завантажити новий шаблон</h5>
+    /* KPI картки */
+    .tpl-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        height: 100%;
+    }
+    .tpl-kpi--ok { border-top-color: var(--tpl-ok-solid); }
+    .tpl-kpi--info { border-top-color: var(--tpl-info-solid); }
+    .tpl-kpi--muted { border-top-color: var(--muted); }
+    .tpl-kpi__label {
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        margin-bottom: .25rem;
+    }
+    .tpl-kpi__val {
+        font-size: 1.55rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--ink-text);
+    }
+    .tpl-kpi--ok .tpl-kpi__val { color: var(--tpl-ok-fg); }
+    .tpl-kpi--info .tpl-kpi__val { color: var(--tpl-info-fg); }
+
+    /* Навігація вкладок робочої області */
+    .tpl-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: .65rem;
+        margin-bottom: 1.1rem;
+    }
+    .tpl-tab-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: .45rem;
+        padding: .52rem .95rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink-text);
+        font-size: .88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+    }
+    html[data-theme="dark"] .tpl-tab-btn {
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    .tpl-tab-btn:hover:not(.is-active) {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--ink);
+    }
+    html[data-theme="dark"] .tpl-tab-btn:hover:not(.is-active) {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    .tpl-tab-btn.is-active,
+    .tpl-tab-btn.is-active:hover {
+        background: var(--ink);
+        color: var(--brass-lt);
+        border-color: var(--ink);
+    }
+    html[data-theme="dark"] .tpl-tab-btn.is-active,
+    html[data-theme="dark"] .tpl-tab-btn.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    .tpl-tab-count {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: .74rem;
+        padding: .08rem .4rem;
+        border-radius: 5px;
+        background: rgba(128, 128, 128, .15);
+        color: inherit;
+    }
+    .tpl-tab-btn.is-active .tpl-tab-count {
+        background: rgba(255, 255, 255, .16);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .tpl-tab-btn.is-active .tpl-tab-count {
+        background: rgba(14, 27, 44, .18);
+        color: var(--ink);
+    }
+
+    /* Панелі */
+    .tpl-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .tpl-panel-head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .65rem;
+        padding: .85rem 1.1rem;
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    .tpl-panel-title {
+        font-family: 'Lora', serif;
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin: 0;
+    }
+
+    /* Зона завантаження файлу */
+    .tpl-dropzone {
+        position: relative;
+        border: 1.5px dashed var(--brass-semi);
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        background: var(--paper);
+        transition: border-color .15s ease, background-color .15s ease;
+    }
+    html[data-theme="dark"] .tpl-dropzone {
+        background: var(--paper-2);
+    }
+    .tpl-dropzone.is-dragover {
+        border-color: var(--brass);
+        background: var(--brass-soft);
+    }
+
+    .tpl-edit-banner {
+        display: none;
+        background: var(--tpl-warn-bg);
+        color: var(--tpl-warn-fg);
+        border: 1px solid var(--tpl-warn-bd);
+        border-radius: 8px;
+        padding: .6rem .85rem;
+        font-size: .85rem;
+        margin-bottom: .9rem;
+    }
+    .tpl-edit-banner.is-visible {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+
+    /* Статусні бейджі (прямокутні 6px) */
+    .tpl-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .3rem;
+        padding: .18rem .52rem;
+        border-radius: 6px;
+        font-size: .74rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .tpl-badge--ok { background: var(--tpl-ok-bg); color: var(--tpl-ok-fg); border-color: var(--tpl-ok-bd); }
+    .tpl-badge--warn { background: var(--tpl-warn-bg); color: var(--tpl-warn-fg); border-color: var(--tpl-warn-bd); }
+    .tpl-badge--info { background: var(--tpl-info-bg); color: var(--tpl-info-fg); border-color: var(--tpl-info-bd); }
+    .tpl-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+    .tpl-badge--miss { background: var(--tpl-miss-bg); color: var(--tpl-miss-fg); border-color: var(--tpl-miss-bd); }
+
+    /* Таблиця шаблонів */
+    .tpl-table { margin-bottom: 0; color: var(--ink-text); }
+    .tpl-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .65rem .85rem;
+        white-space: nowrap;
+    }
+    .tpl-table tbody td {
+        border-color: var(--line);
+        padding: .75rem .85rem;
+        vertical-align: middle;
+    }
+    .tpl-table tbody tr:hover td {
+        background: rgba(200, 162, 74, .06);
+    }
+
+    /* Мобільні картки шаблонів */
+    .tpl-mcard {
+        border-bottom: 1px solid var(--line);
+        padding: .9rem 1rem;
+    }
+    .tpl-mcard:last-child { border-bottom: 0; }
+
+    /* Тулбар фільтрів */
+    .tpl-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: .85rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    /* Фільтри категорій довідника */
+    .tpl-cat-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .35rem;
+    }
+    .tpl-cat-btn {
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        border-radius: 7px;
+        padding: .34rem .7rem;
+        font-size: .8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+    }
+    .tpl-cat-btn:hover:not(.is-active) {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--ink);
+    }
+    .tpl-cat-btn.is-active,
+    .tpl-cat-btn.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    html[data-theme="dark"] .tpl-cat-btn {
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .tpl-cat-btn:hover:not(.is-active) {
+        background: var(--brass-soft);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .tpl-cat-btn.is-active,
+    html[data-theme="dark"] .tpl-cat-btn.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+
+    /* Довідник змінних */
+    .tpl-var-section {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .tpl-var-section__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        padding: .75rem 1rem;
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    .tpl-var-section__title {
+        font-family: 'Lora', serif;
+        font-size: .98rem;
+        font-weight: 700;
+        color: var(--heading);
+        margin: 0;
+    }
+    .tpl-var-row {
+        display: grid;
+        grid-template-columns: minmax(220px, 290px) minmax(95px, 115px) 1fr;
+        gap: .75rem;
+        align-items: start;
+        padding: .68rem 1rem;
+        border-bottom: 1px solid var(--line);
+    }
+    .tpl-var-row:last-child { border-bottom: 0; }
+    .tpl-var-row:hover { background: rgba(200, 162, 74, .05); }
+    @media (max-width: 767.98px) {
+        .tpl-var-row {
+            grid-template-columns: 1fr;
+            gap: .35rem;
+            padding: .75rem .9rem;
+        }
+    }
+
+    .tpl-token-wrap {
+        display: inline-flex;
+        align-items: center;
+        gap: .35rem;
+        max-width: 100%;
+    }
+    .tpl-token {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: .8rem;
+        font-weight: 600;
+        padding: .2rem .48rem;
+        border-radius: 6px;
+        background: var(--paper-2);
+        color: var(--stamp);
+        border: 1px solid var(--line);
+        word-break: break-all;
+    }
+    html[data-theme="dark"] .tpl-token {
+        background: rgba(200, 162, 74, .12);
+        color: var(--brass-lt);
+        border-color: var(--brass-semi);
+    }
+
+    .tpl-copy-btn {
+        flex-shrink: 0;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink-text);
+        border-radius: 6px;
+        padding: .18rem .42rem;
+        font-size: .75rem;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: all .15s ease;
+    }
+    .tpl-copy-btn:hover {
+        color: var(--ink);
+        border-color: var(--brass);
+        background: var(--brass-soft);
+    }
+    html[data-theme="dark"] .tpl-copy-btn {
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .tpl-copy-btn:hover {
+        color: var(--brass-lt);
+        border-color: var(--brass-semi);
+        background: var(--brass-soft);
+    }
+    .tpl-copy-btn.is-copied,
+    html[data-theme="dark"] .tpl-copy-btn.is-copied {
+        background: var(--tpl-ok-bg);
+        color: var(--tpl-ok-fg);
+        border-color: var(--tpl-ok-bd);
+    }
+
+    .tpl-type-tag {
+        display: inline-block;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: .71rem;
+        font-weight: 600;
+        padding: .14rem .42rem;
+        border-radius: 5px;
+        background: var(--paper-2);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        white-space: nowrap;
+    }
+
+    /* Блоки прикладів Word / docxtpl */
+    .tpl-example-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 1rem;
+    }
+    .tpl-example-card__head {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .65rem;
+        padding: .8rem 1rem;
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+    }
+    .tpl-example-card__body {
+        padding: 1rem;
+    }
+    .tpl-code-wrap {
+        position: relative;
+        background: var(--tpl-code-bg);
+        color: var(--tpl-code-fg);
+        border: 1px solid var(--tpl-code-border);
+        border-radius: 8px;
+        padding: .85rem 1rem;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: .8rem;
+        line-height: 1.55;
+        overflow-x: auto;
+        white-space: pre;
+        margin: 0;
+    }
+    .tpl-result-box {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: .8rem .95rem;
+        font-size: .85rem;
+        height: 100%;
+    }
+    html[data-theme="dark"] .tpl-result-box {
+        background: var(--paper-2);
+    }
+    .tpl-note-callout {
+        border-left: 3px solid var(--brass);
+        background: var(--brass-soft);
+        padding: .65rem .85rem;
+        border-radius: 0 8px 8px 0;
+        font-size: .84rem;
+    }
+    .tpl-warn-callout {
+        border-left: 3px solid var(--tpl-miss-solid);
+        background: var(--tpl-miss-bg);
+        color: var(--ink-text);
+        padding: .65rem .85rem;
+        border-radius: 0 8px 8px 0;
+        font-size: .84rem;
+    }
+
+    /* Узгоджений контраст усіх Bootstrap-кнопок у світлій та темній темі */
+    .tpl-page .btn-outline-secondary {
+        --bs-btn-color: var(--ink-text);
+        --bs-btn-border-color: var(--line);
+        --bs-btn-bg: var(--surface);
+        --bs-btn-hover-bg: var(--brass-soft);
+        --bs-btn-hover-border-color: var(--brass-semi);
+        --bs-btn-hover-color: var(--ink);
+        --bs-btn-active-bg: var(--brass-soft);
+        --bs-btn-active-border-color: var(--brass);
+        --bs-btn-active-color: var(--ink);
+    }
+    .tpl-page .btn-outline-primary {
+        --bs-btn-color: #1c4470;
+        --bs-btn-border-color: rgba(28, 68, 112, .42);
+        --bs-btn-bg: transparent;
+        --bs-btn-hover-bg: #1c4470;
+        --bs-btn-hover-border-color: #1c4470;
+        --bs-btn-hover-color: #ffffff;
+        --bs-btn-active-bg: #163659;
+        --bs-btn-active-border-color: #163659;
+        --bs-btn-active-color: #ffffff;
+    }
+    html[data-theme="dark"] .tpl-page .btn-outline-secondary {
+        --bs-btn-color: var(--ink-text);
+        --bs-btn-border-color: var(--line);
+        --bs-btn-bg: var(--paper-2);
+        --bs-btn-hover-bg: var(--surface);
+        --bs-btn-hover-border-color: var(--brass-semi);
+        --bs-btn-hover-color: var(--brass-lt);
+        --bs-btn-active-bg: var(--surface);
+        --bs-btn-active-border-color: var(--brass);
+        --bs-btn-active-color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .tpl-page .btn-outline-primary {
+        --bs-btn-color: #a9c2e8;
+        --bs-btn-border-color: rgba(169, 194, 232, .48);
+        --bs-btn-bg: transparent;
+        --bs-btn-hover-bg: #a9c2e8;
+        --bs-btn-hover-border-color: #a9c2e8;
+        --bs-btn-hover-color: #0e1b2c;
+        --bs-btn-active-bg: #a9c2e8;
+        --bs-btn-active-border-color: #a9c2e8;
+        --bs-btn-active-color: #0e1b2c;
+    }
+    html[data-theme="dark"] .tpl-page .btn-outline-warning {
+        --bs-btn-color: var(--brass-lt);
+        --bs-btn-border-color: var(--brass-semi);
+        --bs-btn-hover-bg: var(--brass);
+        --bs-btn-hover-border-color: var(--brass);
+        --bs-btn-hover-color: #0e1b2c;
+    }
+    html[data-theme="dark"] .tpl-page .btn-outline-success {
+        --bs-btn-color: #a8d4ad;
+        --bs-btn-border-color: rgba(117, 173, 122, .48);
+        --bs-btn-hover-bg: #a8d4ad;
+        --bs-btn-hover-border-color: #a8d4ad;
+        --bs-btn-hover-color: #0e1b2c;
+    }
+    html[data-theme="dark"] .tpl-page .btn-outline-danger {
+        --bs-btn-color: #f0b3ab;
+        --bs-btn-border-color: var(--stamp-semi);
+        --bs-btn-hover-bg: var(--stamp);
+        --bs-btn-hover-border-color: var(--stamp);
+        --bs-btn-hover-color: #ffffff;
+    }
+    .tpl-page .js-copy-block.is-copied,
+    html[data-theme="dark"] .tpl-page .js-copy-block.is-copied {
+        background: var(--tpl-ok-bg) !important;
+        color: var(--tpl-ok-fg) !important;
+        border-color: var(--tpl-ok-bd) !important;
+    }
+</style>
+
+{% set total_cnt = templates|length %}
+{% set visible_cnt = templates|rejectattr('hidden')|list|length %}
+{% set hidden_cnt = templates|selectattr('hidden')|list|length %}
+{% set admin_only_cnt = templates|selectattr('admin_only')|list|length %}
+
+<div class="container py-4 tpl-page">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            {% if has_perm('group_export') %}
+            <a href="{{ url_for('admin.group_export') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-file-earmark-zip me-1"></i>Масова генерація
+            </a>
+            {% endif %}
+            <a href="{{ url_for('students.faq') }}#p-templates" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-question-circle me-1"></i>Довідка системи
+            </a>
         </div>
-        <div class="card-body">
-            <form method="POST" enctype="multipart/form-data" class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label" for="template_file">Файл шаблону (.docx)</label>
-                    <input type="file" name="template_file" id="template_file" class="form-control" accept=".docx" required>
-                    <div class="form-text">Якщо файл із такою самою назвою вже існує - він буде замінений, а назву та опис оновлено.</div>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label" for="display_name">Назва (необов'язково)</label>
-                    <input type="text" name="display_name" id="display_name" class="form-control"
-                           placeholder="Напр.: Повідомлення в ТЦК про зміну облікових даних">
-                    <div class="form-text">Саме ця назва показується користувачам у списку вибору шаблону. Якщо не вказати - буде показано ім'я файлу.</div>
-                </div>
-                <div class="col-12">
-                    <label class="form-label" for="description">Опис (необов'язково)</label>
-                    <textarea name="description" id="description" class="form-control" rows="2"
-                              placeholder="Напр.: для чого цей шаблон, на що звернути увагу перед генерацією"></textarea>
-                </div>
-                <div class="col-12">
-                    <div class="form-check">
-                        <input type="checkbox" name="visible" id="visible" class="form-check-input" checked>
-                        <label class="form-check-label" for="visible">
-                            <i class="bi bi-eye-fill me-1"></i>Показувати в списках вибору (якщо зняти - шаблон буде прихований і його ніхто не зможе обрати при генерації, доки не ввімкнете знову)
-                        </label>
-                    </div>
-                    <div class="form-check">
-                        <input type="checkbox" name="admin_only" id="admin_only" class="form-check-input">
-                        <label class="form-check-label" for="admin_only">
-                            <i class="bi bi-lock-fill me-1"></i>Тільки для адміністратора (інші користувачі не побачать цей шаблон у списку вибору)
-                        </label>
-                    </div>
-                </div>
-                <div class="col-12">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-cloud-upload me-2"></i>Завантажити</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div class="card mb-4">
-        <div class="card-header py-3">
-            <button class="btn btn-link text-decoration-none p-0 w-100 text-start d-flex justify-content-between align-items-center"
-                    type="button" data-bs-toggle="collapse" data-bs-target="#varsReference">
-                <h5 class="mb-0 section-title"><i class="bi bi-book me-2"></i>Довідник змінних для шаблону</h5>
-                <i class="bi bi-chevron-down"></i>
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-sm btn-outline-primary js-jump-tab" data-target-tab="reference">
+                <i class="bi bi-book me-1"></i>Довідник змінних
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-warning js-jump-tab" data-target-tab="examples">
+                <i class="bi bi-code-square me-1"></i>Приклади для Word
             </button>
         </div>
-        <div class="collapse" id="varsReference">
-            <div class="card-body">
-                <p class="text-muted small mb-3">
-                    У тексті Word-шаблону пишіть назву поля у подвійних фігурних дужках, напр.
-                    <code>{{ '{{ qualification_name }}' }}</code> — при генерації воно автоматично заміниться на реальне значення студента.
-                    Поля з приміткою «список» вимагають циклу docxtpl (<code>{% raw %}{%tr for item in program_includes %}{% endraw %}</code> для рядка таблиці або
-                    <code>{% raw %}{%p for item in program_includes %}{% endraw %}</code> для абзацу) — просто <code>{{ '{{ program_includes }}' }}</code> без циклу нічого не виведе.
-                </p>
+    </div>
 
-                <div class="accordion" id="varsAccordion">
+    {{ ui.page_header(
+        'bi-file-earmark-word-fill',
+        'Шаблони документів',
+        'Управління Word-шаблонами (.docx), правами доступу та актуальний довідник змінних із прикладами'
+    ) }}
 
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#vGeneral">
-                                Особисті дані студента
-                                <span class="text-muted small ms-2 fw-normal">джерело: Студенти → Додати / Редагувати студента</span>
-                            </button>
-                        </h2>
-                        <div id="vGeneral" class="accordion-collapse collapse" data-bs-parent="#varsAccordion">
-                            <div class="accordion-body p-0">
-                                <div class="table-responsive">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th style="width:33%">Змінна</th><th>Опис</th><th style="width:30%">Звідки беруться дані</th></tr></thead>
-                                    <tbody>
-                                        <tr><td class="font-monospace text-nowrap">last_name_UA</td><td>Прізвище (укр.)</td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">first_name_UA</td><td>Ім'я (укр.)</td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">middle_name_UA</td><td>По батькові (укр.)</td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">last_name_ENG</td><td>Прізвище (англ.)</td><td class="text-muted small">Картка студента (авто-транслітерація, можна виправити вручну)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">first_name_ENG</td><td>Ім'я (англ.)</td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">birth_date</td><td>Дата народження, формат <code>дд/мм/рррр</code></td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">edebo_code</td><td>Код у ЄДЕБО</td><td class="text-muted small">Картка студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">student_photo</td><td>Фото студента (вставляється як зображення, 3×4). Якщо фото немає — поле в документі лишається порожнім, без помилки</td><td class="text-muted small">Картка студента → Завантажити фото</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">group_name</td><td>Повна назва групи разом з роком, формою і кредитами, напр. «ІПЗ-21 (2021, Денна, 240 кредитів)»</td><td class="text-muted small">Адміністрування → Групи</td></tr>
-                                    </tbody>
-                                </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#vProgram">
-                                Освітня програма / група
-                                <span class="text-muted small ms-2 fw-normal">джерело: Адміністрування → Групи</span>
-                            </button>
-                        </h2>
-                        <div id="vProgram" class="accordion-collapse collapse" data-bs-parent="#varsAccordion">
-                            <div class="accordion-body p-0">
-                                <div class="table-responsive">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th style="width:33%">Змінна</th><th>Опис</th><th style="width:30%">Звідки беруться дані</th></tr></thead>
-                                    <tbody>
-                                        <tr><td class="font-monospace text-nowrap">qualification_name</td><td>Кваліфікація, напр. «Бакалавр комп'ютерних наук» (є <code>_en</code>-версія)</td><td class="text-muted small">Групи → поле «Кваліфікація»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">degree_level</td><td>Ступінь: «Бакалавр» / «Магістр» (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Ступінь»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">specialty</td><td>Спеціальність (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Спеціальність»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">isced_f_ua</td><td>Код і назва деталізованої галузі ISCED-F 2013 (укр.), напр. «0413 Управління та адміністрування»</td><td class="text-muted small">Спеціальності → поле «ISCED-F (укр.)» обраної спеціальності групи</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">isced_f_en</td><td>Те саме англійською, напр. «0413 Management and administration»</td><td class="text-muted small">Спеціальності → поле «ISCED-F (англ.)» обраної спеціальності групи</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">educational_program</td><td>Назва освітньої програми (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Освітня програма»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">knowledge_area</td><td>Галузь знань (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Галузь знань»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">program_credits</td><td>Кількість кредитів (число, напр. 240)</td><td class="text-muted small">Групи → поле «Кредити»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">study_form</td><td>Форма навчання: «Денна» / «Заочна»</td><td class="text-muted small">Групи → поле «Форма навчання»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">study_form_eu</td><td>Форма навчання англійською скорочено: «Full» / «Part»</td><td class="text-muted small">Обчислюється автоматично зі «study_form»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">start_year</td><td>Рік вступу</td><td class="text-muted small">Групи → поле «Рік початку»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">end_year</td><td>Рік випуску</td><td class="text-muted small">Обчислюється: рік вступу + тривалість (зі ступеня і кредитів)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">end_year_short</td><td>Останні 2 цифри року випуску, напр. «25»</td><td class="text-muted small">Обчислюється з «end_year»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">study_years</td><td>Тривалість навчання в роках, напр. «4» чи «1.5»</td><td class="text-muted small">Обчислюється з кількості кредитів (240→4, 180→3, 120→2, 90→1.5)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">institution_name_and_status</td><td>Повна назва й статус закладу освіти (є <code>_en</code>)</td><td class="text-muted small">Ліцензія студента (сторінка «Ліцензії», обирається в картці студента)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">entry_requirements</td><td>Вимоги до вступу (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Вимоги до вступу»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">learning_outcomes</td><td><em>Список</em> результатів навчання, по одному пункту (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Результати навчання» (кожен рядок = окремий пункт)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">program_includes</td><td><em>Список</em> складових програми, по одному пункту (є <code>_en</code>)</td><td class="text-muted small">Групи → поле «Програма включає» (кожен рядок = окремий пункт)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">top_qualification_text</td><td>«підготовка кваліфікаційної роботи» — з'являється лише для магістрів (парне поле — <code>bottom_qualification_text</code> для захисту роботи)</td><td class="text-muted small">Обчислюється: лише якщо ступінь групи = «Магістр»</td></tr>
-                                    </tbody>
-                                </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#vMilitary">
-                                Військовий облік
-                                <span class="text-muted small ms-2 fw-normal">джерело: Картка студента → Військові дані</span>
-                            </button>
-                        </h2>
-                        <div id="vMilitary" class="accordion-collapse collapse" data-bs-parent="#varsAccordion">
-                            <div class="accordion-body p-0">
-                                <div class="table-responsive">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th style="width:33%">Змінна</th><th>Опис</th><th style="width:30%">Звідки беруться дані</th></tr></thead>
-										<tbody>
-											<tr><td class="font-monospace text-nowrap">registry_number</td><td>Реєстраційний номер ДРПВР («Оберіг»)</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">military_registration_document</td><td>Військово-обліковий документ</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">formed_at</td><td>Документ сформовано (дата)</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">vos_code</td><td>Код ВОС</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">military_rank</td><td>Військове звання</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">change_credentials</td><td>Що саме змінилось в обліку</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">reason_for_changing_credentials</td><td>Причина зміни</td><td class="text-muted small">Військові дані студента</td></tr>
-											<tr><td class="font-monospace text-nowrap">address_of_residence</td><td>Адреса проживання</td><td class="text-muted small"><strong>Картка студента</strong> (не military!)</td></tr>
-										</tbody>
-                                </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#vEduDocs">
-                                Документ про освіту
-                                <span class="text-muted small ms-2 fw-normal">джерело: Адміністрування → Документи про освіту</span>
-                            </button>
-                        </h2>
-                        <div id="vEduDocs" class="accordion-collapse collapse" data-bs-parent="#varsAccordion">
-                            <div class="accordion-body p-0">
-                                <p class="text-muted small px-3 pt-3 mb-0">Береться найновіший (останній доданий) документ студента. Поля «reference_*» і «recognition_*» стосуються іноземних документів.</p>
-                                <div class="table-responsive">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th style="width:33%">Змінна</th><th>Опис</th><th style="width:30%">Звідки беруться дані</th></tr></thead>
-                                    <tbody>
-                                        <tr><td class="font-monospace text-nowrap">document_type</td><td>Тип документа про освіту (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">document_number</td><td>Номер документа</td><td class="text-muted small">Документи про освіту</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">institution_name</td><td>Заклад, що видав документ (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">country</td><td>Країна видачі (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">completion_date</td><td>Дата завершення навчання</td><td class="text-muted small">Документи про освіту</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">reference_number</td><td>Номер довідки (іноземні документи)</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">reference_institution</td><td>Заклад, що видав довідку (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">reference_country</td><td>Країна довідки (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">reference_issue_date</td><td>Дата видачі довідки</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">recognition_certificate_number</td><td>Номер свідоцтва про визнання</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">recognition_issuer</td><td>Хто видав визнання (є <code>_en</code>)</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">recognition_date</td><td>Дата визнання</td><td class="text-muted small">Документи про освіту → блок іноземного документа</td></tr>
-                                    </tbody>
-                                </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="accordion-item">
-                        <h2 class="accordion-header">
-                            <button class="accordion-button collapsed flex-wrap" type="button" data-bs-toggle="collapse" data-bs-target="#vDiploma">
-                                Диплом, оцінки та періоди навчання
-                            </button>
-                        </h2>
-                        <div id="vDiploma" class="accordion-collapse collapse" data-bs-parent="#varsAccordion">
-                            <div class="accordion-body p-0">
-                                <div class="table-responsive">
-                                <table class="table table-sm mb-0">
-                                    <thead><tr><th style="width:33%">Змінна</th><th>Опис</th><th style="width:30%">Звідки беруться дані</th></tr></thead>
-                                    <tbody>
-                                        <tr><td class="font-monospace text-nowrap">diploma_number</td><td>Номер диплома, доповнений нулями до 6 цифр</td><td class="text-muted small">Адміністрування → Номери диплому / додатку</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">appendix_number</td><td>Номер додатка, доповнений нулями до 6 цифр</td><td class="text-muted small">Адміністрування → Номери диплому / додатку</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">study_period_names</td><td>Назва(и) закладу за весь період навчання, багаторядковий текст (є <code>_en</code>)</td><td class="text-muted small">Картка студента → Періоди навчання (якщо періодів немає — формується з даних групи)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">study_period_dates</td><td>Дати навчання по періодах, багаторядковий текст (є <code>_en</code>)</td><td class="text-muted small">Картка студента → Періоди навчання</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">accreditation_text</td><td>Текст акредитації (є <code>_en</code>)</td><td class="text-muted small">Адміністрування → Акредитації (підбирається автоматично за ступенем + спеціальністю групи)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">diploma_with_honor_text</td><td>«Диплом з відзнакою» або «Інформація відсутня» (є <code>_en</code>)</td><td class="text-muted small">Обчислюється з оцінок: ≥75% «A», без «D»/«E», атестація на «A»</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">subjects_grades</td><td><em>Список</em> предметів з оцінками (поля елемента: name, name_en, credits, grade)</td><td class="text-muted small">Адміністрування → Предмети + оцінки студента (Оцінки)</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">practice_data</td><td><em>Список</em> практик з оцінками</td><td class="text-muted small">Адміністрування → Практика / атестація / курсові + оцінки студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">coursework_data</td><td><em>Список</em> курсових робіт з оцінками</td><td class="text-muted small">Адміністрування → Практика / атестація / курсові + оцінки студента</td></tr>
-                                        <tr><td class="font-monospace text-nowrap">attestation_data</td><td><em>Список</em> атестацій з оцінками</td><td class="text-muted small">Адміністрування → Практика / атестація / курсові + оцінки студента</td></tr>
-                                    </tbody>
-                                </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                </div>
+    {# ── KPI-смуга ── #}
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="tpl-kpi">
+                <div class="tpl-kpi__label">Усього шаблонів</div>
+                <div class="tpl-kpi__val tpl-num">{{ total_cnt }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="tpl-kpi tpl-kpi--ok">
+                <div class="tpl-kpi__label">Видимі у списках</div>
+                <div class="tpl-kpi__val tpl-num">{{ visible_cnt }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="tpl-kpi tpl-kpi--info">
+                <div class="tpl-kpi__label">Тільки для адміна</div>
+                <div class="tpl-kpi__val tpl-num">{{ admin_only_cnt }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="tpl-kpi tpl-kpi--muted">
+                <div class="tpl-kpi__label">Приховані</div>
+                <div class="tpl-kpi__val tpl-num">{{ hidden_cnt }}</div>
             </div>
         </div>
     </div>
 
-    {{ ui.section_title('Наявні шаблони') }}
-    {% if templates %}
-        {% for tpl in templates %}
-        <div class="card mb-3 {% if tpl.hidden %}opacity-75{% endif %}">
-            <div class="card-body">
+    {# ── Головні вкладки сторінки ── #}
+    <div class="tpl-tabs" role="tablist" aria-label="Розділи керування шаблонами">
+        <button type="button" class="tpl-tab-btn is-active" id="tabBtnManage" data-tab="manage" role="tab" aria-selected="true">
+            <i class="bi bi-folder2-open"></i>
+            <span>Шаблони (.docx)</span>
+            <span class="tpl-tab-count">{{ total_cnt }}</span>
+        </button>
+        <button type="button" class="tpl-tab-btn" id="tabBtnRef" data-tab="reference" role="tab" aria-selected="false">
+            <i class="bi bi-braces"></i>
+            <span>Довідник змінних</span>
+            <span class="tpl-tab-count" id="refTotalCount">—</span>
+        </button>
+        <button type="button" class="tpl-tab-btn" id="tabBtnExamples" data-tab="examples" role="tab" aria-selected="false">
+            <i class="bi bi-file-earmark-richtext"></i>
+            <span>Детальні приклади для Word</span>
+            <span class="tpl-tab-count">8</span>
+        </button>
+    </div>
 
-                <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
-                    <div style="min-width: 0;">
-                        <div class="d-flex align-items-center flex-wrap gap-2">
-                            <h6 class="mb-0">{{ tpl.display_name }}</h6>
-                            {% if tpl.hidden %}
-                                <span class="badge bg-dark"><i class="bi bi-eye-slash-fill me-1"></i>Прихований</span>
-                            {% elif tpl.admin_only %}
-                                <span class="badge bg-secondary"><i class="bi bi-lock-fill me-1"></i>Тільки адмін</span>
-                            {% else %}
-                                <span class="badge bg-success-subtle text-success-emphasis">Доступний усім</span>
-                            {% endif %}
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 1: КЕРУВАННЯ ШАБЛОНАМИ
+       ════════════════════════════════════════════════════════════════ #}
+    <section id="tabPaneManage" class="tpl-tab-pane" role="tabpanel" aria-labelledby="tabBtnManage">
+
+        {# ── Форма завантаження / оновлення ── #}
+        <div class="tpl-panel mb-4" id="uploadPanel">
+            <div class="tpl-panel-head">
+                <h2 class="tpl-panel-title">
+                    <i class="bi bi-cloud-arrow-up me-2" style="color: var(--brass);"></i>Завантажити або оновити шаблон
+                </h2>
+                <span class="small text-muted">Формат <code>.docx</code> · збереження у <code>template_word/</code></span>
+            </div>
+            <div class="p-3 p-md-4">
+                <div class="tpl-edit-banner" id="replaceModeBanner">
+                    <div>
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        <strong>Режим оновлення шаблону:</strong>
+                        оберіть файл із назвою <code id="replaceExpectedName"></code>, щоб замінити вміст та оновити налаштування.
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="cancelReplaceBtn">
+                        Скинути режим оновлення
+                    </button>
+                </div>
+
+                <form method="POST" action="{{ url_for('admin.manage_templates') }}" enctype="multipart/form-data" id="templateUploadForm">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="row g-3">
+                        <div class="col-12 col-lg-5">
+                            <label for="template_file" class="form-label fw-semibold small">
+                                Файл шаблону (.docx) <span class="text-danger">*</span>
+                            </label>
+                            <div class="tpl-dropzone" id="tplDropzone">
+                                <input type="file" name="template_file" id="template_file" class="form-control form-control-sm"
+                                       accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required>
+                                <div class="form-text mt-2 mb-0" id="fileDropHint">
+                                    Перетягніть <code>.docx</code> сюди або оберіть файл. Якщо файл із такою ж назвою вже існує — він буде перезаписаний.
+                                </div>
+                            </div>
                         </div>
-                        <div class="font-monospace small text-muted text-break">{{ tpl.filename }}</div>
-                    </div>
 
-                    <div class="d-flex flex-wrap gap-2 flex-shrink-0">
-                        <form method="POST" action="{{ url_for('admin.toggle_template_visibility', filename=tpl.filename) }}" class="m-0">
-                            <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                    title="{{ 'Показати в списках вибору' if tpl.hidden else 'Приховати зі списків вибору' }}">
-                                <i class="bi {{ 'bi-eye' if tpl.hidden else 'bi-eye-slash' }}"></i>
+                        <div class="col-12 col-lg-7">
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label for="display_name" class="form-label fw-semibold small">Назва для списків вибору</label>
+                                    <input type="text" name="display_name" id="display_name" class="form-control form-control-sm"
+                                           maxlength="120" placeholder="Напр.: Додаток до диплома (Бакалавр)">
+                                    <div class="form-text">Якщо залишити порожнім — покажеться ім'я файлу.</div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label for="description" class="form-label fw-semibold small">Короткий опис</label>
+                                    <input type="text" name="description" id="description" class="form-control form-control-sm"
+                                           maxlength="240" placeholder="Для яких спеціальностей або випадків використовується">
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="d-flex flex-wrap gap-3 gap-md-4 pt-1">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="visible" name="visible" checked>
+                                            <label class="form-check-label small fw-semibold" for="visible">
+                                                Показувати у списках генерації
+                                            </label>
+                                            <div class="form-text mt-0">Якщо вимкнути — шаблон не зникне з диска, але зникне зі списку вибору.</div>
+                                        </div>
+
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="admin_only" name="admin_only">
+                                            <label class="form-check-label small fw-semibold" for="admin_only">
+                                                <i class="bi bi-shield-lock me-1"></i>Тільки для адміністратора
+                                            </label>
+                                            <div class="form-text mt-0">Звичайні працівники з правом експорту цей шаблон не побачать.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2 pt-2 border-top">
+                            <div class="small text-muted">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Службові шаблони відомостей (<code>vidomist_*.docx</code>) зберігаються окремо в <code>static/templates/word/</code>.
+                            </div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-upload me-2"></i>Зберегти шаблон
                             </button>
-                        </form>
-                        <a href="{{ url_for('admin.download_template', filename=tpl.filename) }}"
-                           class="btn btn-sm btn-outline-primary" title="Завантажити файл шаблону">
-                            <i class="bi bi-download"></i>
-                        </a>
-                        <form method="POST" action="{{ url_for('admin.delete_template', filename=tpl.filename) }}"
-                              onsubmit="return confirm('Видалити шаблон «{{ tpl.filename }}»? Це не можна скасувати.');" class="m-0">
-                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити шаблон">
-                                <i class="bi bi-trash"></i>
-                            </button>
-                        </form>
+                        </div>
                     </div>
-                </div>
-
-                {% if tpl.description %}
-                <p class="small text-muted mb-2">{{ tpl.description }}</p>
-                {% endif %}
-
-                <div class="small text-muted d-flex flex-wrap column-gap-3 row-gap-1">
-                    <span><i class="bi bi-hdd me-1"></i>{{ tpl.size_kb }} КБ</span>
-                    {% if tpl.uploaded_by %}<span><i class="bi bi-person me-1"></i>{{ tpl.uploaded_by }}</span>{% endif %}
-                    {% if tpl.uploaded_at %}<span class="font-monospace"><i class="bi bi-clock me-1"></i>{{ tpl.uploaded_at }}</span>{% endif %}
-                </div>
-
+                </form>
             </div>
         </div>
-        {% endfor %}
-    {% else %}
-        {{ ui.empty_state('bi-file-earmark-arrow-up', 'Шаблонів ще немає - завантажте перший вище') }}
-    {% endif %}
+
+        {# ── Пошук і фільтр списку шаблонів ── #}
+        {% if templates %}
+        <div class="tpl-toolbar">
+            <div class="row g-2 align-items-center">
+                <div class="col-md-5">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="tplSearchInput" class="form-control" placeholder="Пошук за назвою, файлом, описом або автором...">
+                    </div>
+                </div>
+                <div class="col-md-7 d-flex flex-wrap justify-content-md-end gap-1" id="tplFilterGroup">
+                    <button type="button" class="tpl-cat-btn is-active" data-tpl-filter="all">Усі ({{ total_cnt }})</button>
+                    <button type="button" class="tpl-cat-btn" data-tpl-filter="visible">Видимі ({{ visible_cnt }})</button>
+                    <button type="button" class="tpl-cat-btn" data-tpl-filter="hidden">Приховані ({{ hidden_cnt }})</button>
+                    <button type="button" class="tpl-cat-btn" data-tpl-filter="admin">Тільки адмін ({{ admin_only_cnt }})</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="tpl-panel">
+            {# ── Десктопна таблиця ── #}
+            <div class="table-responsive d-none d-lg-block">
+                <table class="table tpl-table align-middle" id="tplDesktopTable">
+                    <thead>
+                        <tr>
+                            <th>Шаблон</th>
+                            <th>Видимість</th>
+                            <th>Доступ</th>
+                            <th class="text-end">Розмір</th>
+                            <th>Завантажено</th>
+                            <th class="text-end" style="width: 270px;">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tpl in templates %}
+                        <tr class="js-tpl-row"
+                            data-search="{{ (tpl.display_name ~ ' ' ~ tpl.filename ~ ' ' ~ tpl.description ~ ' ' ~ tpl.uploaded_by)|lower }}"
+                            data-hidden="{{ '1' if tpl.hidden else '0' }}"
+                            data-admin="{{ '1' if tpl.admin_only else '0' }}">
+                            <td>
+                                <div class="fw-semibold">{{ tpl.display_name }}</div>
+                                <div class="small text-muted tpl-mono">{{ tpl.filename }}</div>
+                                {% if tpl.description %}
+                                <div class="small text-muted mt-1">{{ tpl.description }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tpl.hidden %}
+                                <span class="tpl-badge tpl-badge--muted"><i class="bi bi-eye-slash"></i> Прихований</span>
+                                {% else %}
+                                <span class="tpl-badge tpl-badge--ok"><i class="bi bi-eye"></i> Видимий</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tpl.admin_only %}
+                                <span class="tpl-badge tpl-badge--info"><i class="bi bi-shield-lock"></i> Тільки адмін</span>
+                                {% else %}
+                                <span class="tpl-badge tpl-badge--muted"><i class="bi bi-people"></i> Усі з експортом</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end tpl-num small text-muted text-nowrap">{{ tpl.size_kb }} KB</td>
+                            <td class="small">
+                                {% if tpl.uploaded_at %}
+                                <div class="tpl-num">{{ tpl.uploaded_at[:16]|replace('T', ' ') }}</div>
+                                {% else %}
+                                <div class="text-muted">—</div>
+                                {% endif %}
+                                {% if tpl.uploaded_by %}
+                                <div class="text-muted">{{ tpl.uploaded_by }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                <div class="d-inline-flex gap-1">
+                                    <a href="{{ url_for('admin.download_template', filename=tpl.filename) }}"
+                                       class="btn btn-sm btn-outline-secondary" title="Завантажити .docx">
+                                        <i class="bi bi-download"></i>
+                                    </a>
+                                    <form method="POST" action="{{ url_for('admin.toggle_template_visibility', filename=tpl.filename) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit"
+                                                class="btn btn-sm {% if tpl.hidden %}btn-outline-success{% else %}btn-outline-warning{% endif %}"
+                                                title="{{ 'Показати у списках вибору' if tpl.hidden else 'Приховати зі списків вибору' }}">
+                                            <i class="bi bi-{% if tpl.hidden %}eye{% else %}eye-slash{% endif %}"></i>
+                                        </button>
+                                    </form>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-primary js-replace-tpl"
+                                            title="Оновити файл або метадані"
+                                            data-filename="{{ tpl.filename }}"
+                                            data-display-name="{{ tpl.display_name }}"
+                                            data-description="{{ tpl.description }}"
+                                            data-admin-only="{{ '1' if tpl.admin_only else '0' }}"
+                                            data-visible="{{ '0' if tpl.hidden else '1' }}">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </button>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-danger js-delete-tpl"
+                                            title="Видалити шаблон"
+                                            data-filename="{{ tpl.filename }}"
+                                            data-display-name="{{ tpl.display_name }}"
+                                            data-delete-url="{{ url_for('admin.delete_template', filename=tpl.filename) }}">
+                                        <i class="bi bi-trash3"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {# ── Мобільні картки ── #}
+            <div class="d-lg-none" id="tplMobileList">
+                {% for tpl in templates %}
+                <div class="tpl-mcard js-tpl-row"
+                     data-search="{{ (tpl.display_name ~ ' ' ~ tpl.filename ~ ' ' ~ tpl.description ~ ' ' ~ tpl.uploaded_by)|lower }}"
+                     data-hidden="{{ '1' if tpl.hidden else '0' }}"
+                     data-admin="{{ '1' if tpl.admin_only else '0' }}">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+                        <div>
+                            <div class="fw-semibold">{{ tpl.display_name }}</div>
+                            <div class="small text-muted tpl-mono">{{ tpl.filename }}</div>
+                        </div>
+                        <span class="small text-muted tpl-num text-nowrap">{{ tpl.size_kb }} KB</span>
+                    </div>
+                    {% if tpl.description %}
+                    <div class="small text-muted mb-2">{{ tpl.description }}</div>
+                    {% endif %}
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                        {% if tpl.hidden %}
+                        <span class="tpl-badge tpl-badge--muted"><i class="bi bi-eye-slash"></i> Прихований</span>
+                        {% else %}
+                        <span class="tpl-badge tpl-badge--ok"><i class="bi bi-eye"></i> Видимий</span>
+                        {% endif %}
+                        {% if tpl.admin_only %}
+                        <span class="tpl-badge tpl-badge--info"><i class="bi bi-shield-lock"></i> Тільки адмін</span>
+                        {% else %}
+                        <span class="tpl-badge tpl-badge--muted"><i class="bi bi-people"></i> Усі з експортом</span>
+                        {% endif %}
+                    </div>
+                    <div class="small text-muted mb-2 tpl-num">
+                        {% if tpl.uploaded_at %}Оновлено: {{ tpl.uploaded_at[:16]|replace('T', ' ') }}{% endif %}
+                        {% if tpl.uploaded_by %} · {{ tpl.uploaded_by }}{% endif %}
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ url_for('admin.download_template', filename=tpl.filename) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-download me-1"></i>Скачати
+                        </a>
+                        <form method="POST" action="{{ url_for('admin.toggle_template_visibility', filename=tpl.filename) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="btn btn-sm {% if tpl.hidden %}btn-outline-success{% else %}btn-outline-warning{% endif %}">
+                                <i class="bi bi-{% if tpl.hidden %}eye{% else %}eye-slash{% endif %} me-1"></i>{{ 'Показати' if tpl.hidden else 'Приховати' }}
+                            </button>
+                        </form>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-primary js-replace-tpl"
+                                data-filename="{{ tpl.filename }}"
+                                data-display-name="{{ tpl.display_name }}"
+                                data-description="{{ tpl.description }}"
+                                data-admin-only="{{ '1' if tpl.admin_only else '0' }}"
+                                data-visible="{{ '0' if tpl.hidden else '1' }}">
+                            <i class="bi bi-arrow-repeat me-1"></i>Оновити
+                        </button>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-danger js-delete-tpl ms-auto"
+                                data-filename="{{ tpl.filename }}"
+                                data-display-name="{{ tpl.display_name }}"
+                                data-delete-url="{{ url_for('admin.delete_template', filename=tpl.filename) }}">
+                            <i class="bi bi-trash3"></i>
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <div id="tplFilterEmpty" class="p-4 text-center text-muted small d-none">
+                <i class="bi bi-search d-block mb-1" style="font-size: 1.4rem;"></i>
+                За поточним фільтром шаблонів не знайдено.
+            </div>
+        </div>
+        {% else %}
+            {{ ui.empty_state('bi-file-earmark-word', 'У папці template_word/ поки що немає жодного .docx шаблону') }}
+        {% endif %}
+    </section>
+
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 2: АКТУАЛЬНИЙ ДОВІДНИК ЗМІННИХ
+       ════════════════════════════════════════════════════════════════ #}
+    <section id="tabPaneReference" class="tpl-tab-pane d-none" role="tabpanel" aria-labelledby="tabBtnRef">
+
+        <div class="tpl-toolbar">
+            <div class="row g-2 align-items-center mb-2">
+                <div class="col-md-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="refSearchInput" class="form-control"
+                               placeholder="Пошук змінної (напр. diploma, military, learning_outcomes, іноземна)...">
+                        <button type="button" class="btn btn-outline-secondary d-none" id="refSearchClear" title="Очистити">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-6 d-flex justify-content-md-end align-items-center gap-2 small text-muted">
+                    <span>Показано змінних: <strong id="refVisibleCount" class="tpl-num text-body">—</strong></span>
+                    <button type="button" class="btn btn-sm btn-outline-warning js-jump-tab" data-target-tab="examples">
+                        <i class="bi bi-code-square me-1"></i>Перейти до прикладів
+                    </button>
+                </div>
+            </div>
+
+            <div class="tpl-cat-bar" id="refCatBar">
+                <button type="button" class="tpl-cat-btn is-active" data-cat="all">Усі категорії</button>
+                <button type="button" class="tpl-cat-btn" data-cat="personal">Особисті та фото</button>
+                <button type="button" class="tpl-cat-btn" data-cat="group">Група, ОП та ліцензія</button>
+                <button type="button" class="tpl-cat-btn" data-cat="diploma">Диплом, акредитація, періоди</button>
+                <button type="button" class="tpl-cat-btn" data-cat="education">Попередня та іноземна освіта</button>
+                <button type="button" class="tpl-cat-btn" data-cat="grades">Предмети, практики, атестація</button>
+                <button type="button" class="tpl-cat-btn" data-cat="military">Військовий облік (Резерв+)</button>
+                <button type="button" class="tpl-cat-btn" data-cat="vidomist">Відомості сесії</button>
+            </div>
+        </div>
+
+        <div class="tpl-note-callout mb-3">
+            <strong>Як підставляються дані для студентів із паралельним навчанням:</strong>
+            при виборі групи під час масової або індивідуальної генерації у шаблон автоматично передаються
+            <code>edebo_code</code>, <code>group_id</code>, ліцензія (<code>institution_name_and_status*</code>, <code>license_short_name_*</code>),
+            предмети/оцінки, диплом та періоди навчання саме <strong>обраної групи</strong>.
+            Для студентів на скороченій програмі тексти <code>entry_requirements*</code>, <code>program_includes*</code>,
+            <code>learning_outcomes*</code> і кількість кредитів <code>program_credits</code> замінюються скороченими версіями автоматично.
+        </div>
+
+        <div id="refSectionsContainer">
+
+            {# ── 1. Особисті дані та фото ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="personal">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-person-vcard me-2" style="color: var(--brass);"></i>Особисті та контактні дані студента</h3>
+                    <span class="tpl-type-tag">Таблиця students + фото</span>
+                </div>
+                {% set personal_vars = [
+                    ('{{ id }}', 'int', 'Внутрішній ID студента в базі даних', '142'),
+                    ('{{ last_name_UA }}', 'рядок', 'Прізвище українською', 'Коваленко'),
+                    ('{{ first_name_UA }}', 'рядок', "Ім'я українською", 'Олександр'),
+                    ('{{ middle_name_UA }}', 'рядок', 'По батькові українською', 'Іванович'),
+                    ('{{ last_name_ENG }}', 'рядок', 'Прізвище англійською (транслітерація)', 'Kovalenko'),
+                    ('{{ first_name_ENG }}', 'рядок', "Ім'я англійською (транслітерація)", 'Oleksandr'),
+                    ('{{ birth_date }}', 'DD/MM/YYYY', 'Дата народження (автоматично форматується через слеш DD/MM/YYYY)', '15/03/2003'),
+                    ('{{ gender }}', 'M / F', "Стать студента у системі ('M' або 'F')", 'M'),
+                    ('{{ tax_id }}', 'рядок', 'Реєстраційний номер облікової картки платника податків (ІПН)', '3769104512'),
+                    ('{{ edebo_code }}', 'рядок', 'Код ЄДЕБО / № індивідуального навч. плану (береться з enrollment обраної групи)', '9481203'),
+                    ('{{ phone }}', 'рядок', 'Основний номер телефону', '+380671234567'),
+                    ('{{ phone_backup }}', 'рядок', 'Додатковий / резервний телефон', '+380509876543'),
+                    ('{{ email }}', 'рядок', 'Електронна пошта студента', 'kovalenko@example.com'),
+                    ('{{ address_of_residence }}', 'рядок', 'Адреса місця проживання', 'м. Львів, вул. Городоцька, 12, кв. 4'),
+                    ('{% if student_photo %}{{ student_photo }}{% endif %}', 'InlineImage', 'Фото студента 3×4 шириною 30 мм. Змінна існує лише якщо фото завантажено на диск — завжди обгортайте умовою if!', 'Зображення шириною 30 мм')
+                ] %}
+                {% for token, vtype, desc, ex in personal_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 2. Група, спеціальність, ОП та ліцензія ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="group">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-mortarboard me-2" style="color: var(--brass);"></i>Група, спеціальність, освітня програма та ліцензія</h3>
+                    <span class="tpl-type-tag">groups + institution_licenses</span>
+                </div>
+                {% set group_vars = [
+                    ('{{ group_id }}', 'int', 'ID групи, для якої генерується документ', '24'),
+                    ('{{ group_name }}', 'рядок', 'Повна назва групи з роком, формою навчання та кредитами', 'КН-221 (2022, Денна, 240 кредитів)'),
+                    ('{{ start_year }}', 'рядок', 'Рік вступу групи', '2022'),
+                    ('{{ end_year }}', 'рядок', 'Розрахунковий рік закінчення навчання (обчислюється зі start_year, кредитів і ступеня)', '2026'),
+                    ('{{ end_year_short }}', 'рядок', 'Останні 2 цифри року закінчення', '26'),
+                    ('{{ study_form }}', 'рядок', 'Форма навчання українською (Денна / Заочна / Дистанційна)', 'Денна'),
+                    ('{{ study_form_eu }}', 'рядок', 'Форма навчання англійською для додатка ЄКТС (Full / Part / Distance)', 'Full'),
+                    ('{{ program_credits }}', 'int/рядок', 'Обсяг програми в кредитах ЄКТС (для скороченої програми підміняється на program_credits_override)', '240'),
+                    ('{{ program_credits_override }}', 'int/порожньо', 'Індивідуальна кількість кредитів студента (скорочена програма), якщо задана', '180'),
+                    ('{{ study_years }}', 'рядок', 'Строк навчання у роках (240→4, 180→3, 120→2, 90→1.5)', '4'),
+                    ('{{ degree_level }}', 'рядок', 'Ступінь вищої освіти українською', 'Бакалавр'),
+                    ('{{ degree_level_en }}', 'рядок', 'Ступінь вищої освіти англійською', 'Bachelor'),
+                    ('{{ specialty }}', 'рядок', 'Спеціальність українською', '122 Комп’ютерні науки'),
+                    ('{{ specialty_en }}', 'рядок', 'Спеціальність англійською', '122 Computer Science'),
+                    ('{{ educational_program }}', 'рядок', 'Назва освітньої програми українською', 'Комп’ютерні науки'),
+                    ('{{ educational_program_en }}', 'рядок', 'Назва освітньої програми англійською', 'Computer Science'),
+                    ('{{ qualification_name }}', 'рядок', 'Присвоєна кваліфікація українською', 'Бакалавр з комп’ютерних наук'),
+                    ('{{ qualification_name_en }}', 'рядок', 'Присвоєна кваліфікація англійською', 'Bachelor of Computer Science'),
+                    ('{{ knowledge_area }}', 'рядок', 'Галузь знань українською', '12 Інформаційні технології'),
+                    ('{{ knowledge_area_en }}', 'рядок', 'Галузь знань англійською', '12 Information Technologies'),
+                    ('{{ isced_f_ua }}', 'рядок', 'Детальна галузь за МСКО (ISCED-F) українською', '0613 Розробка та аналіз програмного забезпечення'),
+                    ('{{ isced_f_en }}', 'рядок', 'Детальна галузь за МСКО (ISCED-F) англійською', '0613 Software and applications development and analysis'),
+                    ('{{ institution_name_and_status }}', 'рядок', 'Повне найменування та статус ЗВО з ліцензії enrollment або картки студента (укр.)', 'ПВНЗ «Європейський університет» (Львівська філія)...'),
+                    ('{{ institution_name_and_status_en }}', 'рядок', 'Повне найменування та статус ЗВО з ліцензії (англ.)', 'Private Higher Education Establishment «European University»...'),
+                    ('{{ license_short_name_ua }}', 'рядок', 'Коротка назва ліцензії українською', 'Львівська'),
+                    ('{{ license_short_name_en }}', 'рядок', 'Коротка назва ліцензії англійською', 'Lviv'),
+                    ('{{ entry_requirements }}', 'текст', 'Вимоги до вступу (укр.). Звичайний рядок тексту; для скороченої програми підставляється скорочений варіант', 'Повна загальна середня освіта...'),
+                    ('{{ entry_requirements_en }}', 'текст', 'Вимоги до вступу (англ.). Звичайний рядок тексту; для скороченої програми підставляється скорочений варіант', 'Complete general secondary education...'),
+                    ('{% for item in program_includes %}{{ item }}{% endfor %}', 'list[str]', 'Склад освітньої програми (укр.). Це СПИСОК рядків — виводьте через цикл або | join!', 'Список рядків із переносами з ОП'),
+                    ('{% for item in program_includes_en %}{{ item }}{% endfor %}', 'list[str]', 'Склад освітньої програми (англ.). СПИСОК рядків — виводьте через цикл або | join!', 'List of strings'),
+                    ('{% for item in learning_outcomes %}{{ item }}{% endfor %}', 'list[str]', 'Програмні результати навчання (укр.). СПИСОК рядків — виводьте через цикл або | join!', 'Список результатів навчання'),
+                    ('{% for item in learning_outcomes_en %}{{ item }}{% endfor %}', 'list[str]', 'Програмні результати навчання (англ.). СПИСОК рядків — виводьте через цикл або | join!', 'List of learning outcomes'),
+                    ('{{ top_qualification_text }}', 'умовне (Магістр)', 'Підготовка кваліфікаційної роботи (додається лише при degree_level == "Магістр")', '- підготовка кваліфікаційної роботи / preparation of qualification work'),
+                    ('{{ bottom_qualification_text }}', 'умовне (Магістр)', 'Захист кваліфікаційної роботи (додається лише при degree_level == "Магістр")', '- захист кваліфікаційної роботи / defense of qualification work')
+                ] %}
+                {% for token, vtype, desc, ex in group_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 3. Диплом, акредитація та періоди навчання ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="diploma">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-award me-2" style="color: var(--brass);"></i>Диплом, відзнака, акредитація та періоди навчання</h3>
+                    <span class="tpl-type-tag">diplomas + accreditations + study_periods</span>
+                </div>
+                {% set diploma_vars = [
+                    ('{{ diploma_number }}', 'рядок (6 цифр)', 'Номер диплома для пари (студент, група), автоматично доповнюється нулями зліва до 6 цифр', '001234'),
+                    ('{{ appendix_number }}', 'рядок (6 цифр)', 'Номер додатка до диплома для пари (студент, група), 6 цифр з ведучими нулями', '005678'),
+                    ('{{ diploma_with_honor_text }}', 'рядок', "Напис про відзнаку (укр.): 'Диплом з відзнакою' (≥75% 'A' у предметах+практиках, без D/E/Fx/F, і 'A' на атестації) або 'Інформація відсутня'", 'Диплом з відзнакою'),
+                    ('{{ diploma_with_honor_text_en }}', 'рядок', "Напис про відзнаку (англ.): 'Diploma with honours' або 'Information is absent'", 'Diploma with honours'),
+                    ('{{ accreditation_text }}', 'текст', 'Текст про акредитацію програми з довідника accreditations за ступенем і спеціальністю (укр.)', 'Сертифікат про акредитацію №...'),
+                    ('{{ accreditation_text_en }}', 'текст', 'Текст про акредитацію програми (англ.)', 'Accreditation certificate No...'),
+                    ('{{ study_period_names }}', 'RichText (8 pt)', 'Заклади/періоди навчання (укр., Times New Roman 8 pt, кожен наступний період з нового рядка після ";")', 'Львівська філія ПВНЗ «Європейський університет»'),
+                    ('{{ study_period_names_en }}', 'RichText (8 pt)', 'Заклади/періоди навчання (англ., Times New Roman 8 pt, багаторядковий RichText)', 'Lviv Branch of PHEE «European University»'),
+                    ('{{ study_period_dates }}', 'RichText (8 pt)', 'Дати періодів навчання (укр.). Якщо дата кінця ≥ 30.09.2026: "з DD/MM/YYYY до DD/MM/YYYY", інакше "DD/MM/YYYY-DD/MM/YYYY"', 'з 01/09/2022 до 30/09/2026'),
+                    ('{{ study_period_dates_en }}', 'RichText (8 pt)', 'Дати періодів навчання (англ.). Для ≥ 30.09.2026: "from DD/MM/YYYY to DD/MM/YYYY"', 'from 01/09/2022 to 30/09/2026')
+                ] %}
+                {% for token, vtype, desc, ex in diploma_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 4. Попередній документ про освіту + іноземна освіта ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="education">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-file-earmark-text me-2" style="color: var(--brass);"></i>Попередній документ про освіту та іноземна освіта</h3>
+                    <span class="tpl-type-tag">education_documents + foreign_education_docs</span>
+                </div>
+                {% set edu_vars = [
+                    ('{{ document_type }}', 'рядок', 'Тип попереднього документа про освіту (укр.)', 'Свідоцтво про повну загальну середню освіту'),
+                    ('{{ document_type_en }}', 'рядок', 'Тип попереднього документа про освіту (англ.)', 'Certificate of Complete General Secondary Education'),
+                    ('{{ document_number }}', 'рядок', 'Серія та номер документа про освіту', 'ВК 12345678'),
+                    ('{{ institution_name }}', 'рядок', 'Заклад, що видав документ про освіту (укр.)', 'Ліцей № 45 Львівської міської ради'),
+                    ('{{ institution_name_en }}', 'рядок', 'Заклад, що видав документ про освіту (англ.)', 'Lyceum No. 45 of Lviv City Council'),
+                    ('{{ country }}', 'рядок', 'Країна видачі документа (укр.)', 'Україна'),
+                    ('{{ country_en }}', 'рядок', 'Країна видачі документа (англ.)', 'Ukraine'),
+                    ('{{ completion_date }}', 'рядок', 'Дата видачі / завершення попередньої освіти', '25.06.2022'),
+                    ('{{ reference_number }}', 'рядок', 'Іноземна освіта: номер довідки про навчання/документ', 'REF-2022-891'),
+                    ('{{ reference_institution }}', 'рядок', 'Іноземна освіта: заклад/орган, що видав довідку (укр.)', 'Міністерство освіти...'),
+                    ('{{ reference_institution_en }}', 'рядок', 'Іноземна освіта: заклад видачі довідки (англ.)', 'Ministry of Education...'),
+                    ('{{ reference_country }}', 'рядок', 'Іноземна освіта: країна довідки (укр.)', 'Польща'),
+                    ('{{ reference_country_en }}', 'рядок', 'Іноземна освіта: країна довідки (англ.)', 'Poland'),
+                    ('{{ reference_issue_date }}', 'рядок', 'Іноземна освіта: дата видачі довідки', '14.07.2022'),
+                    ('{{ recognition_certificate_number }}', 'рядок', 'Іноземна освіта: номер свідоцтва про визнання документа', 'СВ-11042/22'),
+                    ('{{ recognition_issuer }}', 'рядок', 'Іноземна освіта: орган, що видав свідоцтво про визнання (укр.)', 'МОН України (ЕНІЦ)'),
+                    ('{{ recognition_issuer_en }}', 'рядок', 'Іноземна освіта: орган визнання (англ.)', 'Ministry of Education and Science of Ukraine'),
+                    ('{{ recognition_date }}', 'рядок', 'Іноземна освіта: дата видачі свідоцтва про визнання', '02.09.2022')
+                ] %}
+                {% for token, vtype, desc, ex in edu_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 5. Предмети, практики, курсові, атестації ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="grades">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-table me-2" style="color: var(--brass);"></i>Освітні компоненти та оцінки (списки для циклів)</h3>
+                    <span class="tpl-type-tag">subjects / practices / courseworks / attestations</span>
+                </div>
+                {% set grade_vars = [
+                    ('{{ subjects_grades }}', 'list[dict]', 'Список навчальних дисциплін студента (відфільтрований за повною/скороченою програмою, з reduced_credits/reduced_type). У Word перебирайте циклом {%tr for s in subjects_grades %}.', 'Поля елемента s: s.id, s.code, s.name, s.credits, s.type, s.position, s.grade'),
+                    ('{{ practice_data }}', 'list[dict]', 'Список практик та оцінок студента. Перебір через {%tr for p in practice_data %}.', 'Поля елемента p: p.id, p.code, p.name, p.credits, p.type, p.position, p.grade'),
+                    ('{{ coursework_data }}', 'list[dict]', 'Список курсових робіт / проєктів студента. Перебір через {%tr for c in coursework_data %}.', 'Поля елемента c: c.id, c.code, c.name, c.credits, c.type, c.position, c.grade'),
+                    ('{{ attestation_data }}', 'list[dict]', 'Список атестацій / кваліфікаційних робіт. Крім стандартних полів містить тему роботи та готовий двомовний рядок display_name.', 'Поля елемента a: a.code, a.name, a.credits, a.type, a.grade, a.student_name (тема), a.display_name'),
+                    ('{{ a.display_name }}', 'рядок', 'Усередині циклу attestation_data: готова комбінація «Назва атестації «Тема» / Назва (EN) «Тема (EN)»» (автопереклад через DeepL). Якщо теми немає — виводить лише назву.', 'Кваліфікаційний іспит / Qualification exam або Робота «Тема» / Work «Topic»'),
+                    ('{{ s.grade }}', 'рядок', 'Відформатована оцінка для екзамену чи заліку (порожня, якщо оцінка ще не виставлена)', 'Відмінно / Excellent 95 A  або  Зараховано / Passed 84 B')
+                ] %}
+                {% for token, vtype, desc, ex in grade_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Деталі: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 6. Військовий облік (Резерв+) ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="military">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-shield-check me-2" style="color: var(--brass);"></i>Військовий облік («Резерв+»)</h3>
+                    <span class="tpl-type-tag">Таблиця military (верхній рівень контексту)</span>
+                </div>
+                {% set mil_vars = [
+                    ('{{ status_badge }}', 'рядок', 'Статус військового обліку з «Резерв+»', "Військовозобов'язаний / Призовник / Резервіст"),
+                    ('{{ valid_until }}', 'рядок', 'Документ дійсний до', '18.05.2026'),
+                    ('{{ registration_category }}', 'рядок', 'Категорія обліку', 'Запас 2 категорії'),
+                    ('{{ removal_basis }}', 'рядок', 'Підстава для зняття/виключення з обліку', 'за віком / непридатний'),
+                    ('{{ tck_name }}', 'рядок', 'Найменування ТЦК та СП, де перебуває на обліку', 'Галицько-Франківський ОРТЦК та СП м. Львова'),
+                    ('{{ military_rank }}', 'рядок', 'Військове звання', 'Солдат / Лейтенант запасу'),
+                    ('{{ registry_number }}', 'рядок', 'Номер запису в реєстрі «Оберіг» (ДРПВР)', '23091998004123456789'),
+                    ('{{ vos_code }}', 'рядок', 'Код військово-облікової спеціальності (ВОС)', '100915'),
+                    ('{{ vos_description }}', 'рядок', 'Повний опис ВОС', 'Стрілецькі та інші підрозділи...'),
+                    ('{{ deferral_type }}', 'рядок', 'Тип діючої відстрочки', 'Здобувач освіти (ст. 23)'),
+                    ('{{ deferral_until }}', 'рядок', 'Дата завершення відстрочки', '30.06.2026'),
+                    ('{{ vlk_decision }}', 'рядок', 'Постанова ВЛК (придатність)', 'Придатний до військової служби'),
+                    ('{{ vlk_date }}', 'рядок', 'Дата постанови ВЛК', '12.04.2024'),
+                    ('{{ police_reason }}', 'рядок', 'Причина звернення до поліції (за наявності)', 'Порушення правил військового обліку'),
+                    ('{{ police_date }}', 'рядок', 'Дата фіксації порушення / звернення', '04.11.2024'),
+                    ('{{ disability_group }}', 'рядок', 'Група інвалідності', 'II група'),
+                    ('{{ disability_valid_until }}', 'рядок', 'Термін дії інвалідності', 'безстроково'),
+                    ('{{ disability_reason }}', 'рядок', 'Причина інвалідності', 'Загальне захворювання'),
+                    ('{{ formed_at }}', 'рядок', 'Дата формування PDF-документа «Резерв+»', '20.02.2026'),
+                    ('{{ data_verified_on_time }}', '1 / 0', 'Ознака «Дані уточнено вчасно»', '1'),
+                    ('{{ data_update_date }}', 'рядок', 'Дата останнього уточнення облікових даних', '14.06.2024'),
+                    ('{{ note_18 }}', 'рядок', 'Примітка (графа 18 Додатка 5)', 'Військовослужбовець'),
+                    ('{{ mobilized_date }}', 'рядок', 'Дата призову / мобілізації (коли note_18 == Військовослужбовець)', '01.03.2025'),
+                    ('{{ military_registration_document }}', 'рядок', 'Назва/реквізити військово-облікового документа (ВОД)', 'Тимчасове посвідчення №...'),
+                    ('{{ change_credentials }}', 'рядок', 'Позначка зміни облікових даних (для Додатка 4)', 'Зміна місця навчання'),
+                    ('{{ reason_for_changing_credentials }}', 'рядок', 'Підстава для зміни облікових даних (для Додатка 4)', 'Наказ №145 від 01.09.2025')
+                ] %}
+                {% for token, vtype, desc, ex in mil_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# ── 7. Відомості екзаменаційної сесії (окремі службові шаблони) ── #}
+            <div class="tpl-var-section js-ref-section" data-cat="vidomist">
+                <div class="tpl-var-section__head">
+                    <h3 class="tpl-var-section__title"><i class="bi bi-clipboard2-check me-2" style="color: var(--brass);"></i>Відомості сесії (для <code>static/templates/word/vidomist_*.docx</code>)</h3>
+                    <span class="tpl-type-tag">Окремі системні шаблони</span>
+                </div>
+                <div class="p-3 border-bottom small text-muted">
+                    <i class="bi bi-exclamation-triangle me-1" style="color: var(--brass);"></i>
+                    <strong>Увага:</strong> ці змінні працюють лише у системних шаблонах відомостей (<code>vidomist_sheet.docx</code>, <code>vidomist_sheet_denna.docx</code>, <code>vidomist_summary.docx</code>) і <strong>не доступні</strong> у звичайних документах студентів із папки <code>template_word/</code>.
+                </div>
+                {% set vid_vars = [
+                    ('{{ institution }}', 'відомість / зведена', 'Назва закладу / філії (з перенесенням Львівської філії з нового рядка у відомості)', 'ПВНЗ „Європейський університет“'),
+                    ('{{ faculty }}', 'відомість', 'Назва факультету / кафедри', 'Інформаційні системи та технології'),
+                    ('{{ specialty }}', 'відомість / зведена', 'Код та назва спеціальності', '122 Комп’ютерні науки'),
+                    ('{{ course }}', 'відомість / зведена', 'Курс римськими цифрами (I–VI)', 'III'),
+                    ('{{ group_name }}', 'відомість / зведена', 'Шифр/назва групи', 'КН-221'),
+                    ('{{ study_form }} / {{ study_form_part }}', 'відомість', 'Форма навчання та вона ж у дужках', 'Денна / (Денна)'),
+                    ('{{ academic_year }}', 'відомість / зведена', 'Навчальний рік', '2025/2026'),
+                    ('{{ semester }} / {{ semester_word }}', 'відомість', 'Номер семестру цифрою та словом', '1 / перший'),
+                    ('{{ statement_title }} / {{ statement_number }}', 'відомість', 'Заголовок («ВІДОМІСТЬ № ...») та сам номер', 'ВІДОМІСТЬ  № 42.'),
+                    ('{{ exam_date }}', 'відомість', 'Дата складання у форматі «15 грудня 2026»', '15 грудня 2026'),
+                    ('{{ discipline_name }}', 'відомість', 'Назва дисципліни / практики / атестації', 'Алгоритми та структури даних'),
+                    ('{{ control_form }} / {{ hours_credits }}', 'відомість', 'Форма контролю (малі літери) та години/кредити', 'екзамен / 150 год. / 5 кр.'),
+                    ('{{ teacher_name }} / {{ teacher_sign }}', 'відомість', 'Викладач у шапці та скорочене ПІБ для колонки підпису', 'к.т.н., Гущак О.М. / Гущак О. О.'),
+                    ('{{ stats_a_count }} .. {{ stats_f_count }}, {{ stats_abs_count }}', 'відомість', 'Кількість і відсотки (*_pct, *_label) за шкалою ECTS (A–F) + stats_abs_* (не з’явився), stats_quality, stats_absolute', '12 / 54.5%'),
+                    ('<<<GRADES_TABLE>>>', 'маркер зведеної', 'Спеціальний звичайний текстовий маркер (БЕЗ фігурних дужок {{ }}) для vidomist_summary.docx — замінюється автоматичною таблицею всіх оцінок групи', '<<<GRADES_TABLE>>>')
+                ] %}
+                {% for token, vtype, desc, ex in vid_vars %}
+                <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
+                    <div>
+                        <div class="tpl-token-wrap">
+                            <code class="tpl-token">{{ token }}</code>
+                            <button type="button" class="tpl-copy-btn" data-copy="{{ token }}" title="Копіювати"><i class="bi bi-clipboard"></i></button>
+                        </div>
+                    </div>
+                    <div><span class="tpl-type-tag">{{ vtype }}</span></div>
+                    <div class="small">
+                        <div>{{ desc }}</div>
+                        <div class="text-muted mt-1">Приклад: <span class="tpl-mono">{{ ex }}</span></div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+        </div>
+
+        <div id="refFilterEmpty" class="tpl-panel p-4 text-center text-muted small d-none">
+            <i class="bi bi-search d-block mb-1" style="font-size: 1.5rem;"></i>
+            Жодна змінна не відповідає запиту. Спробуйте інше слово або скиньте категорію.
+        </div>
+    </section>
+
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 3: ДЕТАЛЬНІ ПРИКЛАДИ ДЛЯ WORD (.DOCX)
+       ════════════════════════════════════════════════════════════════ #}
+    <section id="tabPaneExamples" class="tpl-tab-pane d-none" role="tabpanel" aria-labelledby="tabBtnExamples">
+
+        <div class="tpl-warn-callout mb-3">
+            <strong><i class="bi bi-exclamation-octagon me-1"></i>Золоте правило форматування тегів у Microsoft Word:</strong>
+            Word любить розбивати текст на приховані XML-блоки при перевірці орфографії або зміні шрифту всередині рядка.
+            Якщо у <code>{{ "{{ last_name_UA }}" }}</code> випадково виділити й перефарбувати одну літеру — шаблон може не відрендеритись.
+            <strong>Вставляйте теги як звичайний текст (Ctrl+Shift+V) і форматуйте весь вираз цілком!</strong>
+        </div>
+
+        {# ── Приклад 1 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 1</span>
+                    <strong>Персональні дані, дата, ЄДЕБО, диплом та умовне фото 3×4</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode1">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <div class="small fw-semibold text-muted mb-1">Що вставити у Word:</div>
+                        <pre class="tpl-code-wrap" id="exCode1">{% raw %}{% if student_photo %}{{ student_photo }}{% endif %}
+
+ПІБ (укр.): {{ last_name_UA }} {{ first_name_UA }} {{ middle_name_UA }}
+ПІБ (англ.): {{ last_name_ENG }} {{ first_name_ENG }}
+Дата народження: {{ birth_date }}
+РНОКПП (ІПН): {{ tax_id or 'не вказано' }}
+Номер ІНП (ЄДЕБО): {{ edebo_code }}
+Диплом № {{ diploma_number }} · Додаток № {{ appendix_number }}{% endraw %}</pre>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="small fw-semibold text-muted mb-1">Що вийде в готовому документі:</div>
+                        <div class="tpl-result-box">
+                            <div class="small text-muted mb-1">[Фото 30 мм, якщо завантажене у картці]</div>
+                            <div><strong>ПІБ (укр.):</strong> Коваленко Олександр Іванович</div>
+                            <div><strong>ПІБ (англ.):</strong> Kovalenko Oleksandr</div>
+                            <div><strong>Дата народження:</strong> 15/03/2003</div>
+                            <div><strong>РНОКПП (ІПН):</strong> 3769104512</div>
+                            <div><strong>Номер ІНП (ЄДЕБО):</strong> 9481203</div>
+                            <div><strong>Диплом №</strong> 001234 · <strong>Додаток №</strong> 005678</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Приклад 2 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 2</span>
+                    <strong>Таблиця дисциплін та оцінок у Word (<code>{% raw %}{%tr for ... %}{% endraw %}</code>)</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode2">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <p class="small mb-2">
+                    Щоб <code>docxtpl</code> розмножив <strong>рядок таблиці Word</strong> для кожного предмета, створіть таблицю на 4 рядки:
+                    (1) шапка, (2) об'єднаний або перший рядок із відкриттям циклу <code>{% raw %}{%tr for s in subjects_grades %}{% endraw %}</code>,
+                    (3) шаблонний рядок із змінними, (4) рядок із закриттям <code>{% raw %}{%tr endfor %}{% endraw %}</code>. Порожні службові рядки з тегами при генерації зникнуть!
+                </p>
+                <pre class="tpl-code-wrap mb-3" id="exCode2">{% raw %}| № | Шифр | Навчальна дисципліна | Кредити | Форма контролю | Оцінка |
+| {%tr for s in subjects_grades %} | | | | | |
+| {{ loop.index }} | {{ s.code }} | {{ s.name }} | {{ s.credits }} | {{ s.type }} | {{ s.grade }} |
+| {%tr endfor %} | | | | | |{% endraw %}</pre>
+                <div class="tpl-note-callout">
+                    <strong>Підказка:</strong> <code>{% raw %}{{ loop.index }}{% endraw %}</code> автоматично нумерує рядки з 1.
+                    Якщо у студента скорочена програма, <code>subjects_grades</code> вже містить правильний набір предметів і підмінені <code>credits</code>/<code>type</code>.
+                </div>
+            </div>
+        </div>
+
+        {# ── Приклад 3 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 3</span>
+                    <strong>Практики, курсові роботи та атестація з темою кваліфікаційної роботи</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode3">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <p class="small mb-2">
+                    Оскільки у частини груп може не бути курсових або практик, безпечно обгорнути кожен блок у <code>{% raw %}{% if ... %}{% endraw %}</code>.
+                    Для атестації використовуйте <code>{% raw %}{{ a.display_name }}{% endraw %}</code> — він автоматично підставляє назву й тему роботи українською та англійською!
+                </p>
+                <pre class="tpl-code-wrap" id="exCode3">{% raw %}{% if practice_data %}
+Практична підготовка:
+| {%tr for p in practice_data %} | | | |
+| {{ p.code }} | {{ p.name }} | {{ p.credits }} | {{ p.grade }} |
+| {%tr endfor %} | | | |
+{% endif %}
+
+{% if coursework_data %}
+Курсові роботи:
+| {%tr for c in coursework_data %} | | | |
+| {{ c.code }} | {{ c.name }} | {{ c.credits }} | {{ c.grade }} |
+| {%tr endfor %} | | | |
+{% endif %}
+
+{% if attestation_data %}
+Атестація здобувача:
+| {%tr for a in attestation_data %} | | | |
+| {{ a.code }} | {{ a.display_name }} | {{ a.credits }} | {{ a.grade }} |
+| {%tr endfor %} | | | |
+{% endif %}{% endraw %}</pre>
+            </div>
+        </div>
+
+        {# ── Приклад 4 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 4</span>
+                    <strong>Списки <code>learning_outcomes</code> і <code>program_includes</code> (<code>{% raw %}{%p for ... %}{% endraw %}</code> vs рядок)</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode4">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <div class="row g-3">
+                    <div class="col-lg-7">
+                        <pre class="tpl-code-wrap" id="exCode4">{% raw %}Вимоги до вступу (звичайний текст — БЕЗ циклу):
+{{ entry_requirements }}
+
+Що включає програма (кожен пункт з нового абзацу):
+{%p for item in program_includes %}
+{{ item }}
+{%p endfor %}
+
+Результати навчання (EN):
+{%p for item in learning_outcomes_en %}
+• {{ item }}
+{%p endfor %}{% endraw %}</pre>
+                    </div>
+                    <div class="col-lg-5">
+                        <div class="tpl-result-box">
+                            <div class="fw-semibold mb-2">Чому не можна писати просто <code>{% raw %}{{ learning_outcomes }}{% endraw %}</code>?</div>
+                            <p class="small mb-2">
+                                На відміну від <code>entry_requirements</code> (звичайний текст), змінні
+                                <code>program_includes</code>, <code>program_includes_en</code>, <code>learning_outcomes</code> і <code>learning_outcomes_en</code>
+                                розбиваються системою на <strong>список рядків</strong>.
+                            </p>
+                            <p class="small mb-0 text-muted">
+                                Без циклу Word виведе технічний масив <code>['Пункт 1', 'Пункт 2']</code>.
+                                Теги <code>{% raw %}{%p for ... %}{% endraw %}</code> і <code>{% raw %}{%p endfor %}{% endraw %}</code> у Word кожен у своєму абзаці створюють акуратний перелік без зайвих порожніх рядків.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Приклад 5 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 5</span>
+                    <strong>Ступінь «Магістр», диплом з відзнакою, акредитація та періоди навчання</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode5">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <pre class="tpl-code-wrap" id="exCode5">{% raw %}Заклад та ліцензія: {{ institution_name_and_status }}
+Ступінь: {{ degree_level }} / {{ degree_level_en }}
+Форма навчання: {{ study_form }} ({{ study_form_eu }}) · {{ study_years }} р. · {{ program_credits }} кр. ЄКТС
+
+Відзнака: {{ diploma_with_honor_text }} / {{ diploma_with_honor_text_en }}
+Акредитація: {{ accreditation_text }}
+
+{% if degree_level == 'Магістр' %}
+{{ top_qualification_text }}
+{{ bottom_qualification_text }}
+{% endif %}
+
+Періоди навчання (в комірках таблиці додатка):
+| Періоди (Укр) | Дати (Укр) |
+| {{ study_period_names }} | {{ study_period_dates }} |
+| {{ study_period_names_en }} | {{ study_period_dates_en }} |{% endraw %}</pre>
+            </div>
+        </div>
+
+        {# ── Приклад 6 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 6</span>
+                    <strong>Попередній документ про освіту + умовний блок для іноземного документа</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode6">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <pre class="tpl-code-wrap" id="exCode6">{% raw %}Попередній документ: {{ document_type }} № {{ document_number }}
+Виданий: {{ institution_name }}, {{ country }} ({{ completion_date }})
+
+{% if reference_number %}
+Академічна довідка / іноземний документ: № {{ reference_number }} від {{ reference_issue_date }},
+видана {{ reference_institution }} ({{ reference_country }}).
+{% endif %}
+{% if recognition_certificate_number %}
+Свідоцтво про визнання іноземного документа про освіту:
+№ {{ recognition_certificate_number }} від {{ recognition_date }}, видане {{ recognition_issuer }}.
+{% endif %}{% endraw %}</pre>
+            </div>
+        </div>
+
+        {# ── Приклад 7 ── #}
+        <div class="tpl-example-card">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--info me-2">Приклад 7</span>
+                    <strong>Довідка з військового обліку («Резерв+»)</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode7">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати код
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <pre class="tpl-code-wrap" id="exCode7">{% raw %}{% if status_badge or registry_number %}
+Статус військового обліку: {{ status_badge or '—' }}
+ТЦК та СП: {{ tck_name or '—' }}
+Військове звання: {{ military_rank or '—' }} · ВОС: {{ vos_code or '—' }}
+Номер у реєстрі «Оберіг»: {{ registry_number or '—' }}
+{% if deferral_type %}
+Відстрочка: {{ deferral_type }} (дійсна до {{ deferral_until or '—' }})
+{% endif %}
+Постанова ВЛК: {{ vlk_decision or '—' }}{% if vlk_date %} від {{ vlk_date }}{% endif %}
+{% else %}
+Дані військового обліку у картці студента відсутні.
+{% endif %}{% endraw %}</pre>
+            </div>
+        </div>
+
+        {# ── Приклад 8 ── #}
+        <div class="tpl-example-card mb-0">
+            <div class="tpl-example-card__head">
+                <div>
+                    <span class="tpl-badge tpl-badge--warn me-2">Приклад 8</span>
+                    <strong>Зведена відомість сесії (<code>vidomist_summary.docx</code>) та чек-ліст перевірки</strong>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-secondary js-copy-block" data-copy-target="exCode8">
+                    <i class="bi bi-clipboard me-1"></i>Копіювати шапку
+                </button>
+            </div>
+            <div class="tpl-example-card__body">
+                <pre class="tpl-code-wrap mb-3" id="exCode8">{% raw %}{{ institution }}
+ЗВЕДЕНА ВІДОМІСТЬ УСПІШНОСТІ ({{ session_name }})
+Група: {{ group_name }} · Курс: {{ course }} · Семестр: {{ semester }} · Форма: {{ study_form }}
+Ступінь: {{ degree_level }} · Спеціальність: {{ specialty }} · Навч. рік: {{ academic_year }}
+
+<<<GRADES_TABLE>>>{% endraw %}</pre>
+                <div class="small">
+                    <strong>Чек-ліст перед завантаженням нового шаблону:</strong>
+                    <ol class="mb-0 mt-1 ps-3">
+                        <li>Перевірте регістр назв змінних: <code>last_name_UA</code> (великі <code>UA</code>), але <code>isced_f_ua</code> і <code>license_short_name_ua</code> (малі <code>ua</code>).</li>
+                        <li>Всі умовні дані (<code>student_photo</code>, іноземна освіта, військовий облік, відстрочка) обгорніть у <code>{% raw %}{% if ... %}{% endraw %}</code>.</li>
+                        <li>Після завантаження протестуйте шаблон на одному студенту з повною та одному зі скороченою програмою.</li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+
+    </section>
 
 </div>
+
+{# ── Модальне вікно підтвердження видалення ── #}
+<div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deleteModalTitle">Видалити шаблон документа?</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body small">
+                <p class="mb-2">Ви дійсно хочете видалити шаблон <strong id="delTplDisplay"></strong>?</p>
+                <div class="text-muted">Файл <code id="delTplFilename"></code> буде остаточно видалено з папки <code>template_word/</code> разом із його описом і правами доступу.</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <form method="POST" id="deleteTemplateForm" class="d-inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-danger">
+                        <i class="bi bi-trash3 me-1"></i>Видалити остаточно
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    // ── Перемикання вкладок (зі збереженням у URL-хеші) ──
+    const tabBtns = document.querySelectorAll('.tpl-tab-btn');
+    const panes = {
+        manage: document.getElementById('tabPaneManage'),
+        reference: document.getElementById('tabPaneReference'),
+        examples: document.getElementById('tabPaneExamples'),
+    };
+
+    function activateTab(tabKey, pushHash = true) {
+        if (!panes[tabKey]) tabKey = 'manage';
+        tabBtns.forEach(btn => {
+            const active = btn.dataset.tab === tabKey;
+            btn.classList.toggle('is-active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        Object.entries(panes).forEach(([key, pane]) => {
+            if (pane) pane.classList.toggle('d-none', key !== tabKey);
+        });
+        if (pushHash && history.replaceState) {
+            const targetHash = tabKey === 'manage' ? '' : '#' + tabKey;
+            history.replaceState(null, '', window.location.pathname + window.location.search + targetHash);
+        }
+    }
+
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+    });
+    document.querySelectorAll('.js-jump-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activateTab(btn.dataset.targetTab);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    });
+
+    const initialHash = (window.location.hash || '').replace('#', '').toLowerCase();
+    if (initialHash === 'reference' || initialHash === 'ref') {
+        activateTab('reference', false);
+    } else if (initialHash === 'examples') {
+        activateTab('examples', false);
+    }
+
+    // ── Drag & Drop на полі файлу ──
+    const dropzone = document.getElementById('tplDropzone');
+    const fileInput = document.getElementById('template_file');
+    const fileHint = document.getElementById('fileDropHint');
+    if (dropzone && fileInput) {
+        ['dragenter', 'dragover'].forEach(ev => {
+            dropzone.addEventListener(ev, e => {
+                e.preventDefault();
+                dropzone.classList.add('is-dragover');
+            });
+        });
+        ['dragleave', 'drop'].forEach(ev => {
+            dropzone.addEventListener(ev, e => {
+                e.preventDefault();
+                dropzone.classList.remove('is-dragover');
+            });
+        });
+        dropzone.addEventListener('drop', e => {
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                fileInput.dispatchEvent(new Event('change'));
+            }
+        });
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files && fileInput.files.length && fileHint) {
+                const f = fileInput.files[0];
+                const kb = Math.max(1, Math.round(f.size / 1024));
+                fileHint.textContent = `Обрано файл: ${f.name} (${kb} KB)`;
+            }
+        });
+    }
+
+    // ── Режим оновлення існуючого шаблону ──
+    const replaceBanner = document.getElementById('replaceModeBanner');
+    const replaceExpectedName = document.getElementById('replaceExpectedName');
+    const cancelReplaceBtn = document.getElementById('cancelReplaceBtn');
+    const displayNameEl = document.getElementById('display_name');
+    const descriptionEl = document.getElementById('description');
+    const adminOnlyEl = document.getElementById('admin_only');
+    const visibleEl = document.getElementById('visible');
+
+    document.querySelectorAll('.js-replace-tpl').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activateTab('manage');
+            const fn = btn.dataset.filename || '';
+            const dn = btn.dataset.displayName || '';
+            if (displayNameEl) displayNameEl.value = (dn && dn !== fn) ? dn : '';
+            if (descriptionEl) descriptionEl.value = btn.dataset.description || '';
+            if (adminOnlyEl) adminOnlyEl.checked = btn.dataset.adminOnly === '1';
+            if (visibleEl) visibleEl.checked = btn.dataset.visible === '1';
+            if (replaceExpectedName) replaceExpectedName.textContent = fn;
+            if (replaceBanner) replaceBanner.classList.add('is-visible');
+            document.getElementById('uploadPanel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            fileInput?.focus();
+        });
+    });
+
+    if (cancelReplaceBtn) {
+        cancelReplaceBtn.addEventListener('click', () => {
+            if (replaceBanner) replaceBanner.classList.remove('is-visible');
+            if (displayNameEl) displayNameEl.value = '';
+            if (descriptionEl) descriptionEl.value = '';
+            if (adminOnlyEl) adminOnlyEl.checked = false;
+            if (visibleEl) visibleEl.checked = true;
+            if (fileInput) fileInput.value = '';
+        });
+    }
+
+    // ── Модалка видалення ──
+    const deleteModalEl = document.getElementById('deleteTemplateModal');
+    const deleteModal = deleteModalEl && window.bootstrap ? new bootstrap.Modal(deleteModalEl) : null;
+    const delTplDisplay = document.getElementById('delTplDisplay');
+    const delTplFilename = document.getElementById('delTplFilename');
+    const deleteForm = document.getElementById('deleteTemplateForm');
+
+    document.querySelectorAll('.js-delete-tpl').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (delTplDisplay) delTplDisplay.textContent = btn.dataset.displayName || btn.dataset.filename || '';
+            if (delTplFilename) delTplFilename.textContent = btn.dataset.filename || '';
+            if (deleteForm) deleteForm.action = btn.dataset.deleteUrl || '';
+            if (deleteModal) deleteModal.show();
+        });
+    });
+
+    // ── Фільтрація списку шаблонів ──
+    const tplSearchInput = document.getElementById('tplSearchInput');
+    const tplFilterBtns = document.querySelectorAll('[data-tpl-filter]');
+    const tplRows = document.querySelectorAll('.js-tpl-row');
+    const tplFilterEmpty = document.getElementById('tplFilterEmpty');
+    let activeTplFilter = 'all';
+
+    function filterTemplates() {
+        const q = (tplSearchInput?.value || '').trim().toLowerCase();
+        const desktopContainer = document.getElementById('tplDesktopTable');
+        let visibleDesktopCount = 0;
+        let visibleTotal = 0;
+
+        tplRows.forEach(row => {
+            const hay = row.dataset.search || '';
+            const isHidden = row.dataset.hidden === '1';
+            const isAdmin = row.dataset.admin === '1';
+            let ok = !q || hay.includes(q);
+            if (ok && activeTplFilter === 'visible') ok = !isHidden;
+            if (ok && activeTplFilter === 'hidden') ok = isHidden;
+            if (ok && activeTplFilter === 'admin') ok = isAdmin;
+
+            row.classList.toggle('d-none', !ok);
+            if (ok) {
+                visibleTotal++;
+                if (desktopContainer && desktopContainer.contains(row)) visibleDesktopCount++;
+            }
+        });
+
+        if (tplFilterEmpty) {
+            tplFilterEmpty.classList.toggle('d-none', visibleTotal > 0);
+        }
+    }
+
+    if (tplSearchInput) {
+        tplSearchInput.addEventListener('input', filterTemplates);
+    }
+    tplFilterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeTplFilter = btn.dataset.tplFilter || 'all';
+            tplFilterBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+            filterTemplates();
+        });
+    });
+
+    // ── Фільтрація та пошук по Довіднику змінних ──
+    const refSearchInput = document.getElementById('refSearchInput');
+    const refSearchClear = document.getElementById('refSearchClear');
+    const refCatBtns = document.querySelectorAll('#refCatBar [data-cat]');
+    const refSections = document.querySelectorAll('.js-ref-section');
+    const refTotalCountEl = document.getElementById('refTotalCount');
+    const refVisibleCountEl = document.getElementById('refVisibleCount');
+    const refFilterEmpty = document.getElementById('refFilterEmpty');
+    let activeRefCat = 'all';
+
+    const allVarRows = document.querySelectorAll('.js-var-row');
+    if (refTotalCountEl) refTotalCountEl.textContent = String(allVarRows.length);
+
+    function filterReference() {
+        const q = (refSearchInput?.value || '').trim().toLowerCase();
+        if (refSearchClear) refSearchClear.classList.toggle('d-none', !q);
+
+        let visibleVars = 0;
+        let visibleSections = 0;
+
+        refSections.forEach(sec => {
+            const cat = sec.dataset.cat;
+            const catMatch = activeRefCat === 'all' || cat === activeRefCat;
+            if (!catMatch) {
+                sec.classList.add('d-none');
+                return;
+            }
+            const rows = sec.querySelectorAll('.js-var-row');
+            let secVisible = 0;
+            rows.forEach(r => {
+                const match = !q || (r.dataset.search || '').includes(q);
+                r.classList.toggle('d-none', !match);
+                if (match) {
+                    secVisible++;
+                    visibleVars++;
+                }
+            });
+            sec.classList.toggle('d-none', secVisible === 0);
+            if (secVisible > 0) visibleSections++;
+        });
+
+        if (refVisibleCountEl) refVisibleCountEl.textContent = String(visibleVars);
+        if (refFilterEmpty) refFilterEmpty.classList.toggle('d-none', visibleSections > 0);
+    }
+
+    if (refSearchInput) {
+        refSearchInput.addEventListener('input', filterReference);
+    }
+    if (refSearchClear) {
+        refSearchClear.addEventListener('click', () => {
+            if (refSearchInput) {
+                refSearchInput.value = '';
+                refSearchInput.focus();
+            }
+            filterReference();
+        });
+    }
+    refCatBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeRefCat = btn.dataset.cat || 'all';
+            refCatBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+            filterReference();
+        });
+    });
+    filterReference();
+
+    // ── Копіювання змінних та блоків коду ──
+    async function copyToClipboard(text, btn, iconOnly = false) {
+        if (!text) return;
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+            if (btn) {
+                const prev = btn.innerHTML;
+                btn.classList.add('is-copied');
+                btn.innerHTML = iconOnly
+                    ? '<i class="bi bi-check-lg"></i>'
+                    : '<i class="bi bi-check-lg me-1"></i>Скопійовано';
+                setTimeout(() => {
+                    btn.classList.remove('is-copied');
+                    btn.innerHTML = prev;
+                }, 1500);
+            }
+        } catch (err) {
+            /* буфер обміну недоступний */
+        }
+    }
+
+    document.querySelectorAll('.tpl-copy-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            copyToClipboard(btn.dataset.copy || '', btn, true);
+        });
+    });
+
+    document.querySelectorAll('.js-copy-block').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const target = document.getElementById(btn.dataset.copyTarget);
+            if (target) copyToClipboard(target.textContent || '', btn, false);
+        });
+    });
+});
+</script>
 {% endblock %}
