@@ -134,6 +134,25 @@
         opacity: .8;
         font-weight: 700;
     }
+    .es-row-problem td {
+        background: var(--st-miss-bg);
+    }
+    .es-retake-banner {
+        background: var(--st-warn-bg);
+        border: 1px solid var(--st-warn-bd);
+        color: var(--st-warn-fg);
+        border-radius: 12px;
+        padding: .75rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .es-info-banner {
+        background: var(--st-info-bg);
+        border: 1px solid var(--st-info-bd);
+        color: var(--st-info-fg);
+        border-radius: 12px;
+        padding: .75rem 1rem;
+        margin-bottom: 1rem;
+    }
 </style>
 
 <div class="container py-4 es-page">
@@ -204,6 +223,18 @@
                     <div class="es-fill {% if progress_pct == 100 %}es-fill--ok{% elif progress_pct > 0 %}es-fill--warn{% else %}es-fill--miss{% endif %}"
                          style="width: {{ progress_pct }}%;"></div>
                 </div>
+                {% if sheet.sheet_kind == 'retake' %}
+                <span class="es-badge es-badge--warn"><i class="bi bi-arrow-repeat"></i>Перездача</span>
+                {% endif %}
+                {% if sheet.teacher_closed %}
+                <span class="es-badge es-badge--info" title="Викладач самостійно закрив відомість">
+                    <i class="bi bi-lock-fill"></i>Закрита викладачем{% if sheet.teacher_closed_at %} ({{ sheet.teacher_closed_at }}){% endif %}
+                </span>
+                {% elif sheet.reopened_at and sheet.status not in ('approved', 'locked') %}
+                <span class="es-badge es-badge--warn" title="Повторно відкрито для викладача">
+                    <i class="bi bi-unlock-fill"></i>Відкрито повторно ({{ sheet.reopened_by or '—' }}, {{ sheet.reopened_at }})
+                </span>
+                {% endif %}
                 {% if sheet.status in ('approved', 'locked') %}
                 <span class="es-badge es-badge--ok">{{ status_ua.get(sheet.status, sheet.status) }}</span>
                 {% elif sheet.status == 'submitted' %}
@@ -216,6 +247,41 @@
                 <span class="es-badge es-badge--muted">{{ status_ua.get(sheet.status, sheet.status) }}</span>
                 {% endif %}
             </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sheet.sheet_kind == 'retake' %}
+    <div class="es-retake-banner d-flex align-items-center justify-content-between flex-wrap gap-2">
+        <div class="small">
+            <i class="bi bi-arrow-repeat me-1"></i>
+            <strong>Відомість перездачі (ліквідація академзаборгованості).</strong>
+            Сформована для студентів з незадовільними оцінками або неявкою.
+            У загальній зведеній відомості сесії оцінки звідси автоматично замінять попередні та будуть позначені <strong>*</strong>.
+        </div>
+        {% if parent_sheet %}
+        <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=parent_sheet.id) }}"
+           class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-box-arrow-up-left me-1"></i>Основна відомість #{{ parent_sheet.id }}
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if child_retakes %}
+    <div class="es-info-banner">
+        <div class="small fw-semibold mb-1">
+            <i class="bi bi-arrow-repeat me-1"></i>Створені відомості перездачі за цією дисципліною ({{ child_retakes|length }}):
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for cr in child_retakes %}
+            <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=cr.id) }}"
+               class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-file-earmark-text me-1"></i>
+                Перездача #{{ cr.id }} · {{ status_ua.get(cr.status, cr.status) }} · {{ cr.graded_count }}/{{ cr.students_count }}
+                {% if cr.exam_date %} ({{ cr.exam_date }}){% endif %}
+            </a>
+            {% endfor %}
         </div>
     </div>
     {% endif %}
@@ -358,6 +424,14 @@
                 <div class="es-card__body d-flex flex-column gap-3">
                     <div class="es-step">
                         <div class="fw-semibold mb-1">1. Список студентів</div>
+                        {% if sheet.sheet_kind == 'retake' %}
+                        <div class="small text-muted mb-2">
+                            Сформовано автоматично лише зі студентів основної відомості, які не склали предмет або не з'явилися.
+                        </div>
+                        <span class="es-badge es-badge--warn">
+                            <i class="bi bi-arrow-repeat"></i>Відомість перездачі ({{ students|length }} студ.)
+                        </span>
+                        {% else %}
                         <div class="small text-muted mb-2">
                             Сформовано за групою та ліцензією. Оновіть, якщо додалися чи перевелися студенти.
                         </div>
@@ -370,6 +444,7 @@
                         </form>
                         {% else %}
                         <span class="es-badge es-badge--muted">Недоступно після здачі оцінок</span>
+                        {% endif %}
                         {% endif %}
                     </div>
 
@@ -410,20 +485,49 @@
                     </div>
 
                     <div class="es-step">
-                        <div class="fw-semibold mb-1">4. Затвердження</div>
-                        {% if sheet.status in ('submitted', 'sent', 'in_progress') %}
-                        <form method="post" onsubmit="return confirm('Затвердити відомість? Викладач більше не зможе змінювати оцінки.')">
-                            <input type="hidden" name="action" value="approve">
-                            <button type="submit" class="btn btn-sm btn-success">
-                                <i class="bi bi-check2-circle me-1"></i>Затвердити відомість
-                            </button>
-                        </form>
-                        {% elif sheet.status == 'approved' %}
-                        <span class="es-badge es-badge--ok">Уже затверджено</span>
-                        {% elif sheet.status == 'locked' %}
-                        <span class="es-badge es-badge--ok">Заблоковано після затвердження</span>
-                        {% else %}
-                        <span class="es-badge es-badge--muted">Спочатку виставте оцінки або надішліть викладачу</span>
+                        <div class="fw-semibold mb-1">4. Затвердження, перездача та повторне відкриття</div>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            {% if sheet.status in ('submitted', 'sent', 'in_progress') %}
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('Затвердити відомість? Викладач більше не зможе змінювати оцінки.{% if problem_students_count > 0 and sheet.sheet_kind != 'retake' %}\n\nБуде автоматично створено відомість перездачі для {{ problem_students_count }} студ. (нездані / неявки).{% endif %}')">
+                                <input type="hidden" name="action" value="approve">
+                                <button type="submit" class="btn btn-sm btn-success">
+                                    <i class="bi bi-check2-circle me-1"></i>Затвердити відомість
+                                </button>
+                            </form>
+                            {% elif sheet.status == 'approved' %}
+                            <span class="es-badge es-badge--ok">Уже затверджено</span>
+                            {% elif sheet.status == 'locked' %}
+                            <span class="es-badge es-badge--ok">Заблоковано після затвердження</span>
+                            {% else %}
+                            <span class="es-badge es-badge--muted">Спочатку виставте оцінки або надішліть викладачу</span>
+                            {% endif %}
+
+                            {% if can_reopen and sheet.status != 'locked' and (sheet.teacher_closed or sheet.status in ('submitted', 'approved')) %}
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('Повторно відкрити відомість для викладача?\n\nВикладач знову отримає можливість змінювати бали.{% if sheet.linked_entity_id %}\nУвага: оцінки вже перенесено в план — після змін їх потрібно буде оновити повторно.{% endif %}');">
+                                <input type="hidden" name="action" value="reopen_sheet">
+                                <button type="submit" class="btn btn-sm btn-outline-warning">
+                                    <i class="bi bi-unlock me-1"></i>Повторно відкрити для викладача
+                                </button>
+                            </form>
+                            {% endif %}
+                        </div>
+
+                        {% if sheet.status in ('approved', 'locked') and problem_students_count > 0 %}
+                        <div class="mt-2 pt-2 border-top d-flex flex-wrap gap-2 align-items-center" style="border-color: var(--line) !important;">
+                            <span class="small text-muted">
+                                Незданих / неявок у відомості: <strong class="es-num">{{ problem_students_count }}</strong>.
+                            </span>
+                            <form method="post" class="d-inline"
+                                  onsubmit="return confirm('Створити окрему відомість перездачі для {{ problem_students_count }} студ. (нездані / неявки)?');">
+                                <input type="hidden" name="action" value="create_retake">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-arrow-repeat me-1"></i>
+                                    {% if child_retakes %}Створити ще одну відомість перездачі{% else %}Створити відомість перездачі{% endif %}
+                                </button>
+                            </form>
+                        </div>
                         {% endif %}
                     </div>
 
@@ -532,9 +636,17 @@
                     <tbody>
                         {% for st in students %}
                         {% set has_parts = (st.points_mid is not none) or (st.points_current is not none) or (st.points_exam is not none) %}
-                        <tr data-search="{{ (st.full_name ~ ' ' ~ (st.edebo_code or ''))|lower }}">
+                        {% set is_problem = (sheet.status in ('approved', 'locked')) and (st.points is none or st.points < 60) %}
+                        <tr class="{% if is_problem %}es-row-problem{% endif %}" data-search="{{ (st.full_name ~ ' ' ~ (st.edebo_code or ''))|lower }}">
                             <td class="text-muted es-num">{{ st.position }}</td>
-                            <td class="fw-medium">{{ st.full_name }}</td>
+                            <td class="fw-medium">
+                                {{ st.full_name }}
+                                {% if is_problem %}
+                                <span class="es-badge es-badge--miss ms-1">
+                                    {% if st.points is none %}Неявка{% else %}Нездано{% endif %}
+                                </span>
+                                {% endif %}
+                            </td>
                             <td class="small font-monospace text-muted">{{ st.edebo_code or '—' }}</td>
                             {% if show_topic %}
                             <td>

@@ -10,6 +10,7 @@ from routes.db import get_db
 from routes.utils import logger
 from routes.exam_sessions import exam_sessions_bp
 from routes.exam_sessions.schema import ensure_exam_session_tables
+from routes.exam_sessions.helpers_extra import ensure_exam_extra_columns
 from routes.exam_sessions.service import (
     parse_points, compute_final_points, sheet_token_valid,
     points_to_national_ects, recompute_sheet_status,
@@ -47,6 +48,42 @@ def _save_teacher_grades(conn, sheet_id, sheet_control_form, form):
         """, (mid, cur, exam, total, nat, ects, sheet_id, sid))
 
 
+def _close_sheet_by_teacher(conn, sheet, saved_by_label):
+    """Фіксує відомість як закриту викладачем і записує подію в журнал."""
+    sheet_id = sheet['id']
+    counts = conn.execute("""
+        SELECT COUNT(*) AS total_cnt,
+               SUM(CASE WHEN points IS NOT NULL THEN 1 ELSE 0 END) AS graded_cnt
+        FROM session_sheet_students
+        WHERE sheet_id = ?
+    """, (sheet_id,)).fetchone()
+    total_cnt = (counts['total_cnt'] or 0) if counts else 0
+    graded_cnt = (counts['graded_cnt'] or 0) if counts else 0
+
+    conn.execute("""
+        UPDATE session_sheets
+        SET status = 'submitted',
+            teacher_closed = 1,
+            teacher_closed_at = datetime('now', 'localtime')
+        WHERE id = ?
+    """, (sheet_id,))
+
+    from routes.exam_sessions.history import log_history
+    log_history(
+        conn,
+        entity_type='sheet', entity_id=sheet_id,
+        session_id=sheet['session_id'], sheet_id=sheet_id,
+        action='close_by_teacher', field_name='status',
+        old_value=sheet['status'], new_value='submitted',
+        details={
+            'saved_by': saved_by_label,
+            'teacher_closed': True,
+            'graded_count': graded_cnt,
+            'students_count': total_cnt,
+        },
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════
 # Кабінет викладача (постійна ссылка)
 # ═══════════════════════════════════════════════════════════════════
@@ -57,6 +94,7 @@ def teacher_cabinet(teacher_token):
     conn = get_db()
     conn.row_factory = sqlite3.Row
     ensure_exam_session_tables(conn)
+    ensure_exam_extra_columns(conn)
 
     teacher = conn.execute(
         "SELECT * FROM teachers WHERE token = ? AND is_active = 1",
@@ -96,9 +134,6 @@ def teacher_cabinet(teacher_token):
             ss.discipline_name, ss.license_id
     """, (teacher['id'],)).fetchall()
 
-    # Розширена статистика з окремими категоріями статусів.
-    # Раніше в шаблоні була спроба вивести `stats.needs_work - stats.draft - stats.sent`,
-    # але `draft` і `sent` не передавались → виводився 0.
     stats = {
         'total': len(sheets),
         'draft': sum(1 for s in sheets if s['status'] == 'draft'),
@@ -127,6 +162,7 @@ def teacher_sheet(teacher_token, sheet_id):
     conn = get_db()
     conn.row_factory = sqlite3.Row
     ensure_exam_session_tables(conn)
+    ensure_exam_extra_columns(conn)
 
     teacher = conn.execute(
         "SELECT * FROM teachers WHERE token = ? AND is_active = 1",
@@ -153,14 +189,39 @@ def teacher_sheet(teacher_token, sheet_id):
         return render_template('exam_sessions/teacher_invalid.html'), 404
 
     sheet = dict(sheet)
-    readonly = sheet['status'] in ('approved', 'locked')
+    readonly = (sheet['status'] in ('approved', 'locked')) or bool(sheet.get('teacher_closed'))
 
-    if request.method == 'POST' and not readonly:
+    if request.method == 'POST':
+        if readonly:
+            conn.close()
+            flash('Відомість уже закрита або затверджена — редагування заблоковане.', 'error')
+            return redirect(url_for(
+                'exam_sessions.teacher_sheet',
+                teacher_token=teacher_token, sheet_id=sheet_id,
+            ))
+
         allowed, _retry = check_rate_limit('teacher_grade_post', client_ip(), limit=120, window_seconds=300)
         if not allowed:
             conn.close()
             return 'Занадто багато запитів. Зачекайте кілька хвилин і повторіть збереження.', 429
+
         _save_teacher_grades(conn, sheet_id, sheet['control_form'], request.form)
+        action = (request.form.get('action') or 'save').strip()
+
+        if action == 'close_sheet':
+            _close_sheet_by_teacher(conn, sheet, 'teacher (cabinet)')
+            conn.commit()
+            conn.close()
+            flash(
+                'Відомість закрито та передано на перевірку. '
+                'Повторно відкрити її зможе лише відповідальний користувач або адміністратор.',
+                'success',
+            )
+            return redirect(url_for(
+                'exam_sessions.teacher_sheet',
+                teacher_token=teacher_token, sheet_id=sheet_id,
+            ))
+
         new_status = recompute_sheet_status(conn, sheet_id)
 
         from routes.exam_sessions.history import log_history
@@ -179,6 +240,7 @@ def teacher_sheet(teacher_token, sheet_id):
             SELECT id FROM session_sheets
             WHERE teacher_ref_id = ?
               AND status IN ('draft', 'sent', 'in_progress')
+              AND COALESCE(teacher_closed, 0) = 0
               AND id != ?
             ORDER BY
                 CASE status
@@ -254,16 +316,13 @@ def teacher_sheet(teacher_token, sheet_id):
 # ═══════════════════════════════════════════════════════════════════
 # Стара одноразова ссылка /session-grade/<token> (залишаємо для сумісності)
 # ═══════════════════════════════════════════════════════════════════
-# ВАЖЛИВО: раніше ця функція рендерила `teacher_form.html`, який насправді
-# є АДМІНСЬКИМ шаблоном (потребує teacher, users, stats) — тому сторінка
-# ламалася з помилкою рендерингу. Тепер рендеримо `teacher_sheet.html` і
-# передаємо teacher_token=None — шаблон адаптується (без навігації).
 
 @exam_sessions_bp.route('/session-grade/<token>', methods=['GET', 'POST'])
 def teacher_grade_form(token):
     conn = get_db()
     conn.row_factory = sqlite3.Row
     ensure_exam_session_tables(conn)
+    ensure_exam_extra_columns(conn)
 
     sheet = conn.execute("""
         SELECT ss.*, es.academic_year, es.semester, es.name AS session_name,
@@ -282,14 +341,33 @@ def teacher_grade_form(token):
         return render_template('exam_sessions/teacher_invalid.html'), 404
 
     sheet = dict(sheet)
-    readonly = sheet['status'] in ('approved', 'locked')
+    readonly = (sheet['status'] in ('approved', 'locked')) or bool(sheet.get('teacher_closed'))
 
-    if request.method == 'POST' and not readonly:
+    if request.method == 'POST':
+        if readonly:
+            conn.close()
+            flash('Відомість уже закрита або затверджена — редагування заблоковане.', 'error')
+            return redirect(url_for('exam_sessions.teacher_grade_form', token=token))
+
         allowed, _retry = check_rate_limit('teacher_grade_post', client_ip(), limit=120, window_seconds=300)
         if not allowed:
             conn.close()
             return 'Занадто багато запитів. Зачекайте кілька хвилин і повторіть збереження.', 429
+
         _save_teacher_grades(conn, sheet['id'], sheet['control_form'], request.form)
+        action = (request.form.get('action') or 'save').strip()
+
+        if action == 'close_sheet':
+            _close_sheet_by_teacher(conn, sheet, 'teacher (public form)')
+            conn.commit()
+            logger.info(f"[session-grade] teacher closed sheet_id={sheet['id']}")
+            flash(
+                'Відомість закрито та здано. Повторне відкриття можливе лише відповідальним користувачем.',
+                'success',
+            )
+            conn.close()
+            return redirect(url_for('exam_sessions.teacher_grade_form', token=token))
+
         new_status = recompute_sheet_status(conn, sheet['id'])
 
         from routes.exam_sessions.history import log_history
@@ -315,8 +393,6 @@ def teacher_grade_form(token):
     """, (sheet['id'],)).fetchall()]
     conn.close()
 
-    # Рендеримо той самий teacher_sheet.html, але без навігації кабінету
-    # (teacher_token=None, prev/next=None) — це "стара" публічна форма.
     return render_template(
         'exam_sessions/teacher_sheet.html',
         sheet=sheet,

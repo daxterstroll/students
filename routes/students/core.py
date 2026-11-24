@@ -922,6 +922,7 @@ FAQ_SECTION_PERMISSIONS = {
         'manage_graduation',
         'study_periods',
         'manage_exam_sessions',
+        'reopen_exam_sheets',
         'transfer_exam_grades',
         'view_exam_session_history',
         'import_subjects',

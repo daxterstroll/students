@@ -178,7 +178,12 @@
     } %}
 
     <div class="header-glass">
-        <h1 class="mb-2">{{ sheet.discipline_name }}</h1>
+        <h1 class="mb-2">
+            {{ sheet.discipline_name }}
+            {% if sheet.sheet_kind == 'retake' %}
+            <span class="kind-badge" style="background:#e69b3a;color:#0e1b2c;"><i class="bi bi-arrow-repeat"></i> Перездача</span>
+            {% endif %}
+        </h1>
         <div class="small opacity-75">
             <span class="kind-badge">
                 <i class="bi {{ kind_icon.get(sheet.entity_kind, 'bi-file-earmark') }}"></i>
@@ -195,7 +200,11 @@
         {% if readonly %}
         <div class="alert alert-warning mt-2 mb-0 py-2 small">
             <i class="bi bi-lock-fill me-1"></i>
+            {% if sheet.teacher_closed and sheet.status not in ('approved', 'locked') %}
+            Відомість закрито вами ({{ sheet.teacher_closed_at or 'здано' }}) — редагування тимчасово заблоковано.
+            {% else %}
             Відомість затверджено — оцінки не редагуються.
+            {% endif %}
         </div>
         {% endif %}
     </div>

@@ -138,7 +138,7 @@ def _parse_pdf_ajax():
     if not file.filename.lower().endswith('.pdf'):
         return jsonify({'ok': False, 'error': 'Підтримуються лише PDF-файли'}), 400
 
-    pdf_bytes = file.read()
+    pdf_bytes = file.read(MAX_PDF_SIZE_BYTES + 1)
     if len(pdf_bytes) > MAX_PDF_SIZE_BYTES:
         return jsonify({
             'ok': False,
@@ -561,7 +561,7 @@ def apply():
         f"[apply] pdf_file: filename={getattr(pdf_file, 'filename', None)!r}"
     )
     if pdf_file and pdf_file.filename and pdf_file.filename.lower().endswith('.pdf'):
-        pdf_bytes = pdf_file.read()
+        pdf_bytes = pdf_file.read(MAX_PDF_SIZE_BYTES + 1)
         logger.info(f"[apply] pdf_file size: {len(pdf_bytes)} bytes, "
                     f"starts_with_pdf={pdf_bytes.startswith(b'%PDF')}")
         if len(pdf_bytes) <= MAX_PDF_SIZE_BYTES and pdf_bytes.startswith(b'%PDF'):

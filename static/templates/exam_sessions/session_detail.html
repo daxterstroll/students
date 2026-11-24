@@ -209,7 +209,10 @@
             <div class="es-kpi">
                 <div class="es-kpi__label">Відомостей у сесії</div>
                 <div class="es-kpi__val es-num">{{ session_stats.total }}</div>
-                <div class="es-kpi__sub">Затверджено: {{ session_stats.approved }} · У плані: {{ session_stats.linked }}</div>
+                <div class="es-kpi__sub">
+                    Затверджено: {{ session_stats.approved }} · У плані: {{ session_stats.linked }}
+                    {% if session_stats.retakes %} · Перездач: {{ session_stats.retakes }}{% endif %}
+                </div>
             </div>
         </div>
         <div class="col-6 col-lg-3">
@@ -301,18 +304,25 @@
     {# ── Фільтри таблиці відомостей ── #}
     <div class="es-toolbar">
         <div class="row g-2 align-items-center">
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <div class="input-group input-group-sm">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
-                    <input type="search" id="sheetSearch" class="form-control" placeholder="Дисципліна, викладач або № відомості...">
+                    <input type="search" id="sheetSearch" class="form-control" placeholder="Дисципліна, викладач або №...">
                 </div>
             </div>
-            <div class="col-6 col-md-3">
+            <div class="col-6 col-md-2">
                 <select id="sheetStatusFilter" class="form-select form-select-sm">
                     <option value="">Усі статуси</option>
                     {% for k, label in sheet_status_ua.items() %}
                     <option value="{{ k }}">{{ label }}</option>
                     {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <select id="sheetKindFilter" class="form-select form-select-sm">
+                    <option value="">Усі види</option>
+                    <option value="main">Основні</option>
+                    <option value="retake">Перездачі</option>
                 </select>
             </div>
             <div class="col-6 col-md-3">
@@ -323,7 +333,7 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
+            <div class="col-6 col-md-2">
                 <select id="sheetTeacherFilter" class="form-select form-select-sm">
                     <option value="">Усі викладачі</option>
                     {% for tid, tname in session_teachers %}
@@ -375,8 +385,10 @@
                 </thead>
                 <tbody>
                     {% for s in sheets %}
-                    <tr data-search="{{ (s.discipline_name ~ ' ' ~ (s.teacher_short or '') ~ ' ' ~ (s.teacher_full or '') ~ ' ' ~ (s.statement_number or '') ~ ' ' ~ (s.license_name or ''))|lower }}"
+                    {% set is_retake = (s.sheet_kind == 'retake') or s.parent_sheet_id %}
+                    <tr data-search="{{ (s.discipline_name ~ ' ' ~ (s.teacher_short or '') ~ ' ' ~ (s.teacher_full or '') ~ ' ' ~ (s.statement_number or '') ~ ' ' ~ (s.license_name or '') ~ (' перездача' if is_retake else ''))|lower }}"
                         data-status="{{ s.status }}"
+                        data-kind="{{ 'retake' if is_retake else 'main' }}"
                         data-license="{{ s.license_id or '' }}"
                         data-teacher="{{ s.teacher_ref_id or '' }}">
                         <td class="text-center">
@@ -384,18 +396,29 @@
                                    form="bulkSheetsForm" name="sheet_ids" value="{{ s.id }}">
                         </td>
                         <td>
-                            <div class="fw-semibold">
+                            <div class="fw-semibold d-flex align-items-center flex-wrap gap-1">
                                 <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.id) }}" class="text-decoration-none">
                                     {{ s.discipline_name }}
                                 </a>
+                                {% if is_retake %}
+                                <span class="es-badge es-badge--warn" title="Відомість перездачі / ліквідації академзаборгованості">
+                                    <i class="bi bi-arrow-repeat"></i>Перездача
+                                </span>
+                                {% endif %}
                             </div>
-                            {% if s.statement_number or s.exam_date or s.hours_credits %}
+                            {% if s.statement_number or s.exam_date or s.hours_credits or s.parent_sheet_id %}
                             <div class="small text-muted">
                                 {% if s.statement_number %}№ {{ s.statement_number }}{% endif %}
                                 {% if s.statement_number and s.exam_date %} · {% endif %}
                                 {% if s.exam_date %}{{ s.exam_date }}{% endif %}
                                 {% if (s.statement_number or s.exam_date) and s.hours_credits %} · {% endif %}
                                 {% if s.hours_credits %}{{ s.hours_credits }}{% endif %}
+                                {% if s.parent_sheet_id %}
+                                    {% if s.statement_number or s.exam_date or s.hours_credits %} · {% endif %}
+                                    <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.parent_sheet_id) }}" class="text-decoration-none text-muted">
+                                        ← осн. #{{ s.parent_sheet_id }}
+                                    </a>
+                                {% endif %}
                             </div>
                             {% endif %}
                         </td>
@@ -455,6 +478,26 @@
                                 <span class="es-badge es-badge--muted">{{ sheet_status_ua.get(s.status, s.status) }}</span>
                                 {% endif %}
                             </div>
+                            {% if s.teacher_closed and s.status == 'submitted' %}
+                            <div class="mt-1">
+                                <span class="es-badge es-badge--info" title="Викладач самостійно закрив відомість">
+                                    <i class="bi bi-lock-fill"></i>Закрита викл.
+                                </span>
+                            </div>
+                            {% endif %}
+                            {% if s.child_retake_id %}
+                            <div class="mt-1">
+                                <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=s.child_retake_id) }}"
+                                   class="es-badge es-badge--warn text-decoration-none"
+                                   title="Відкрити відомість перездачі">
+                                    <i class="bi bi-arrow-repeat"></i>Перездача #{{ s.child_retake_id }}
+                                </a>
+                            </div>
+                            {% elif s.status in ('approved', 'locked') and s.problem_count > 0 %}
+                            <div class="small mt-1" style="color:var(--st-miss-fg);">
+                                Незданих/неявок: {{ s.problem_count }}
+                            </div>
+                            {% endif %}
                             {% if s.linked_entity_id %}
                             <div class="small mt-1" style="color:var(--st-ok-fg);">
                                 <i class="bi bi-check2-circle"></i> у плані #{{ s.linked_entity_id }}
@@ -471,6 +514,16 @@
                                     <input type="hidden" name="sheet_id" value="{{ s.id }}">
                                     <button type="submit" class="btn btn-sm btn-outline-success" title="Швидко затвердити відомість">
                                         <i class="bi bi-check2"></i>
+                                    </button>
+                                </form>
+                                {% endif %}
+                                {% if can_reopen and s.status != 'locked' and (s.teacher_closed or s.status in ('submitted', 'approved')) %}
+                                <form method="post" class="d-inline"
+                                      onsubmit="return confirm('Повторно відкрити відомість «{{ s.discipline_name }}» для викладача?{% if s.linked_entity_id %}\nУвага: відомість вже перенесено в план.{% endif %}');">
+                                    <input type="hidden" name="action" value="reopen_sheet">
+                                    <input type="hidden" name="sheet_id" value="{{ s.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Повторно відкрити відомість для викладача">
+                                        <i class="bi bi-unlock"></i>
                                     </button>
                                 </form>
                                 {% endif %}
@@ -617,6 +670,7 @@
     const rows = Array.from(table.querySelectorAll('tbody tr'));
     const qEl = document.getElementById('sheetSearch');
     const stEl = document.getElementById('sheetStatusFilter');
+    const kindEl = document.getElementById('sheetKindFilter');
     const licEl = document.getElementById('sheetLicenseFilter');
     const tEl = document.getElementById('sheetTeacherFilter');
     const emptyEl = document.getElementById('sheetsEmptyFilter');
@@ -624,12 +678,14 @@
     function filter() {
         const q = (qEl.value || '').trim().toLowerCase();
         const st = stEl.value;
+        const kind = kindEl ? kindEl.value : '';
         const lic = licEl.value;
         const teach = tEl.value;
         let vis = 0;
         rows.forEach(r => {
             const ok = (!q || r.dataset.search.includes(q))
                 && (!st || r.dataset.status === st)
+                && (!kind || r.dataset.kind === kind)
                 && (!lic || r.dataset.license === lic)
                 && (!teach || r.dataset.teacher === teach);
             r.classList.toggle('d-none', !ok);
@@ -637,7 +693,7 @@
         });
         emptyEl.classList.toggle('d-none', vis > 0);
     }
-    [qEl, stEl, licEl, tEl].forEach(el => {
+    [qEl, stEl, kindEl, licEl, tEl].forEach(el => {
         if (el) el.addEventListener(el.tagName === 'INPUT' ? 'input' : 'change', filter);
     });
 

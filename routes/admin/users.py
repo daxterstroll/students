@@ -60,6 +60,7 @@ PERMISSION_DEFINITIONS = [
 
     # ─── Сесії ──────────────────────────────────────────────────
     ('manage_exam_sessions',        'Сесії та відомості — створення та редагування', 'sessions'),
+    ('reopen_exam_sheets',          'Сесії та відомості — повторне відкриття закритих відомостей', 'sessions'),
     ('delete_exam_sessions',        'Сесії та відомості — ВИДАЛЕННЯ',                'sessions'),
     ('view_exam_session_history',   'Історія сесій та відомостей (перегляд)',        'sessions'),
     ('transfer_exam_grades',        'Перенос оцінок із сесій у план',                'sessions'),
@@ -308,6 +309,13 @@ def add_user():
         ok_pwd, pwd_err = validate_password_strength(password)
         if not ok_pwd:
             flash(pwd_err, 'error')
+            conn.close()
+            return redirect(url_for('admin.add_user'))
+
+        uname_fold = username.casefold()
+        existing_usernames = conn.execute("SELECT username FROM users").fetchall()
+        if any((r['username'] or '').strip().casefold() == uname_fold for r in existing_usernames):
+            flash('Такий логін уже існує', 'error')
             conn.close()
             return redirect(url_for('admin.add_user'))
 

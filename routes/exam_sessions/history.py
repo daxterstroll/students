@@ -53,6 +53,9 @@ ACTION_META_UA: dict[str, tuple[str, str]] = {
     'lock': ('Блокування відомості', 'muted'),
     'unlock': ('Розблокування відомості', 'warn'),
     'submit': ('Подання відомості', 'info'),
+    'close_by_teacher': ('Закриття відомості викладачем', 'info'),
+    'reopen': ('Повторне відкриття відомості', 'warn'),
+    'create_retake': ('Створення відомості перездачі', 'warn'),
     'send': ('Надсилання викладачу', 'info'),
     'transfer': ('Перенос оцінок у план', 'ok'),
     'unlink': ('Відвʼязування від плану', 'warn'),
@@ -114,6 +117,12 @@ FIELD_NAME_UA: dict[str, str] = {
     'linked_at': 'Дата переносу в план',
     'created_by': 'Створив',
     'teacher_id': 'Викладач',
+    'sheet_kind': 'Тип відомості',
+    'parent_sheet_id': 'Основна відомість',
+    'teacher_closed': 'Закрито викладачем',
+    'teacher_closed_at': 'Дата закриття викладачем',
+    'reopened_at': 'Дата повторного відкриття',
+    'reopened_by': 'Повторно відкрив',
 }
 
 VALUE_UA: dict[str, str] = {
@@ -126,6 +135,9 @@ VALUE_UA: dict[str, str] = {
     'submitted': 'Оцінки здано',
     'approved': 'Затверджено',
     'locked': 'Заблоковано',
+    # Типи відомостей
+    'main': 'Основна відомість',
+    'retake': 'Перездача (ліквідація заборгованості)',
     # Типи компонентів
     'subject': 'Предмет',
     'practice': 'Практика',
@@ -148,6 +160,8 @@ VALUE_UA: dict[str, str] = {
     # Булеві значення
     'true': 'Так',
     'false': 'Ні',
+    '1': 'Так',
+    '0': 'Ні',
 }
 
 ENTITY_KIND_UA: dict[str, str] = {
@@ -203,6 +217,15 @@ DETAIL_KEY_UA: dict[str, str] = {
     'exam_date': 'Дата проведення',
     'statement_number': 'Номер відомості',
     'work_topic': 'Тема роботи',
+    'parent_sheet_id': 'Основна відомість',
+    'retake_sheet_id': 'Відомість перездачі',
+    'retake_students_count': 'Студентів на перездачу',
+    'teacher_closed': 'Закрито викладачем',
+    'reopened_by': 'Повторно відкрив',
+    'graded_count': 'Заповнено оцінок',
+    'prev_status': 'Попередній статус',
+    'new_status': 'Новий статус',
+    'sheet_kind': 'Тип відомості',
 }
 
 
@@ -214,6 +237,11 @@ def _ensure_history_table(conn: sqlite3.Connection) -> set[str]:
     """Гарантує існування таблиці exam_session_history та повертає її колонки."""
     try:
         ensure_exam_session_tables(conn)
+    except Exception:
+        pass
+    try:
+        from routes.exam_sessions.helpers_extra import ensure_exam_extra_columns
+        ensure_exam_extra_columns(conn)
     except Exception:
         pass
 
@@ -756,7 +784,7 @@ def format_history_row(
 
     # Зрозумілий заголовок зміни, якщо field_name не передано (напр. approve/lock без field_name)
     if not field_ua and (old_ua or new_ua):
-        if action in ('approve', 'lock', 'unlock', 'submit', 'send'):
+        if action in ('approve', 'lock', 'unlock', 'submit', 'send', 'close_by_teacher', 'reopen'):
             field_ua = 'Статус'
         elif action == 'create' and new_ua:
             field_ua = 'Значення'

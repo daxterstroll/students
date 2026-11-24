@@ -130,6 +130,9 @@
                             <a href="{{ url_for('exam_sessions.sheet_detail', sheet_id=r.id) }}" class="fw-semibold text-decoration-none">
                                 {{ r.discipline_name }}
                             </a>
+                            {% if r.sheet_kind == 'retake' %}
+                            <span class="es-badge es-badge--warn ms-1">Перездача</span>
+                            {% endif %}
                         </td>
                         <td>{{ r.group_name }}</td>
                         <td class="small es-num">{{ r.academic_year }} / сем. {{ r.semester }}</td>

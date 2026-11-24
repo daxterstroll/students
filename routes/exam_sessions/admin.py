@@ -17,6 +17,11 @@ from routes.helpers import current_username
 from routes.config import PUBLIC_APPLY_BASE_URL
 from routes.exam_sessions import exam_sessions_bp
 from routes.exam_sessions.schema import ensure_exam_session_tables
+from routes.exam_sessions.helpers_extra import (
+    ensure_exam_extra_columns,
+    create_retake_sheet_if_needed,
+    is_failing_or_absent_student,
+)
 from routes.exam_sessions.service import (
     allowed_groups_for_user, user_can_access_group,
     licenses_present_in_group, populate_sheet_students,
@@ -32,6 +37,7 @@ def _conn():
     conn = get_db()
     conn.row_factory = sqlite3.Row
     ensure_exam_session_tables(conn)
+    ensure_exam_extra_columns(conn)
     return conn
 
 
@@ -98,18 +104,29 @@ def _sheet_row_has_grade(st):
     return (pts is not None and str(pts).strip() != '') or bool(nat) or bool(ects)
 
 
+def _is_retake_sheet(sh):
+    return ((sh.get('sheet_kind') or 'main').strip().lower() == 'retake') or bool(sh.get('parent_sheet_id'))
+
+
 def _merge_summary_sheets_by_discipline(sheets, by_students):
-    """Об'єднує відомості однієї дисципліни (створені під різними ліцензіями)
+    """Об'єднує відомості однієї дисципліни (різні ліцензії та відомості перездач)
     в одну спільну колонку для загальної відомості сесії.
+    Оцінки з відомості перездачі перекривають незадовільні/відсутні оцінки основної
+    відомості і позначаються прапорцем is_retake=True.
     """
     from routes.helpers import sort_ukrainian
+
+    ordered_sheets = sorted(
+        [dict(sh) if not isinstance(sh, dict) else dict(sh) for sh in (sheets or [])],
+        key=lambda s: (1 if _is_retake_sheet(s) else 0, int(s.get('id') or 0)),
+    )
 
     merged_sheets = []
     merged_by_students = {}
     groups_by_key = {}
 
-    for sh in (sheets or []):
-        sh_dict = dict(sh) if not isinstance(sh, dict) else dict(sh)
+    for sh_dict in ordered_sheets:
+        is_retake = _is_retake_sheet(sh_dict)
         name_norm = ' '.join((sh_dict.get('discipline_name') or '').split()).lower()
         ctrl_norm = ' '.join((sh_dict.get('control_form') or '').split()).lower()
         kind_norm = (sh_dict.get('entity_kind') or 'subject').strip().lower()
@@ -136,10 +153,23 @@ def _merge_summary_sheets_by_discipline(sheets, by_students):
                     sid_key = ('id', str(raw_sid).strip())
             else:
                 sid_key = ('name', ' '.join((st_dict.get('full_name') or '').split()).lower())
-            if sid_key not in stu_map:
-                stu_map[sid_key] = st_dict
-            elif not _sheet_row_has_grade(stu_map[sid_key]) and _sheet_row_has_grade(st_dict):
-                stu_map[sid_key] = st_dict
+
+            if is_retake:
+                if _sheet_row_has_grade(st_dict):
+                    prev = stu_map.get(sid_key)
+                    st_dict['is_retake'] = True
+                    st_dict['retake_sheet_id'] = sh_dict.get('id')
+                    st_dict['retake_date'] = sh_dict.get('exam_date')
+                    if prev:
+                        st_dict['orig_points'] = prev.get('points')
+                    stu_map[sid_key] = st_dict
+                elif sid_key not in stu_map:
+                    stu_map[sid_key] = st_dict
+            else:
+                if sid_key not in stu_map:
+                    stu_map[sid_key] = st_dict
+                elif not _sheet_row_has_grade(stu_map[sid_key]) and _sheet_row_has_grade(st_dict):
+                    stu_map[sid_key] = st_dict
 
     out_by_students = {}
     for sh in merged_sheets:
@@ -147,6 +177,87 @@ def _merge_summary_sheets_by_discipline(sheets, by_students):
         rows = list(merged_by_students[cid].values())
         out_by_students[cid] = sort_ukrainian(rows, lambda r: r.get('full_name') or '')
     return merged_sheets, out_by_students
+
+
+def _approve_sheet_and_spawn_retake(conn, sheet_id: int, session_id: int, username: str):
+    """Затверджує відомість і автоматично створює відомість перездачі для незданих/неявок."""
+    sh = conn.execute(
+        "SELECT id, status, discipline_name, sheet_kind FROM session_sheets WHERE id = ? AND session_id = ?",
+        (sheet_id, session_id),
+    ).fetchone()
+    if not sh:
+        return None, None
+
+    conn.execute("""
+        UPDATE session_sheets
+        SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
+        WHERE id=?
+    """, (username, sheet_id))
+    log_history(
+        conn,
+        entity_type='sheet', entity_id=sheet_id,
+        session_id=session_id, sheet_id=sheet_id,
+        action='approve', old_value=sh['status'], new_value='approved',
+    )
+
+    retake_info = create_retake_sheet_if_needed(conn, sheet_id, created_by=username)
+    if retake_info:
+        log_history(
+            conn,
+            entity_type='sheet', entity_id=retake_info['sheet_id'],
+            session_id=session_id, sheet_id=retake_info['sheet_id'],
+            action='create_retake',
+            details={
+                'discipline_name': retake_info['discipline_name'],
+                'parent_sheet_id': sheet_id,
+                'retake_students_count': retake_info['students_count'],
+                'license_id': retake_info.get('license_id'),
+                'teacher_ref_id': retake_info.get('teacher_ref_id'),
+            },
+        )
+    return dict(sh), retake_info
+
+
+def _reopen_sheet_for_teacher(conn, sheet_row, username: str):
+    """Повторно відкриває закриту викладачем або затверджену (не заблоковану) відомість."""
+    sheet_id = sheet_row['id']
+    old_status = sheet_row['status']
+    conn.execute("""
+        UPDATE session_sheets
+        SET teacher_closed = 0,
+            teacher_closed_at = NULL,
+            approved_at = NULL,
+            approved_by = NULL,
+            reopened_at = datetime('now', 'localtime'),
+            reopened_by = ?
+        WHERE id = ?
+    """, (username, sheet_id))
+
+    counts = conn.execute("""
+        SELECT COUNT(*) AS total_cnt,
+               SUM(CASE WHEN points IS NOT NULL THEN 1 ELSE 0 END) AS graded_cnt
+        FROM session_sheet_students
+        WHERE sheet_id = ?
+    """, (sheet_id,)).fetchone()
+    graded_cnt = (counts['graded_cnt'] or 0) if counts else 0
+
+    new_status = 'in_progress' if graded_cnt > 0 else 'sent'
+    conn.execute("UPDATE session_sheets SET status = ? WHERE id = ?", (new_status, sheet_id))
+
+    log_history(
+        conn,
+        entity_type='sheet', entity_id=sheet_id,
+        session_id=sheet_row['session_id'], sheet_id=sheet_id,
+        action='reopen', field_name='status',
+        old_value=old_status, new_value=new_status,
+        details={
+            'reopened_by': username,
+            'prev_status': old_status,
+            'new_status': new_status,
+            'teacher_closed': False,
+        },
+    )
+    return new_status
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -734,20 +845,46 @@ def session_detail(session_id):
                 (target_sheet_id, session_id),
             ).fetchone()
             if sh and sh['status'] in ('submitted', 'in_progress', 'sent'):
-                conn.execute("""
-                    UPDATE session_sheets
-                    SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
-                    WHERE id=?
-                """, (current_username(), target_sheet_id))
-                log_history(
-                    conn,
-                    entity_type='sheet', entity_id=target_sheet_id,
-                    session_id=session_id, sheet_id=target_sheet_id,
-                    action='approve', old_value=sh['status'], new_value='approved',
+                _, retake_info = _approve_sheet_and_spawn_retake(
+                    conn, target_sheet_id, session_id, current_username()
                 )
                 conn.commit()
                 log_action(current_username(), f"затвердив відомість #{target_sheet_id} у сесії #{session_id}")
-                flash(f"Відомість «{sh['discipline_name']}» затверджено.", 'success')
+                msg = f"Відомість «{sh['discipline_name']}» затверджено."
+                if retake_info:
+                    log_action(
+                        current_username(),
+                        f"автоматично створив відомість перездачі #{retake_info['sheet_id']} "
+                        f"з відомості #{target_sheet_id} ({retake_info['students_count']} студ.)",
+                    )
+                    msg += (
+                        f" Автоматично створено відомість перездачі #{retake_info['sheet_id']} "
+                        f"для {retake_info['students_count']} студ. (нездані / неявки)."
+                    )
+                flash(msg, 'success')
+            conn.close()
+            return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+
+        if action == 'reopen_sheet':
+            can_reopen = bool(session.get('is_admin') or 'reopen_exam_sheets' in (session.get('permissions') or []))
+            if not can_reopen:
+                conn.close()
+                flash('Немає права повторно відкривати відомості', 'error')
+                return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
+            target_sheet_id = request.form.get('sheet_id', type=int)
+            sh = conn.execute(
+                "SELECT * FROM session_sheets WHERE id = ? AND session_id = ?",
+                (target_sheet_id, session_id),
+            ).fetchone()
+            if sh:
+                sh_d = dict(sh)
+                if sh_d['status'] == 'locked':
+                    flash('Відомість остаточно заблокована — повторне відкриття неможливе.', 'error')
+                elif sh_d.get('teacher_closed') or sh_d['status'] in ('submitted', 'approved'):
+                    _reopen_sheet_for_teacher(conn, sh_d, current_username())
+                    conn.commit()
+                    log_action(current_username(), f"повторно відкрив відомість #{target_sheet_id} у сесії #{session_id}")
+                    flash(f"Відомість «{sh_d['discipline_name']}» повторно відкрито для викладача.", 'success')
             conn.close()
             return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
 
@@ -755,6 +892,8 @@ def session_detail(session_id):
             raw_ids = request.form.getlist('sheet_ids')
             sids = [int(x) for x in raw_ids if str(x).isdigit()]
             approved_count = 0
+            retakes_created = 0
+            retake_students_total = 0
             if sids:
                 ph = ','.join('?' * len(sids))
                 candidates = conn.execute(
@@ -762,24 +901,26 @@ def session_detail(session_id):
                     [session_id] + sids,
                 ).fetchall()
                 for c in candidates:
-                    conn.execute("""
-                        UPDATE session_sheets
-                        SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
-                        WHERE id=?
-                    """, (current_username(), c['id']))
-                    log_history(
-                        conn,
-                        entity_type='sheet', entity_id=c['id'],
-                        session_id=session_id, sheet_id=c['id'],
-                        action='approve', old_value=c['status'], new_value='approved',
+                    _, retake_info = _approve_sheet_and_spawn_retake(
+                        conn, c['id'], session_id, current_username()
                     )
                     approved_count += 1
+                    if retake_info:
+                        retakes_created += 1
+                        retake_students_total += retake_info['students_count']
                 if approved_count:
                     conn.commit()
-                    log_action(current_username(), f"масово затвердив відомості ({approved_count}) у сесії #{session_id}")
+                    log_action(
+                        current_username(),
+                        f"масово затвердив відомості ({approved_count}) у сесії #{session_id}"
+                        + (f"; створено перездач: {retakes_created}" if retakes_created else ""),
+                    )
             conn.close()
             if approved_count:
-                flash(f'Затверджено відомостей: {approved_count}.', 'success')
+                msg = f'Затверджено відомостей: {approved_count}.'
+                if retakes_created:
+                    msg += f' Автоматично створено відомостей перездачі: {retakes_created} (студентів: {retake_students_total}).'
+                flash(msg, 'success')
             else:
                 flash('Не знайдено відомостей для затвердження серед обраних.', 'info')
             return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
@@ -791,7 +932,11 @@ def session_detail(session_id):
             if sids:
                 ph = ','.join('?' * len(sids))
                 candidates = conn.execute(
-                    f"SELECT id, license_id FROM session_sheets WHERE session_id = ? AND id IN ({ph}) AND status IN ('draft', 'sent', 'in_progress')",
+                    f"""SELECT id, license_id FROM session_sheets
+                        WHERE session_id = ? AND id IN ({ph})
+                          AND status IN ('draft', 'sent', 'in_progress')
+                          AND COALESCE(sheet_kind, 'main') != 'retake'
+                          AND COALESCE(teacher_closed, 0) = 0""",
                     [session_id] + sids,
                 ).fetchall()
                 for c in candidates:
@@ -809,7 +954,7 @@ def session_detail(session_id):
             if refreshed:
                 flash(f'Оновлено списки студентів у відомостях: {refreshed}.', 'success')
             else:
-                flash('Список студентів можна оновити лише у чернетках, надісланих або в процесі заповнення.', 'info')
+                flash('Список студентів можна оновити лише у відкритих основних відомостях (чернетки, надіслані або в процесі).', 'info')
             return redirect(url_for('exam_sessions.session_detail', session_id=session_id))
 
     sheets = [dict(r) for r in conn.execute("""
@@ -820,12 +965,18 @@ def session_detail(session_id):
                l.short_name_ua AS license_name,
                (SELECT COUNT(*) FROM session_sheet_students x WHERE x.sheet_id = ss.id) AS students_count,
                (SELECT COUNT(*) FROM session_sheet_students x
-                WHERE x.sheet_id = ss.id AND x.points IS NOT NULL) AS graded_count
+                WHERE x.sheet_id = ss.id AND x.points IS NOT NULL) AS graded_count,
+               (SELECT COUNT(*) FROM session_sheet_students x
+                WHERE x.sheet_id = ss.id AND (x.points IS NULL OR x.points < 60)) AS problem_count,
+               (SELECT c.id FROM session_sheets c
+                WHERE c.parent_sheet_id = ss.id ORDER BY c.id DESC LIMIT 1) AS child_retake_id
         FROM session_sheets ss
         LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         WHERE ss.session_id = ?
-        ORDER BY ss.discipline_name, ss.license_id
+        ORDER BY ss.discipline_name,
+                 CASE WHEN COALESCE(ss.sheet_kind, 'main') = 'retake' THEN 1 ELSE 0 END,
+                 ss.license_id, ss.id
     """, (session_id,)).fetchall()]
 
     base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
@@ -844,6 +995,7 @@ def session_detail(session_id):
     in_progress_sheets = sum(1 for s in sheets if s['status'] == 'in_progress')
     pending_sheets = sum(1 for s in sheets if s['status'] in ('draft', 'sent'))
     linked_sheets = sum(1 for s in sheets if s.get('linked_entity_id'))
+    retake_sheets_count = sum(1 for s in sheets if (s.get('sheet_kind') or 'main') == 'retake')
     total_students_slots = sum(s['students_count'] or 0 for s in sheets)
     total_graded_slots = sum(s['graded_count'] or 0 for s in sheets)
 
@@ -854,6 +1006,7 @@ def session_detail(session_id):
         'in_progress': in_progress_sheets,
         'pending': pending_sheets,
         'linked': linked_sheets,
+        'retakes': retake_sheets_count,
         'percent': round(submitted_sheets / total_sheets * 100) if total_sheets else 0,
         'students_total': total_students_slots,
         'students_graded': total_graded_slots,
@@ -862,6 +1015,7 @@ def session_detail(session_id):
 
     licenses = licenses_present_in_group(conn, es['group_id'])
     can_transfer = bool(session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or []))
+    can_reopen = bool(session.get('is_admin') or 'reopen_exam_sheets' in (session.get('permissions') or []))
     teachers = conn.execute(
         "SELECT id, full_name, short_name FROM teachers "
         "WHERE is_active = 1 ORDER BY full_name COLLATE UKRAINIAN"
@@ -870,6 +1024,7 @@ def session_detail(session_id):
     return render_template(
         'exam_sessions/session_detail.html',
         es=es, sheets=sheets, licenses=licenses, can_transfer=can_transfer,
+        can_reopen=can_reopen,
         teachers=teachers, session_stats=session_stats,
         session_licenses=list(session_licenses_map.items()),
         session_teachers=list(session_teachers_map.items()),
@@ -1238,6 +1393,13 @@ def sheet_detail(sheet_id):
             return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
         if action == 'refresh_students' and sheet['status'] in ('draft', 'sent', 'in_progress'):
+            if (sheet.get('sheet_kind') or 'main').strip().lower() == 'retake':
+                flash(
+                    'Список студентів відомості перездачі сформовано з незданих/неявок і не оновлюється загальним списком групи.',
+                    'warning',
+                )
+                conn.close()
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
             n = populate_sheet_students(conn, sheet_id, sheet['group_id'], sheet['license_id'])
             log_history(
                 conn,
@@ -1324,28 +1486,84 @@ def sheet_detail(sheet_id):
 
             # Перераховуємо статус за фактичною заповненістю
             recompute_sheet_status(conn, sheet_id)
+            if sheet.get('teacher_closed') and sheet['status'] not in ('approved', 'locked'):
+                conn.execute("UPDATE session_sheets SET status='submitted' WHERE id=?", (sheet_id,))
             conn.commit()
             flash('Оцінки збережено', 'success')
             conn.close()
             return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
         if action == 'approve' and sheet['status'] in ('submitted', 'in_progress', 'sent', 'approved'):
-            # Дозволяємо затвердити навіть частково заповнену — адмін бачить і вирішує
-            conn.execute("""
-                UPDATE session_sheets
-                SET status='approved', approved_at=datetime('now','localtime'), approved_by=?
-                WHERE id=?
-            """, (current_username(), sheet_id))
-            log_history(
-                conn,
-                entity_type='sheet', entity_id=sheet_id,
-                session_id=sheet['session_id'], sheet_id=sheet_id,
-                action='approve',
-                old_value=sheet['status'], new_value='approved',
+            _, retake_info = _approve_sheet_and_spawn_retake(
+                conn, sheet_id, sheet['session_id'], current_username()
             )
             conn.commit()
             log_action(current_username(), f"затвердив відомість #{sheet_id}")
-            flash('Відомість затверджено', 'success')
+            msg = 'Відомість затверджено.'
+            if retake_info:
+                log_action(
+                    current_username(),
+                    f"автоматично створив відомість перездачі #{retake_info['sheet_id']} "
+                    f"з відомості #{sheet_id} ({retake_info['students_count']} студ.)",
+                )
+                msg += (
+                    f" Автоматично створено відомість перездачі #{retake_info['sheet_id']} "
+                    f"для {retake_info['students_count']} студ. (нездані / неявки)."
+                )
+            flash(msg, 'success')
+            conn.close()
+            return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+        if action == 'create_retake' and sheet['status'] in ('approved', 'locked'):
+            retake_info = create_retake_sheet_if_needed(
+                conn, sheet_id, created_by=current_username(), allow_from_retake=True
+            )
+            if retake_info:
+                log_history(
+                    conn,
+                    entity_type='sheet', entity_id=retake_info['sheet_id'],
+                    session_id=sheet['session_id'], sheet_id=retake_info['sheet_id'],
+                    action='create_retake',
+                    details={
+                        'discipline_name': retake_info['discipline_name'],
+                        'parent_sheet_id': sheet_id,
+                        'retake_students_count': retake_info['students_count'],
+                        'license_id': retake_info.get('license_id'),
+                        'teacher_ref_id': retake_info.get('teacher_ref_id'),
+                    },
+                )
+                conn.commit()
+                log_action(
+                    current_username(),
+                    f"створив відомість перездачі #{retake_info['sheet_id']} з відомості #{sheet_id} "
+                    f"({retake_info['students_count']} студ.)",
+                )
+                conn.close()
+                flash(
+                    f"Створено відомість перездачі #{retake_info['sheet_id']} "
+                    f"для {retake_info['students_count']} студ.",
+                    'success',
+                )
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=retake_info['sheet_id']))
+            flash('Немає студентів із незадовільними оцінками або неявкою для перездачі.', 'info')
+            conn.close()
+            return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+
+        if action == 'reopen_sheet':
+            can_reopen = bool(session.get('is_admin') or 'reopen_exam_sheets' in (session.get('permissions') or []))
+            if not can_reopen:
+                conn.close()
+                flash('Немає права повторно відкривати відомості', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+            if sheet['status'] == 'locked':
+                conn.close()
+                flash('Відомість остаточно заблокована — повторне відкриття неможливе.', 'error')
+                return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
+            if sheet.get('teacher_closed') or sheet['status'] in ('submitted', 'approved'):
+                _reopen_sheet_for_teacher(conn, sheet, current_username())
+                conn.commit()
+                log_action(current_username(), f"повторно відкрив відомість #{sheet_id} для викладача")
+                flash('Відомість повторно відкрито — викладач знову може редагувати оцінки.', 'success')
             conn.close()
             return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
@@ -1456,6 +1674,7 @@ def sheet_detail(sheet_id):
                     )
                     snapshot['grades_removed_from_plan'] = removed
 
+                conn.execute("UPDATE session_sheets SET parent_sheet_id = NULL WHERE parent_sheet_id = ?", (sheet_id,))
                 conn.execute("DELETE FROM session_sheets WHERE id = ?", (sheet_id,))
                 log_history(
                     conn,
@@ -1513,6 +1732,7 @@ def sheet_detail(sheet_id):
             }
 
             try:
+                conn.execute("UPDATE session_sheets SET parent_sheet_id = NULL WHERE parent_sheet_id = ?", (sheet_id,))
                 conn.execute("DELETE FROM session_sheets WHERE id = ?", (sheet_id,))
                 log_history(
                     conn,
@@ -1543,6 +1763,24 @@ def sheet_detail(sheet_id):
         return redirect(url_for('exam_sessions.sheet_detail', sheet_id=sheet_id))
 
     students = _load_students(conn, sheet_id)
+    problem_students_count = sum(1 for st in students if is_failing_or_absent_student(st))
+    parent_sheet = None
+    if sheet.get('parent_sheet_id'):
+        p_row = conn.execute(
+            "SELECT id, discipline_name, status, exam_date FROM session_sheets WHERE id = ?",
+            (sheet['parent_sheet_id'],),
+        ).fetchone()
+        if p_row:
+            parent_sheet = dict(p_row)
+    child_retakes = [dict(r) for r in conn.execute("""
+        SELECT id, status, exam_date, teacher_closed, created_at,
+               (SELECT COUNT(*) FROM session_sheet_students x WHERE x.sheet_id = session_sheets.id) AS students_count,
+               (SELECT COUNT(*) FROM session_sheet_students x WHERE x.sheet_id = session_sheets.id AND x.points IS NOT NULL) AS graded_count
+        FROM session_sheets
+        WHERE parent_sheet_id = ?
+        ORDER BY id DESC
+    """, (sheet_id,)).fetchall()]
+
     base_url = PUBLIC_APPLY_BASE_URL.rstrip('/')
     teacher_link = None
     if sheet.get('teacher_token'):
@@ -1551,6 +1789,7 @@ def sheet_detail(sheet_id):
     if sheet.get('token'):
         sheet_direct_link = f"{base_url}/session-grade/{sheet['token']}"
     can_transfer = bool(session.get('is_admin') or 'transfer_exam_grades' in (session.get('permissions') or []))
+    can_reopen = bool(session.get('is_admin') or 'reopen_exam_sheets' in (session.get('permissions') or []))
     teachers = conn.execute(
         "SELECT id, full_name, short_name FROM teachers "
         "WHERE is_active = 1 OR id = ? ORDER BY full_name COLLATE UKRAINIAN",
@@ -1575,8 +1814,10 @@ def sheet_detail(sheet_id):
         'exam_sessions/sheet_detail.html',
         sheet=sheet, students=students, teacher_link=teacher_link,
         sheet_direct_link=sheet_direct_link,
-        can_transfer=can_transfer, teachers=teachers,
+        can_transfer=can_transfer, can_reopen=can_reopen, teachers=teachers,
         group_licenses=group_licenses, other_licenses=other_licenses,
+        parent_sheet=parent_sheet, child_retakes=child_retakes,
+        problem_students_count=problem_students_count,
     )
 
 
@@ -1730,7 +1971,8 @@ def group_course_summary():
     for es in sessions:
         raw_sheets = [dict(r) for r in conn.execute("""
             SELECT ss.id, ss.discipline_name, ss.control_form, ss.hours_credits,
-                   ss.entity_kind, ss.license_id, l.short_name_ua AS license_name
+                   ss.entity_kind, ss.license_id, ss.sheet_kind, ss.parent_sheet_id,
+                   ss.exam_date, l.short_name_ua AS license_name
             FROM session_sheets ss
             LEFT JOIN institution_licenses l ON l.id = ss.license_id
             WHERE ss.session_id=?
@@ -1759,6 +2001,7 @@ def group_course_summary():
                     'national': r['national_grade'],
                     'points': r['points'],
                     'ects': r['ects'],
+                    'is_retake': bool(r.get('is_retake')),
                 }
 
         sessions_blocks.append({
@@ -1901,6 +2144,15 @@ def session_summary_word(session_id):
     for sh in sheets:
         by_students[sh['id']] = _load_students(conn, sh['id'])
     sheets, by_students = _merge_summary_sheets_by_discipline(sheets, by_students)
+    for sh_id, st_rows in by_students.items():
+        for st in st_rows:
+            if st.get('is_retake'):
+                nat = (st.get('national_grade') or '').strip()
+                if nat and 'перездача' not in nat.lower():
+                    st['national_grade'] = f"{nat} (перездача)"
+                ects = (st.get('ects') or '').strip()
+                if ects and not ects.endswith('*'):
+                    st['ects'] = f"{ects}*"
     meta = dict(es)
     conn.close()
 
@@ -2043,7 +2295,8 @@ def session_copy(session_id):
         new_session_id = cur.lastrowid
 
         sheets = [dict(r) for r in conn.execute(
-            "SELECT * FROM session_sheets WHERE session_id = ?", (session_id,)
+            "SELECT * FROM session_sheets WHERE session_id = ? AND COALESCE(sheet_kind, 'main') != 'retake'",
+            (session_id,),
         ).fetchall()]
 
         from routes.gen_docx import _format_teacher_short

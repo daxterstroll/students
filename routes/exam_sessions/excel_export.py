@@ -478,10 +478,12 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
     )
     bold = Font(name='Times New Roman', size=10, bold=True)
     normal = Font(name='Times New Roman', size=9)
+    retake_font = Font(name='Times New Roman', size=9, bold=True, color='8A3B12')
     center = Alignment(horizontal='center', vertical='center', wrap_text=True)
     left = Alignment(horizontal='left', vertical='center', wrap_text=True)
     header_fill = PatternFill('solid', fgColor='D9E2F3')
     avg_fill = PatternFill('solid', fgColor='FFF2CC')
+    retake_fill = PatternFill('solid', fgColor='FCE4D6')
 
     # Row 1: semester titles
     # Row 2: discipline names
@@ -604,6 +606,7 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
     ws.cell(header_sub, overall_col, 'бали').font = bold
 
     # data rows
+    any_retake = False
     for ri, st in enumerate(students):
         row = data_start + ri
         sid = st['id']
@@ -620,19 +623,42 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
             c = br['start']
             for sh in br['sheets']:
                 g = (br['grades'].get(sid) or {}).get(sh['id']) or {}
+                is_ret = bool(g.get('is_retake'))
+                if is_ret:
+                    any_retake = True
                 nat = g.get('national') or ''
                 pts = g.get('points')
                 ects = g.get('ects') or ''
-                ws.cell(row, c, sanitize_spreadsheet_cell(nat)).font = normal
-                ws.cell(row, c).alignment = center
-                ws.cell(row, c).border = thin
-                cell_pts = ws.cell(row, c + 1, pts if pts is not None and pts != '' else '')
-                cell_pts.font = normal
-                cell_pts.alignment = center
-                cell_pts.border = thin
-                ws.cell(row, c + 2, sanitize_spreadsheet_cell(ects)).font = normal
-                ws.cell(row, c + 2).alignment = center
-                ws.cell(row, c + 2).border = thin
+                if is_ret:
+                    if nat and '*' not in nat:
+                        nat = f"{nat}*"
+                    if ects and '*' not in ects:
+                        ects = f"{ects}*"
+
+                c_font = retake_font if is_ret else normal
+                c_nat = ws.cell(row, c, sanitize_spreadsheet_cell(nat))
+                c_nat.font = c_font
+                c_nat.alignment = center
+                c_nat.border = thin
+                if is_ret:
+                    c_nat.fill = retake_fill
+
+                c_pts = ws.cell(row, c + 1, pts if pts is not None and pts != '' else '')
+                c_pts.font = c_font
+                c_pts.alignment = center
+                c_pts.border = thin
+                if is_ret:
+                    c_pts.fill = retake_fill
+                    if pts is not None and pts != '':
+                        c_pts.number_format = '0"*"'
+
+                c_ects = ws.cell(row, c + 2, sanitize_spreadsheet_cell(ects))
+                c_ects.font = c_font
+                c_ects.alignment = center
+                c_ects.border = thin
+                if is_ret:
+                    c_ects.fill = retake_fill
+
                 if pts is not None and pts != '':
                     try:
                         sem_pts.append(float(pts))
@@ -653,6 +679,17 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
         cell.alignment = center
         cell.border = thin
         cell.fill = avg_fill
+
+    if any_retake:
+        legend_row = data_start + len(students) + 1
+        ws.merge_cells(start_row=legend_row, start_column=1, end_row=legend_row, end_column=overall_col)
+        leg_cell = ws.cell(
+            legend_row, 1,
+            "* — оцінка складена в окрему сесію (відомість перездачі / ліквідація академзаборгованості)",
+        )
+        leg_cell.font = retake_font
+        leg_cell.alignment = left
+        leg_cell.fill = retake_fill
 
     ws.column_dimensions['A'].width = 5
     ws.column_dimensions['B'].width = 28
@@ -735,6 +772,8 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
                 'national_grade': _g(st, 'national_grade') or '',
                 'points': _g(st, 'points'),
                 'ects': _g(st, 'ects') or '',
+                'is_retake': bool(_g(st, 'is_retake')),
+                'retake_date': _g(st, 'retake_date') or '',
             }
 
     try:
@@ -755,6 +794,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
     f_header = Font(name=FONT_NAME, size=9, bold=True)
     f_body   = Font(name=FONT_NAME, size=9)
     f_bold   = Font(name=FONT_NAME, size=9, bold=True)
+    f_retake = Font(name=FONT_NAME, size=9, bold=True, color='8A3B12')
 
     thin = Side(style='thin', color='888888')
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -762,6 +802,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
     left   = Alignment(horizontal='left',   vertical='center', wrap_text=True)
     header_fill = PatternFill('solid', fgColor='E8E0CC')  # світло-кремовий
     zebra_fill  = PatternFill('solid', fgColor='F7F3EA')  # дуже світлий
+    retake_fill = PatternFill('solid', fgColor='FCE4D6')  # м'яке виділення перездачі
 
     wb = Workbook()
     ws = wb.active
@@ -867,10 +908,12 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
     ws.row_dimensions[header_row_2].height = 20
 
     # ── дані ──
+    any_retake = False
     for ri, sid in enumerate(order):
         row = data_start + ri
         is_zebra = ri % 2 == 1
         fill = zebra_fill if is_zebra else None
+        row_has_retake = False
 
         put(row, 1, ri + 1, f_body, center, fill, border)
         put(row, 2, sanitize_spreadsheet_cell(names.get(sid, '')), f_body, left, fill, border)
@@ -879,10 +922,27 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
         for i, sh in enumerate(sheets):
             base_col = 3 + i * 3
             g = (grades.get(sid) or {}).get(sh['id']) or {}
-            put(row, base_col,     sanitize_spreadsheet_cell(g.get('national_grade') or ''), f_body, center, fill, border)
+            is_ret = bool(g.get('is_retake'))
+            if is_ret:
+                any_retake = True
+                row_has_retake = True
+            c_fill = retake_fill if is_ret else fill
+            c_font = f_retake if is_ret else f_body
+
+            nat_val = g.get('national_grade') or ''
+            ects_val = g.get('ects') or ''
+            if is_ret:
+                if nat_val and '*' not in nat_val:
+                    nat_val = f"{nat_val}*"
+                if ects_val and '*' not in ects_val:
+                    ects_val = f"{ects_val}*"
+
+            put(row, base_col,     sanitize_spreadsheet_cell(nat_val), c_font, center, c_fill, border)
             pts = g.get('points')
-            put(row, base_col + 1, '' if pts is None else pts,  f_body, center, fill, border)
-            put(row, base_col + 2, sanitize_spreadsheet_cell(g.get('ects') or ''),        f_body, center, fill, border)
+            c_pts = put(row, base_col + 1, '' if pts is None else pts, c_font, center, c_fill, border)
+            if is_ret and pts is not None and pts != '':
+                c_pts.number_format = '0"*"'
+            put(row, base_col + 2, sanitize_spreadsheet_cell(ects_val), c_font, center, c_fill, border)
             if pts is not None and pts != '':
                 try:
                     pts_list.append(float(pts))
@@ -892,7 +952,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
         avg = round(sum(pts_list) / len(pts_list), 2) if pts_list else ''
         put(row, avg_col, avg, f_bold, center, fill, border)
 
-        ws.row_dimensions[row].height = 16
+        ws.row_dimensions[row].height = 20 if row_has_retake else 16
 
     # ── ширини колонок ──
     ws.column_dimensions['A'].width = 5
@@ -921,6 +981,16 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
     put(footer_row, 1, f"Усього студентів: {n_students} | "
                        f"Дисциплін: {n_disc}",
         f_bold, left)
+
+    if any_retake:
+        legend_row = footer_row + 1
+        ws.merge_cells(start_row=legend_row, start_column=1,
+                       end_row=legend_row, end_column=cols)
+        put(
+            legend_row, 1,
+            "* — оцінка складена в окрему сесію (відомість перездачі / ліквідація академзаборгованості)",
+            f_retake, left, retake_fill,
+        )
 
     buf = BytesIO()
     wb.save(buf)
