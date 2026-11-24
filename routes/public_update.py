@@ -270,6 +270,9 @@ def update_info(token):
     allowed_fields = json.loads(row['allowed_fields'])
 
     if request.method == 'POST' and request.form.get('action') == 'parse_pdf':
+        if 'military' not in allowed_fields:
+            conn.close()
+            return jsonify({'ok': False, 'error': 'Розпізнавання PDF недоступне для цього посилання'}), 403
         allowed, _retry = check_rate_limit('public_update_pdf', client_ip(), limit=20, window_seconds=300)
         if not allowed:
             conn.close()
@@ -281,7 +284,7 @@ def update_info(token):
         if not file.filename.lower().endswith('.pdf'):
             conn.close()
             return jsonify({'ok': False, 'error': 'Підтримуються лише PDF-файли'}), 400
-        pdf_bytes = file.read()
+        pdf_bytes = file.read(MAX_PDF_SIZE_BYTES + 1)
         if len(pdf_bytes) > MAX_PDF_SIZE_BYTES:
             conn.close()
             return jsonify({'ok': False, 'error': 'Файл завеликий'}), 400
@@ -493,8 +496,8 @@ def update_info(token):
     )
     pdf_saved = False
 
-    if pdf_file and pdf_file.filename and pdf_file.filename.lower().endswith('.pdf'):
-        pdf_bytes = pdf_file.read()
+    if 'military' in allowed_fields and pdf_file and pdf_file.filename and pdf_file.filename.lower().endswith('.pdf'):
+        pdf_bytes = pdf_file.read(MAX_PDF_SIZE_BYTES + 1)
         logger.info(f"[update_info] pdf_file size: {len(pdf_bytes)} bytes")
         if len(pdf_bytes) <= MAX_PDF_SIZE_BYTES and pdf_bytes.startswith(b'%PDF'):
             import uuid as _uuid

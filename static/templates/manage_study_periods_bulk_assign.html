@@ -728,10 +728,27 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (effectiveCount > 0) {
-            const grpHint = gidStr && GROUP_NAME_BY_ID[gidStr]
-                ? ` · група <strong>${GROUP_NAME_BY_ID[gidStr]}</strong>`
-                : ' · до основної групи кожного';
-            submitTargetSummary.innerHTML = `<span class="spb-badge spb-badge--ok"><i class="bi bi-check2"></i> Цільових студентів: <strong class="ms-1 spb-num">${effectiveCount}</strong></span><span class="small text-muted ms-1">${grpHint}</span>`;
+            submitTargetSummary.textContent = '';
+            const badge = document.createElement('span');
+            badge.className = 'spb-badge spb-badge--ok';
+            badge.innerHTML = '<i class="bi bi-check2"></i> Цільових студентів: ';
+            const countStrong = document.createElement('strong');
+            countStrong.className = 'ms-1 spb-num';
+            countStrong.textContent = String(effectiveCount);
+            badge.appendChild(countStrong);
+
+            const hint = document.createElement('span');
+            hint.className = 'small text-muted ms-1';
+            if (gidStr && GROUP_NAME_BY_ID[gidStr]) {
+                hint.appendChild(document.createTextNode(' · група '));
+                const grpStrong = document.createElement('strong');
+                grpStrong.textContent = GROUP_NAME_BY_ID[gidStr];
+                hint.appendChild(grpStrong);
+            } else {
+                hint.textContent = ' · до основної групи кожного';
+            }
+            submitTargetSummary.appendChild(badge);
+            submitTargetSummary.appendChild(hint);
             bulkSubmitBtn.disabled = false;
         } else {
             submitTargetSummary.innerHTML = '<span class="text-muted">Оберіть групу або студентів ліворуч</span>';

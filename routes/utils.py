@@ -22,7 +22,7 @@ routes/utils.py
 """
 
 from functools import wraps
-from flask import session, redirect, url_for, flash
+from flask import session, redirect, url_for, flash, g
 import logging
 import os
 from datetime import datetime
@@ -237,9 +237,58 @@ def log_action(username, action, group_ids=None, mode=None, details=None):
         if conn is not None:
             conn.close()
     
+def _sync_session_auth():
+    """
+    Синхронізує role, is_admin і permissions поточної сесії з БД один раз
+    за HTTP-запит (кеш у flask.g). Якщо користувача видалили — очищає
+    сесію і повертає False.
+    """
+    user_id = session.get('user_id')
+    if not user_id:
+        return False
+    if getattr(g, '_auth_synced', False):
+        return True
+
+    try:
+        conn = get_db()
+        try:
+            user = conn.execute(
+                """
+                SELECT role, is_admin, permissions
+                FROM users
+                WHERE id = ?
+                """,
+                (user_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Не вдалося перевірити права користувача (user_id={user_id}): {e}", exc_info=True)
+        return None
+
+    if not user:
+        session.clear()
+        return False
+
+    try:
+        perms = json.loads(user['permissions'] or '[]')
+    except Exception:
+        perms = []
+    if not isinstance(perms, list):
+        perms = []
+
+    is_admin = bool(user['is_admin']) or (user['role'] == 'admin')
+    role = 'admin' if is_admin else (user['role'] or 'user')
+    session['role'] = role
+    session['is_admin'] = is_admin
+    session['permissions'] = perms
+    g._auth_synced = True
+    return True
+
+
 def login_required(role=None):
     """
-    Декоратор: пускає на сторінку тільки авторизованих користувачів.
+    Декоратор: пускає на сторінку тільки авторизаних користувачів.
     Стара версія для зворотної сумісності - для нових перевірок прав
     краще використовувати permission_required() нижче.
 
@@ -255,6 +304,12 @@ def login_required(role=None):
         def decorated_function(*args, **kwargs):
             if 'user_id' not in session:
                 return redirect(url_for('auth.login'))
+            synced = _sync_session_auth()
+            if synced is None:
+                flash('Помилка бази даних під час перевірки прав доступу', 'danger')
+                return redirect(url_for('auth.login'))
+            if not synced:
+                return redirect(url_for('auth.login'))
             if role and session.get('role') != role:
                 return "403 Forbidden", 403
             return f(*args, **kwargs)
@@ -269,9 +324,8 @@ def permission_required(*permissions):
     - Якщо дозволів не передано або передано лише None: достатньо бути залогіненим.
     - Якщо передано один або кілька дозволів (напр. @permission_required('manage_students', 'manage_military_reports')):
       потрібен is_admin=1 АБО наявність хоча б одного з цих дозволів у permissions користувача.
-    - Значення is_admin/permissions спочатку читаються з сесії (кеш),
-      і лише якщо їх там ще немає - підвантажуються з БД один раз і
-      кешуються в сесії (щоб не робити зайвий SELECT на кожен запит).
+    - Права синхронізуються з БД один раз на HTTP-запит (через _sync_session_auth),
+      тому відкликання доступу чи видалення користувача діє негайно.
 
     Незалогінених користувачів редіректить на логін;
     користувачів без потрібного дозволу - на список студентів.
@@ -285,34 +339,16 @@ def permission_required(*permissions):
                 flash('Потрібна авторизація', 'danger')
                 return redirect(url_for('auth.login'))
 
-            # Спочатку перевіряємо сесію (кеш)
-            is_admin = session.get('is_admin', False)
-            perms = session.get('permissions', [])
+            synced = _sync_session_auth()
+            if synced is None:
+                flash('Помилка бази даних під час перевірки прав доступу', 'danger')
+                return redirect(url_for('auth.login'))
+            if not synced:
+                flash('Потрібна авторизація', 'danger')
+                return redirect(url_for('auth.login'))
 
-            # Якщо немає в сесії, завантажуємо з БД.
-            if 'is_admin' not in session:
-                try:
-                    conn = get_db()
-                    try:
-                        user = conn.execute("""
-                            SELECT role, is_admin, permissions 
-                            FROM users 
-                            WHERE id = ?
-                        """, (session['user_id'],)).fetchone()
-                    finally:
-                        conn.close()
-                except Exception as e:
-                    logger.error(f"Не вдалося перевірити права користувача (user_id={session.get('user_id')}): {e}", exc_info=True)
-                    flash('Помилка бази даних під час перевірки прав доступу', 'danger')
-                    return redirect(url_for('auth.login'))
-
-                if not user:
-                    session.clear()
-                    return redirect(url_for('auth.login'))
-                is_admin = bool(user['is_admin']) or (user['role'] == 'admin')
-                perms = json.loads(user['permissions'] or '[]')
-                session['is_admin'] = is_admin
-                session['permissions'] = perms
+            is_admin = bool(session.get('is_admin', False))
+            perms = session.get('permissions') or []
 
             if not required_perms:
                 return f(*args, **kwargs)
