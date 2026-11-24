@@ -13,17 +13,23 @@
     (function(){
         try {
             var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-            if (!mq) return;
             function apply(){
-                if (mq.matches) {
+                var saved = null;
+                try { saved = localStorage.getItem('theme'); } catch (e) {}
+                var isDark = (saved === 'dark') || (!saved && mq && mq.matches);
+                if (isDark) {
                     document.documentElement.setAttribute('data-theme', 'dark');
+                } else if (saved === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
                 } else {
                     document.documentElement.removeAttribute('data-theme');
                 }
             }
             apply();
-            if (mq.addEventListener) mq.addEventListener('change', apply);
-            else if (mq.addListener) mq.addListener(apply);
+            if (mq) {
+                if (mq.addEventListener) mq.addEventListener('change', apply);
+                else if (mq.addListener) mq.addListener(apply);
+            }
         } catch (e) {}
     })();
     </script>
@@ -76,6 +82,13 @@
             --badge-secondary-bg: #e9ecef;
             --badge-secondary-text: #495057;
 
+            --view-btn-bg: rgba(14,27,44,.05);
+            --view-btn-bd: rgba(14,27,44,.22);
+            --view-btn-text: #1f2e42;
+            --view-btn-hover-bg: rgba(200,162,74,.16);
+            --view-btn-hover-bd: var(--brass-dark);
+            --view-btn-hover-text: #0e1b2c;
+
             --page-gradient:
                 radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.14), transparent 60%),
                 radial-gradient(900px 500px at 110% 10%, rgba(14,27,44,.08), transparent 55%),
@@ -86,7 +99,7 @@
 
         /* ─── ТЕМНА ТЕМА — тригер 1: системна тема ─── */
         @media (prefers-color-scheme: dark) {
-            :root {
+            :root:not([data-theme="light"]) {
                 --paper: #0f151c;
                 --paper-2: #1a222b;
                 --card-bg: #1a222b;
@@ -107,7 +120,7 @@
                 --status-in-progress-text: #f0d896;
                 --status-submitted-bg: rgba(79,122,82,.28);
                 --status-submitted-text: #bfe3c2;
-                --status-approved-bg: rgba(231,226,214,.1);
+                --status-approved-bg: rgba(231,226,214,.14);
                 --status-approved-text: #e7e2d6;
 
                 --progress-track: rgba(231,226,214,.1);
@@ -116,7 +129,14 @@
                 --badge-warning-bg: rgba(200,162,74,.28);
                 --badge-warning-text: #f0d896;
                 --badge-secondary-bg: rgba(231,226,214,.15);
-                --badge-secondary-text: #9aa3ad;
+                --badge-secondary-text: #c2c8cf;
+
+                --view-btn-bg: rgba(231,226,214,.09);
+                --view-btn-bd: rgba(231,226,214,.28);
+                --view-btn-text: #e7e2d6;
+                --view-btn-hover-bg: rgba(200,162,74,.20);
+                --view-btn-hover-bd: var(--brass);
+                --view-btn-hover-text: #f0d896;
 
                 --page-gradient:
                     radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
@@ -147,7 +167,7 @@
             --status-in-progress-text: #f0d896;
             --status-submitted-bg: rgba(79,122,82,.28);
             --status-submitted-text: #bfe3c2;
-            --status-approved-bg: rgba(231,226,214,.1);
+            --status-approved-bg: rgba(231,226,214,.14);
             --status-approved-text: #e7e2d6;
 
             --progress-track: rgba(231,226,214,.1);
@@ -156,7 +176,14 @@
             --badge-warning-bg: rgba(200,162,74,.28);
             --badge-warning-text: #f0d896;
             --badge-secondary-bg: rgba(231,226,214,.15);
-            --badge-secondary-text: #9aa3ad;
+            --badge-secondary-text: #c2c8cf;
+
+            --view-btn-bg: rgba(231,226,214,.09);
+            --view-btn-bd: rgba(231,226,214,.28);
+            --view-btn-text: #e7e2d6;
+            --view-btn-hover-bg: rgba(200,162,74,.20);
+            --view-btn-hover-bd: var(--brass);
+            --view-btn-hover-text: #f0d896;
 
             --page-gradient:
                 radial-gradient(1100px 500px at 15% -10%, rgba(200,162,74,.08), transparent 60%),
@@ -272,7 +299,9 @@
         .sheet-card--draft,
         .sheet-card--sent         { border-left-color: var(--danger); }
         .sheet-card--approved,
-        .sheet-card--locked       { border-left-color: var(--muted-soft); opacity: .85; }
+        .sheet-card--locked       { border-left-color: var(--muted-soft); }
+        .sheet-card--approved .sheet-body,
+        .sheet-card--locked .sheet-body { opacity: .9; }
 
         .sheet-body { min-width: 0; }
         .sheet-title {
@@ -280,7 +309,7 @@
             margin-bottom: .2rem; overflow-wrap: break-word;
         }
         .sheet-meta { font-size: .82rem; color: var(--muted); line-height: 1.4; }
-        .sheet-progress { font-size: .82rem; margin-top: .4rem; }
+        .sheet-progress { font-size: .82rem; margin-top: .4rem; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
         .sheet-progress .badge {
             font-weight: 700; padding: .25rem .6rem;
             border-radius: 999px; font-size: .75rem;
@@ -311,21 +340,32 @@
         .sheet-status--locked      { background: var(--status-approved-bg); color: var(--status-approved-text); }
 
         .btn-open {
-            display: inline-flex; align-items: center; gap: .35rem;
+            display: inline-flex; align-items: center; justify-content: center; gap: .35rem;
             padding: .55rem 1.15rem; border-radius: 10px;
             font-weight: 700; font-size: .85rem; text-decoration: none;
             border: 1.5px solid var(--brass);
             background: linear-gradient(160deg, var(--brass-lt), var(--brass));
             color: var(--ink); white-space: nowrap;
-            transition: transform .15s ease, box-shadow .2s ease;
+            transition: transform .15s ease, box-shadow .2s ease, background-color .15s ease, border-color .15s ease, color .15s ease;
         }
-        .btn-open:hover {
+        .btn-open:hover,
+        .sheet-card:hover .btn-open {
             transform: translateY(-1px);
             box-shadow: 0 6px 16px -6px rgba(200,162,74,.5);
             color: var(--ink);
         }
         .btn-open--view {
-            background: transparent; border-color: var(--line); color: var(--muted);
+            background: var(--view-btn-bg);
+            border: 1.5px solid var(--view-btn-bd);
+            color: var(--view-btn-text);
+            box-shadow: none;
+        }
+        .btn-open--view:hover,
+        .sheet-card:hover .btn-open--view {
+            background: var(--view-btn-hover-bg);
+            border-color: var(--view-btn-hover-bd);
+            color: var(--view-btn-hover-text);
+            box-shadow: 0 4px 12px -6px rgba(200,162,74,.45);
         }
 
         .empty {
@@ -398,7 +438,7 @@
                 transition: none !important;
             }
         }
-		.kind-badge {
+        .kind-badge {
             display: inline-flex;
             align-items: center;
             gap: .3rem;
@@ -412,8 +452,16 @@
             vertical-align: middle;
             white-space: nowrap;
         }
-        html[data-theme="dark"] .kind-badge {
+        .kind-badge--retake {
+            background: #e69b3a;
+            color: #0e1b2c;
+        }
+        :root[data-theme="dark"] .kind-badge {
             background: rgba(200,162,74,.9);
+            color: #0e1b2c;
+        }
+        :root[data-theme="dark"] .kind-badge--retake {
+            background: rgba(230,155,58,.92);
             color: #0e1b2c;
         }
     </style>
@@ -476,7 +524,7 @@
     } %}
 
     {% for sh in sheets %}
-    {% set is_done = sh.status in ('submitted', 'approved', 'locked') %}
+    {% set is_done = (sh.status in ('submitted', 'approved', 'locked')) or sh.teacher_closed %}
     <a href="{{ url_for('exam_sessions.teacher_sheet',
                         teacher_token=teacher_token, sheet_id=sh.id) }}"
        class="sheet-card sheet-card--{{ sh.status }}">
@@ -486,6 +534,11 @@
                     <i class="bi {{ kind_icon.get(sh.entity_kind, 'bi-file-earmark') }}"></i>
                     {{ kind_ua.get(sh.entity_kind, sh.entity_kind) }}
                 </span>
+                {% if sh.sheet_kind == 'retake' %}
+                <span class="kind-badge kind-badge--retake">
+                    <i class="bi bi-arrow-repeat"></i> Перездача
+                </span>
+                {% endif %}
                 {{ sh.discipline_name }}
             </div>
             <div class="sheet-meta">
@@ -498,6 +551,11 @@
                 <span class="badge {% if sh.graded_count == sh.students_count and sh.students_count > 0 %}bg-success{% elif sh.graded_count > 0 %}bg-warning{% else %}bg-secondary{% endif %}">
                     <i class="bi bi-people me-1"></i>{{ sh.graded_count }} / {{ sh.students_count }} оцінено
                 </span>
+                {% if sh.teacher_closed and sh.status not in ('approved', 'locked') %}
+                <span class="badge bg-secondary">
+                    <i class="bi bi-lock-fill me-1"></i>Закрито викладачем
+                </span>
+                {% endif %}
             </div>
         </div>
         <div class="sheet-status sheet-status--{{ sh.status }}">
