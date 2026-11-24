@@ -8,7 +8,7 @@ routes/admin/documents.py
 """
 from flask import render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from routes.db import get_db
-from routes.utils import log_action, permission_required, logger
+from routes.utils import log_action, permission_required, logger, build_field_changes
 from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
@@ -209,6 +209,13 @@ def manage_education_documents():
         if action == 'delete':
             doc_id = request.form.get('doc_id')
             try:
+                doc_info = cursor.execute(
+                    "SELECT ed.document_type, ed.document_number, ed.student_id, ed.group_id, "
+                    "s.last_name_UA || ' ' || s.first_name_UA AS student_name "
+                    "FROM education_documents ed LEFT JOIN students s ON s.id = ed.student_id "
+                    "WHERE ed.id = ?",
+                    (doc_id,),
+                ).fetchone()
                 for att in get_attachments(db, 'education_document', doc_id):
                     att_path = resolve_under_dir('static', att['file_path'])
                     if att_path and os.path.exists(att_path):
@@ -217,7 +224,19 @@ def manage_education_documents():
                 cursor.execute("DELETE FROM foreign_education_docs WHERE education_doc_id = ?", (doc_id,))
                 cursor.execute("DELETE FROM education_documents WHERE id = ?", (doc_id,))
                 db.commit()
-                log_action(current_username(), f"ВИДАЛИВ документ про освіту ID {doc_id}")
+                log_action(
+                    current_username(),
+                    f"ВИДАЛИВ документ про освіту ID {doc_id}" + (
+                        f": {doc_info['document_type']} №{doc_info['document_number']} ({doc_info['student_name']})"
+                        if doc_info else ""
+                    ),
+                    group_ids=[doc_info['group_id']] if doc_info and doc_info['group_id'] else None,
+                    category='delete',
+                    section='Документи про освіту',
+                    entity_type='education_document',
+                    entity_id=doc_id,
+                    entity_name=doc_info['student_name'] if doc_info else None,
+                )
                 flash('Документ успішно видалено', 'success')
             except sqlite3.Error as e:
                 db.rollback()
@@ -260,11 +279,23 @@ def manage_education_documents():
             country_en = request.form.get('country_en') or ''
 
             try:
-                cursor.execute("SELECT student_id FROM education_documents WHERE id = ?", (doc_id,))
-                existing = cursor.fetchone()
+                cursor.execute(
+                    "SELECT ed.*, s.last_name_UA || ' ' || s.first_name_UA AS student_name "
+                    "FROM education_documents ed LEFT JOIN students s ON s.id = ed.student_id "
+                    "WHERE ed.id = ?",
+                    (doc_id,),
+                )
+                existing_row = cursor.fetchone()
+                existing = existing_row
                 if not existing:
                     flash('Документ не знайдено', 'danger')
                     return _redirect_back()
+                old_edu = dict(existing_row)
+                old_foreign = cursor.execute(
+                    "SELECT * FROM foreign_education_docs WHERE education_doc_id = ?",
+                    (doc_id,),
+                ).fetchone()
+                old_foreign_dict = dict(old_foreign) if old_foreign else {}
 
                 if student_id:
                     cursor.execute("SELECT id FROM students WHERE id = ? AND COALESCE(archived, 0) = 0", (student_id,))
@@ -342,10 +373,65 @@ def manage_education_documents():
                     save_multiple_attachments(db, 'education_document', doc_id, new_scans, 'education_documents', current_username())
                     db.commit()
 
+                edu_changes = build_field_changes(
+                    old_edu,
+                    {
+                        'student_id': int(student_id) if str(student_id).isdigit() else student_id,
+                        'group_id': doc_group_id,
+                        'document_type': request.form.get('document_type'),
+                        'document_type_en': request.form.get('document_type_en'),
+                        'document_number': request.form.get('document_number'),
+                        'institution_name': request.form.get('institution_name'),
+                        'institution_name_en': request.form.get('institution_name_en'),
+                        'country': country,
+                        'country_en': country_en,
+                        'completion_date': request.form.get('completion_date'),
+                    },
+                    {
+                        'document_type': 'Тип документа (укр.)',
+                        'document_type_en': 'Тип документа (англ.)',
+                        'document_number': 'Серія та номер',
+                        'institution_name': 'Заклад освіти (укр.)',
+                        'institution_name_en': 'Заклад освіти (англ.)',
+                        'country': 'Країна (укр.)',
+                        'country_en': 'Країна (англ.)',
+                        'completion_date': 'Дата завершення',
+                        'group_id': 'ID групи',
+                        'student_id': 'ID студента',
+                    },
+                ) + build_field_changes(
+                    old_foreign_dict,
+                    {
+                        'reference_number': reference_number,
+                        'reference_institution': reference_institution,
+                        'reference_country': reference_country,
+                        'reference_issue_date': reference_issue_date,
+                        'recognition_certificate_number': recognition_certificate_number,
+                        'recognition_issuer': recognition_issuer,
+                        'recognition_date': recognition_date,
+                    },
+                    {
+                        'reference_number': 'Номер довідки',
+                        'reference_institution': 'Видавник довідки',
+                        'reference_country': 'Країна довідки',
+                        'reference_issue_date': 'Дата довідки',
+                        'recognition_certificate_number': 'Свідоцтво визнання',
+                        'recognition_issuer': 'Орган визнання',
+                        'recognition_date': 'Дата визнання',
+                    },
+                )
+                st_name = old_edu.get('student_name') or f"ID {student_id}"
                 log_action(
                     current_username(),
-                    f"редагував документ про освіту ID {doc_id}",
-                    details=f"країна: {country}"
+                    f"редагував документ про освіту ID {doc_id} ({st_name})",
+                    group_ids=[doc_group_id] if doc_group_id else None,
+                    category='update',
+                    section='Документи про освіту',
+                    entity_type='student',
+                    entity_id=student_id,
+                    entity_name=st_name,
+                    changes=edu_changes,
+                    details=f"країна: {country}" + (f"; додано сканів: {len(new_scans)}" if new_scans else ""),
                 )
                 flash('Документ успішно оновлено', 'success')
 
@@ -767,6 +853,13 @@ def manage_passport_documents():
         if action == 'delete':
             doc_id = request.form.get('doc_id')
             try:
+                p_info = cursor.execute(
+                    "SELECT pd.document_type, pd.series, pd.number, pd.student_id, pd.group_id, "
+                    "s.last_name_UA || ' ' || s.first_name_UA AS student_name "
+                    "FROM passport_documents pd LEFT JOIN students s ON s.id = pd.student_id "
+                    "WHERE pd.id = ?",
+                    (doc_id,),
+                ).fetchone()
                 for att in get_attachments(db, 'passport_document', doc_id):
                     att_path = resolve_under_dir('static', att['file_path'])
                     if att_path and os.path.exists(att_path):
@@ -774,7 +867,19 @@ def manage_passport_documents():
                 cursor.execute("DELETE FROM attachments WHERE entity_type='passport_document' AND entity_id=?", (doc_id,))
                 cursor.execute("DELETE FROM passport_documents WHERE id = ?", (doc_id,))
                 db.commit()
-                log_action(current_username(), f"ВИДАЛИВ паспортні дані ID {doc_id}")
+                log_action(
+                    current_username(),
+                    f"ВИДАЛИВ паспортні дані ID {doc_id}" + (
+                        f": {p_info['document_type']} {p_info['series'] or ''}{p_info['number'] or ''} ({p_info['student_name']})"
+                        if p_info else ""
+                    ),
+                    group_ids=[p_info['group_id']] if p_info and p_info['group_id'] else None,
+                    category='delete',
+                    section='Паспортні дані',
+                    entity_type='passport_document',
+                    entity_id=doc_id,
+                    entity_name=p_info['student_name'] if p_info else None,
+                )
                 flash('Запис успішно видалено', 'success')
             except sqlite3.Error as e:
                 db.rollback()
@@ -816,17 +921,23 @@ def manage_passport_documents():
             document_type = request.form.get('document_type')
 
             try:
-                existing = cursor.execute("SELECT student_id FROM passport_documents WHERE id = ?", (doc_id,)).fetchone()
+                existing = cursor.execute(
+                    "SELECT pd.*, s.last_name_UA || ' ' || s.first_name_UA AS student_name "
+                    "FROM passport_documents pd LEFT JOIN students s ON s.id = pd.student_id "
+                    "WHERE pd.id = ?",
+                    (doc_id,),
+                ).fetchone()
                 if not existing:
                     flash('Запис не знайдено', 'danger')
                     return _redirect_back()
+                old_pass = dict(existing)
 
                 if student_id:
                     if not cursor.execute("SELECT id FROM students WHERE id = ? AND COALESCE(archived, 0) = 0", (student_id,)).fetchone():
                         flash('Обраний студент не існує або заархівований', 'danger')
                         return _redirect_back()
                 else:
-                    student_id = existing[0]
+                    student_id = existing['student_id']
 
                 if document_type not in PASSPORT_TYPES:
                     raise ValueError("Невірний тип документа")
@@ -838,6 +949,11 @@ def manage_passport_documents():
 
                 valid_until = request.form.get('valid_until') or None if document_type in PASSPORT_TYPES_ID_STYLE else None
                 doc_group_id = request.form.get('doc_group_id', type=int)
+                norm_series = normalize_passport_series(request.form.get('series')) or None
+                norm_num = normalize_passport_number(request.form.get('number'), document_type)
+                issued_by_val = request.form.get('issued_by') or None
+                issue_date_val = request.form.get('issue_date') or None
+                unique_num_val = request.form.get('unique_number') or None
 
                 cursor.execute("""
                     UPDATE passport_documents SET
@@ -845,11 +961,9 @@ def manage_passport_documents():
                         issued_by=?, issue_date=?, valid_until=?, unique_number=?
                     WHERE id=?
                 """, (
-                    student_id, doc_group_id, document_type, normalize_passport_series(request.form.get('series')) or None,
-                    normalize_passport_number(request.form.get('number'), document_type),
-                    request.form.get('issued_by') or None, request.form.get('issue_date') or None,
-                    valid_until, request.form.get('unique_number') or None,
-                    doc_id,
+                    student_id, doc_group_id, document_type, norm_series,
+                    norm_num, issued_by_val, issue_date_val,
+                    valid_until, unique_num_val, doc_id,
                 ))
                 db.commit()
 
@@ -857,7 +971,44 @@ def manage_passport_documents():
                     save_multiple_attachments(db, 'passport_document', doc_id, new_scans, 'passport_documents', current_username())
                     db.commit()
 
-                log_action(current_username(), f"редагував паспортні дані ID {doc_id}", details=document_type)
+                pass_changes = build_field_changes(
+                    old_pass,
+                    {
+                        'student_id': int(student_id) if str(student_id).isdigit() else student_id,
+                        'group_id': doc_group_id,
+                        'document_type': document_type,
+                        'series': norm_series,
+                        'number': norm_num,
+                        'issued_by': issued_by_val,
+                        'issue_date': issue_date_val,
+                        'valid_until': valid_until,
+                        'unique_number': unique_num_val,
+                    },
+                    {
+                        'document_type': 'Тип документа',
+                        'series': 'Серія',
+                        'number': 'Номер',
+                        'issued_by': 'Ким виданий',
+                        'issue_date': 'Дата видачі',
+                        'valid_until': 'Дійсний до',
+                        'unique_number': 'УНЗР',
+                        'group_id': 'ID групи',
+                        'student_id': 'ID студента',
+                    },
+                )
+                st_name = old_pass.get('student_name') or f"ID {student_id}"
+                log_action(
+                    current_username(),
+                    f"редагував паспортні дані ID {doc_id} ({st_name})",
+                    group_ids=[doc_group_id] if doc_group_id else None,
+                    category='update',
+                    section='Паспортні дані',
+                    entity_type='student',
+                    entity_id=student_id,
+                    entity_name=st_name,
+                    changes=pass_changes,
+                    details=document_type + (f"; додано сканів: {len(new_scans)}" if new_scans else ""),
+                )
                 flash('Дані успішно оновлено', 'success')
 
             except (sqlite3.Error, ValueError) as e:

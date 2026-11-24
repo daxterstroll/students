@@ -13,7 +13,7 @@ routes/admin/catalogs.py
 """
 from flask import render_template, request, redirect, url_for, flash, session, send_file
 from routes.db import get_db
-from routes.utils import log_action, permission_required, logger
+from routes.utils import log_action, permission_required, logger, build_field_changes
 from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
@@ -471,13 +471,42 @@ def manage_specialties():
             if not name_ua or not field_code:
                 flash("Заповніть назву і галузь знань.", "error")
             else:
+                old_spec = conn.execute("SELECT * FROM specialties WHERE code = ?", (code,)).fetchone()
                 conn.execute(
                     "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, isced_f_ua = ?, isced_f_en = ?, knowledge_field_code = ? WHERE code = ?",
                     (name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code, code)
                 )
                 conn.commit()
+                spec_changes = build_field_changes(
+                    old_spec,
+                    {
+                        'name_ua': name_ua,
+                        'short_name': short_name,
+                        'name_en': name_en,
+                        'isced_f_ua': isced_f_ua,
+                        'isced_f_en': isced_f_en,
+                        'knowledge_field_code': field_code,
+                    },
+                    {
+                        'name_ua': 'Назва (укр.)',
+                        'short_name': 'Коротка назва',
+                        'name_en': 'Назва (англ.)',
+                        'isced_f_ua': 'ISCED-F (укр.)',
+                        'isced_f_en': 'ISCED-F (англ.)',
+                        'knowledge_field_code': 'Галузь знань',
+                    },
+                )
                 flash("Спеціальність оновлено.", "success")
-                log_action(current_username(), f"редагував спеціальність: {code} {name_ua}")
+                log_action(
+                    current_username(),
+                    f"редагував спеціальність: {code} {name_ua}",
+                    category='update',
+                    section='Довідники',
+                    entity_type='specialty',
+                    entity_id=code,
+                    entity_name=f"{code} {name_ua}",
+                    changes=spec_changes,
+                )
 
         elif action == 'edit_field':
             field_code = request.form.get('field_code')
@@ -486,13 +515,28 @@ def manage_specialties():
             if not field_name_ua:
                 flash("Заповніть назву галузі знань.", "error")
             else:
+                old_kf = conn.execute("SELECT * FROM knowledge_fields WHERE code = ?", (field_code,)).fetchone()
                 conn.execute(
                     "UPDATE knowledge_fields SET name_ua = ?, name_en = ? WHERE code = ?",
                     (field_name_ua, field_name_en, field_code)
                 )
                 conn.commit()
+                kf_changes = build_field_changes(
+                    old_kf,
+                    {'name_ua': field_name_ua, 'name_en': field_name_en},
+                    {'name_ua': 'Назва (укр.)', 'name_en': 'Назва (англ.)'},
+                )
                 flash("Галузь знань оновлено.", "success")
-                log_action(current_username(), f"редагував галузь знань: {field_code} {field_name_ua}")
+                log_action(
+                    current_username(),
+                    f"редагував галузь знань: {field_code} {field_name_ua}",
+                    category='update',
+                    section='Довідники',
+                    entity_type='knowledge_field',
+                    entity_id=field_code,
+                    entity_name=f"{field_code} {field_name_ua}",
+                    changes=kf_changes,
+                )
 
         elif action == 'delete':
             code = request.form.get('code')
@@ -609,13 +653,28 @@ def manage_degree_levels():
                 flash("Заповніть назву ступеня.", "error")
             else:
                 try:
+                    old_deg = conn.execute("SELECT * FROM degree_levels WHERE id = ?", (level_id,)).fetchone()
                     conn.execute(
                         "UPDATE degree_levels SET name_ua = ?, name_en = ?, name_suffix = ? WHERE id = ?",
                         (name_ua, name_en, name_suffix, level_id)
                     )
                     conn.commit()
+                    deg_changes = build_field_changes(
+                        old_deg,
+                        {'name_ua': name_ua, 'name_en': name_en, 'name_suffix': name_suffix},
+                        {'name_ua': 'Назва (укр.)', 'name_en': 'Назва (англ.)', 'name_suffix': 'Суфікс назви групи'},
+                    )
                     flash("Ступінь оновлено.", "success")
-                    log_action(current_username(), f"редагував ступінь: {name_ua}")
+                    log_action(
+                        current_username(),
+                        f"редагував ступінь: {name_ua}",
+                        category='update',
+                        section='Довідники',
+                        entity_type='degree_level',
+                        entity_id=level_id,
+                        entity_name=name_ua,
+                        changes=deg_changes,
+                    )
                 except sqlite3.IntegrityError:
                     flash(f"Ступінь «{name_ua}» вже існує.", "error")
 
@@ -723,13 +782,38 @@ def manage_licenses():
             if not name_ua:
                 flash("Заповніть повну назву ліцензії.", "error")
             else:
+                old_lic = conn.execute("SELECT * FROM institution_licenses WHERE id = ?", (license_id,)).fetchone()
                 conn.execute(
                     "UPDATE institution_licenses SET name_ua = ?, short_name_ua = ?, name_en = ?, short_name_en = ? WHERE id = ?",
                     (name_ua, short_name_ua, name_en, short_name_en, license_id)
                 )
                 conn.commit()
+                lic_changes = build_field_changes(
+                    old_lic,
+                    {
+                        'name_ua': name_ua,
+                        'short_name_ua': short_name_ua,
+                        'name_en': name_en,
+                        'short_name_en': short_name_en,
+                    },
+                    {
+                        'name_ua': 'Повна назва (укр.)',
+                        'short_name_ua': 'Коротка назва (укр.)',
+                        'name_en': 'Повна назва (англ.)',
+                        'short_name_en': 'Коротка назва (англ.)',
+                    },
+                )
                 flash("Ліцензію оновлено.", "success")
-                log_action(current_username(), f"редагував ліцензію (ID {license_id})")
+                log_action(
+                    current_username(),
+                    f"редагував ліцензію: {short_name_ua or name_ua} (ID {license_id})",
+                    category='update',
+                    section='Довідники',
+                    entity_type='license',
+                    entity_id=license_id,
+                    entity_name=short_name_ua or name_ua,
+                    changes=lic_changes,
+                )
 
         elif action == 'delete':
             license_id = request.form.get('id')
@@ -1911,13 +1995,28 @@ def manage_educational_programs():
             if not name_ua:
                 flash("Заповніть назву програми.", "error")
             else:
+                old_ep = conn.execute("SELECT * FROM educational_programs WHERE id = ?", (program_id,)).fetchone()
                 conn.execute(
                     "UPDATE educational_programs SET name_ua = ?, name_en = ? WHERE id = ?",
                     (name_ua, name_en, program_id)
                 )
                 conn.commit()
+                ep_changes = build_field_changes(
+                    old_ep,
+                    {'name_ua': name_ua, 'name_en': name_en},
+                    {'name_ua': 'Назва програми (укр.)', 'name_en': 'Назва програми (англ.)'},
+                )
                 flash("Освітню програму оновлено.", "success")
-                log_action(current_username(), f"редагував освітню програму ID {program_id}: {name_ua}")
+                log_action(
+                    current_username(),
+                    f"редагував освітню програму ID {program_id}: {name_ua}",
+                    category='update',
+                    section='Довідники',
+                    entity_type='educational_program',
+                    entity_id=program_id,
+                    entity_name=name_ua,
+                    changes=ep_changes,
+                )
 
         elif action == 'delete':
             program_id = request.form.get('id')
@@ -2054,13 +2153,28 @@ def manage_qualification_names():
             if not name_ua:
                 flash("Заповніть назву кваліфікації.", "error")
             else:
+                old_qual = conn.execute("SELECT * FROM qualification_names WHERE id = ?", (qual_id,)).fetchone()
                 conn.execute(
                     "UPDATE qualification_names SET name_ua = ?, name_en = ? WHERE id = ?",
                     (name_ua, name_en, qual_id)
                 )
                 conn.commit()
+                qual_changes = build_field_changes(
+                    old_qual,
+                    {'name_ua': name_ua, 'name_en': name_en},
+                    {'name_ua': 'Кваліфікація (укр.)', 'name_en': 'Кваліфікація (англ.)'},
+                )
                 flash("Назву кваліфікації оновлено.", "success")
-                log_action(current_username(), f"редагував назву кваліфікації ID {qual_id}: {name_ua}")
+                log_action(
+                    current_username(),
+                    f"редагував назву кваліфікації ID {qual_id}: {name_ua}",
+                    category='update',
+                    section='Довідники',
+                    entity_type='qualification_name',
+                    entity_id=qual_id,
+                    entity_name=name_ua,
+                    changes=qual_changes,
+                )
 
         elif action == 'delete':
             qual_id = request.form.get('id')

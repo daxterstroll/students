@@ -22,13 +22,14 @@ routes/utils.py
 """
 
 from functools import wraps
-from flask import session, redirect, url_for, flash, g
+from flask import session, redirect, url_for, flash, g, request, has_request_context
 import logging
 import os
 from datetime import datetime
 from routes.db import get_db
 import json
 import re
+import uuid
 
 # Настройка пути к файлу
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -169,73 +170,720 @@ except Exception as e:
     logger.error(f"Ошибка при доступе к файлу логов {monthly_log_path()}: {e}")
     print(f"Ошибка при доступе к файлу логов: {e}")
 
-def log_action(username, action, group_ids=None, mode=None, details=None):
-    """
-    Записує дію користувача в лог-файл (app.log) у вигляді:
-    "YYYY-MM-DD | HH:MM:SS | INFO | 👤 username - дія (групи: ...) | деталі"
+_AUDIT_SCHEMA_ENSURED = False
 
-    Параметри:
-        username   - ім'я користувача, що виконав дію (див. helpers.current_username())
-        action     - короткий опис дії, наприклад "додав студента"
-        group_ids  - ID груп, яких стосується дія (для не-адмінів ці ID
-                     перетворюються на людські назви груп)
-        mode       - необов'язковий режим/контекст дії
-        details    - додаткові деталі (наприклад, кількість оброблених рядків)
+AUDIT_CATEGORY_UA = {
+    'auth': 'Вхід / вихід',
+    'security': 'Безпека',
+    'create': 'Створення',
+    'update': 'Редагування',
+    'delete': 'Видалення',
+    'permissions': 'Права та доступ',
+    'sessions': 'Сесії та оцінки',
+    'orders': 'Накази',
+    'export': 'Генерація / експорт',
+    'import': 'Імпорт даних',
+    'view': 'Перегляд',
+    'system': 'Система',
+}
 
-    ВАЖЛИВО: раніше ця функція не мала обробки помилок. Якщо get_db()
-    не міг відкрити файл БД (немає прав доступу, диск переповнений тощо)
-    або запит до groups падав, виняток "вилітав" з log_action() і міг
-    зламати весь HTTP-запит - навіть якщо основна дія (наприклад,
-    збереження студента) вже завершилась успішно. Тепер збій самого
-    логування ніколи не ламає основний функціонал, але обов'язково
-    фіксується як ERROR в лог, щоб про проблему було відомо.
+AUDIT_SECTION_BY_PREFIX = [
+    ('/login', 'Авторизація'),
+    ('/logout', 'Авторизація'),
+    ('/admin/users', 'Користувачі та права'),
+    ('/admin/view_logs', 'Журнал дій'),
+    ('/admin/download_log', 'Журнал дій'),
+    ('/admin/export_logs', 'Журнал дій'),
+    ('/admin/manage_templates', 'Шаблони документів'),
+    ('/admin/manage_education_documents', 'Документи про освіту'),
+    ('/admin/import_docs', 'Документи про освіту'),
+    ('/admin/manage_passport_documents', 'Паспортні дані'),
+    ('/admin/import_passport', 'Паспортні дані'),
+    ('/admin/manage_specialties', 'Довідники'),
+    ('/admin/manage_degree_levels', 'Довідники'),
+    ('/admin/manage_licenses', 'Довідники'),
+    ('/admin/manage_educational_programs', 'Довідники'),
+    ('/admin/manage_qualification_names', 'Довідники'),
+    ('/admin/manage_accreditations', 'Довідники'),
+    ('/admin/orders', 'Накази'),
+    ('/admin/enrollment_order', 'Накази'),
+    ('/admin/expulsion', 'Накази'),
+    ('/admin/renewal', 'Накази'),
+    ('/admin/pending_students', 'Заявки на реєстрацію'),
+    ('/admin/update_requests', 'Заявки на оновлення'),
+    ('/admin/study_periods', 'Періоди навчання'),
+    ('/admin/diplomas', 'Дипломи та додатки'),
+    ('/admin/groups', 'Групи та курси'),
+    ('/admin/courses', 'Групи та курси'),
+    ('/admin/archive', 'Групи та курси'),
+    ('/admin/subjects', 'Предмети та активності'),
+    ('/admin/activities', 'Предмети та активності'),
+    ('/admin/group_export', 'Генерація та експорт'),
+    ('/admin/custom_export', 'Генерація та експорт'),
+    ('/admin/license_report', 'Звіт по ліцензіях'),
+    ('/admin/export_photos', 'Фото студентів'),
+    ('/import_grades', 'Імпорт оцінок'),
+    ('/military-reports', 'Військовий облік'),
+    ('/session-grade', 'Сесії та відомості'),
+    ('/analytics', 'Аналітика'),
+    ('/office', 'Редактор документів'),
+    ('/photo', 'Фото студентів'),
+    ('/apply', 'Публічні форми'),
+    ('/update-info', 'Публічні форми'),
+    ('/grades/', 'Оцінки та план'),
+    ('/activities/', 'Оцінки та план'),
+    ('/students', 'Студенти'),
+]
+
+
+def ensure_audit_logs_table(conn):
+    """Ідемпотентно створює таблицю audit_logs та індекси для детального аудиту."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            log_uid TEXT,
+            created_at TEXT NOT NULL,
+            level TEXT NOT NULL DEFAULT 'INFO',
+            username TEXT,
+            user_id INTEGER,
+            user_role TEXT,
+            category TEXT,
+            action_type TEXT,
+            section TEXT,
+            action_text TEXT NOT NULL,
+            entity_type TEXT,
+            entity_id TEXT,
+            entity_name TEXT,
+            entity_url TEXT,
+            group_ids_json TEXT,
+            group_names TEXT,
+            mode TEXT,
+            changes_json TEXT,
+            details_json TEXT,
+            details_text TEXT,
+            route_path TEXT,
+            endpoint TEXT,
+            http_method TEXT,
+            ip_address TEXT,
+            user_agent TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_username ON audit_logs(username)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_category ON audit_logs(category)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_section ON audit_logs(section)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_level ON audit_logs(level)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_uid ON audit_logs(log_uid)")
+
+
+def _extract_client_ip():
+    if not has_request_context():
+        return None
+    from routes.security import client_ip
+    ip = client_ip()
+    return None if not ip or ip == 'unknown' else ip
+
+
+def _short_user_agent(ua_raw):
+    if not ua_raw:
+        return None
+    ua = str(ua_raw).strip()
+    if not ua:
+        return None
+    browser = 'Інший браузер'
+    for pattern, name in (
+        (r'Edg/(\d+)', 'Edge'),
+        (r'OPR/(\d+)', 'Opera'),
+        (r'Chrome/(\d+)', 'Chrome'),
+        (r'Firefox/(\d+)', 'Firefox'),
+        (r'Version/(\d+).*Safari', 'Safari'),
+        (r'curl/([\d.]+)', 'curl'),
+        (r'python-requests/([\d.]+)', 'Python'),
+    ):
+        m = re.search(pattern, ua)
+        if m:
+            browser = f"{name} {m.group(1)}"
+            break
+    os_name = ''
+    if 'Windows NT 10' in ua or 'Windows NT 11' in ua:
+        os_name = 'Windows'
+    elif 'Windows' in ua:
+        os_name = 'Windows'
+    elif 'Android' in ua:
+        os_name = 'Android'
+    elif 'iPhone' in ua or 'iPad' in ua:
+        os_name = 'iOS'
+    elif 'Mac OS X' in ua or 'Macintosh' in ua:
+        os_name = 'macOS'
+    elif 'Linux' in ua:
+        os_name = 'Linux'
+    return f"{browser} · {os_name}" if os_name else browser
+
+
+def _normalize_diff_val(val, empty_placeholder='—'):
+    if val is None:
+        return empty_placeholder
+    if isinstance(val, bool):
+        return 'Так' if val else 'Ні'
+    s = str(val).strip()
+    return s if s else empty_placeholder
+
+
+def build_field_changes(old_data, new_data, field_labels, *, formatters=None, empty_placeholder='—'):
     """
-    conn = None
+    Порівнює словники/sqlite3.Row (old_data vs new_data) за картою підписів field_labels
+    і повертає список змін у форматі:
+      [{'field': key, 'label': '...', 'old': '...', 'new': '...'}, ...]
+    """
+    old_dict = dict(old_data) if old_data is not None else {}
+    new_dict = dict(new_data) if new_data is not None else {}
+    formatters = formatters or {}
+    changes = []
+
+    for field, label in field_labels.items():
+        if field not in new_dict:
+            continue
+        raw_old = old_dict.get(field)
+        raw_new = new_dict.get(field)
+
+        norm_old = '' if raw_old is None else str(raw_old).strip()
+        norm_new = '' if raw_new is None else str(raw_new).strip()
+        if isinstance(raw_old, bool):
+            norm_old = '1' if raw_old else '0'
+        if isinstance(raw_new, bool):
+            norm_new = '1' if raw_new else '0'
+
+        if norm_old == norm_new:
+            continue
+
+        fmt = formatters.get(field)
+        if callable(fmt):
+            disp_old = _normalize_diff_val(fmt(raw_old), empty_placeholder)
+            disp_new = _normalize_diff_val(fmt(raw_new), empty_placeholder)
+        else:
+            disp_old = _normalize_diff_val(raw_old, empty_placeholder)
+            disp_new = _normalize_diff_val(raw_new, empty_placeholder)
+
+        if disp_old == disp_new:
+            continue
+
+        changes.append({
+            'field': field,
+            'label': label,
+            'old': disp_old,
+            'new': disp_new,
+        })
+    return changes
+
+
+def _normalize_changes_list(changes):
+    if not changes:
+        return []
+    out = []
+    for item in changes:
+        if isinstance(item, dict):
+            label = str(item.get('label') or item.get('field') or 'Поле').strip()
+            field = str(item.get('field') or label).strip()
+            old_v = _normalize_diff_val(item.get('old'))
+            new_v = _normalize_diff_val(item.get('new'))
+            out.append({'field': field, 'label': label, 'old': old_v, 'new': new_v})
+        elif isinstance(item, (tuple, list)) and len(item) >= 3:
+            label = str(item[0]).strip()
+            out.append({
+                'field': label,
+                'label': label,
+                'old': _normalize_diff_val(item[1]),
+                'new': _normalize_diff_val(item[2]),
+            })
+    return out
+
+
+_INLINE_ARROW_RE = re.compile(r'([^;|\n]+?)\s*(?:→|->)\s*([^;|\n]+)')
+
+
+def parse_inline_changes_from_text(text):
+    """Витягує прості дифи «було → стало» із текстового рядка details."""
+    if not text:
+        return []
+    changes = []
+    for part in re.split(r'[;\n]+', str(text)):
+        part = part.strip()
+        if not part or ('→' not in part and '->' not in part):
+            continue
+        m = _INLINE_ARROW_RE.search(part)
+        if not m:
+            continue
+        left = m.group(1).strip()
+        right = m.group(2).strip()
+        label = 'Значення'
+        if ':' in left and not left.lower().startswith('http'):
+            maybe_lbl, maybe_old = left.split(':', 1)
+            if 1 <= len(maybe_lbl.strip()) <= 45:
+                label = maybe_lbl.strip()
+                left = maybe_old.strip()
+        if right.lower().startswith('нова група:'):
+            right = right.split(':', 1)[1].strip()
+        if left.lower().startswith('стара група:'):
+            label = 'Група'
+            left = left.split(':', 1)[1].strip()
+        if left or right:
+            changes.append({
+                'field': label.lower().replace(' ', '_'),
+                'label': label,
+                'old': left or '—',
+                'new': right or '—',
+            })
+    return changes
+
+
+def infer_audit_metadata(action_text, details_text='', route_path='', endpoint='', view_args=None):
+    """Визначає section, category, action_type, entity_type, entity_id, entity_url за контекстом."""
+    act = (action_text or '').strip()
+    act_low = act.lower()
+    path = (route_path or '').strip()
+    ep = (endpoint or '').strip()
+    view_args = view_args or {}
+
+    section = None
+    for prefix, sec_name in AUDIT_SECTION_BY_PREFIX:
+        if path.startswith(prefix):
+            section = sec_name
+            break
+    if not section:
+        if 'студент' in act_low:
+            section = 'Студенти'
+        elif 'паспорт' in act_low:
+            section = 'Паспортні дані'
+        elif 'освіт' in act_low and 'документ' in act_low:
+            section = 'Документи про освіту'
+        elif 'військ' in act_low or 'тцк' in act_low or 'додаток' in act_low or 'резерв+' in act_low:
+            section = 'Військовий облік'
+        elif 'наказ' in act_low:
+            section = 'Накази'
+        elif 'сесі' in act_low or 'відомост' in act_low or 'викладач' in act_low:
+            section = 'Сесії та відомості'
+        elif 'користувач' in act_low or 'пароль' in act_low:
+            section = 'Користувачі та права'
+        elif 'шаблон' in act_low:
+            section = 'Шаблони документів'
+        elif 'лог' in act_low or 'журнал' in act_low:
+            section = 'Журнал дій'
+        elif 'ввійшов' in act_low or 'вийшов' in act_low or 'входу' in act_low:
+            section = 'Авторизація'
+        elif 'оцінк' in act_low or 'активност' in act_low:
+            section = 'Оцінки та план'
+        elif 'спеціальн' in act_low or 'ступін' in act_low or 'ліцензі' in act_low or 'кваліфікац' in act_low or 'програм' in act_low or 'галуз' in act_low:
+            section = 'Довідники'
+        else:
+            section = 'Система'
+
+    # action_type & category
+    action_type = 'other'
+    category = 'system'
+    if 'невдала спроба входу' in act_low or 'блокування спроб входу' in act_low or 'rate limit' in act_low:
+        action_type = 'rate_limit' if 'блокуван' in act_low or 'rate' in act_low else 'login_failed'
+        category = 'security'
+    elif 'ввійшов у систему' in act_low:
+        action_type = 'login'
+        category = 'auth'
+    elif 'вийшов із системи' in act_low:
+        action_type = 'logout'
+        category = 'auth'
+    elif 'переглянув' in act_low:
+        action_type = 'view'
+        category = 'view'
+    elif 'видалив' in act_low:
+        action_type = 'delete'
+        category = 'delete'
+    elif 'відхилив' in act_low:
+        action_type = 'reject'
+        category = 'update'
+    elif 'імпорт' in act_low or 'пакетний імпорт' in act_low:
+        action_type = 'import'
+        category = 'import'
+    elif 'згенерував' in act_low or 'вивантажив' in act_low or 'завантажив лог' in act_low or 'експорт' in act_low:
+        action_type = 'export'
+        category = 'export'
+    elif 'повторно відкрив' in act_low or 'розблокував' in act_low:
+        action_type = 'reopen'
+        category = 'sessions'
+    elif 'затвердив' in act_low or 'підтвердив' in act_low or 'застосував' in act_low:
+        action_type = 'approve'
+        category = 'sessions' if ('відомост' in act_low or 'сесі' in act_low) else 'update'
+    elif 'об\'єднав' in act_low or 'об’єднав' in act_low:
+        action_type = 'merge'
+        category = 'orders'
+    elif 'скопіював' in act_low:
+        action_type = 'copy'
+        category = 'create'
+    elif any(w in act_low for w in ('додав', 'створив', 'завантажив новий', 'зарахував', 'призначив', 'синхронізував')):
+        action_type = 'create'
+        category = 'permissions' if section == 'Користувачі та права' else 'create'
+    elif any(w in act_low for w in ('редагував', 'оновив', 'змінив', 'прив\'язав', 'відв\'язав', 'вирішив', 'розархівував', 'переніс', 'перевів', 'увімкнув', 'вимкнув', 'активував', 'деактивував', 'приховав', 'зробив видимим', 'скинув', 'відрахував', 'випустив')):
+        action_type = 'update'
+        if section == 'Користувачі та права':
+            category = 'permissions'
+        elif section == 'Сесії та відомості':
+            category = 'sessions'
+        elif section == 'Накази':
+            category = 'orders'
+        else:
+            category = 'update'
+
+    if category in ('create', 'update', 'delete'):
+        if section == 'Користувачі та права' and category != 'delete':
+            category = 'permissions'
+
+    # entity_type, entity_id, entity_url
+    entity_type = None
+    entity_id = None
+    entity_url = None
+    if 'student_id' in view_args and view_args['student_id']:
+        entity_type = 'student'
+        entity_id = str(view_args['student_id'])
+    elif 'existing_id' in view_args and view_args['existing_id']:
+        entity_type = 'student'
+        entity_id = str(view_args['existing_id'])
+    elif 'order_id' in view_args and view_args['order_id']:
+        entity_type = 'order'
+        entity_id = str(view_args['order_id'])
+    elif 'sheet_id' in view_args and view_args['sheet_id']:
+        entity_type = 'exam_sheet'
+        entity_id = str(view_args['sheet_id'])
+    elif 'session_id' in view_args and view_args['session_id']:
+        entity_type = 'exam_session'
+        entity_id = str(view_args['session_id'])
+    elif 'user_id' in view_args and view_args['user_id']:
+        entity_type = 'user'
+        entity_id = str(view_args['user_id'])
+    elif 'pending_id' in view_args and view_args['pending_id']:
+        entity_type = 'pending_student'
+        entity_id = str(view_args['pending_id'])
+    elif 'request_id' in view_args and view_args['request_id']:
+        entity_type = 'update_request'
+        entity_id = str(view_args['request_id'])
+    elif 'teacher_id' in view_args and view_args['teacher_id']:
+        entity_type = 'teacher'
+        entity_id = str(view_args['teacher_id'])
+    elif 'group_id' in view_args and view_args['group_id']:
+        entity_type = 'group'
+        entity_id = str(view_args['group_id'])
+
+    if not entity_id:
+        m = re.search(r'(?:ID\s*|student=|#)(\d+)', act)
+        if m:
+            entity_id = m.group(1)
+
+    if not entity_type:
+        if 'студент' in act_low or 'student=' in act_low:
+            entity_type = 'student'
+        elif 'наказ' in act_low:
+            entity_type = 'order'
+        elif 'відомост' in act_low:
+            entity_type = 'exam_sheet'
+        elif 'сесі' in act_low:
+            entity_type = 'exam_session'
+        elif 'користувач' in act_low:
+            entity_type = 'user'
+        elif 'паспорт' in act_low:
+            entity_type = 'passport_document'
+        elif 'документ про освіту' in act_low:
+            entity_type = 'education_document'
+        elif 'шаблон' in act_low:
+            entity_type = 'template'
+        elif 'ліцензі' in act_low:
+            entity_type = 'license'
+        elif 'спеціальн' in act_low:
+            entity_type = 'specialty'
+        elif 'ступін' in act_low:
+            entity_type = 'degree_level'
+        elif 'освітн' in act_low and 'програм' in act_low:
+            entity_type = 'educational_program'
+        elif 'кваліфікац' in act_low:
+            entity_type = 'qualification_name'
+        elif 'тцк' in act_low:
+            entity_type = 'tck'
+        elif 'викладач' in act_low:
+            entity_type = 'teacher'
+
+    if action_type != 'delete' and entity_id and str(entity_id).isdigit():
+        eid = int(entity_id)
+        if entity_type == 'student':
+            entity_url = f"/students/{eid}"
+        elif entity_type == 'order':
+            entity_url = f"/admin/orders/{eid}"
+        elif entity_type == 'exam_session':
+            entity_url = f"/session-grade/sessions/{eid}"
+        elif entity_type == 'exam_sheet':
+            entity_url = f"/session-grade/sheets/{eid}"
+        elif entity_type == 'user':
+            entity_url = f"/admin/users/{eid}/edit"
+        elif entity_type == 'pending_student':
+            entity_url = f"/admin/pending_students/{eid}"
+        elif entity_type == 'update_request':
+            entity_url = f"/admin/update_requests/{eid}"
+
+    return {
+        'section': section,
+        'category': category,
+        'action_type': action_type,
+        'entity_type': entity_type,
+        'entity_id': entity_id,
+        'entity_url': entity_url,
+    }
+
+
+def log_action(
+    username,
+    action,
+    group_ids=None,
+    mode=None,
+    details=None,
+    *,
+    level='INFO',
+    category=None,
+    action_type=None,
+    section=None,
+    entity_type=None,
+    entity_id=None,
+    entity_name=None,
+    entity_url=None,
+    changes=None,
+    meta=None,
+    ip_address=None,
+    route_path=None,
+    endpoint=None,
+    http_method=None,
+    user_agent=None,
+    conn=None,
+):
+    """
+    Записує дію користувача в структуровану таблицю `audit_logs` та у місячний
+    лог-файл (logs/app-YYYY-MM.log). Повністю зворотно сумісна зі старими
+    викликами log_action(username, action, group_ids=..., mode=..., details=...).
+    """
+    global _AUDIT_SCHEMA_ENSURED
+    own_conn = None
+    log_uid = uuid.uuid4().hex[:12]
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    level_norm = (str(level or 'INFO').upper() if level else 'INFO')
+    if level_norm not in ('DEBUG', 'INFO', 'WARNING', 'ERROR'):
+        level_norm = 'INFO'
+
     try:
-        conn = get_db()
-        # session.get() вимагає активного контексту HTTP-запиту - якщо
-        # log_action викликається з фонового потоку (напр. масова
-        # генерація документів у admin.py), контексту запиту вже немає.
-        # В такому разі просто вважаємо роль невідомою (не адмін) -
-        # це найбезпечніший варіант за замовчуванням.
-        try:
-            role = session.get('role', 'невідомо')
-        except RuntimeError:
-            role = 'невідомо'
+        db = conn if conn is not None else get_db()
+        if conn is None:
+            own_conn = db
 
+        in_req = has_request_context()
+        if in_req:
+            try:
+                user_id = session.get('user_id')
+                role = session.get('role') or ('admin' if session.get('is_admin') else None)
+            except RuntimeError:
+                user_id = None
+                role = None
+            req_path = route_path or request.path
+            req_ep = endpoint or request.endpoint
+            req_method = http_method or request.method
+            req_ip = ip_address or _extract_client_ip()
+            req_ua = user_agent or _short_user_agent(request.headers.get('User-Agent', ''))
+            req_view_args = getattr(request, 'view_args', None) or {}
+        else:
+            user_id = None
+            role = None
+            req_path = route_path
+            req_ep = endpoint
+            req_method = http_method
+            req_ip = ip_address
+            req_ua = user_agent
+            req_view_args = {}
+
+        # Завжди визначаємо людські назви груп, якщо передано group_ids
+        norm_gids = []
         group_names_str = ''
-        if group_ids is not None and role != 'admin':
-            if not isinstance(group_ids, list):
-                group_ids = [group_ids] if group_ids else []
-            if group_ids:
-                placeholders = ','.join('?' for _ in group_ids)
-                group_names = conn.execute(
+        if group_ids is not None:
+            raw_list = group_ids if isinstance(group_ids, (list, tuple, set)) else ([group_ids] if group_ids else [])
+            for g_item in raw_list:
+                if g_item is None or g_item == '':
+                    continue
+                try:
+                    norm_gids.append(int(g_item))
+                except (TypeError, ValueError):
+                    pass
+            if norm_gids:
+                placeholders = ','.join('?' for _ in norm_gids)
+                group_rows = db.execute(
                     f"""
-                    SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кредитів)' AS display_name
+                    SELECT name || ' (' || start_year || ', ' || study_form || ', ' || program_credits || ' кр.)' AS display_name
                     FROM groups
                     WHERE id IN ({placeholders})
                     ORDER BY name, start_year
                     """,
-                    group_ids
+                    norm_gids,
                 ).fetchall()
-                group_names_str = ', '.join([row['display_name'] for row in group_names]) if group_names else 'немає груп'
+                group_names_str = ', '.join([r['display_name'] for r in group_rows]) if group_rows else ''
 
+        details_str = ''
+        if isinstance(details, dict):
+            if meta is None:
+                meta = details
+            details_str = '; '.join(f"{k}: {v}" for k, v in details.items() if v not in (None, ''))
+        elif details is not None:
+            details_str = str(details).strip()
+
+        inferred = infer_audit_metadata(
+            action,
+            details_str,
+            route_path=req_path or '',
+            endpoint=req_ep or '',
+            view_args=req_view_args,
+        )
+
+        final_section = section or inferred['section']
+        final_category = category or inferred['category']
+        final_action_type = action_type or inferred['action_type']
+        final_entity_type = entity_type or inferred['entity_type']
+        final_entity_id = str(entity_id) if entity_id is not None else inferred['entity_id']
+        final_entity_url = entity_url if entity_url is not None else inferred['entity_url']
+
+        norm_changes = _normalize_changes_list(changes)
+        if not norm_changes and details_str:
+            norm_changes = parse_inline_changes_from_text(details_str)
+
+        changes_json = json.dumps(norm_changes, ensure_ascii=False) if norm_changes else None
+        meta_json = json.dumps(meta, ensure_ascii=False) if meta else None
+        gids_json = json.dumps(norm_gids, ensure_ascii=False) if norm_gids else None
+
+        # Запис у таблицю БД (не блокує файловий лог у разі винятку)
+        try:
+            if not _AUDIT_SCHEMA_ENSURED:
+                ensure_audit_logs_table(db)
+                _AUDIT_SCHEMA_ENSURED = True
+            try:
+                db.execute(
+                    """
+                    INSERT INTO audit_logs (
+                        log_uid, created_at, level, username, user_id, user_role,
+                        category, action_type, section, action_text,
+                        entity_type, entity_id, entity_name, entity_url,
+                        group_ids_json, group_names, mode,
+                        changes_json, details_json, details_text,
+                        route_path, endpoint, http_method, ip_address, user_agent
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        log_uid,
+                        now_str,
+                        level_norm,
+                        str(username or 'невідомо'),
+                        user_id,
+                        role,
+                        final_category,
+                        final_action_type,
+                        final_section,
+                        str(action or ''),
+                        final_entity_type,
+                        final_entity_id,
+                        str(entity_name) if entity_name else None,
+                        final_entity_url,
+                        gids_json,
+                        group_names_str or None,
+                        str(mode) if mode else None,
+                        changes_json,
+                        meta_json,
+                        details_str or None,
+                        req_path,
+                        req_ep,
+                        req_method,
+                        req_ip,
+                        req_ua,
+                    ),
+                )
+            except Exception:
+                ensure_audit_logs_table(db)
+                _AUDIT_SCHEMA_ENSURED = True
+                db.execute(
+                    """
+                    INSERT INTO audit_logs (
+                        log_uid, created_at, level, username, user_id, user_role,
+                        category, action_type, section, action_text,
+                        entity_type, entity_id, entity_name, entity_url,
+                        group_ids_json, group_names, mode,
+                        changes_json, details_json, details_text,
+                        route_path, endpoint, http_method, ip_address, user_agent
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        log_uid,
+                        now_str,
+                        level_norm,
+                        str(username or 'невідомо'),
+                        user_id,
+                        role,
+                        final_category,
+                        final_action_type,
+                        final_section,
+                        str(action or ''),
+                        final_entity_type,
+                        final_entity_id,
+                        str(entity_name) if entity_name else None,
+                        final_entity_url,
+                        gids_json,
+                        group_names_str or None,
+                        str(mode) if mode else None,
+                        changes_json,
+                        meta_json,
+                        details_str or None,
+                        req_path,
+                        req_ep,
+                        req_method,
+                        req_ip,
+                        req_ua,
+                    ),
+                )
+            if own_conn is not None:
+                own_conn.commit()
+        except Exception as db_exc:
+            logger.warning(f"audit_logs DB insert fallback ({username} / {action}): {db_exc}")
+
+        # Людський запис у місячний текстовий файл .log
         log_msg = f"👤 {username} - {action}"
         if mode:
             log_msg += f" (режим: {mode})"
+        if final_section:
+            where_part = f"{final_section} · {req_path}" if req_path else final_section
+            log_msg += f" (де: {where_part})"
         if group_names_str:
             log_msg += f" (групи: {group_names_str})"
-        if details:
-            log_msg += f" | {details}"
+        if req_ip and 'ip:' not in (details_str or '').lower():
+            log_msg += f" (IP: {req_ip})"
+        if norm_changes:
+            diff_preview = '; '.join(
+                f"{c['label']}: «{c['old']}» → «{c['new']}»" for c in norm_changes[:8]
+            )
+            if len(norm_changes) > 8:
+                diff_preview += f" (+ще {len(norm_changes) - 8})"
+            log_msg += f" | Зміни: {diff_preview}"
+        if details_str:
+            log_msg += f" | {details_str}"
+        log_msg += f" [ref:{log_uid}]"
 
-        logger.info(log_msg)
+        if level_norm == 'ERROR':
+            logger.error(log_msg)
+        elif level_norm == 'WARNING':
+            logger.warning(log_msg)
+        elif level_norm == 'DEBUG':
+            logger.debug(log_msg)
+        else:
+            logger.info(log_msg)
 
     except Exception as e:
         # Логування НІКОЛИ не повинно "ронити" запит користувача, що його викликав.
         logger.error(f"Не вдалося записати дію в лог (username={username}, action={action}): {e}", exc_info=True)
     finally:
-        if conn is not None:
-            conn.close()
+        if own_conn is not None:
+            own_conn.close()
     
 def _sync_session_auth():
     """

@@ -1,259 +1,979 @@
 {% extends 'layout.html' %}
 {% import '_macros.html' as ui %}
-{% block title %}Журнал дій{% endblock %}
-{% block main_class %}py-3{% endblock %} 
+{% block title %}Журнал дій та аудит змін{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
 {% block content %}
-<div class="container py-4">
-
-{{ ui.page_header('bi-file-earmark-text-fill', 'Журнал дій', 'Історія всіх дій користувачів у системі') }}
-
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-  <form method="GET" class="d-flex align-items-center gap-2">
-    <label class="small text-muted mb-0" for="month-select">Місяць:</label>
-    <select name="month" id="month-select" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
-      {% for m in available_months %}
-        <option value="{{ m.value }}" {% if m.value == selected_month %}selected{% endif %}>
-          {{ m.value }}{% if m.value == current_month %} (поточний){% endif %} - {{ m.size_kb }} КБ
-        </option>
-      {% endfor %}
-      {% if not available_months %}
-        <option value="{{ selected_month }}" selected>{{ selected_month }}</option>
-      {% endif %}
-    </select>
-  </form>
-
-  <div class="d-flex gap-2">
-    {% if logs %}
-    <a href="{{ url_for('admin.download_log', month=selected_month) }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-download me-1"></i>Завантажити .log за {{ selected_month }}
-    </a>
-    {% endif %}
-    <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-arrow-left me-1"></i>Назад
-    </a>
-  </div>
-</div>
-
-{# ── Останні помилки за кілька останніх місяців (а не лише обраний) ── #}
-{% if recent_errors %}
-<div class="card mb-4 border-danger">
-  <div class="card-body py-2">
-    <button class="btn btn-sm btn-link text-danger text-decoration-none p-0 fw-bold" type="button" data-bs-toggle="collapse" data-bs-target="#recentErrorsPanel">
-      <i class="bi bi-exclamation-triangle-fill me-1"></i>Останні помилки за весь час ({{ recent_errors|length }})
-      <i class="bi bi-chevron-down small"></i>
-    </button>
-    <div class="collapse mt-2" id="recentErrorsPanel">
-      <div class="table-responsive">
-      <table class="table table-sm mb-0">
-        <tbody>
-          {% for e in recent_errors %}
-          <tr>
-            <td class="text-muted small font-monospace" style="white-space:nowrap;">{{ e.date }} {{ e.time }}</td>
-            <td class="small"><span class="badge bg-secondary">{{ e.month }}</span></td>
-            <td class="small log-action">{{ e.action }}</td>
-            <td class="text-end" style="white-space:nowrap;">
-              {% if e.month != selected_month %}
-              <a href="{{ url_for('admin.view_logs', month=e.month) }}" class="small">Відкрити місяць</a>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      </div>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-{# ── Статистика ── #}
-{% if logs %}
-<div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="card text-center">
-      <div class="card-body py-3">
-        <div class="fs-4 fw-bold text-primary" id="stat-total">{{ logs|length }}</div>
-        <div class="small text-muted">Всього записів</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card text-center">
-      <div class="card-body py-3">
-        <div class="fs-4 fw-bold text-success" id="stat-users">{{ usernames|length }}</div>
-        <div class="small text-muted">Користувачів</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card text-center">
-      <div class="card-body py-3">
-        <div class="fs-4 fw-bold text-warning" id="stat-today">
-          {{ logs | selectattr('date', 'equalto', now) | list | length }}
-        </div>
-        <div class="small text-muted">Сьогодні</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card text-center">
-      <div class="card-body py-3">
-        <div class="fs-4 fw-bold text-danger" id="stat-errors">
-          {{ logs | selectattr('level', 'equalto', 'ERROR') | list | length }}
-        </div>
-        <div class="small text-muted">Помилок</div>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── Фільтри ── #}
-<div class="card mb-3">
-  <div class="card-body py-2">
-    <div class="row g-2 align-items-end">
-      <div class="col-12 col-md-4">
-        <label class="form-label small mb-1">Пошук по дії</label>
-        <input type="text" id="filter-search" class="form-control form-control-sm" placeholder="Введіть текст...">
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Користувач</label>
-        <select id="filter-user" class="form-select form-select-sm">
-          <option value="">Всі</option>
-          {% for u in usernames %}
-            <option value="{{ u }}">{{ u }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Дата</label>
-        <input type="date" id="filter-date" class="form-control form-control-sm">
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Рівень</label>
-        <select id="filter-level" class="form-select form-select-sm">
-          <option value="">Всі</option>
-          <option value="INFO">INFO</option>
-          <option value="WARNING">WARNING</option>
-          <option value="ERROR">ERROR</option>
-          <option value="DEBUG">DEBUG</option>
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
-        <button class="btn btn-outline-secondary btn-sm w-100" onclick="clearFilters()">
-          <i class="bi bi-x-circle me-1"></i>Скинути
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
-
-{# ── Таблиця логів ── #}
-<div class="card">
-  <div class="card-body p-0">
-    <div class="table-responsive" style="max-height: 620px; overflow-y: auto;">
-      <table class="table table-sm table-hover mb-0 align-middle" id="logs-table">
-        <thead class="table-dark sticky-top">
-          <tr>
-            <th style="width:95px">Дата</th>
-            <th style="width:70px">Час</th>
-            <th style="width:65px">Рівень</th>
-            <th style="width:130px">Користувач</th>
-            <th>Дія</th>
-          </tr>
-        </thead>
-        <tbody id="logs-body">
-          {% for entry in logs %}
-          <tr class="log-row"
-              data-search="{{ entry.action | lower }}"
-              data-user="{{ entry.username | lower }}"
-              data-date="{{ entry.date }}"
-              data-level="{{ entry.level }}">
-            <td class="text-muted small">{{ entry.date }}</td>
-            <td class="text-muted small font-monospace">{{ entry.time }}</td>
-            <td>
-              {% if entry.level == 'ERROR' %}
-                <span class="badge bg-danger">ERROR</span>
-              {% elif entry.level == 'WARNING' %}
-                <span class="badge bg-warning text-dark">WARN</span>
-              {% elif entry.level == 'DEBUG' %}
-                <span class="badge bg-secondary">DEBUG</span>
-              {% else %}
-                <span class="badge bg-success">INFO</span>
-              {% endif %}
-            </td>
-            <td>
-              {% if entry.username %}
-                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">
-                  <i class="bi bi-person me-1"></i>{{ entry.username }}
-                </span>
-              {% else %}
-                <span class="text-muted small">—</span>
-              {% endif %}
-            </td>
-            <td class="small log-action">
-              {{ entry.action }}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  <div class="card-footer d-flex justify-content-between align-items-center py-2">
-    <span class="small text-muted">Показано: <strong id="visible-count">{{ logs|length }}</strong> з {{ logs|length }}</span>
-    <span class="small text-muted" id="no-results" style="display:none">Нічого не знайдено</span>
-  </div>
-</div>
-
-{% else %}
-  {{ ui.empty_state('bi-file-earmark-text', 'За ' ~ selected_month ~ ' записів немає') }}
-{% endif %}
-
-</div>
-
-<script>
-const rows = document.querySelectorAll('.log-row');
-const visibleCount = document.getElementById('visible-count');
-const noResults = document.getElementById('no-results');
-
-function applyFilters() {
-  const search = document.getElementById('filter-search').value.toLowerCase();
-  const user   = document.getElementById('filter-user').value.toLowerCase();
-  const date   = document.getElementById('filter-date').value;
-  const level  = document.getElementById('filter-level').value;
-
-  let visible = 0;
-  rows.forEach(row => {
-    const matchSearch = !search || row.dataset.search.includes(search)
-                                 || row.dataset.user.includes(search);
-    const matchUser   = !user   || row.dataset.user === user;
-    const matchDate   = !date   || row.dataset.date === date;
-    const matchLevel  = !level  || row.dataset.level === level;
-
-    const show = matchSearch && matchUser && matchDate && matchLevel;
-    row.style.display = show ? '' : 'none';
-    if (show) visible++;
-  });
-
-  visibleCount.textContent = visible;
-  noResults.style.display = visible === 0 ? '' : 'none';
-}
-
-function clearFilters() {
-  document.getElementById('filter-search').value = '';
-  document.getElementById('filter-user').value   = '';
-  document.getElementById('filter-date').value   = '';
-  document.getElementById('filter-level').value  = '';
-  applyFilters();
-}
-
-document.getElementById('filter-search').addEventListener('input',  applyFilters);
-document.getElementById('filter-user').addEventListener('change',   applyFilters);
-document.getElementById('filter-date').addEventListener('change',   applyFilters);
-document.getElementById('filter-level').addEventListener('change',  applyFilters);
-</script>
-
 <style>
-.log-action { overflow-wrap: anywhere; }
+    .logs-page {
+        --st-ok-bg: rgba(79, 122, 82, .14);
+        --st-ok-fg: #2b5b3d;
+        --st-ok-bd: rgba(79, 122, 82, .35);
+        --st-ok-solid: #3d7a53;
+
+        --st-warn-bg: rgba(200, 162, 74, .18);
+        --st-warn-fg: #75550c;
+        --st-warn-bd: rgba(200, 162, 74, .46);
+        --st-warn-solid: #c8a24a;
+
+        --st-miss-bg: rgba(162, 59, 46, .12);
+        --st-miss-fg: #8f2d22;
+        --st-miss-bd: rgba(162, 59, 46, .34);
+        --st-miss-solid: #a23b2e;
+
+        --st-info-bg: rgba(61, 104, 153, .13);
+        --st-info-fg: #274f7d;
+        --st-info-bd: rgba(61, 104, 153, .34);
+        --st-info-solid: #3d6899;
+
+        --diff-old-bg: rgba(162, 59, 46, .10);
+        --diff-old-fg: #8a291f;
+        --diff-new-bg: rgba(43, 91, 61, .11);
+        --diff-new-fg: #245235;
+    }
+    html[data-theme="dark"] .logs-page {
+        --st-ok-bg: rgba(79, 122, 82, .25);
+        --st-ok-fg: #c2e6c5;
+        --st-ok-bd: rgba(117, 173, 122, .42);
+        --st-ok-solid: #5aa372;
+
+        --st-warn-bg: rgba(200, 162, 74, .20);
+        --st-warn-fg: #f2d687;
+        --st-warn-bd: rgba(227, 200, 122, .38);
+        --st-warn-solid: #d9b45c;
+
+        --st-miss-bg: rgba(162, 59, 46, .28);
+        --st-miss-fg: #f5b8b0;
+        --st-miss-bd: rgba(216, 108, 95, .42);
+        --st-miss-solid: #c9584a;
+
+        --st-info-bg: rgba(74, 110, 168, .22);
+        --st-info-fg: #b4ccf0;
+        --st-info-bd: rgba(120, 156, 214, .38);
+        --st-info-solid: #6994cc;
+
+        --diff-old-bg: rgba(201, 88, 74, .24);
+        --diff-old-fg: #f7c2bb;
+        --diff-new-bg: rgba(90, 163, 114, .24);
+        --diff-new-fg: #c5edd0;
+    }
+
+    .logs-num { font-variant-numeric: tabular-nums; }
+
+    .logs-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 12px;
+        padding: .8rem 1rem;
+        height: 100%;
+    }
+    .logs-kpi--ok { border-top-color: var(--st-ok-solid); }
+    .logs-kpi--warn { border-top-color: var(--st-miss-solid); }
+    .logs-kpi--info { border-top-color: var(--st-info-solid); }
+    .logs-kpi__label {
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        margin-bottom: .22rem;
+    }
+    .logs-kpi__val {
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--ink-text);
+    }
+    .logs-kpi--ok .logs-kpi__val { color: var(--st-ok-fg); }
+    .logs-kpi--warn .logs-kpi__val { color: var(--st-miss-fg); }
+    .logs-kpi--info .logs-kpi__val { color: var(--st-info-fg); }
+    .logs-kpi__sub {
+        font-size: .75rem;
+        color: var(--muted);
+        margin-top: .25rem;
+    }
+
+    .logs-toolbar {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .95rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .logs-toolbar .form-control,
+    .logs-toolbar .form-select,
+    .logs-period-bar .form-select {
+        background-color: var(--paper);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .logs-toolbar .form-control,
+    html[data-theme="dark"] .logs-toolbar .form-select,
+    html[data-theme="dark"] .logs-period-bar .form-select {
+        background-color: var(--paper-2);
+    }
+    .logs-toolbar .input-group-text {
+        background-color: var(--paper-2);
+        color: var(--muted);
+        border-color: var(--line);
+    }
+
+    .logs-err-card {
+        background: var(--surface);
+        border: 1px solid var(--st-miss-bd);
+        border-left: 4px solid var(--st-miss-solid);
+        border-radius: 12px;
+        padding: .75rem 1rem;
+        margin-bottom: 1rem;
+    }
+    .logs-err-toggle {
+        color: var(--st-miss-fg);
+        font-weight: 700;
+        font-size: .9rem;
+        background: transparent;
+        border: 0;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+    }
+    .logs-err-toggle:hover { text-decoration: underline; }
+
+    .logs-panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .logs-table {
+        margin-bottom: 0;
+        color: var(--ink-text);
+    }
+    .logs-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        padding: .68rem .8rem;
+        white-space: nowrap;
+    }
+    .logs-table tbody td {
+        border-color: var(--line);
+        padding: .78rem .8rem;
+        vertical-align: top;
+    }
+    .logs-table tbody tr.is-error-row {
+        background: var(--st-miss-bg);
+    }
+    .logs-table tbody tr.is-warn-row {
+        background: var(--st-warn-bg);
+    }
+
+    .logs-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        padding: .16rem .5rem;
+        border-radius: 6px;
+        font-size: .72rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .logs-badge--ok { background: var(--st-ok-bg); color: var(--st-ok-fg); border-color: var(--st-ok-bd); }
+    .logs-badge--warn { background: var(--st-warn-bg); color: var(--st-warn-fg); border-color: var(--st-warn-bd); }
+    .logs-badge--miss { background: var(--st-miss-bg); color: var(--st-miss-fg); border-color: var(--st-miss-bd); }
+    .logs-badge--info { background: var(--st-info-bg); color: var(--st-info-fg); border-color: var(--st-info-bd); }
+    .logs-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+
+    .logs-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        padding: .14rem .46rem;
+        border-radius: 5px;
+        font-size: .72rem;
+        font-weight: 600;
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border: 1px solid var(--line);
+        max-width: 100%;
+        word-break: break-word;
+    }
+    .logs-chip--link {
+        text-decoration: none;
+        color: var(--st-info-fg);
+        background: var(--st-info-bg);
+        border-color: var(--st-info-bd);
+    }
+    .logs-chip--link:hover {
+        filter: brightness(1.06);
+        text-decoration: underline;
+    }
+
+    .logs-actor-name {
+        font-weight: 700;
+        font-size: .86rem;
+        color: var(--ink-text);
+        display: inline-flex;
+        align-items: center;
+        gap: .32rem;
+        word-break: break-word;
+    }
+    .logs-actor-meta {
+        font-size: .73rem;
+        color: var(--muted);
+        line-height: 1.35;
+        margin-top: .2rem;
+        word-break: break-word;
+    }
+
+    .logs-action-title {
+        font-size: .88rem;
+        font-weight: 600;
+        color: var(--ink-text);
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+    .logs-route {
+        font-family: var(--bs-font-monospace, monospace);
+        font-size: .72rem;
+        color: var(--muted);
+        word-break: break-all;
+    }
+
+    .logs-diff-list {
+        display: flex;
+        flex-direction: column;
+        gap: .34rem;
+    }
+    .logs-diff-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .28rem .38rem;
+        font-size: .8rem;
+        line-height: 1.35;
+    }
+    .logs-diff-field {
+        font-weight: 600;
+        color: var(--muted);
+    }
+    .logs-diff-val {
+        display: inline-block;
+        padding: .08rem .4rem;
+        border-radius: 5px;
+        font-weight: 600;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        max-width: 100%;
+    }
+    .logs-diff-val--old {
+        background: var(--diff-old-bg);
+        color: var(--diff-old-fg);
+        text-decoration: line-through;
+        text-decoration-thickness: 1px;
+    }
+    .logs-diff-val--new {
+        background: var(--diff-new-bg);
+        color: var(--diff-new-fg);
+    }
+
+    .logs-meta-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .28rem .45rem;
+        font-size: .76rem;
+        color: var(--muted);
+    }
+    .logs-meta-item strong {
+        color: var(--ink-text);
+        font-weight: 600;
+    }
+
+    .logs-more-toggle {
+        margin-top: .25rem;
+        font-size: .78rem;
+    }
+    .logs-more-toggle summary {
+        cursor: pointer;
+        color: var(--st-info-fg);
+        font-weight: 600;
+        user-select: none;
+    }
+    .logs-raw-toggle {
+        margin-top: .35rem;
+        font-size: .74rem;
+        color: var(--muted);
+    }
+    .logs-raw-toggle summary {
+        cursor: pointer;
+        user-select: none;
+    }
+    .logs-raw-code {
+        margin-top: .25rem;
+        padding: .45rem .6rem;
+        border-radius: 6px;
+        background: var(--paper-2);
+        border: 1px solid var(--line);
+        font-family: var(--bs-font-monospace, monospace);
+        font-size: .72rem;
+        color: var(--ink-text);
+        word-break: break-all;
+        white-space: pre-wrap;
+    }
+
+    .logs-mobile-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: .88rem .95rem;
+    }
+    .logs-mobile-card.is-error-row {
+        border-color: var(--st-miss-bd);
+        border-left: 4px solid var(--st-miss-solid);
+    }
+    .logs-mobile-card.is-warn-row {
+        border-color: var(--st-warn-bd);
+        border-left: 4px solid var(--st-warn-solid);
+    }
+    .logs-mobile-card__head {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: .5rem;
+        padding-bottom: .5rem;
+        margin-bottom: .5rem;
+        border-bottom: 1px solid var(--line);
+    }
+    .logs-mobile-card__foot {
+        padding-top: .48rem;
+        margin-top: .5rem;
+        border-top: 1px solid var(--line);
+    }
+
+    .logs-panel-foot {
+        background: var(--paper-2);
+        border-top: 1px solid var(--line);
+        padding: .65rem .9rem;
+    }
+
+    .pagination .page-link {
+        background-color: var(--surface);
+        border-color: var(--line);
+        color: var(--ink-text);
+    }
+    .pagination .page-link:hover {
+        background-color: var(--paper-2);
+        color: var(--ink-text);
+    }
+    .pagination .page-item.active .page-link {
+        background-color: var(--brass, #8b6f32);
+        border-color: var(--brass, #8b6f32);
+        color: #fff;
+    }
+    .pagination .page-item.disabled .page-link {
+        background-color: var(--paper-2);
+        color: var(--muted);
+        border-color: var(--line);
+    }
 </style>
+
+<div class="container-xxl py-4 logs-page">
+
+    {{ ui.page_header('bi-journal-check', 'Журнал дій та аудит змін', 'Детальна історія дій: хто, коли, де, з якої IP-адреси та що саме змінив («Було → Стало»)') }}
+
+    {# ── Верхня панель періоду та експорту ── #}
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 logs-period-bar">
+        <form method="GET" action="{{ url_for('admin.view_logs') }}" class="d-flex align-items-center flex-wrap gap-2">
+            <label class="small text-muted fw-semibold mb-0" for="month-select">Період:</label>
+            <select name="month" id="month-select" class="form-select form-select-sm" style="width:auto;" onchange="this.form.submit()">
+                <option value="all" {% if selected_month == 'all' %}selected{% endif %}>
+                    Усі періоди (зведена база аудиту)
+                </option>
+                {% for m in available_months %}
+                <option value="{{ m.value }}" {% if m.value == selected_month %}selected{% endif %}>
+                    {{ m.value }}{% if m.value == current_month %} (поточний){% endif %}{% if m.size_kb %} · {{ m.size_kb }} КБ{% endif %}
+                </option>
+                {% endfor %}
+                {% if not available_months and selected_month != 'all' %}
+                <option value="{{ selected_month }}" selected>{{ selected_month }}</option>
+                {% endif %}
+            </select>
+
+            <div class="btn-group btn-group-sm" role="group" aria-label="Швидкі періоди">
+                <a href="{{ url_for('admin.view_logs', month=selected_month, date_from=now, date_to=now) }}"
+                   class="btn btn-outline-secondary {% if filters.date_from == now and filters.date_to == now %}active{% endif %}">
+                    Сьогодні
+                </a>
+                <a href="{{ url_for('admin.view_logs', month=selected_month, date_from=week_ago, date_to=now) }}"
+                   class="btn btn-outline-secondary {% if filters.date_from == week_ago and filters.date_to == now %}active{% endif %}">
+                    7 днів
+                </a>
+                <a href="{{ url_for('admin.view_logs', month=selected_month, only_changes='1', hide_views='1') }}"
+                   class="btn btn-outline-secondary {% if filters.only_changes and filters.hide_views %}active{% endif %}">
+                    Лише зміни
+                </a>
+            </div>
+        </form>
+
+        <div class="d-flex flex-wrap gap-2">
+            {% if total_filtered > 0 %}
+            <a href="{{ url_for('admin.export_logs',
+                                month=selected_month,
+                                q=filters.q or None,
+                                user=filters.user or None,
+                                category=filters.category or None,
+                                section=filters.section or None,
+                                level=filters.level or None,
+                                date_from=filters.date_from or None,
+                                date_to=filters.date_to or None,
+                                only_changes='1' if filters.only_changes else None,
+                                hide_views='1' if filters.hide_views else None) }}"
+               class="btn btn-outline-success btn-sm">
+                <i class="bi bi-file-earmark-spreadsheet me-1"></i>Експорт CSV ({{ total_filtered }})
+            </a>
+            {% endif %}
+            {% if has_log_file %}
+            <a href="{{ url_for('admin.download_log', month=selected_month) }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-download me-1"></i>Файл .log ({{ selected_month }})
+            </a>
+            {% endif %}
+            <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left me-1"></i>Назад
+            </a>
+        </div>
+    </div>
+
+    {# ── Останні помилки за кілька останніх місяців ── #}
+    {% if recent_errors %}
+    <div class="logs-err-card">
+        <button class="logs-err-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#recentErrorsPanel">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            <span>Останні системні помилки ({{ recent_errors|length }})</span>
+            <i class="bi bi-chevron-down small"></i>
+        </button>
+        <div class="collapse mt-2" id="recentErrorsPanel">
+            <div class="table-responsive">
+                <table class="table logs-table table-sm mb-0">
+                    <thead>
+                        <tr>
+                            <th>Коли</th>
+                            <th>Користувач</th>
+                            <th>Розділ / Подія</th>
+                            <th class="text-end">Період</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for e in recent_errors %}
+                        <tr>
+                            <td class="logs-num text-nowrap small">
+                                <span class="fw-semibold">{{ e.date_ua or e.date }}</span>
+                                <span class="text-muted font-monospace ms-1">{{ e.time }}</span>
+                            </td>
+                            <td class="small fw-semibold">{{ e.username or 'Система' }}</td>
+                            <td class="small">
+                                {% if e.section %}<span class="logs-chip me-1">{{ e.section }}</span>{% endif %}
+                                <span>{{ e.action }}</span>
+                                {% if e.details_text %}
+                                <div class="text-muted mt-1">{{ e.details_text }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap small">
+                                <span class="logs-badge logs-badge--muted">{{ e.month }}</span>
+                                {% if e.month and e.month != selected_month %}
+                                <a href="{{ url_for('admin.view_logs', month=e.month, level='ERROR') }}" class="ms-2 small text-decoration-none">
+                                    Відкрити
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── KPI-зведення ── #}
+    <div class="row g-2 g-md-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="logs-kpi">
+                <div class="logs-kpi__label">Записів у вибірці</div>
+                <div class="logs-kpi__val logs-num">{{ summary.total_filtered }}</div>
+                <div class="logs-kpi__sub">З {{ summary.total_all }} за період · сьогодні: {{ summary.today }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="logs-kpi logs-kpi--info">
+                <div class="logs-kpi__label">Активні користувачі</div>
+                <div class="logs-kpi__val logs-num">{{ summary.unique_users }}</div>
+                <div class="logs-kpi__sub">Унікальних логінів у вибірці</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="logs-kpi logs-kpi--ok">
+                <div class="logs-kpi__label">Зміни «Було → Стало»</div>
+                <div class="logs-kpi__val logs-num">{{ summary.with_changes }}</div>
+                <div class="logs-kpi__sub">Записи з точним дифом полів</div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="logs-kpi logs-kpi--warn">
+                <div class="logs-kpi__label">Видалення та безпека</div>
+                <div class="logs-kpi__val logs-num">{{ summary.security_and_deletes }}</div>
+                <div class="logs-kpi__sub">Попереджень/помилок: {{ summary.errors_warnings }}</div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Панель серверних фільтрів ── #}
+    {% set has_active_filters = filters.q or filters.user or filters.category or filters.section or filters.level or filters.date_from or filters.date_to or filters.only_changes or filters.hide_views %}
+    <div class="logs-toolbar">
+        <form method="GET" action="{{ url_for('admin.view_logs') }}" class="row g-2 align-items-end">
+            <input type="hidden" name="month" value="{{ selected_month }}">
+
+            <div class="col-12 col-md-6 col-xl-4">
+                <label class="form-label small fw-semibold mb-1" for="filterSearch">Пошук (ПІБ, старе/нове значення, IP, маршрут)</label>
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="search" id="filterSearch" name="q" class="form-control"
+                           value="{{ filters.q }}" placeholder="Напр.: Іванов, наказ, 192.168...">
+                </div>
+            </div>
+
+            <div class="col-6 col-md-3 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterUser">Користувач</label>
+                <select id="filterUser" name="user" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі користувачі</option>
+                    {% for u in usernames %}
+                    <option value="{{ u }}" {% if filters.user == u %}selected{% endif %}>{{ u }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-3 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterCategory">Тип дії</label>
+                <select id="filterCategory" name="category" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі типи</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat.code }}" {% if filters.category == cat.code %}selected{% endif %}>{{ cat.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterSection">Розділ системи</label>
+                <select id="filterSection" name="section" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі розділи</option>
+                    {% for s in sections %}
+                    <option value="{{ s }}" {% if filters.section == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterLevel">Рівень</label>
+                <select id="filterLevel" name="level" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">Усі рівні</option>
+                    <option value="INFO" {% if filters.level == 'INFO' %}selected{% endif %}>INFO</option>
+                    <option value="WARNING" {% if filters.level == 'WARNING' %}selected{% endif %}>WARNING</option>
+                    <option value="ERROR" {% if filters.level == 'ERROR' %}selected{% endif %}>ERROR</option>
+                    <option value="DEBUG" {% if filters.level == 'DEBUG' %}selected{% endif %}>DEBUG</option>
+                </select>
+            </div>
+
+            <div class="col-6 col-md-3 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterDateFrom">Дата з</label>
+                <input type="date" id="filterDateFrom" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
+            </div>
+
+            <div class="col-6 col-md-3 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterDateTo">Дата по</label>
+                <input type="date" id="filterDateTo" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+            </div>
+
+            <div class="col-6 col-md-2 col-xl-2">
+                <label class="form-label small fw-semibold mb-1" for="filterPerPage">На сторінці</label>
+                <select id="filterPerPage" name="per_page" class="form-select form-select-sm" onchange="this.form.submit()">
+                    {% for n in (50, 100, 200) %}
+                    <option value="{{ n }}" {% if per_page == n %}selected{% endif %}>{{ n }} записів</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-12 col-md-6 col-xl-4 d-flex flex-wrap align-items-center gap-3 py-1">
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="filterOnlyChanges" name="only_changes" value="1"
+                           {% if filters.only_changes %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label small" for="filterOnlyChanges">Лише зі змінами «Було → Стало»</label>
+                </div>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" id="filterHideViews" name="hide_views" value="1"
+                           {% if filters.hide_views %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label small" for="filterHideViews">Приховати перегляди</label>
+                </div>
+            </div>
+
+            <div class="col-12 col-md-4 col-xl-2 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                    <i class="bi bi-funnel me-1"></i>Застосувати
+                </button>
+                {% if has_active_filters %}
+                <a href="{{ url_for('admin.view_logs', month=selected_month) }}" class="btn btn-sm btn-outline-secondary" title="Скинути фільтри">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    {% if logs %}
+
+    {# ── Десктопна таблиця ── #}
+    <div class="logs-panel d-none d-lg-block">
+        <div class="table-responsive">
+            <table class="table logs-table table-hover align-top">
+                <thead>
+                    <tr>
+                        <th style="width: 118px;">Коли</th>
+                        <th style="width: 205px;">Хто і звідки</th>
+                        <th style="min-width: 280px;">Де і що зробив</th>
+                        <th style="min-width: 330px;">Що на що замінив / Деталі</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in logs %}
+                    <tr class="{% if entry.level == 'ERROR' %}is-error-row{% elif entry.level == 'WARNING' %}is-warn-row{% endif %}">
+                        <td class="logs-num text-nowrap">
+                            <div class="fw-semibold small">{{ entry.date_ua or entry.date }}</div>
+                            <div class="text-muted font-monospace" style="font-size: .76rem;">{{ entry.time }}</div>
+                            <div class="mt-1 d-flex flex-wrap gap-1">
+                                {% if entry.level == 'ERROR' %}
+                                    <span class="logs-badge logs-badge--miss">ERROR</span>
+                                {% elif entry.level == 'WARNING' %}
+                                    <span class="logs-badge logs-badge--warn">WARNING</span>
+                                {% elif entry.level == 'DEBUG' %}
+                                    <span class="logs-badge logs-badge--muted">DEBUG</span>
+                                {% endif %}
+                                {% if entry.source == 'file' %}
+                                    <span class="logs-badge logs-badge--muted" title="Запис із текстового .log файлу">.log</span>
+                                {% endif %}
+                            </div>
+                        </td>
+
+                        <td>
+                            <div class="logs-actor-name">
+                                <i class="bi bi-person-circle text-muted"></i>
+                                <span>{{ entry.username or 'Система' }}</span>
+                            </div>
+                            {% if entry.user_role_label %}
+                            <div class="mt-1">
+                                <span class="logs-badge {% if entry.user_role == 'admin' %}logs-badge--warn{% else %}logs-badge--muted{% endif %}">
+                                    {{ entry.user_role_label }}
+                                </span>
+                            </div>
+                            {% endif %}
+                            {% if entry.ip_address or entry.user_agent %}
+                            <div class="logs-actor-meta">
+                                {% if entry.ip_address %}
+                                <div><i class="bi bi-geo-alt me-1"></i><span class="font-monospace">{{ entry.ip_address }}</span></div>
+                                {% endif %}
+                                {% if entry.user_agent %}
+                                <div><i class="bi bi-laptop me-1"></i>{{ entry.user_agent }}</div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            <div class="d-flex flex-wrap align-items-center gap-1 mb-1">
+                                <span class="logs-badge logs-badge--{{ entry.category_tone }}">{{ entry.category_label }}</span>
+                                <span class="logs-chip">{{ entry.section }}</span>
+                                {% if entry.mode %}
+                                <span class="logs-badge logs-badge--info">{{ entry.mode }}</span>
+                                {% endif %}
+                            </div>
+
+                            <div class="logs-action-title">{{ entry.action }}</div>
+
+                            {% if entry.entity_name or entry.entity_id or entry.entity_label %}
+                            <div class="mt-1 d-flex flex-wrap align-items-center gap-1">
+                                {% if entry.entity_url %}
+                                <a href="{{ entry.entity_url }}" class="logs-chip logs-chip--link">
+                                    <i class="bi bi-box-arrow-up-right"></i>
+                                    <span>
+                                        {% if entry.entity_label %}{{ entry.entity_label }}: {% endif %}
+                                        {{ entry.entity_name or ('#' ~ entry.entity_id) }}
+                                    </span>
+                                </a>
+                                {% else %}
+                                <span class="logs-chip">
+                                    {% if entry.entity_label %}{{ entry.entity_label }}{% endif %}
+                                    {% if entry.entity_name %}: {{ entry.entity_name }}{% endif %}
+                                    {% if entry.entity_id %} (#{{ entry.entity_id }}){% endif %}
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if entry.group_names %}
+                            <div class="small text-muted mt-1">
+                                <i class="bi bi-people me-1"></i>{{ entry.group_names }}
+                            </div>
+                            {% endif %}
+
+                            {% if entry.route_path %}
+                            <div class="logs-route mt-1">
+                                {% if entry.http_method %}<span class="fw-semibold">{{ entry.http_method }}</span> {% endif %}{{ entry.route_path }}
+                            </div>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if entry.changes %}
+                            <div class="logs-diff-list">
+                                {% for ch in entry.changes[:4] %}
+                                <div class="logs-diff-row">
+                                    <span class="logs-diff-field">{{ ch.label }}:</span>
+                                    <span class="logs-diff-val logs-diff-val--old">{{ ch.old }}</span>
+                                    <i class="bi bi-arrow-right text-muted small"></i>
+                                    <span class="logs-diff-val logs-diff-val--new">{{ ch.new }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% if entry.changes|length > 4 %}
+                            <details class="logs-more-toggle">
+                                <summary>Показати ще {{ entry.changes|length - 4 }} змін</summary>
+                                <div class="logs-diff-list mt-2">
+                                    {% for ch in entry.changes[4:] %}
+                                    <div class="logs-diff-row">
+                                        <span class="logs-diff-field">{{ ch.label }}:</span>
+                                        <span class="logs-diff-val logs-diff-val--old">{{ ch.old }}</span>
+                                        <i class="bi bi-arrow-right text-muted small"></i>
+                                        <span class="logs-diff-val logs-diff-val--new">{{ ch.new }}</span>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                            {% endif %}
+                            {% endif %}
+
+                            {% if entry.meta_items %}
+                            <div class="logs-meta-list {% if entry.changes %}mt-2 pt-1 border-top{% endif %}" style="border-color: var(--line) !important;">
+                                {% for mi in entry.meta_items %}
+                                <span class="logs-meta-item">{{ mi.label }}: <strong>{{ mi.value }}</strong></span>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+
+                            {% if entry.details_text and (not entry.changes or entry.source == 'db') %}
+                            <div class="small text-muted {% if entry.changes or entry.meta_items %}mt-1{% endif %}" style="overflow-wrap:anywhere;">
+                                {{ entry.details_text }}
+                            </div>
+                            {% endif %}
+
+                            {% if not entry.changes and not entry.meta_items and not entry.details_text %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+
+                            {% if entry.raw %}
+                            <details class="logs-raw-toggle">
+                                <summary>Технічний рядок</summary>
+                                <div class="logs-raw-code">{{ entry.raw }}</div>
+                            </details>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="logs-panel-foot d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span class="small text-muted logs-num">
+                Показано <strong>{{ start_num }}–{{ end_num }}</strong> з <strong>{{ total_filtered }}</strong> записів
+                (усього за період: {{ total_all }})
+            </span>
+
+            {% if total_pages > 1 %}
+            <nav aria-label="Сторінки журналу">
+                <ul class="pagination pagination-sm mb-0">
+                    <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.view_logs',
+                            month=selected_month, q=filters.q or None, user=filters.user or None,
+                            category=filters.category or None, section=filters.section or None,
+                            level=filters.level or None, date_from=filters.date_from or None,
+                            date_to=filters.date_to or None,
+                            only_changes='1' if filters.only_changes else None,
+                            hide_views='1' if filters.hide_views else None,
+                            per_page=per_page if per_page != 50 else None,
+                            page=page - 1) }}">&laquo;</a>
+                    </li>
+                    {% for p in range(1, total_pages + 1) %}
+                        {% if p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+                        <li class="page-item {% if p == page %}active{% endif %}">
+                            <a class="page-link" href="{{ url_for('admin.view_logs',
+                                month=selected_month, q=filters.q or None, user=filters.user or None,
+                                category=filters.category or None, section=filters.section or None,
+                                level=filters.level or None, date_from=filters.date_from or None,
+                                date_to=filters.date_to or None,
+                                only_changes='1' if filters.only_changes else None,
+                                hide_views='1' if filters.hide_views else None,
+                                per_page=per_page if per_page != 50 else None,
+                                page=p) }}">{{ p }}</a>
+                        </li>
+                        {% elif p == page - 3 or p == page + 3 %}
+                        <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                        <a class="page-link" href="{{ url_for('admin.view_logs',
+                            month=selected_month, q=filters.q or None, user=filters.user or None,
+                            category=filters.category or None, section=filters.section or None,
+                            level=filters.level or None, date_from=filters.date_from or None,
+                            date_to=filters.date_to or None,
+                            only_changes='1' if filters.only_changes else None,
+                            hide_views='1' if filters.hide_views else None,
+                            per_page=per_page if per_page != 50 else None,
+                            page=page + 1) }}">&raquo;</a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Мобільні картки ── #}
+    <div class="d-lg-none d-flex flex-column gap-2">
+        {% for entry in logs %}
+        <div class="logs-mobile-card {% if entry.level == 'ERROR' %}is-error-row{% elif entry.level == 'WARNING' %}is-warn-row{% endif %}">
+            <div class="logs-mobile-card__head">
+                <div class="d-flex flex-wrap gap-1 align-items-center">
+                    <span class="logs-badge logs-badge--{{ entry.category_tone }}">{{ entry.category_label }}</span>
+                    <span class="logs-chip">{{ entry.section }}</span>
+                    {% if entry.level in ('ERROR', 'WARNING') %}
+                    <span class="logs-badge {% if entry.level == 'ERROR' %}logs-badge--miss{% else %}logs-badge--warn{% endif %}">{{ entry.level }}</span>
+                    {% endif %}
+                </div>
+                <div class="text-end logs-num small text-nowrap">
+                    <div class="fw-semibold">{{ entry.date_ua or entry.date }}</div>
+                    <div class="text-muted font-monospace" style="font-size:.74rem;">{{ entry.time }}</div>
+                </div>
+            </div>
+
+            <div class="logs-action-title mb-2">{{ entry.action }}</div>
+
+            {% if entry.entity_name or entry.entity_id or entry.entity_label %}
+            <div class="mb-2">
+                {% if entry.entity_url %}
+                <a href="{{ entry.entity_url }}" class="logs-chip logs-chip--link">
+                    <i class="bi bi-box-arrow-up-right"></i>
+                    <span>{% if entry.entity_label %}{{ entry.entity_label }}: {% endif %}{{ entry.entity_name or ('#' ~ entry.entity_id) }}</span>
+                </a>
+                {% else %}
+                <span class="logs-chip">
+                    {% if entry.entity_label %}{{ entry.entity_label }}{% endif %}
+                    {% if entry.entity_name %}: {{ entry.entity_name }}{% endif %}
+                    {% if entry.entity_id %} (#{{ entry.entity_id }}){% endif %}
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if entry.changes %}
+            <div class="logs-diff-list mb-2">
+                {% for ch in entry.changes[:4] %}
+                <div class="logs-diff-row">
+                    <span class="logs-diff-field">{{ ch.label }}:</span>
+                    <span class="logs-diff-val logs-diff-val--old">{{ ch.old }}</span>
+                    <i class="bi bi-arrow-right text-muted small"></i>
+                    <span class="logs-diff-val logs-diff-val--new">{{ ch.new }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% if entry.changes|length > 4 %}
+            <details class="logs-more-toggle mb-2">
+                <summary>Показати ще {{ entry.changes|length - 4 }} змін</summary>
+                <div class="logs-diff-list mt-2">
+                    {% for ch in entry.changes[4:] %}
+                    <div class="logs-diff-row">
+                        <span class="logs-diff-field">{{ ch.label }}:</span>
+                        <span class="logs-diff-val logs-diff-val--old">{{ ch.old }}</span>
+                        <i class="bi bi-arrow-right text-muted small"></i>
+                        <span class="logs-diff-val logs-diff-val--new">{{ ch.new }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </details>
+            {% endif %}
+            {% endif %}
+
+            {% if entry.meta_items %}
+            <div class="logs-meta-list mb-1">
+                {% for mi in entry.meta_items %}
+                <span class="logs-meta-item">{{ mi.label }}: <strong>{{ mi.value }}</strong></span>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if entry.details_text and (not entry.changes or entry.source == 'db') %}
+            <div class="small text-muted mb-1" style="overflow-wrap:anywhere;">{{ entry.details_text }}</div>
+            {% endif %}
+
+            <div class="logs-mobile-card__foot d-flex justify-content-between align-items-center flex-wrap gap-2 small text-muted">
+                <div>
+                    <strong style="color: var(--ink-text);">{{ entry.username or 'Система' }}</strong>
+                    {% if entry.user_role_label %}<span> · {{ entry.user_role_label }}</span>{% endif %}
+                    {% if entry.ip_address %}<span class="font-monospace"> · {{ entry.ip_address }}</span>{% endif %}
+                </div>
+                {% if entry.route_path %}
+                <span class="logs-route">{{ entry.route_path }}</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if total_pages > 1 %}
+        <div class="d-flex justify-content-between align-items-center mt-2">
+            <span class="small text-muted logs-num">{{ start_num }}–{{ end_num }} з {{ total_filtered }}</span>
+            <ul class="pagination pagination-sm mb-0">
+                <li class="page-item {% if page <= 1 %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.view_logs',
+                        month=selected_month, q=filters.q or None, user=filters.user or None,
+                        category=filters.category or None, section=filters.section or None,
+                        level=filters.level or None, date_from=filters.date_from or None,
+                        date_to=filters.date_to or None,
+                        only_changes='1' if filters.only_changes else None,
+                        hide_views='1' if filters.hide_views else None,
+                        per_page=per_page if per_page != 50 else None,
+                        page=page - 1) }}">Назад</a>
+                </li>
+                <li class="page-item disabled"><span class="page-link">{{ page }} / {{ total_pages }}</span></li>
+                <li class="page-item {% if page >= total_pages %}disabled{% endif %}">
+                    <a class="page-link" href="{{ url_for('admin.view_logs',
+                        month=selected_month, q=filters.q or None, user=filters.user or None,
+                        category=filters.category or None, section=filters.section or None,
+                        level=filters.level or None, date_from=filters.date_from or None,
+                        date_to=filters.date_to or None,
+                        only_changes='1' if filters.only_changes else None,
+                        hide_views='1' if filters.hide_views else None,
+                        per_page=per_page if per_page != 50 else None,
+                        page=page + 1) }}">Далі</a>
+                </li>
+            </ul>
+        </div>
+        {% endif %}
+    </div>
+
+    {% else %}
+        {{ ui.empty_state('bi-journal-x', 'Записів за обраними параметрами не знайдено') }}
+    {% endif %}
+
+</div>
 {% endblock %}

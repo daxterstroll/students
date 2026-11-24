@@ -245,6 +245,7 @@ def edit_activities_grades(student_id):
     # ── Збереження ────────────────────────────────────────────
     if request.method == 'POST':
         try:
+            activity_changes = []
             for entity_type, entities in [
                 ('practice', practices),
                 ('coursework', courseworks),
@@ -256,6 +257,9 @@ def edit_activities_grades(student_id):
                     grade_value = request.form.get(grade_key)
                     student_name = request.form.get(name_key) if entity_type == 'attestation' else ''
                     key = (entity['id'], entity_type)
+                    old_entry = grade_map.get(key)
+                    old_grade = old_entry['grade'] if old_entry else None
+                    old_topic = (old_entry.get('name') or '') if old_entry else ''
 
                     if grade_value:
                         try:
@@ -274,11 +278,32 @@ def edit_activities_grades(student_id):
                                     INSERT INTO activity_grades (student_id, entity_id, entity_type, grade, name)
                                     VALUES (?, ?, ?, ?, ?)
                                 """, (student_id, entity['id'], entity_type, grade_value, student_name))
+                            if old_grade != grade_value:
+                                activity_changes.append({
+                                    'field': f'{entity_type}_{entity["id"]}',
+                                    'label': f"{entity['name']}",
+                                    'old': '—' if old_grade is None else str(old_grade),
+                                    'new': str(grade_value),
+                                })
+                            if entity_type == 'attestation' and (old_topic or '') != (student_name or ''):
+                                activity_changes.append({
+                                    'field': f'{entity_type}_topic_{entity["id"]}',
+                                    'label': f"{entity['name']} (тема)",
+                                    'old': old_topic or '—',
+                                    'new': student_name or '—',
+                                })
                         except ValueError:
                             conn.execute("""
                                 DELETE FROM activity_grades
                                 WHERE student_id = ? AND entity_id = ? AND entity_type = ?
                             """, (student_id, entity['id'], entity_type))
+                            if old_grade is not None:
+                                activity_changes.append({
+                                    'field': f'{entity_type}_{entity["id"]}',
+                                    'label': f"{entity['name']}",
+                                    'old': str(old_grade),
+                                    'new': '—',
+                                })
                             flash(f"Некоректна оцінка для {entity['name']}: має бути числом", "error")
                     else:
                         if key in grade_map:
@@ -286,6 +311,13 @@ def edit_activities_grades(student_id):
                                 DELETE FROM activity_grades
                                 WHERE id = ? AND student_id = ? AND entity_id = ? AND entity_type = ?
                             """, (grade_map[key]['id'], student_id, entity['id'], entity_type))
+                            if old_grade is not None:
+                                activity_changes.append({
+                                    'field': f'{entity_type}_{entity["id"]}',
+                                    'label': f"{entity['name']}",
+                                    'old': str(old_grade),
+                                    'new': '—',
+                                })
                         else:
                             conn.execute("""
                                 DELETE FROM activity_grades
@@ -294,12 +326,20 @@ def edit_activities_grades(student_id):
 
             conn.commit()
             flash("Оцінки успішно збережено", "success")
+            full_fio = f"{student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA'] or ''}".strip()
             log_action(
                 current_username(),
-                f"змінив активності: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+                f"змінив активності: {full_fio} (ID {student_id})",
                 group_ids=[gid],
+                category='update',
+                section='Оцінки та план',
+                entity_type='student',
+                entity_id=student_id,
+                entity_name=full_fio,
+                changes=activity_changes,
                 details=f"практики: {len(practices)}, курсові: {len(courseworks)}, "
                         f"атестації: {len(attestations)}, група: {selected_group['name']}",
+                meta={'Група': selected_group['name'], 'Змінено позицій': len(activity_changes)},
             )
             conn.close()
             # Повертаємось на ту ж групу (щоб можна було продовжити),
@@ -409,8 +449,12 @@ def edit_grades(student_id):
 
     if request.method == 'POST':
         filled = 0
+        grade_changes = []
         for subject in subjects:
             grade_value = request.form.get(f'grade_{subject["id"]}')
+            old_grade = grade_map.get(subject["id"])
+            old_str = '' if old_grade is None else str(old_grade).strip()
+            new_str = '' if grade_value is None else str(grade_value).strip()
             if grade_value:
                 filled += 1
                 if subject["id"] in grade_map:
@@ -423,14 +467,29 @@ def edit_grades(student_id):
                         "INSERT INTO grades (student_id, subject_id, grade) VALUES (?, ?, ?)",
                         (student_id, subject["id"], grade_value),
                     )
+                if old_str != new_str:
+                    grade_changes.append({
+                        'field': f'subject_{subject["id"]}',
+                        'label': subject.get('name') or f"Предмет #{subject['id']}",
+                        'old': old_str or '—',
+                        'new': new_str,
+                    })
         conn.commit()
         conn.close()
 
+        full_fio = f"{student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA'] or ''}".strip()
         log_action(
             current_username(),
-            f"змінив оцінки з дисциплін: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+            f"змінив оцінки з дисциплін: {full_fio} (ID {student_id})",
             group_ids=[gid],
-            details=f"заповнено {filled} з {len(subjects)} предметів, група: {selected_group['name']}",
+            category='update',
+            section='Оцінки та план',
+            entity_type='student',
+            entity_id=student_id,
+            entity_name=full_fio,
+            changes=grade_changes,
+            details=f"заповнено {filled} з {len(subjects)} предметів, змінено: {len(grade_changes)}, група: {selected_group['name']}",
+            meta={'Група': selected_group['name'], 'Заповнено': f"{filled} / {len(subjects)}"},
         )
         flash("Оцінки збережено", "success")
         if len(student_groups) > 1:

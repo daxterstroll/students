@@ -1145,10 +1145,38 @@ def quick_edit(student_id):
         return jsonify({'ok': False, 'error': 'Помилка збереження військових даних'}), 500
 
     conn.close()
+    _quick_labels = {
+        'category': 'Категорія (звання)',
+        'rank': 'Військове звання',
+        'vos_code': 'ВОС',
+        'tck_name': 'ТЦК та СП',
+        'registration_type': 'Тип обліку',
+        'note_18': 'Примітка (постанова)',
+        'is_liable': 'Військовозобовʼязаний',
+        'deferment_until': 'Відстрочка до',
+        'conscription_status': 'Статус обліку',
+        'data_verified_on_time': 'Дані звірені вчасно',
+    }
+    quick_changes = [
+        {
+            'field': fn,
+            'label': _quick_labels.get(fn, fn),
+            'old': ov or '—',
+            'new': nv or '—',
+        }
+        for fn, ov, nv in diff_rows
+    ]
+    full_fio = f"{student['last_name_UA']} {student['first_name_UA']}".strip()
     log_action(
         current_username(),
-        f"швидке редагування військових даних: "
-        f"{student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+        f"швидке редагування військових даних: {full_fio} (ID {student_id})",
+        group_ids=[student['group_id']] if 'group_id' in student.keys() and student['group_id'] else None,
+        category='update',
+        section='Військовий облік',
+        entity_type='student',
+        entity_id=student_id,
+        entity_name=full_fio,
+        changes=quick_changes,
         details=f"поля: {', '.join(updates.keys())}",
     )
     return jsonify({'ok': True})
@@ -2155,6 +2183,7 @@ def tck_offices():
                 flash("Вкажіть назву ТЦК", "error")
             else:
                 try:
+                    prev_row = conn.execute("SELECT name_ua, address FROM tck_offices WHERE id = ?", (tck_id,)).fetchone()
                     conn.execute(
                         "UPDATE tck_offices SET name_ua = ?, address = ? WHERE id = ?",
                         (new_name, new_address, tck_id),
@@ -2167,14 +2196,28 @@ def tck_offices():
                         )
                         cascaded = cur.rowcount
                     conn.commit()
+                    tck_changes = []
+                    if prev_row:
+                        if (prev_row['name_ua'] or '') != new_name:
+                            tck_changes.append({'field': 'name_ua', 'label': 'Назва ТЦК', 'old': prev_row['name_ua'] or '—', 'new': new_name})
+                        if (prev_row['address'] or '') != (new_address or ''):
+                            tck_changes.append({'field': 'address', 'label': 'Адреса ТЦК', 'old': prev_row['address'] or '—', 'new': new_address or '—'})
                     details = (
                         f"перейменовано з «{old_name}»" if old_name != new_name else "оновлено"
                     )
                     if cascaded:
                         details += f", оновлено у {cascaded} студентів"
-                    log_action(current_username(),
-                               f"редагував ТЦК (ID {tck_id}): {new_name}",
-                               details=details)
+                    log_action(
+                        current_username(),
+                        f"редагував ТЦК (ID {tck_id}): {new_name}",
+                        category='update',
+                        section='Військовий облік',
+                        entity_type='tck',
+                        entity_id=tck_id,
+                        entity_name=new_name,
+                        changes=tck_changes,
+                        details=details,
+                    )
                     flash(
                         f"ТЦК «{new_name}» оновлено" +
                         (f" (у {cascaded} студентів)" if cascaded else ""),
@@ -2226,8 +2269,21 @@ def tck_offices():
                     (new_state, tck_id),
                 )
                 conn.commit()
-                log_action(current_username(),
-                           f"{'увімкнув' if new_state else 'вимкнув'} ТЦК: {row['name_ua']}")
+                log_action(
+                    current_username(),
+                    f"{'увімкнув' if new_state else 'вимкнув'} ТЦК: {row['name_ua']}",
+                    category='update',
+                    section='Військовий облік',
+                    entity_type='tck',
+                    entity_id=tck_id,
+                    entity_name=row['name_ua'],
+                    changes=[{
+                        'field': 'is_active',
+                        'label': 'Статус ТЦК',
+                        'old': 'Активний' if row['is_active'] else 'Неактивний',
+                        'new': 'Активний' if new_state else 'Неактивний',
+                    }],
+                )
                 flash(
                     f"ТЦК «{row['name_ua']}» тепер "
                     f"{'активний' if new_state else 'неактивний'}",

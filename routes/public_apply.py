@@ -441,8 +441,9 @@ def apply():
     # Усі поля збираємо в ОДИН словник, а колонки й placeholder'и
     # генеруються з нього автоматично - кількість ? завжди дорівнює
     # кількості колонок.
+    client_addr = client_ip()
     pending_fields = {
-        'submitted_ip':                      request.remote_addr,
+        'submitted_ip':                      client_addr,
 
         'last_name_UA':                      last_name_ua,
         'first_name_UA':                     first_name_ua,
@@ -531,13 +532,13 @@ def apply():
           AND created_at >= datetime('now', 'localtime', ?)
         ORDER BY id DESC LIMIT 1
         """,
-        (request.remote_addr, phone or '', f'-{DEDUP_WINDOW_SECONDS} seconds'),
+        (client_addr, phone or '', f'-{DEDUP_WINDOW_SECONDS} seconds'),
     ).fetchone()
 
     if _recent:
         conn.close()
         logger.info(
-            f"[apply] duplicate suppressed: ip={request.remote_addr}, "
+            f"[apply] duplicate suppressed: ip={client_addr}, "
             f"phone={phone!r}, existing_id={_recent['id']}"
         )
         # тихо показуємо "дякуємо" — це і є те, що студент хотів побачити

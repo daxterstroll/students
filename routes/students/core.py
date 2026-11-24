@@ -16,7 +16,7 @@ import sqlite3
 from routes.utils import (
     generate_english_name, is_student_on_reduced_program, save_multiple_attachments,
     program_track_condition, apply_track_overrides, get_attachments, get_templates_with_metadata,
-    normalize_phone_pair,
+    normalize_phone_pair, build_field_changes,
 )
 from routes.gen_docx import gen_doc
 from routes import office_editor
@@ -1843,6 +1843,12 @@ def manage_study_periods(student_id):
                 log_action(
                     current_username(),
                     f"додав період навчання студенту ID {student_id}{grp_label}: {filiya}",
+                    group_ids=[group_id] if group_id else None,
+                    category='create',
+                    section='Періоди навчання',
+                    entity_type='student',
+                    entity_id=student_id,
+                    meta={'Філія': filiya, 'Період': f"{start_date or '—'} — {end_date or '—'}"},
                 )
                 flash('Період навчання додано', 'success')
 
@@ -1860,6 +1866,11 @@ def manage_study_periods(student_id):
             if not filiya:
                 flash('Потрібно вказати філію', 'danger')
             else:
+                old_period = cursor.execute(
+                    "SELECT group_id, filiya, filiya_en, group_name, start_date, end_date, period_order, note "
+                    "FROM student_study_periods WHERE id = ? AND student_id = ?",
+                    (period_id, student_id),
+                ).fetchone()
                 cursor.execute("""
                     UPDATE student_study_periods SET
                         group_id = ?, filiya = ?, filiya_en = ?, group_name = ?,
@@ -1869,14 +1880,47 @@ def manage_study_periods(student_id):
                       start_date, end_date, period_order, note,
                       period_id, student_id))
                 db.commit()
+                period_changes = build_field_changes(
+                    old_period,
+                    {
+                        'group_id': group_id,
+                        'filiya': filiya,
+                        'filiya_en': filiya_en,
+                        'group_name': group_name,
+                        'start_date': start_date,
+                        'end_date': end_date,
+                        'period_order': period_order,
+                        'note': note,
+                    },
+                    {
+                        'filiya': 'Філія (укр.)',
+                        'filiya_en': 'Філія (англ.)',
+                        'group_name': 'Назва групи в документі',
+                        'start_date': 'Дата початку',
+                        'end_date': 'Дата завершення',
+                        'period_order': 'Порядковий номер',
+                        'note': 'Примітка',
+                        'group_id': 'ID привʼязаної групи',
+                    },
+                )
                 log_action(
                     current_username(),
                     f"оновив період навчання ID {period_id} студенту ID {student_id}",
+                    group_ids=[group_id] if group_id else None,
+                    category='update',
+                    section='Періоди навчання',
+                    entity_type='student',
+                    entity_id=student_id,
+                    changes=period_changes,
                 )
                 flash('Період навчання оновлено', 'success')
 
         elif action == 'delete':
             period_id = request.form.get('period_id')
+            old_period = cursor.execute(
+                "SELECT filiya, start_date, end_date, group_id FROM student_study_periods WHERE id = ? AND student_id = ?",
+                (period_id, student_id),
+            ).fetchone()
             cursor.execute("""
                 DELETE FROM student_study_periods WHERE id = ? AND student_id = ?
             """, (period_id, student_id))
@@ -1884,6 +1928,12 @@ def manage_study_periods(student_id):
             log_action(
                 current_username(),
                 f"видалив період навчання ID {period_id} студенту ID {student_id}",
+                group_ids=[old_period['group_id']] if old_period and old_period['group_id'] else None,
+                category='delete',
+                section='Періоди навчання',
+                entity_type='student',
+                entity_id=student_id,
+                meta={'Філія': old_period['filiya'], 'Період': f"{old_period['start_date'] or '—'} — {old_period['end_date'] or '—'}"} if old_period else None,
             )
             flash('Період навчання видалено', 'success')
 
@@ -2434,15 +2484,27 @@ def edit_student(student_id):
             last_name_ua = request.form['last_name_UA']
             first_name_ua = request.form['first_name_UA']
             last_name_eng, first_name_eng = generate_english_name(last_name_ua, first_name_ua)
+            eng_changes = build_field_changes(
+                student,
+                {'last_name_ENG': last_name_eng, 'first_name_ENG': first_name_eng},
+                {'last_name_ENG': 'Прізвище (англ.)', 'first_name_ENG': "Ім'я (англ.)"},
+            )
             conn.execute("""
                 UPDATE students SET last_name_ENG = ?, first_name_ENG = ? WHERE id = ?
             """, (last_name_eng, first_name_eng, student_id))
             conn.commit()
+            full_fio = f"{last_name_ua} {first_name_ua}".strip()
             log_action(
                 current_username(),
-                f"оновив англійські імена: {last_name_ua} {first_name_ua} (ID {student_id})",
+                f"оновив англійські імена: {full_fio} (ID {student_id})",
                 group_ids=[group_int],
-                details=f"→ {last_name_eng} {first_name_eng}"
+                category='update',
+                section='Студенти',
+                entity_type='student',
+                entity_id=student_id,
+                entity_name=full_fio,
+                changes=eng_changes,
+                details=f"→ {last_name_eng} {first_name_eng}",
             )
             flash('Англійські імена оновлено.', 'success')
             conn.close()
@@ -2475,6 +2537,22 @@ def edit_student(student_id):
             else:
                 gender = detect_gender_from_middle_name(middle_name_form)
 
+            new_values = {
+                'last_name_UA': request.form['last_name_UA'],
+                'first_name_UA': request.form['first_name_UA'],
+                'middle_name_UA': request.form.get('middle_name_UA'),
+                'last_name_ENG': request.form.get('last_name_ENG'),
+                'first_name_ENG': request.form.get('first_name_ENG'),
+                'birth_date': birth_date,
+                'group_id': group_int,
+                'tax_id': request.form.get('tax_id') or None,
+                'phone': phone,
+                'phone_backup': phone_backup,
+                'email': email,
+                'address_of_residence': address_of_residence,
+                'gender': gender,
+            }
+
             conn.execute("""
                 UPDATE students SET
                     last_name_UA=?, first_name_UA=?, middle_name_UA=?,
@@ -2483,18 +2561,16 @@ def edit_student(student_id):
                     phone=?, phone_backup=?, email=?, address_of_residence=?, gender=?
                 WHERE id=?
             """, (
-                request.form['last_name_UA'], request.form['first_name_UA'],
-                request.form.get('middle_name_UA'), request.form.get('last_name_ENG'),
-                request.form.get('first_name_ENG'), birth_date,
-                group_int, request.form.get('tax_id') or None,
-                phone, phone_backup, email, address_of_residence, gender, student_id
+                new_values['last_name_UA'], new_values['first_name_UA'],
+                new_values['middle_name_UA'], new_values['last_name_ENG'],
+                new_values['first_name_ENG'], new_values['birth_date'],
+                new_values['group_id'], new_values['tax_id'],
+                new_values['phone'], new_values['phone_backup'],
+                new_values['email'], new_values['address_of_residence'],
+                new_values['gender'], student_id
             ))
             
             # ── Синхронізація student_enrollments при зміні основної групи ──
-            # students.group_id = primary enrollment. Якщо групу змінили
-            # через форму редагування, enrollment має оновитись теж,
-            # інакше утворюється розсинхрон: students.group_id=B, а в
-            # student_enrollments — лише A з is_primary=1.
             if old_group != group_int:
                 try:
                     from routes.enrollments_service import (
@@ -2526,12 +2602,60 @@ def edit_student(student_id):
                     ))
             conn.commit()
 
-            details = f"стара група: {old_group} → нова група: {group_int}" if old_group != group_int else f"група: {group_int}"
+            group_name_by_id = {}
+            for gid_lookup in {old_group, group_int}:
+                if gid_lookup is not None:
+                    grow = conn.execute("SELECT name, start_year, study_form FROM groups WHERE id = ?", (gid_lookup,)).fetchone()
+                    if grow:
+                        group_name_by_id[str(gid_lookup)] = f"{grow['name']} ({grow['start_year']}, {grow['study_form']})"
+
+            def _fmt_group(v):
+                if v is None:
+                    return '—'
+                return group_name_by_id.get(str(v), f"Група #{v}")
+
+            def _fmt_gender(v):
+                if v == 'M':
+                    return 'Чоловіча'
+                if v == 'F':
+                    return 'Жіноча'
+                return v or '—'
+
+            profile_changes = build_field_changes(
+                student,
+                new_values,
+                {
+                    'last_name_UA': 'Прізвище (укр.)',
+                    'first_name_UA': "Ім'я (укр.)",
+                    'middle_name_UA': 'По батькові (укр.)',
+                    'last_name_ENG': 'Прізвище (англ.)',
+                    'first_name_ENG': "Ім'я (англ.)",
+                    'birth_date': 'Дата народження',
+                    'group_id': 'Основна група',
+                    'tax_id': 'РНОКПП (ІПН)',
+                    'phone': 'Телефон',
+                    'phone_backup': 'Резервний телефон',
+                    'email': 'Email',
+                    'address_of_residence': 'Адреса проживання',
+                    'gender': 'Стать',
+                },
+                formatters={'group_id': _fmt_group, 'gender': _fmt_gender},
+            )
+            full_fio = f"{new_values['last_name_UA']} {new_values['first_name_UA']} {new_values['middle_name_UA'] or ''}".strip()
+            details = f"змінено полів: {len(profile_changes)}"
+            if old_group != group_int:
+                details = f"група: {_fmt_group(old_group)} → {_fmt_group(group_int)}; {details}"
             log_action(
                 current_username(),
-                f"редагував студента: {request.form['last_name_UA']} {request.form['first_name_UA']} (ID {student_id})",
+                f"редагував студента: {full_fio} (ID {student_id})",
                 group_ids=[group_int],
-                details=details
+                category='update',
+                section='Студенти',
+                entity_type='student',
+                entity_id=student_id,
+                entity_name=full_fio,
+                changes=profile_changes,
+                details=details,
             )
         conn.close()
         return redirect(url_for('students.student_list'))
@@ -2613,12 +2737,23 @@ def delete_student(student_id):
         conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
         conn.commit()
 
+        del_fio = f"{student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA'] or ''}".strip()
         log_action(
             current_username(),
-            f"ВИДАЛИВ студента: {student['last_name_UA']} {student['first_name_UA']} {student['middle_name_UA']} (ID {student_id})",
+            f"ВИДАЛИВ студента: {del_fio} (ID {student_id})",
             group_ids=[student['group_id']],
+            category='delete',
+            section='Студенти',
+            entity_type='student',
+            entity_id=student_id,
+            entity_name=del_fio,
             details="каскадне видалення: military, military_history, grades, activity_grades, education_documents, passport_documents, "
-                    "frozen_students, expulsion_order_students, diplomas, вкладення, фото"
+                    "frozen_students, expulsion_order_students, diplomas, вкладення, фото",
+            meta={
+                'Документів про освіту': len(doc_ids),
+                'Паспортних документів': len(passport_ids),
+                'Вкладень видалено': len(all_attachments),
+            },
         )
     except Exception as e:
         conn.rollback()
@@ -3153,6 +3288,17 @@ def enrollment_action(student_id, group_id):
                 log_action(
                     current_username(),
                     f"змінив код ЄДЕБО навчання: student={student_id} group={group_id}",
+                    group_ids=[group_id],
+                    category='update',
+                    section='Студенти',
+                    entity_type='student',
+                    entity_id=student_id,
+                    changes=[{
+                        'field': 'edebo_code',
+                        'label': 'Код ЄДЕБО',
+                        'old': enrollment['edebo_code'] or '—',
+                        'new': new_edebo or '—',
+                    }],
                     details=f"{enrollment['edebo_code'] or '—'} → {new_edebo or '—'}",
                 )
                 flash('Код ЄДЕБО оновлено', 'success')
@@ -3165,6 +3311,7 @@ def enrollment_action(student_id, group_id):
             from routes.enrollments_service import update_enrollment_program_credits
             new_credits_raw = (request.form.get('new_program_credits_override') or '').strip()
             new_credits = int(new_credits_raw) if new_credits_raw else None
+            old_credits = enrollment['program_credits_override'] if 'program_credits_override' in enrollment.keys() else None
 
             ok, msg = update_enrollment_program_credits(
                 student_id, group_id, new_credits, conn=conn,
@@ -3174,7 +3321,18 @@ def enrollment_action(student_id, group_id):
                 log_action(
                     current_username(),
                     f"змінив кредити скороченої програми: student={student_id} group={group_id}",
-                    details=f"{'—' if new_credits is None else new_credits}",
+                    group_ids=[group_id],
+                    category='update',
+                    section='Студенти',
+                    entity_type='student',
+                    entity_id=student_id,
+                    changes=[{
+                        'field': 'program_credits_override',
+                        'label': 'Кредити скороченої програми',
+                        'old': '—' if old_credits is None else str(old_credits),
+                        'new': '—' if new_credits is None else str(new_credits),
+                    }],
+                    details=f"{'—' if old_credits is None else old_credits} → {'—' if new_credits is None else new_credits}",
                 )
                 flash('Кредити скороченої програми оновлено', 'success')
             conn.close()
@@ -3436,14 +3594,32 @@ def change_student_name(student_id):
         conn.commit()
         conn.close()
 
-        old_pib = f"{old_snapshot['last_name_UA']} {old_snapshot['first_name_UA']}"
-        new_pib = f"{new_snapshot['last_name_UA']} {new_snapshot['first_name_UA']}"
+        old_pib = f"{old_snapshot['last_name_UA']} {old_snapshot['first_name_UA']} {old_snapshot['middle_name_UA'] or ''}".strip()
+        new_pib = f"{new_snapshot['last_name_UA']} {new_snapshot['first_name_UA']} {new_snapshot['middle_name_UA'] or ''}".strip()
+        pib_changes = build_field_changes(
+            old_snapshot,
+            new_snapshot,
+            {
+                'last_name_UA': 'Прізвище (укр.)',
+                'first_name_UA': "Ім'я (укр.)",
+                'middle_name_UA': 'По батькові (укр.)',
+                'last_name_ENG': 'Прізвище (англ.)',
+                'first_name_ENG': "Ім'я (англ.)",
+            },
+        )
 
         if bypass_order:
             log_action(
                 current_username(),
-                f'КОРЕКЦІЯ (без наказу): змінив ПІБ студента ID {student_id}',
+                f'КОРЕКЦІЯ (без наказу): змінив ПІБ студента {new_pib} (ID {student_id})',
+                category='update',
+                section='Студенти',
+                entity_type='student',
+                entity_id=student_id,
+                entity_name=new_pib,
+                changes=pib_changes,
                 details=f'{old_pib} → {new_pib}; причина: {correction_reason}',
+                meta={'Причина корекції': correction_reason},
             )
             flash(f'ПІБ змінено БЕЗ наказу (корекція). Причина: {correction_reason}. '
                   f'Дію зафіксовано в журналі.', 'success')
@@ -3451,8 +3627,15 @@ def change_student_name(student_id):
 
         log_action(
             current_username(),
-            f'змінив ПІБ студента ID {student_id} (наказ №{order_number} від {order_date}, order_id={order_id})',
+            f'змінив ПІБ студента {new_pib} (ID {student_id}, наказ №{order_number} від {order_date})',
+            category='update',
+            section='Студенти',
+            entity_type='student',
+            entity_id=student_id,
+            entity_name=new_pib,
+            changes=pib_changes,
             details=f'{old_pib} → {new_pib}',
+            meta={'Наказ': f"№{order_number} від {order_date}", 'ID наказу': order_id},
         )
         flash(f'ПІБ змінено. Створено наказ №{order_number}.', 'success')
         return redirect(url_for('admin.order_detail', order_id=order_id))

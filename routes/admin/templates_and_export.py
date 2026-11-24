@@ -224,7 +224,17 @@ def manage_templates():
             log_action(
                 current_username(),
                 f"{'оновив' if is_replace else 'завантажив новий'} шаблон документа: {filename}",
-                details=f"тільки для адміністратора: {'так' if admin_only else 'ні'}"
+                category='update' if is_replace else 'create',
+                section='Шаблони документів',
+                entity_type='template',
+                entity_name=display_name or filename,
+                details=f"тільки для адміністратора: {'так' if admin_only else 'ні'}",
+                meta={
+                    'Файл': filename,
+                    'Назва': display_name,
+                    'Тільки адмін': 'Так' if admin_only else 'Ні',
+                    'Видимий': 'Ні' if hidden else 'Так',
+                },
             )
             flash(f"Шаблон «{filename}» успішно {'оновлено' if is_replace else 'завантажено'}", 'success')
         except Exception as e:
@@ -296,7 +306,17 @@ def toggle_template_visibility(filename):
         conn.commit()
         log_action(
             current_username(),
-            f"{'приховав' if new_hidden else 'зробив видимим'} шаблон документа: {filename}"
+            f"{'приховав' if new_hidden else 'зробив видимим'} шаблон документа: {filename}",
+            category='update',
+            section='Шаблони документів',
+            entity_type='template',
+            entity_name=filename,
+            changes=[{
+                'field': 'hidden',
+                'label': 'Видимість у списках',
+                'old': 'Прихований' if not new_hidden else 'Видимий',
+                'new': 'Прихований' if new_hidden else 'Видимий',
+            }],
         )
         flash(f"Шаблон «{filename}» тепер {'прихований зі' if new_hidden else 'видимий у'} списках вибору", 'success')
     except Exception as e:

@@ -15,6 +15,7 @@ routes/security.py
 from collections import deque
 import hmac
 import io
+import ipaddress
 import os
 import re
 import secrets
@@ -112,9 +113,58 @@ _RATE_LOCK = threading.Lock()
 _RATE_BUCKETS: dict[tuple[str, str], deque[float]] = {}
 _LAST_CLEANUP_AT = 0.0
 
+_DEFAULT_TRUSTED_PROXIES = frozenset({'127.0.0.1', '::1'})
+
+
+def _trusted_proxy_set() -> set[str]:
+    extra = os.environ.get('TRUSTED_PROXY_IPS', '')
+    out = set(_DEFAULT_TRUSTED_PROXIES)
+    for item in extra.split(','):
+        ip = _normalize_ip(item)
+        if ip:
+            out.add(ip)
+    return out
+
+
+def _normalize_ip(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() == 'unknown':
+        return None
+    if s.startswith('[') and ']' in s:
+        s = s[1:s.index(']')]
+    elif s.count(':') == 1 and '.' in s:
+        # IPv4:port
+        s = s.split(':', 1)[0]
+    try:
+        addr = ipaddress.ip_address(s)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
+        return str(addr)
+    except ValueError:
+        return None
+
 
 def client_ip() -> str:
-    return (request.remote_addr or 'unknown').strip()
+    remote = _normalize_ip(request.remote_addr)
+    trusted = _trusted_proxy_set()
+    if not remote or remote in trusted:
+        real_ip = _normalize_ip(request.headers.get('X-Real-IP'))
+        if real_ip and real_ip not in trusted:
+            return real_ip
+        xff_raw = request.headers.get('X-Forwarded-For') or ''
+        if xff_raw:
+            candidates = [_normalize_ip(p) for p in xff_raw.split(',')]
+            candidates = [c for c in candidates if c]
+            for ip in reversed(candidates):
+                if ip not in trusted:
+                    return ip
+            if candidates:
+                return candidates[0]
+        if real_ip:
+            return real_ip
+    return remote or 'unknown'
 
 
 def check_rate_limit(bucket: str, key: str, limit: int, window_seconds: int) -> tuple[bool, int]:

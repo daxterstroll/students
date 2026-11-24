@@ -401,11 +401,19 @@ def military_data(student_id):
             return redirect(url_for('students.military_data', student_id=student_id))
 
         action_name = "редагував" if military else "додав"
+        full_fio = f"{student['last_name_UA']} {student['first_name_UA']}".strip()
         log_action(
             current_username(),
-            f"{action_name} військові дані: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+            f"{action_name} військові дані: {full_fio} (ID {student_id})",
             group_ids=[student['group_id']],
+            category='update' if military else 'create',
+            section='Військовий облік',
+            entity_type='student',
+            entity_id=student_id,
+            entity_name=full_fio,
+            changes=diff,
             details=f"змінених полів: {len(diff)}",
+            meta={'Додано сканів': len(new_scans)} if new_scans else None,
         )
         conn.close()
         flash(f"Збережено. Змінених полів: {len(diff)}", "success")
@@ -724,15 +732,28 @@ def military_apply_pdf(student_id):
     session.pop(photo_key, None)
     session.pop(raw_key, None)
 
+    full_fio = f"{student['last_name_UA']} {student['first_name_UA']}".strip()
+    combined_changes = list(mil_diff) + list(stud_diff)
     log_action(
         current_username(),
-        f"оновив військові дані з PDF: {student['last_name_UA']} {student['first_name_UA']} (ID {student_id})",
+        f"оновив військові дані з PDF: {full_fio} (ID {student_id})",
         group_ids=[student['group_id']],
+        category='import',
+        section='Військовий облік',
+        entity_type='student',
+        entity_id=student_id,
+        entity_name=full_fio,
+        changes=combined_changes,
         details=(
             f"військових: {len(mil_diff)}, "
             f"картки: {len(stud_diff)}, "
             f"фото: {'оновлено' if photo_saved else 'без змін'}"
         ),
+        meta={
+            'Змін військових даних': len(mil_diff),
+            'Змін картки': len(stud_diff),
+            'Фото': 'Оновлено' if photo_saved else 'Без змін',
+        },
     )
     flash(
         f"Дані з PDF застосовано. Військових: {len(mil_diff)}, "
@@ -1173,15 +1194,23 @@ def military_bulk_import_apply(token):
             conn.commit()
             applied += 1
 
+            combined_changes = list(mil_diff) + list(stud_diff)
             log_action(
                 current_username(),
                 f"пакетний імпорт PDF: {r['student_name']} (ID {r['student_id']})",
+                category='import',
+                section='Військовий облік',
+                entity_type='student',
+                entity_id=r['student_id'],
+                entity_name=r['student_name'],
+                changes=combined_changes,
                 details=(
                     f"військових: {len(mil_diff)}, картки: {len(stud_diff)}, "
                     f"фото: {'так' if photo_saved else 'ні'}, "
                     f"PDF-скан: {'так' if pdf_attached else 'ні'}, "
                     f"файл: {r['filename']}"
                 ),
+                meta={'Файл': r['filename'], 'Фото': 'Так' if photo_saved else 'Ні', 'PDF-скан': 'Так' if pdf_attached else 'Ні'},
             )
         except Exception as e:
             conn.rollback()

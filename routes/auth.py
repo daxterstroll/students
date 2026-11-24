@@ -45,7 +45,13 @@ def login():
             log_action(
                 username or "невідомий",
                 "блокування спроб входу (rate limit)",
+                level='WARNING',
+                category='security',
+                action_type='rate_limit',
+                section='Авторизація',
+                ip_address=ip,
                 details=f"логін: '{username}', IP: {ip}, очікування: {wait_sec}с",
+                meta={'Введений логін': username or '—', 'Очікування (сек)': wait_sec},
             )
             flash(
                 f'Забагато невдалих спроб входу. Спробуйте знову через {wait_sec} сек.',
@@ -92,14 +98,32 @@ def login():
                     canonical_username,
                     "ввійшов у систему",
                     group_ids=group_ids,
-                    details=f"роль: {user['role']}, груп: {len(group_ids)}, IP: {ip}"
+                    category='auth',
+                    action_type='login',
+                    section='Авторизація',
+                    entity_type='user',
+                    entity_id=user['id'],
+                    entity_name=canonical_username,
+                    ip_address=ip,
+                    details=f"роль: {user['role']}, груп: {len(group_ids)}, IP: {ip}",
+                    meta={
+                        'Роль': 'Адміністратор' if session['is_admin'] else 'Працівник',
+                        'Доступних груп': len(group_ids),
+                        'Прав': len(session['permissions']),
+                    },
                 )
                 return redirect(url_for('students.student_list'))
             else:
                 log_action(
                     username or "невідомий",
                     "невдала спроба входу",
-                    details=f"логін: '{username}', IP: {ip}"
+                    level='WARNING',
+                    category='security',
+                    action_type='login_failed',
+                    section='Авторизація',
+                    ip_address=ip,
+                    details=f"логін: '{username}', IP: {ip}",
+                    meta={'Введений логін': username or '—', 'Причина': 'Невірний логін або пароль'},
                 )
                 flash('Невірний логін або пароль', 'error')
 
@@ -122,7 +146,14 @@ def logout():
         username,
         "вийшов із системи",
         group_ids=group_ids,
-        details=f"IP: {request.remote_addr}"
+        category='auth',
+        action_type='logout',
+        section='Авторизація',
+        entity_type='user',
+        entity_id=session.get('user_id'),
+        entity_name=username,
+        ip_address=client_ip(),
+        details=f"IP: {client_ip()}"
     )
     session.clear()
     return redirect(url_for('auth.login'))

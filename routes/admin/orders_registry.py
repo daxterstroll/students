@@ -20,7 +20,7 @@ from flask import render_template, request, redirect, url_for, flash, session
 from routes.admin import admin_bp
 from routes.db import get_db
 from routes.helpers import current_username, sort_ukrainian
-from routes.utils import permission_required, log_action, save_multiple_attachments
+from routes.utils import permission_required, log_action, save_multiple_attachments, build_field_changes
 from routes.orders_service import (
     ORDER_TYPE_LABELS,
     ORDER_TYPES,
@@ -425,6 +425,7 @@ def order_edit(order_id):
                 conn.close()
                 return redirect(url_for('admin.order_edit', order_id=order_id))
 
+            old_order = dict(order)
             conn.execute(
                 """
                 UPDATE orders
@@ -434,14 +435,37 @@ def order_edit(order_id):
                 (order_number, order_date, title, notes, order_id),
             )
             scan_files = request.files.getlist('scan_files')
-            if scan_files and any(f and f.filename for f in scan_files):
+            uploaded_scans = [f for f in (scan_files or []) if f and f.filename]
+            if uploaded_scans:
                 save_multiple_attachments(
                     conn, 'order', order_id, scan_files, 'orders', current_username()
                 )
             conn.commit()
+            order_changes = build_field_changes(
+                old_order,
+                {
+                    'order_number': order_number,
+                    'order_date': order_date,
+                    'title': title,
+                    'notes': notes,
+                },
+                {
+                    'order_number': 'Номер наказу',
+                    'order_date': 'Дата наказу',
+                    'title': 'Назва / заголовок',
+                    'notes': 'Примітки',
+                },
+            )
             log_action(
                 current_username(),
                 f'редагував наказ #{order_id} №{order_number} від {order_date}',
+                category='orders',
+                section='Накази',
+                entity_type='order',
+                entity_id=order_id,
+                entity_name=f"Наказ №{order_number} від {order_date}",
+                changes=order_changes,
+                meta={'Додано сканів': len(uploaded_scans)} if uploaded_scans else None,
             )
             flash('Реквізити наказу збережено.', 'success')
             conn.close()
