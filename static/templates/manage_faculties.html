@@ -1,0 +1,174 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Факультети{% endblock %}
+{% block main_class %}py-3{% endblock %}
+{% block content %}
+<div class="container py-4">
+
+    {{ ui.page_header('bi-building', 'Факультети', 'Структурні підрозділи (факультети) університету для спеціальностей, груп та відомостей сесії') }}
+
+    <div class="alert alert-light border small">
+        <strong><i class="bi bi-info-circle me-1"></i>Як це працює:</strong>
+        Типовий факультет закріплюється за кожною спеціальністю у довіднику «Спеціальності» й автоматично підставляється при створенні нової групи.
+        За потреби для конкретної групи факультет можна змінити вручну на сторінці «Групи».
+        При перейменуванні факультету тут його назва автоматично оновиться у всіх прив'язаних групах та подальших відомостях і документах.
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-body">
+            <h6 class="section-title">Додати факультет</h6>
+            <form method="POST" class="row g-2 align-items-end">
+                <input type="hidden" name="action" value="add">
+                <div class="col-md-2">
+                    <label class="form-label small mb-1">Скорочено</label>
+                    <input type="text" name="short_name" class="form-control form-control-sm" placeholder="напр. ФІСТ">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Повна назва (укр.)</label>
+                    <input type="text" name="name_ua" class="form-control form-control-sm" placeholder="Факультет..." required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Повна назва (англ.)</label>
+                    <input type="text" name="name_en" class="form-control form-control-sm" placeholder="Faculty of...">
+                </div>
+                <div class="col-md-1">
+                    <label class="form-label small mb-1">Порядок</label>
+                    <input type="number" name="sort_order" class="form-control form-control-sm" value="100" min="0" max="9999">
+                </div>
+                <div class="col-md-1">
+                    <button type="submit" class="btn btn-primary btn-sm w-100" title="Додати"><i class="bi bi-plus-circle"></i></button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;" class="text-center">Порядок</th>
+                            <th style="width:110px;">Скорочено</th>
+                            <th>Назва (укр.)</th>
+                            <th>Назва (англ.)</th>
+                            <th class="text-center" style="width:170px;">Прив'язано</th>
+                            <th class="text-center" style="width:110px;">Актуальний</th>
+                            <th class="text-end" style="width:130px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for f in faculties %}
+                        <tr class="{% if not f.is_active %}text-muted{% endif %}">
+                            <td class="text-center font-monospace small">{{ f.sort_order }}</td>
+                            <td class="fw-semibold font-monospace">{{ f.short_name or '—' }}</td>
+                            <td>{{ f.name_ua }}</td>
+                            <td class="small text-muted">{{ f.name_en or '—' }}</td>
+                            <td class="text-center small">
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis me-1" title="Спеціальностей з цим факультетом">
+                                    {{ f.specialties_count }} спец.
+                                </span>
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis" title="Активних груп цього факультету">
+                                    {{ f.active_groups_count }} груп
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle_active">
+                                    <input type="hidden" name="id" value="{{ f.id }}">
+                                    <button type="submit" class="btn btn-sm {% if f.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                        {{ 'так' if f.is_active else 'ні' }}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-end">
+                                <button type="button" class="btn btn-sm btn-outline-secondary js-edit-btn"
+                                        data-id="{{ f.id }}"
+                                        data-name-ua="{{ f.name_ua }}"
+                                        data-short-name="{{ f.short_name or '' }}"
+                                        data-name-en="{{ f.name_en or '' }}"
+                                        data-sort-order="{{ f.sort_order }}">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                {% if f.specialties_count == 0 and f.total_groups_count == 0 %}
+                                <form method="POST" class="d-inline" onsubmit="return confirm('Видалити факультет «{{ f.name_ua }}»?');">
+                                    <input type="hidden" name="action" value="delete">
+                                    <input type="hidden" name="id" value="{{ f.id }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                </form>
+                                {% else %}
+                                <span class="text-muted small ms-1" title="Прив'язано спеціальностей ({{ f.specialties_count }}) або груп ({{ f.total_groups_count }}) — видалення заборонено">
+                                    <i class="bi bi-lock"></i> {{ f.specialties_count + f.total_groups_count }}
+                                </span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">Факультети відсутні</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="modal fade" id="editFacultyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form method="POST">
+                <input type="hidden" name="action" value="edit">
+                <input type="hidden" name="id" id="editId">
+                <div class="modal-header">
+                    <h5 class="modal-title">Редагувати факультет</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-7">
+                            <label class="form-label">Скорочена назва</label>
+                            <input type="text" name="short_name" id="editShortName" class="form-control" placeholder="напр. ФІСТ">
+                        </div>
+                        <div class="col-md-5">
+                            <label class="form-label">Порядок</label>
+                            <input type="number" name="sort_order" id="editSortOrder" class="form-control" min="0" max="9999" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Повна назва (укр.)</label>
+                            <input type="text" name="name_ua" id="editNameUa" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Повна назва (англ.)</label>
+                            <input type="text" name="name_en" id="editNameEn" class="form-control">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                    <button type="submit" class="btn btn-primary">Зберегти</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+window.addEventListener('load', function () {
+    const modalEl = document.getElementById('editFacultyModal');
+    const modal = new bootstrap.Modal(modalEl);
+    document.querySelectorAll('.js-edit-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('editId').value = btn.dataset.id;
+            document.getElementById('editNameUa').value = btn.dataset.nameUa;
+            document.getElementById('editShortName').value = btn.dataset.shortName;
+            document.getElementById('editNameEn').value = btn.dataset.nameEn;
+            document.getElementById('editSortOrder').value = btn.dataset.sortOrder || 100;
+            modal.show();
+        });
+    });
+});
+</script>
+{% endblock %}

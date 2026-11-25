@@ -48,6 +48,7 @@ PERMISSION_DEFINITIONS = [
 
     # ─── Освітня програма ───────────────────────────────────────
     ('manage_groups',               'Групи',                                     'education'),
+    ('manage_faculties',            'Факультети',                                'education'),
     ('manage_specialties',          'Спеціальності',                             'education'),
     ('manage_degree_levels',        'Ступені',                                   'education'),
     ('manage_educational_programs', 'Освітні програми',                          'education'),

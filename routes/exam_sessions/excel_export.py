@@ -150,6 +150,29 @@ def _set(ws, row, col, value, font=None, align=None, border=None, keep_style=Tru
     return cell
 
 
+def _resolve_sheet_faculty(sheet):
+    faculty_label = (_get(sheet, 'faculty') or '').strip()
+    sp_lookup = (_get(sheet, 'specialty_code') or _get(sheet, 'specialty') or '').strip()
+    if not faculty_label and sp_lookup:
+        _c_eff = None
+        try:
+            from routes.db import get_db
+            from routes.utils import lookup_specialty_faculty
+            _c_eff = get_db()
+            faculty_label, _ = lookup_specialty_faculty(_c_eff, sp_lookup)
+        except Exception:
+            faculty_label = ''
+        finally:
+            if _c_eff is not None:
+                try:
+                    _c_eff.close()
+                except Exception:
+                    pass
+    if not faculty_label:
+        faculty_label = _get(sheet, 'knowledge_area') or _get(sheet, 'department') or ''
+    return faculty_label
+
+
 def _fill_header(ws, sheet: dict):
     f_title = Font(name=_FONT, size=14, bold=True)
     f13 = Font(name=_FONT, size=13)
@@ -166,7 +189,7 @@ def _fill_header(ws, sheet: dict):
     except Exception:
         pass
 
-    faculty = _get(sheet, 'faculty') or _get(sheet, 'department') or 'Інформаційні системи та технології'
+    faculty = _resolve_sheet_faculty(sheet)
     _set(ws, 3, 1, f'Інститут, факультет, відділення      {faculty}', f13)
     try:
         ws.merge_cells('A3:G3')
@@ -497,10 +520,11 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
     ws['A1'].font = Font(name='Times New Roman', size=14, bold=True)
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
 
+    fac_suffix = f" · {group_meta['faculty']}" if group_meta.get('faculty') else ''
     ws['A2'] = (
         f"Група {group_meta.get('group_name') or ''} · курс {_roman(group_meta.get('course'))} · "
         f"{group_meta.get('study_form') or ''} · {group_meta.get('degree_level') or ''} · "
-        f"{group_meta.get('specialty_code') or ''} {group_meta.get('specialty') or ''}"
+        f"{group_meta.get('specialty_code') or ''} {group_meta.get('specialty') or ''}{fac_suffix}"
     )
     ws['A2'].font = Font(name='Times New Roman', size=11)
 
@@ -836,6 +860,7 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
 
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
     parts = []
+    if session_meta.get('faculty'):     parts.append(f"Факультет: {session_meta['faculty']}")
     if session_meta.get('group_name'):  parts.append(f"Група: {session_meta['group_name']}")
     if session_meta.get('course'):      parts.append(f"Курс: {session_meta['course']}")
     if session_meta.get('study_form'):  parts.append(f"Форма: {session_meta['study_form']}")

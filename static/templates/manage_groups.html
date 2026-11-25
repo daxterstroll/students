@@ -88,7 +88,8 @@
                                 data-name-en="{{ sp.name_en or '' }}"
                                 data-field-name="{{ sp.field_code }} {{ sp.field_name }}"
                                 data-field-name-en="{{ sp.field_name_en or '' }}"
-                                data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
+                                data-short-name="{{ sp.short_name or '' }}"
+                                data-faculty-id="{{ sp.faculty_id or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                     {% endfor %}
                     {% if specialty_catalog %}</optgroup>{% endif %}
                 </select>
@@ -97,6 +98,20 @@
                 <label for="specialty_en" class="form-label">Specialty (EN)</label>
                 <input type="text" id="specialty_en" class="form-control" readonly
                        placeholder="Підставиться автоматично після вибору спеціальності">
+            </div>
+            <div class="col-md-6">
+                <label for="faculty_id" class="form-label">Факультет</label>
+                <select name="faculty_id" id="faculty_id" class="form-select" onchange="onFacultyChange(this, '')">
+                    <option value="" data-en="">— автоматично зі спеціальності / не вказано —</option>
+                    {% for fac in faculties if fac.is_active %}
+                    <option value="{{ fac.id }}" data-en="{{ fac.name_en or '' }}">{{ fac.name_ua }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label for="faculty_en" class="form-label">Faculty (EN)</label>
+                <input type="text" id="faculty_en" class="form-control" readonly
+                       placeholder="Підставиться автоматично після вибору факультету">
             </div>
             <div class="col-md-6">
                 <label for="qualification_name" class="form-label">Назва кваліфікації</label>
@@ -204,7 +219,7 @@
                 {% for key, label in [
                     ('id', 'ID'), ('name', 'Назва'), ('course', 'Курс'), ('start_year', 'Рік вступу'),
                     ('study_form', 'Форма навчання'), ('program_credits', 'Кредити'),
-                    ('specialty', 'Спеціальність'), ('degree_level', 'Ступінь'),
+                    ('faculty', 'Факультет'), ('specialty', 'Спеціальність'), ('degree_level', 'Ступінь'),
                     ('educational_program', 'Освітня програма'), ('knowledge_area', 'Галузь знань'),
                     ('qualification_name', 'Назва кваліфікації'), ('student_count', 'Кількість студентів'),
                 ] %}
@@ -240,6 +255,7 @@
                     <th data-col="start_year">{{ sort_link('start_year', 'Рік вступу') }}</th>
                     <th data-col="study_form">{{ sort_link('study_form', 'Форма навчання') }}</th>
                     <th data-col="program_credits">{{ sort_link('program_credits', 'Кредити') }}</th>
+                    <th data-col="faculty">{{ sort_link('faculty', 'Факультет') }}</th>
                     <th data-col="specialty">{{ sort_link('specialty', 'Спеціальність') }}</th>
                     <th data-col="degree_level">{{ sort_link('degree_level', 'Ступінь') }}</th>
                     <th data-col="educational_program">{{ sort_link('educational_program', 'Освітня програма') }}</th>
@@ -258,6 +274,7 @@
                         <td data-col="start_year">{{ group.start_year }}</td>
                         <td data-col="study_form">{{ group.study_form }}</td>
                         <td data-col="program_credits">{{ group.program_credits }}</td>
+                        <td data-col="faculty" class="small">{{ group.faculty or '—' }}</td>
                         <td data-col="specialty" class="small">{{ group.specialty }}</td>
                         <td data-col="degree_level" class="small">{{ group.degree_level }}</td>
                         <td data-col="educational_program" class="small">{{ group.educational_program }}</td>
@@ -352,6 +369,16 @@
                     {% if group.degree_level_en and group.degree_level_en != '' %}
                         <div class="col-md-6">
                             <strong>Degree Level (EN):</strong> {{ group.degree_level_en or '' }}
+                        </div>
+                    {% endif %}
+
+                    <!-- Факультет -->
+                    <div class="{% if not group.faculty_en or group.faculty_en == '' %}col-md-12{% else %}col-md-6{% endif %}">
+                        <strong>Факультет:</strong> {{ group.faculty or '—' }}
+                    </div>
+                    {% if group.faculty_en and group.faculty_en != '' %}
+                        <div class="col-md-6">
+                            <strong>Faculty (EN):</strong> {{ group.faculty_en }}
                         </div>
                     {% endif %}
 
@@ -551,7 +578,8 @@
                                                         data-name-en="{{ sp.name_en or '' }}"
                                                         data-field-name="{{ sp.field_code }} {{ sp.field_name }}"
                                                         data-field-name-en="{{ sp.field_name_en or '' }}"
-                                                        data-short-name="{{ sp.short_name or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
+                                                        data-short-name="{{ sp.short_name or '' }}"
+                                                        data-faculty-id="{{ sp.faculty_id or '' }}">{{ sp.code }} {{ sp.name_ua }}</option>
                                             {% endfor %}
                                             {% if specialty_catalog %}</optgroup>{% endif %}
                                         </select>
@@ -562,6 +590,23 @@
                                     <div class="col-md-6">
                                         <label for="specialty_en{{ group.id }}" class="form-label">Specialty (EN)</label>
                                         <input type="text" id="specialty_en{{ group.id }}" class="form-control" readonly value="{{ group.specialty_en or '' }}">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="faculty_id{{ group.id }}" class="form-label">Факультет</label>
+                                        <select name="faculty_id" id="faculty_id{{ group.id }}" class="form-select"
+                                                {% if group.faculty_id %}data-user-selected="1"{% endif %}
+                                                onchange="onFacultyChange(this, '{{ group.id }}')">
+                                            <option value="" data-en="">— автоматично зі спеціальності / не вказано —</option>
+                                            {% for fac in faculties if fac.is_active or group.faculty_id == fac.id %}
+                                            <option value="{{ fac.id }}" data-en="{{ fac.name_en or '' }}" {% if group.faculty_id == fac.id %}selected{% endif %}>
+                                                {{ fac.name_ua }}{% if not fac.is_active %} (неактивний){% endif %}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="faculty_en{{ group.id }}" class="form-label">Faculty (EN)</label>
+                                        <input type="text" id="faculty_en{{ group.id }}" class="form-control" readonly value="{{ group.faculty_en or '' }}">
                                     </div>
                                     <div class="col-md-6">
                                         <label for="qualification_name{{ group.id }}" class="form-label">Назва кваліфікації</label>
@@ -670,15 +715,31 @@
 // заново з обраного specialty_code, тому підміна значень тут
 // неможлива. suffix - або '' (форма додавання), або group.id (форма
 // редагування конкретної групи).
+function onFacultyChange(selectEl, suffix) {
+    const opt = selectEl.options[selectEl.selectedIndex];
+    const enField = document.getElementById('faculty_en' + suffix);
+    if (enField) enField.value = (opt && opt.dataset.en) || '';
+    selectEl.dataset.userSelected = selectEl.value ? '1' : '';
+}
+
 function fillSpecialtyDerived(selectEl, suffix) {
     const opt = selectEl.options[selectEl.selectedIndex];
     const nameEn = opt.dataset.nameEn || '';
     const fieldName = opt.dataset.fieldName || '';
     const fieldNameEn = opt.dataset.fieldNameEn || '';
+    const defaultFacultyId = opt.dataset.facultyId || '';
 
     document.getElementById('specialty_en' + suffix).value = nameEn;
     document.getElementById('knowledge_area' + suffix).value = fieldName;
     document.getElementById('knowledge_area_en' + suffix).value = fieldNameEn;
+
+    const facSelect = document.getElementById('faculty_id' + suffix);
+    if (facSelect && !facSelect.dataset.userSelected) {
+        facSelect.value = defaultFacultyId;
+        const facOpt = facSelect.options[facSelect.selectedIndex];
+        const facEnField = document.getElementById('faculty_en' + suffix);
+        if (facEnField) facEnField.value = (facOpt && facOpt.dataset.en) || '';
+    }
 }
 
 // Загальніший варіант того самого принципу для простих пар полів
@@ -812,7 +873,7 @@ function fillQualificationName(suffix) {
 // сторінки чи повторного заходу (лише на цьому пристрої).
 (function () {
     const STORAGE_KEY = 'manageGroupsVisibleColumns';
-    const DEFAULT_COLUMNS = ['id', 'name', 'course', 'start_year', 'study_form', 'program_credits', 'specialty', 'student_count'];
+    const DEFAULT_COLUMNS = ['id', 'name', 'course', 'start_year', 'study_form', 'program_credits', 'faculty', 'specialty', 'student_count'];
 
     function getVisibleColumns() {
         try {

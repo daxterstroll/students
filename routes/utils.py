@@ -199,6 +199,7 @@ AUDIT_SECTION_BY_PREFIX = [
     ('/admin/import_docs', 'Документи про освіту'),
     ('/admin/manage_passport_documents', 'Паспортні дані'),
     ('/admin/import_passport', 'Паспортні дані'),
+    ('/admin/manage_faculties', 'Довідники'),
     ('/admin/manage_specialties', 'Довідники'),
     ('/admin/manage_degree_levels', 'Довідники'),
     ('/admin/manage_licenses', 'Довідники'),
@@ -472,7 +473,7 @@ def infer_audit_metadata(action_text, details_text='', route_path='', endpoint='
             section = 'Авторизація'
         elif 'оцінк' in act_low or 'активност' in act_low:
             section = 'Оцінки та план'
-        elif 'спеціальн' in act_low or 'ступін' in act_low or 'ліцензі' in act_low or 'кваліфікац' in act_low or 'програм' in act_low or 'галуз' in act_low:
+        elif 'факультет' in act_low or 'спеціальн' in act_low or 'ступін' in act_low or 'ліцензі' in act_low or 'кваліфікац' in act_low or 'програм' in act_low or 'галуз' in act_low:
             section = 'Довідники'
         else:
             section = 'Система'
@@ -593,6 +594,8 @@ def infer_audit_metadata(action_text, details_text='', route_path='', endpoint='
             entity_type = 'template'
         elif 'ліцензі' in act_low:
             entity_type = 'license'
+        elif 'факультет' in act_low:
+            entity_type = 'faculty'
         elif 'спеціальн' in act_low:
             entity_type = 'specialty'
         elif 'ступін' in act_low:
@@ -1381,3 +1384,228 @@ def normalize_phone_pair(phone, phone_backup):
         norm_backup = None
 
     return norm_phone, norm_backup
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Факультети: довідник, міграція схеми, початкове заповнення та резолвінг
+# ═══════════════════════════════════════════════════════════════════════════════
+
+FACULTY_SEED = (
+    ('Факультет економіки та менеджменту', 'ФЕМ', 'Faculty of Economics and Management', 10),
+    ('Факультет інформаційних систем та технологій', 'ФІСТ', 'Faculty of Information Systems and Technologies', 20),
+    ('Факультет психології та соціальних технологій', 'ФПСТ', 'Faculty of Psychology and Social Technologies', 30),
+    ('Юридичний факультет', 'ЮФ', 'Faculty of Law', 40),
+    ('Факультет іноземної філології', 'ФІФ', 'Faculty of Foreign Philology', 50),
+)
+
+# Відповідність кодів спеціальностей (КМУ №1021 та попередні шифри) скороченій назві факультету
+SPECIALTY_CODE_TO_FACULTY_SHORT = {
+    # ФЕМ
+    'C1': 'ФЕМ', 'D1': 'ФЕМ', 'D2': 'ФЕМ', 'D3': 'ФЕМ', 'D4': 'ФЕМ',
+    'D5': 'ФЕМ', 'D6': 'ФЕМ', 'D7': 'ФЕМ', 'J2': 'ФЕМ', 'J3': 'ФЕМ',
+    '051': 'ФЕМ', '071': 'ФЕМ', '072': 'ФЕМ', '073': 'ФЕМ', '075': 'ФЕМ',
+    '076': 'ФЕМ', '281': 'ФЕМ', '292': 'ФЕМ',
+    # ФІСТ
+    'F1': 'ФІСТ', 'F2': 'ФІСТ', 'F3': 'ФІСТ', 'F4': 'ФІСТ', 'F5': 'ФІСТ',
+    'F6': 'ФІСТ', 'F7': 'ФІСТ',
+    '113': 'ФІСТ', '121': 'ФІСТ', '122': 'ФІСТ', '124': 'ФІСТ', '125': 'ФІСТ', '126': 'ФІСТ',
+    # ФПСТ
+    'C4': 'ФПСТ', 'C5': 'ФПСТ', 'I4': 'ФПСТ', 'I10': 'ФПСТ',
+    '053': 'ФПСТ', '231': 'ФПСТ',
+    # ЮФ
+    'D8': 'ЮФ', 'D9': 'ЮФ', 'K9': 'ЮФ',
+    '081': 'ЮФ', '262': 'ЮФ', '293': 'ЮФ',
+    # ФІФ
+    'B11': 'ФІФ', '035': 'ФІФ',
+}
+
+
+def ensure_faculty_schema(conn):
+    """
+    Ідемпотентно створює таблицю `faculties`, додає колонки `faculty_id` у `specialties`
+    та `faculty_id`, `faculty`, `faculty_en` у `groups`, заповнює 5 університетських
+    факультетів і виконує одноразовий початковий backfill (відстежується у `_patch_migrations`).
+    Безпечно викликати повторно на будь-якому з'єднанні SQLite.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS faculties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name_ua TEXT NOT NULL UNIQUE,
+            short_name TEXT,
+            name_en TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 100,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_faculties_active_order ON faculties(is_active, sort_order, id)")
+
+    for name_ua, short_name, name_en, sort_order in FACULTY_SEED:
+        conn.execute(
+            "INSERT OR IGNORE INTO faculties (name_ua, short_name, name_en, sort_order, is_active) VALUES (?, ?, ?, ?, 1)",
+            (name_ua, short_name, name_en, sort_order),
+        )
+
+    def _table_columns(table_name):
+        return {r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+    spec_cols = _table_columns('specialties')
+    if spec_cols and 'faculty_id' not in spec_cols:
+        conn.execute("ALTER TABLE specialties ADD COLUMN faculty_id INTEGER")
+
+    group_cols = _table_columns('groups')
+    if group_cols:
+        if 'faculty_id' not in group_cols:
+            conn.execute("ALTER TABLE groups ADD COLUMN faculty_id INTEGER")
+        if 'faculty' not in group_cols:
+            conn.execute("ALTER TABLE groups ADD COLUMN faculty TEXT")
+        if 'faculty_en' not in group_cols:
+            conn.execute("ALTER TABLE groups ADD COLUMN faculty_en TEXT")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS _patch_migrations (
+            key TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+    done = conn.execute(
+        "SELECT 1 FROM _patch_migrations WHERE key = 'faculties_initial_backfill_v1'"
+    ).fetchone()
+
+    if not done:
+        fac_rows = conn.execute("SELECT id, short_name, name_ua, name_en FROM faculties").fetchall()
+        by_short = {(r[1] or '').strip().upper(): (r[0], r[2], r[3] or '') for r in fac_rows if r[1]}
+
+        # 1. Прив'язуємо спеціальності без faculty_id за картою кодів
+        if spec_cols:
+            spec_rows = conn.execute("SELECT code, faculty_id FROM specialties").fetchall()
+            for sp_row in spec_rows:
+                sp_code = (sp_row[0] or '').strip().upper()
+                if sp_row[1] is not None:
+                    continue
+                short = SPECIALTY_CODE_TO_FACULTY_SHORT.get(sp_code)
+                if short and short in by_short:
+                    fid, _, _ = by_short[short]
+                    conn.execute(
+                        "UPDATE specialties SET faculty_id = ? WHERE code = ? AND faculty_id IS NULL",
+                        (fid, sp_row[0]),
+                    )
+
+        # 2. Заповнюємо групи без факультету: спочатку зі спеціальності, далі за картою шифрів
+        if group_cols:
+            spec_fac_map = {}
+            if spec_cols:
+                for row in conn.execute("""
+                    SELECT UPPER(TRIM(s.code)) AS code, f.id AS fid, f.name_ua, f.name_en
+                    FROM specialties s
+                    JOIN faculties f ON f.id = s.faculty_id
+                """).fetchall():
+                    spec_fac_map[row[0]] = (row[1], row[2], row[3] or '')
+
+            has_sp_code = 'specialty_code' in group_cols
+            has_sp_text = 'specialty' in group_cols
+            sel_cols = ["id"]
+            if has_sp_code:
+                sel_cols.append("specialty_code")
+            if has_sp_text:
+                sel_cols.append("specialty")
+            sel_cols.extend(["faculty_id", "faculty"])
+            grp_rows = conn.execute(
+                f"SELECT {', '.join(sel_cols)} FROM groups"
+            ).fetchall()
+            for g_row in grp_rows:
+                idx = 1
+                g_sp_code = g_row[idx] if has_sp_code else None
+                if has_sp_code:
+                    idx += 1
+                g_sp_text = g_row[idx] if has_sp_text else None
+                if has_sp_text:
+                    idx += 1
+                gid, g_fid, g_fac = g_row[0], g_row[idx], g_row[idx + 1]
+                if g_fid is not None or (g_fac or '').strip():
+                    continue
+                code_norm = (g_sp_code or '').strip().upper()
+                if not code_norm and g_sp_text:
+                    code_norm = (g_sp_text or '').strip().split()[0].upper()
+
+                target = spec_fac_map.get(code_norm)
+                if not target:
+                    short = SPECIALTY_CODE_TO_FACULTY_SHORT.get(code_norm)
+                    if short and short in by_short:
+                        target = by_short[short]
+                if target:
+                    fid, f_ua, f_en = target
+                    conn.execute(
+                        "UPDATE groups SET faculty_id = ?, faculty = ?, faculty_en = ? WHERE id = ?",
+                        (fid, f_ua, f_en or None, gid),
+                    )
+
+        conn.execute(
+            "INSERT OR IGNORE INTO _patch_migrations (key) VALUES ('faculties_initial_backfill_v1')"
+        )
+
+    conn.commit()
+
+
+def lookup_specialty_faculty(conn, specialty_code):
+    """Повертає (name_ua, name_en) факультету за кодом спеціальності або ('', '')."""
+    if conn is None or not specialty_code:
+        return '', ''
+    code_clean = str(specialty_code).strip()
+    if not code_clean:
+        return '', ''
+    candidates = [code_clean]
+    first_tok = code_clean.split()[0]
+    if first_tok and first_tok != code_clean:
+        candidates.append(first_tok)
+    try:
+        for cand in candidates:
+            row = conn.execute("""
+                SELECT f.name_ua, f.name_en
+                FROM specialties s
+                JOIN faculties f ON f.id = s.faculty_id
+                WHERE UPPER(TRIM(s.code)) = UPPER(TRIM(?))
+                LIMIT 1
+            """, (cand,)).fetchone()
+            if row:
+                return (row[0] or '').strip(), (row[1] or '').strip()
+    except Exception:
+        pass
+    return '', ''
+
+
+def resolve_vidomist_faculty(sheet, conn=None):
+    """
+    Визначає назву факультету для відомостей/експортів сесій за пріоритетом:
+      1. Явний факультет групи/відомості (`sheet['faculty']`)
+      2. Типовий факультет спеціальності з БД (`specialties.faculty_id`)
+      3. Резервно — галузь знань (`sheet['knowledge_area']`)
+      4. `sheet['department']` -> ''
+    Повертає кортеж (faculty_ua, faculty_en, knowledge_area).
+    """
+    def _g(key):
+        if sheet is None:
+            return ''
+        try:
+            v = sheet[key]
+        except (KeyError, IndexError, TypeError):
+            v = sheet.get(key) if isinstance(sheet, dict) else None
+        return (str(v).strip() if v is not None else '')
+
+    faculty_ua = _g('faculty')
+    faculty_en = _g('faculty_en')
+    knowledge_area = _g('knowledge_area')
+    specialty_code = _g('specialty_code') or _g('specialty')
+
+    if not faculty_ua and conn is not None and specialty_code:
+        sp_ua, sp_en = lookup_specialty_faculty(conn, specialty_code)
+        if sp_ua:
+            faculty_ua = sp_ua
+            if not faculty_en and sp_en:
+                faculty_en = sp_en
+
+    if not faculty_ua:
+        faculty_ua = knowledge_area or _g('department') or ''
+
+    return faculty_ua, faculty_en, knowledge_area
+

@@ -157,6 +157,33 @@ def refresh_session_permissions():
     session.modified = True
 
 
+_FACULTY_SCHEMA_LOCK = threading.Lock()
+_FACULTY_SCHEMA_READY = False
+
+
+@app.before_request
+def ensure_faculties_migrated():
+    """Одноразово за процес ідемпотентно створює таблицю факультетів та колонки."""
+    global _FACULTY_SCHEMA_READY
+    if _FACULTY_SCHEMA_READY:
+        return
+    with _FACULTY_SCHEMA_LOCK:
+        if _FACULTY_SCHEMA_READY:
+            return
+        from routes.db import get_db
+        from routes.utils import ensure_faculty_schema
+        conn = None
+        try:
+            conn = get_db()
+            ensure_faculty_schema(conn)
+            _FACULTY_SCHEMA_READY = True
+        except Exception as e:
+            logger.warning(f"Не вдалося виконати міграцію факультетів: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
+
+
 _CATALOG_SYNC_LOCK = threading.Lock()
 _CATALOG_SYNCED_YEAR = None
 

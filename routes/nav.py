@@ -136,6 +136,8 @@ NAV_SECTIONS = [
         'label': 'Система',
         'icon': 'bi-gear-fill',
         'items': [
+            {'perm': 'manage_faculties',             'url': 'admin.manage_faculties',
+             'icon': 'bi-building',                  'label': 'Факультети'},
             {'perm': 'manage_specialties',           'url': 'admin.manage_specialties',
              'icon': 'bi-diagram-3',                 'label': 'Спеціальності'},
             {'perm': 'manage_degree_levels',         'url': 'admin.manage_degree_levels',

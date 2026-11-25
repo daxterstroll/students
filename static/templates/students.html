@@ -606,6 +606,7 @@
     <!-- Фільтри -->
     {% set active_extra_filters = [] %}
     {% if degree_level %}{% set _ = active_extra_filters.append(1) %}{% endif %}
+    {% if faculty %}{% set _ = active_extra_filters.append(1) %}{% endif %}
     {% if study_form %}{% set _ = active_extra_filters.append(1) %}{% endif %}
     {% if course %}{% set _ = active_extra_filters.append(1) %}{% endif %}
     {% if license_id %}{% set _ = active_extra_filters.append(1) %}{% endif %}
@@ -755,6 +756,17 @@
                         </div>
 
                         <div class="col-12 col-md-6 col-lg-4">
+                            <label class="form-label small text-muted mb-1">Факультет</label>
+                            <select name="faculty" class="form-select form-select-sm" onchange="this.form.submit()">
+                                <option value="">Всі</option>
+                                {% for f in faculties_available %}
+                                <option value="{{ f.id }}" {% if faculty == (f.id|string) %}selected{% endif %}>{{ f.name_ua }}</option>
+                                {% endfor %}
+                                <option value="none" {% if faculty == 'none' %}selected{% endif %}>— без факультету —</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-6 col-lg-4">
                             <label class="form-label small text-muted mb-1">Сортування</label>
                             <select id="sortComboSelect" class="form-select form-select-sm">
                                 {% set sort_val = sort_by ~ ':' ~ sort_order %}
@@ -771,7 +783,7 @@
                             </select>
                         </div>
 
-                        <div class="col-12 col-lg-8 d-flex align-items-end gap-2 flex-wrap">
+                        <div class="col-12 col-lg-4 d-flex align-items-end gap-2 flex-wrap">
                             <span class="small text-muted me-1">Показати також:</span>
                             <input type="checkbox" class="btn-check" id="includeFrozenCheck" name="include_frozen" value="1" autocomplete="off" {% if include_frozen %}checked{% endif %} onchange="this.form.submit()">
                             <label class="btn btn-sm btn-outline-secondary" for="includeFrozenCheck"><i class="bi bi-snow"></i> Заморожені</label>
@@ -810,7 +822,7 @@
                 {% set cnt = summary_counts.get(key, 0) %}
                 {% if cnt > 0 %}
                     {% set next_missing = '' if missing == key else key %}
-                    <a href="{{ url_for('students.student_list', search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=next_missing, include_frozen=include_frozen, include_archived=include_archived, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
+                    <a href="{{ url_for('students.student_list', search=search, group_id=group_id, faculty=faculty, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=next_missing, include_frozen=include_frozen, include_archived=include_archived, per_page=per_page, sort_by=sort_by, sort_order=sort_order) }}"
                        class="summary-pill {{ cls }} {% if missing == key %}is-active{% endif %}"
                        title="{{ 'Скинути фільтр' if missing == key else ('Показати лише: ' ~ lbl) }}">
                         <i class="bi {{ icon }}"></i>
@@ -824,7 +836,7 @@
     {% endif %}
 
     <!-- Активні фільтри -->
-    {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
+    {% if search or group_id or faculty or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
     <div class="filter-bar mb-3 py-2 px-3" role="alert">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <div class="d-flex align-items-center flex-wrap gap-2">
@@ -837,6 +849,20 @@
                             <span class="filter-chip group">Група: {{ group.name }}</span>
                         {% endif %}
                     {% endfor %}
+                {% endif %}
+                {% if faculty == 'none' %}
+                    <span class="filter-chip" style="background: var(--st-miss-bg); border-color: var(--st-miss-bd); color: var(--st-miss-fg);">
+                        <i class="bi bi-exclamation-triangle"></i> Без факультету
+                    </span>
+                {% elif faculty %}
+                    {% set fac_ns = namespace(found=false) %}
+                    {% for f in faculties_available %}
+                        {% if faculty == (f.id|string) %}
+                            {% set fac_ns.found = true %}
+                            <span class="filter-chip">Факультет: {{ f.short_name or f.name_ua }}</span>
+                        {% endif %}
+                    {% endfor %}
+                    {% if not fac_ns.found %}<span class="filter-chip">Факультет: {{ faculty }}</span>{% endif %}
                 {% endif %}
                 {% if missing %}
                     {% for mkey, mlabel in missing_options %}
@@ -873,7 +899,7 @@
 
     {% macro sort_link(column, label) -%}
         {%- set new_order = 'asc' if sort_order == 'desc' or sort_by != column else 'desc' -%}
-        <a href="{{ url_for('students.student_list', search=search, page=1, per_page=per_page, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
+        <a href="{{ url_for('students.student_list', search=search, page=1, per_page=per_page, group_id=group_id, faculty=faculty, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=column, sort_order=new_order) }}" class="text-decoration-none">
             {{ label }}
             {%- if sort_by == column %}
                 {% if sort_order == 'asc' %} ▲{% else %} ▼{% endif %}
@@ -1333,7 +1359,7 @@
         <div class="student-card text-center py-4 text-muted">
             <i class="bi bi-search fs-3 d-block mb-2 opacity-50"></i>
             <div class="fw-semibold">Студентів за обраними параметрами не знайдено</div>
-            {% if search or group_id or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
+            {% if search or group_id or faculty or degree_level or study_form or course or license_id or reduced or missing or include_frozen or include_archived %}
             <a href="{{ url_for('students.student_list') }}" class="btn btn-sm btn-outline-secondary mt-2">Скинути фільтри</a>
             {% endif %}
         </div>
@@ -1342,8 +1368,8 @@
 
     <!-- Пагінація -->
     {% if total_pages > 1 %}
-    {% set prev_url = url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
-    {% set next_url = url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set prev_url = url_for('students.student_list', page=page-1, per_page=per_page, search=search, group_id=group_id, faculty=faculty, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
+    {% set next_url = url_for('students.student_list', page=page+1, per_page=per_page, search=search, group_id=group_id, faculty=faculty, degree_level=degree_level, study_form=study_form, course=course, license_id=license_id, reduced=reduced, missing=missing, include_frozen=include_frozen, include_archived=include_archived, sort_by=sort_by, sort_order=sort_order) %}
     {% set range_start = (page - 1) * per_page + 1 %}
     {% set range_end = [page * per_page, total_students] | min %}
 
@@ -1358,6 +1384,7 @@
             <form method="GET" class="d-flex">
                 <input type="hidden" name="search" value="{{ search }}">
                 <input type="hidden" name="group_id" value="{{ group_id or '' }}">
+                <input type="hidden" name="faculty" value="{{ faculty or '' }}">
                 <input type="hidden" name="degree_level" value="{{ degree_level }}">
                 <input type="hidden" name="study_form" value="{{ study_form }}">
                 <input type="hidden" name="course" value="{{ course or '' }}">

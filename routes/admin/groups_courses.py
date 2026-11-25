@@ -6,7 +6,7 @@ routes/admin/groups_courses.py
 """
 from flask import render_template, request, redirect, url_for, flash, session, send_file
 from routes.db import get_db
-from routes.utils import log_action, permission_required, logger
+from routes.utils import log_action, permission_required, logger, ensure_faculty_schema, build_field_changes
 from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
@@ -105,6 +105,23 @@ def manage_groups():
     """CRUD-сторінка навчальних груп: додавання, редагування та видалення (видалення заборонено, якщо є пов'язані студенти/предмети/активності)."""
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    ensure_faculty_schema(conn)
+
+    def _resolve_group_faculty(fac_id, spec_code):
+        fid = fac_id
+        if not fid and spec_code:
+            sp_row = conn.execute(
+                "SELECT faculty_id FROM specialties WHERE code = ?", (spec_code,)
+            ).fetchone()
+            if sp_row and sp_row['faculty_id']:
+                fid = sp_row['faculty_id']
+        if fid:
+            f_row = conn.execute(
+                "SELECT id, name_ua, name_en FROM faculties WHERE id = ?", (fid,)
+            ).fetchone()
+            if f_row:
+                return f_row['id'], f_row['name_ua'], (f_row['name_en'] or None)
+        return None, None, None
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -115,6 +132,7 @@ def manage_groups():
             program_credits = request.form.get('program_credits')
             degree_level = request.form.get('degree_level')
             specialty_code = request.form.get('specialty_code') or None
+            faculty_id_input = request.form.get('faculty_id', type=int)
             degree_level_row = conn.execute(
                 "SELECT name_en FROM degree_levels WHERE name_ua = ?", (degree_level,)
             ).fetchone()
@@ -168,6 +186,8 @@ def manage_groups():
                     knowledge_area = f"{cat_row['field_code']} {cat_row['field_name']}"
                     knowledge_area_en = cat_row['field_name_en']
                     specialty_short_name = cat_row['specialty_short_name']
+
+            faculty_id, faculty, faculty_en = _resolve_group_faculty(faculty_id_input, specialty_code)
 
             # Освітня програма теж більше не вводиться вручну - вона
             # своя для кожної трійки "спеціальність + рік вступу +
@@ -241,16 +261,20 @@ def manage_groups():
                         conn.execute("""
                             INSERT INTO groups (
                                 name, course, start_year, study_form, program_credits,
-                                qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
+                                qualification_name, degree_level, specialty, specialty_code,
+                                faculty_id, faculty, faculty_en,
+                                educational_program, knowledge_area,
                                 qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                                 entry_requirements, entry_requirements_en,
                                 learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
                                 entry_requirements_reduced, entry_requirements_reduced_en,
                                 learning_outcomes_reduced, learning_outcomes_reduced_en,
                                 program_includes_reduced, program_includes_reduced_en
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (name, course, start_year, study_form, program_credits,
-                              qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
+                              qualification_name, degree_level, specialty, specialty_code,
+                              faculty_id, faculty, faculty_en,
+                              educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
                               learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
@@ -262,7 +286,11 @@ def manage_groups():
                         log_action(
                             current_username(),
                             f"додав групу: {name} ({start_year}, {study_form}, {program_credits} кредитів)",
-                            details=f"спеціальність: {specialty or 'не вказано'}, ступінь: {degree_level or 'не вказано'}"
+                            category='create',
+                            section='Групи та курси',
+                            entity_type='group',
+                            entity_name=name,
+                            details=f"факультет: {faculty or 'не вказано'}, спеціальність: {specialty or 'не вказано'}, ступінь: {degree_level or 'не вказано'}"
                         )
                 except ValueError:
                     flash("Рік початку навчання або кредити мають бути числами.", "error")
@@ -281,6 +309,7 @@ def manage_groups():
             program_credits = request.form.get('program_credits')
             degree_level = request.form.get('degree_level')
             specialty_code = request.form.get('specialty_code') or None
+            faculty_id_input = request.form.get('faculty_id', type=int)
             degree_level_row = conn.execute(
                 "SELECT name_en FROM degree_levels WHERE name_ua = ?", (degree_level,)
             ).fetchone()
@@ -321,6 +350,8 @@ def manage_groups():
                     knowledge_area = f"{cat_row['field_code']} {cat_row['field_name']}"
                     knowledge_area_en = cat_row['field_name_en']
                     specialty_short_name = cat_row['specialty_short_name']
+
+            faculty_id, faculty, faculty_en = _resolve_group_faculty(faculty_id_input, specialty_code)
 
             educational_program = None
             educational_program_en = None
@@ -381,10 +412,12 @@ def manage_groups():
                     if start_year < 2000 or start_year > current_year:
                         flash(f"Рік початку навчання має бути між 2000 і {current_year}.", "error")
                     else:
+                        old_group = conn.execute("SELECT * FROM groups WHERE id=?", (group_id,)).fetchone()
                         conn.execute("""
                             UPDATE groups SET
                                 name=?, course=?, start_year=?, study_form=?, program_credits=?,
                                 qualification_name=?, degree_level=?, specialty=?, specialty_code=?,
+                                faculty_id=?, faculty=?, faculty_en=?,
                                 educational_program=?, knowledge_area=?,
                                 qualification_name_en=?, degree_level_en=?, specialty_en=?, isced_f_ua=?, isced_f_en=?,
                                 educational_program_en=?, knowledge_area_en=?,
@@ -396,7 +429,9 @@ def manage_groups():
                                 program_includes_reduced=?, program_includes_reduced_en=?
                             WHERE id=?
                         """, (name, course, start_year, study_form, program_credits,
-                              qualification_name, degree_level, specialty, specialty_code, educational_program, knowledge_area,
+                              qualification_name, degree_level, specialty, specialty_code,
+                              faculty_id, faculty, faculty_en,
+                              educational_program, knowledge_area,
                               qualification_name_en, degree_level_en, specialty_en, isced_f_ua, isced_f_en, educational_program_en, knowledge_area_en,
                               entry_requirements, entry_requirements_en,
                               learning_outcomes, learning_outcomes_en, program_includes, program_includes_en,
@@ -405,10 +440,43 @@ def manage_groups():
                               program_includes_reduced, program_includes_reduced_en,
                               group_id))
                         conn.commit()
+                        group_changes = build_field_changes(
+                            old_group,
+                            {
+                                'name': name,
+                                'course': course,
+                                'start_year': start_year,
+                                'study_form': study_form,
+                                'program_credits': program_credits,
+                                'degree_level': degree_level,
+                                'specialty': specialty,
+                                'faculty': faculty,
+                                'educational_program': educational_program,
+                                'qualification_name': qualification_name,
+                            },
+                            {
+                                'name': 'Назва групи',
+                                'course': 'Курс',
+                                'start_year': 'Рік вступу',
+                                'study_form': 'Форма навчання',
+                                'program_credits': 'Кредити',
+                                'degree_level': 'Ступінь',
+                                'specialty': 'Спеціальність',
+                                'faculty': 'Факультет',
+                                'educational_program': 'Освітня програма',
+                                'qualification_name': 'Назва кваліфікації',
+                            },
+                        )
                         flash("Групу відредаговано успішно.", "success")
                         log_action(
                             current_username(),
                             f"редагував групу: {name} (ID {group_id})",
+                            category='update',
+                            section='Групи та курси',
+                            entity_type='group',
+                            entity_id=group_id,
+                            entity_name=name,
+                            changes=group_changes,
                             details=f"рік: {start_year}, форма: {study_form}, кредити: {program_credits}"
                         )
                 except ValueError:
@@ -536,6 +604,7 @@ def manage_groups():
         'id': 'g.id', 'name': 'g.name COLLATE UKRAINIAN', 'course': 'g.course',
         'start_year': 'g.start_year', 'study_form': 'g.study_form COLLATE UKRAINIAN',
         'program_credits': 'g.program_credits', 'specialty': 'g.specialty COLLATE UKRAINIAN',
+        'faculty': 'COALESCE(NULLIF(TRIM(g.faculty), \'\'), f.name_ua, \'\') COLLATE UKRAINIAN',
         'degree_level': 'g.degree_level COLLATE UKRAINIAN',
         'educational_program': 'g.educational_program COLLATE UKRAINIAN',
         'knowledge_area': 'g.knowledge_area COLLATE UKRAINIAN',
@@ -551,7 +620,11 @@ def manage_groups():
 
     groups = conn.execute(f"""
         SELECT g.id, g.name, g.course, g.start_year, g.study_form, g.program_credits,
-               g.qualification_name, g.degree_level, g.specialty, g.specialty_code, g.educational_program, g.knowledge_area,
+               g.qualification_name, g.degree_level, g.specialty, g.specialty_code,
+               g.faculty_id,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), f.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), f.name_en, '') AS faculty_en,
+               g.educational_program, g.knowledge_area,
                g.qualification_name_en, g.degree_level_en, g.specialty_en, g.educational_program_en, g.knowledge_area_en,
                g.entry_requirements, g.entry_requirements_en,
                g.learning_outcomes, g.learning_outcomes_en, g.program_includes, g.program_includes_en,
@@ -575,13 +648,22 @@ def manage_groups():
                   AND (e.id IS NOT NULL OR s.group_id = g.id)
                   AND s.program_credits_override IS NOT NULL
                   AND s.program_credits_override < g.program_credits) AS reduced_count
-        FROM groups g WHERE g.archived = FALSE ORDER BY {sortable_columns[sort_by]} {sort_order.upper()}
+        FROM groups g
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties f ON f.id = COALESCE(g.faculty_id, sp.faculty_id)
+        WHERE g.archived = FALSE ORDER BY {sortable_columns[sort_by]} {sort_order.upper()}
     """).fetchall()
 
     # Каталог ступенів для випадаючого списку "Ступінь" - та сама
     # логіка "активний/неактивний", що й у спеціальностей.
     degree_levels = conn.execute("""
         SELECT id, name_ua, name_suffix, name_en, is_active FROM degree_levels ORDER BY is_active DESC, id
+    """).fetchall()
+
+    faculties = conn.execute("""
+        SELECT id, name_ua, short_name, name_en, is_active
+        FROM faculties
+        ORDER BY is_active DESC, sort_order ASC, name_ua COLLATE UKRAINIAN
     """).fetchall()
 
     # Освітні програми (спеціальність + рік вступу -> назва) - для
@@ -599,14 +681,18 @@ def manage_groups():
     # Каталог спеціальностей (Постанова КМУ №266) для випадаючого
     # списку - згруповано по галузях знань, щоб було зручно шукати.
     specialty_catalog = conn.execute("""
-        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active,
+        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.is_active, s.faculty_id,
                k.code AS field_code, k.name_ua AS field_name, k.name_en AS field_name_en
         FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
         ORDER BY s.is_active DESC, k.code, substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
+    specialty_faculty_map = {
+        row['code']: row['faculty_id']
+        for row in specialty_catalog if row['faculty_id']
+    }
 
     conn.close()
-    return render_template("manage_groups.html", groups=groups, specialty_catalog=specialty_catalog, degree_levels=degree_levels, educational_programs_map=educational_programs_map, qualification_names_map=qualification_names_map, sort_by=sort_by, sort_order=sort_order)
+    return render_template("manage_groups.html", groups=groups, specialty_catalog=specialty_catalog, degree_levels=degree_levels, faculties=faculties, specialty_faculty_map=specialty_faculty_map, educational_programs_map=educational_programs_map, qualification_names_map=qualification_names_map, sort_by=sort_by, sort_order=sort_order)
 
 
 @admin_bp.route('/admin/courses')

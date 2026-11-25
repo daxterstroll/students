@@ -102,13 +102,22 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label small mb-1">ISCED-F (укр.)</label>
                     <input type="text" name="isced_f_ua" class="form-control form-control-sm" placeholder="напр. 0413 Управління та адміністрування">
                 </div>
-                <div class="col-md-5">
+                <div class="col-md-4">
                     <label class="form-label small mb-1">ISCED-F (англ.)</label>
                     <input type="text" name="isced_f_en" class="form-control form-control-sm" placeholder="напр. 0413 Management and administration">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small mb-1">Факультет (типовий)</label>
+                    <select name="faculty_id" class="form-select form-select-sm">
+                        <option value="">— не призначено —</option>
+                        {% for fac in faculties if fac.is_active %}
+                        <option value="{{ fac.id }}">{{ fac.name_ua }}</option>
+                        {% endfor %}
+                    </select>
                 </div>
                 <div class="col-md-1">
                     <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-plus-circle"></i></button>
@@ -129,6 +138,7 @@
                             <th>Назва (англ.)</th>
                             <th>ISCED-F (укр. / англ.)</th>
                             <th>Галузь знань</th>
+                            <th>Факультет</th>
                             <th class="text-center" style="width:110px;">Актуальна</th>
                             <th class="text-end" style="width:160px;"></th>
                         </tr>
@@ -145,6 +155,13 @@
                             <td class="small text-muted">{{ sp.name_en or '—' }}</td>
                             <td class="small text-muted">{{ sp.isced_f_ua or '—' }} / {{ sp.isced_f_en or '—' }}</td>
                             <td class="small">{{ sp.field_code }} {{ sp.field_name }}</td>
+                            <td class="small">
+                                {% if sp.faculty_name %}
+                                <span title="{{ sp.faculty_name }}">{{ sp.faculty_short_name or sp.faculty_name }}</span>
+                                {% else %}
+                                <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
                             <td class="text-center">
                                 <form method="POST" class="d-inline">
                                     <input type="hidden" name="action" value="toggle_active">
@@ -159,6 +176,7 @@
                                         data-code="{{ sp.code }}" data-name="{{ sp.name_ua }}"
                                         data-short-name="{{ sp.short_name or '' }}"
                                         data-name-en="{{ sp.name_en or '' }}" data-field="{{ sp.field_code }}"
+                                        data-faculty-id="{{ sp.faculty_id or '' }}"
                                         data-isced-ua="{{ sp.isced_f_ua or '' }}" data-isced-en="{{ sp.isced_f_en or '' }}">
                                     <i class="bi bi-pencil"></i>
                                 </button>
@@ -228,6 +246,15 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Факультет (типовий)</label>
+                        <select name="faculty_id" id="editFaculty" class="form-select">
+                            <option value="">— не призначено —</option>
+                            {% for fac in faculties %}
+                            <option value="{{ fac.id }}">{{ fac.name_ua }}{% if not fac.is_active %} (неактивний){% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
@@ -286,6 +313,7 @@ window.addEventListener('load', function () {
             document.getElementById('editIscedUa').value = btn.dataset.iscedUa;
             document.getElementById('editIscedEn').value = btn.dataset.iscedEn;
             document.getElementById('editField').value = btn.dataset.field;
+            document.getElementById('editFaculty').value = btn.dataset.facultyId || '';
             specModal.show();
         });
     });

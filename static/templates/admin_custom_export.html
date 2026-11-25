@@ -180,6 +180,22 @@
                                 {% endfor %}
                             </select>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label small d-flex align-items-center gap-1">
+                                Факультет
+                                <i class="bi bi-info-circle text-muted" style="font-size:.8em; cursor:help;"
+                                   title="Факультет групи (або типовий факультет за спеціальністю, якщо в групи ще не обрано окремий)."></i>
+                            </label>
+                            <select class="form-select form-select-sm" name="faculty_id">
+                                <option value="">Усі факультети</option>
+                                {% for f in choices.faculties %}
+                                <option value="{{ f.id }}" {% if form.get('faculty_id') == (f.id|string) %}selected{% endif %}>
+                                    {{ f.name_ua }}
+                                </option>
+                                {% endfor %}
+                                <option value="none" {% if form.get('faculty_id') == 'none' %}selected{% endif %}>— без факультету —</option>
+                            </select>
+                        </div>
                         <div class="col-6">
                             <label class="form-label small d-flex align-items-center gap-1">
                                 Ступінь

@@ -695,6 +695,8 @@ def generate_group_docs():
                g.qualification_name, g.degree_level, g.specialty, g.educational_program, g.knowledge_area,
                g.qualification_name_en, g.degree_level_en, g.specialty_en, g.isced_f_ua, g.isced_f_en,
                g.educational_program_en, g.knowledge_area_en,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                il.name_ua AS institution_name_and_status, il.name_en AS institution_name_and_status_en,
                il.short_name_ua AS license_short_name_ua, il.short_name_en AS license_short_name_en,
                g.entry_requirements, g.entry_requirements_en,
@@ -707,6 +709,8 @@ def generate_group_docs():
                ON e.student_id = s.id AND e.status = 'active'
         LEFT JOIN groups g
                ON g.id = COALESCE(e.group_id, s.group_id)
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses il
                ON il.id = COALESCE(e.license_id, s.license_id)
         WHERE s.archived = FALSE

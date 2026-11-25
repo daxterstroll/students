@@ -775,6 +775,9 @@
                 {% if 'system' in (faq_sections or []) %}
                 <div class="faq-toc-group" data-toc-cat="system">
                     <div class="faq-toc-group-label"><i class="bi bi-gear-fill"></i> Система</div>
+                    {% if has_perm('manage_faculties') %}
+                    <a href="#p-faculties" class="faq-toc-link" data-target-collapse="#p-faculties">Факультети</a>
+                    {% endif %}
                     {% if has_perm('manage_specialties') %}
                     <a href="#p-specialties" class="faq-toc-link" data-target-collapse="#p-specialties">Спеціальності</a>
                     {% endif %}
@@ -1428,8 +1431,8 @@
                                 <span>Головне джерело інформації про програму, спеціальність і результати навчання для додатка до диплома.</span>
                             </div>
                             <ul class="mb-2">
-                                <li><strong>Що заповнюється вручну:</strong> рік вступу, форма навчання, кредити, ступінь, спеціальність, заклад освіти, вимоги до вступу, результати навчання, «програма включає».</li>
-                                <li><strong>Що підтягується автоматично:</strong> курс, назва групи, англійські назви спеціальності, галузі знань і ступеня, коди ISCED-F, освітня програма та назва кваліфікації.</li>
+                                <li><strong>Що заповнюється вручну:</strong> рік вступу, форма навчання, кредити, ступінь, спеціальність, заклад освіти, вимоги до вступу, результати навчання, «програма включає», а за потреби — окремий факультет (інакше підставляється автоматично за спеціальністю).</li>
+                                <li><strong>Що підтягується автоматично:</strong> курс, назва групи, факультет (укр./англ. з довідника спеціальностей), англійські назви спеціальності, галузі знань і ступеня, коди ISCED-F, освітня програма та назва кваліфікації.</li>
                                 <li><strong>Кількість студентів:</strong> враховує і основних, і паралельних студентів групи.</li>
                             </ul>
                             <div class="faq-callout faq-callout--info mb-0">
@@ -2116,6 +2119,29 @@
                     <span><i class="bi bi-gear-fill me-2"></i>Розділ 4 · Система (довідники, шаблони та звіти)</span>
                 </div>
 
+                {% if has_perm('manage_faculties') %}
+                <div class="accordion-item faq-searchable" data-faq-cat="system">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-faculties">
+                            <i class="bi bi-building"></i>Факультети
+                        </button>
+                    </h2>
+                    <div id="p-faculties" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <div class="faq-meta-row">
+                                <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Система → Факультети</span>
+                                <span>Єдиний довідник факультетів університету (укр./англ. назви, скорочення, статус активності).</span>
+                            </div>
+                            <ul class="mb-0">
+                                <li><strong>Прив’язка до спеціальностей і груп:</strong> у довіднику «Спеціальності» для кожної спеціальності задається типовий факультет, який автоматично підставляється при створенні або редагуванні групи (за потреби для окремої групи його можна перевизначити вручну).</li>
+                                <li><strong>Синхронізація назв:</strong> при перейменуванні факультету українська та англійська назви автоматично оновлюються в усіх прив’язаних групах.</li>
+                                <li><strong>Документи та фільтри:</strong> факультет використовується у шапках відомостей сесії (Word і Excel), у змінних шаблонів (<code>&#123;&#123; faculty &#125;&#125;</code> / <code>&#123;&#123; faculty_en &#125;&#125;</code>), у фільтрі списку студентів та в кастомному експорті.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if has_perm('manage_specialties') %}
                 <div class="accordion-item faq-searchable" data-faq-cat="system">
                     <h2 class="accordion-header">
@@ -2129,7 +2155,7 @@
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Система → Спеціальності</span>
                                 <span>Перелік спеціальностей (за Постановою КМУ №1021 та власні спеціальності закладу).</span>
                             </div>
-                            <p class="mb-0">Обов'язково заповнюйте <strong>Скорочену назву</strong> — саме з неї та номера курсу автоматично утворюється назва групи (напр. <code>КН-1</code>). Також тут задаються англійська назва спеціальності та коди <strong>ISCED-F</strong> (укр./англ.) для додатка до диплома.</p>
+                            <p class="mb-0">Обов'язково заповнюйте <strong>Скорочену назву</strong> — саме з неї та номера курсу автоматично утворюється назва групи (напр. <code>КН-1</code>). Також тут задаються <strong>Факультет за замовчуванням</strong>, англійська назва спеціальності та коди <strong>ISCED-F</strong> (укр./англ.) для додатка до диплома.</p>
                         </div>
                     </div>
                 </div>

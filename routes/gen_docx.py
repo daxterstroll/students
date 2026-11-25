@@ -545,6 +545,34 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
             student_dict[field] = cleaned_lines
 
     context = {**student_dict, **military_dict}
+    if not (context.get('faculty') or '').strip():
+        try:
+            conn_f = get_db()
+            conn_f.row_factory = sqlite3.Row
+            if student_dict.get('group_id'):
+                frow = conn_f.execute("""
+                    SELECT COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+                           COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en
+                    FROM groups g
+                    LEFT JOIN specialties sp ON sp.code = g.specialty_code
+                    LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
+                    WHERE g.id = ?
+                """, (student_dict['group_id'],)).fetchone()
+                if frow:
+                    context['faculty'] = frow['faculty'] or ''
+                    if not (context.get('faculty_en') or '').strip():
+                        context['faculty_en'] = frow['faculty_en'] or ''
+            elif student_dict.get('specialty_code'):
+                from routes.utils import lookup_specialty_faculty
+                f_ua, f_en = lookup_specialty_faculty(conn_f, student_dict.get('specialty_code'))
+                context['faculty'] = f_ua
+                if not (context.get('faculty_en') or '').strip():
+                    context['faculty_en'] = f_en
+            conn_f.close()
+        except Exception as e:
+            global_logger.warning(f"Не вдалося визначити факультет у gen_doc: {e}")
+    context.setdefault('faculty', '')
+    context.setdefault('faculty_en', '')
 
     photo_rel = student_dict.get('photo')
     if photo_rel:
@@ -972,9 +1000,47 @@ def _vidomist_build_context(sheet, students):
         if m:
             inst = m.group(1).strip() + '\n' + m.group(2).strip()
 
+    from routes.utils import resolve_vidomist_faculty
+    knowledge_area = (sheet.get('knowledge_area') or '').strip()
+    _conn_v = None
+    try:
+        sp_ref = (sheet.get('specialty_code') or sheet.get('specialty') or '').strip()
+        need_kf = not knowledge_area and bool(sheet.get('specialty_code'))
+        need_fac = not (sheet.get('faculty') or '').strip() and bool(sp_ref)
+        if need_kf or need_fac:
+            from routes.db import get_db
+            _conn_v = get_db()
+        if need_kf and _conn_v is not None:
+            _kf = _conn_v.execute(
+                """
+                SELECT k.code, k.name_ua
+                FROM specialties s
+                JOIN knowledge_fields k ON k.code = s.knowledge_field_code
+                WHERE s.code = ?
+                """,
+                (sheet.get('specialty_code'),),
+            ).fetchone()
+            if _kf:
+                knowledge_area = f"{_kf['code']} {_kf['name_ua']}".strip()
+        faculty_ua, faculty_en, _ = resolve_vidomist_faculty(
+            {**sheet, 'knowledge_area': knowledge_area},
+            conn=_conn_v,
+        )
+    except Exception:
+        faculty_ua = (sheet.get('faculty') or '').strip() or knowledge_area or (sheet.get('department') or '').strip() or ''
+        faculty_en = (sheet.get('faculty_en') or '').strip()
+    finally:
+        if _conn_v is not None:
+            try:
+                _conn_v.close()
+            except Exception:
+                pass
+
     ctx = {
         'institution': inst,
-        'faculty': sheet.get('faculty') or sheet.get('department') or 'Інформаційні системи та технології',
+        'faculty': faculty_ua,
+        'faculty_en': faculty_en,
+        'knowledge_area': knowledge_area,
         'specialty': _vidomist_format_specialty(sheet.get('specialty_code'), sheet.get('specialty')),
         'course': _vidomist_roman(sheet.get('course')),
         'group_name': sheet.get('group_name') or '',
@@ -1838,10 +1904,32 @@ def gen_vidomist_summary(session_meta, sheets, by_sheet_students, template=None,
     except Exception:
         pass
 
+    from routes.utils import resolve_vidomist_faculty
+    _conn_sum = None
+    try:
+        sp_sum_ref = (session_meta.get('specialty_code') or session_meta.get('specialty') or '').strip()
+        if not (session_meta.get('faculty') or '').strip() and sp_sum_ref:
+            from routes.db import get_db
+            _conn_sum = get_db()
+        sum_faculty, sum_faculty_en, sum_ka = resolve_vidomist_faculty(session_meta, conn=_conn_sum)
+    except Exception:
+        sum_ka = (session_meta.get('knowledge_area') or '').strip()
+        sum_faculty = (session_meta.get('faculty') or '').strip() or sum_ka or ''
+        sum_faculty_en = (session_meta.get('faculty_en') or '').strip()
+    finally:
+        if _conn_sum is not None:
+            try:
+                _conn_sum.close()
+            except Exception:
+                pass
+
     form = session_meta.get('study_form') or ''
     ctx = {
         'institution': session_meta.get('institution_name_and_status')
             or 'ПВНЗ „Європейський університет“',
+        'faculty': sum_faculty,
+        'faculty_en': sum_faculty_en,
+        'knowledge_area': sum_ka,
         'group_name': session_meta.get('group_name') or '',
         'course': _vidomist_roman(session_meta.get('course')),
         'study_form': form,

@@ -13,7 +13,7 @@ routes/admin/catalogs.py
 """
 from flask import render_template, request, redirect, url_for, flash, session, send_file
 from routes.db import get_db
-from routes.utils import log_action, permission_required, logger, build_field_changes
+from routes.utils import log_action, permission_required, logger, build_field_changes, ensure_faculty_schema
 from routes.helpers import current_username, sort_ukrainian
 from routes.admin import admin_bp
 import sqlite3
@@ -423,6 +423,16 @@ def manage_specialties():
     """
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    ensure_faculty_schema(conn)
+
+    def _resolve_faculty_label(fid):
+        if fid in (None, ''):
+            return None
+        try:
+            r = conn.execute("SELECT name_ua FROM faculties WHERE id = ?", (int(fid),)).fetchone()
+            return r['name_ua'] if r else str(fid)
+        except (ValueError, TypeError):
+            return str(fid)
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -445,14 +455,15 @@ def manage_specialties():
             isced_f_ua = (request.form.get('isced_f_ua') or '').strip() or None
             isced_f_en = (request.form.get('isced_f_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
+            faculty_id = request.form.get('faculty_id', type=int)
 
             if not code or not name_ua or not field_code:
                 flash("Заповніть код, назву і галузь знань.", "error")
             else:
                 try:
                     conn.execute(
-                        "INSERT INTO specialties (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, knowledge_field_code, is_active, is_custom) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)",
-                        (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code)
+                        "INSERT INTO specialties (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, knowledge_field_code, faculty_id, is_active, is_custom) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)",
+                        (code, name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code, faculty_id)
                     )
                     conn.commit()
                     flash(f"Спеціальність «{code} {name_ua}» додано.", "success")
@@ -468,13 +479,14 @@ def manage_specialties():
             isced_f_ua = (request.form.get('isced_f_ua') or '').strip() or None
             isced_f_en = (request.form.get('isced_f_en') or '').strip() or None
             field_code = request.form.get('knowledge_field_code')
+            faculty_id = request.form.get('faculty_id', type=int)
             if not name_ua or not field_code:
                 flash("Заповніть назву і галузь знань.", "error")
             else:
                 old_spec = conn.execute("SELECT * FROM specialties WHERE code = ?", (code,)).fetchone()
                 conn.execute(
-                    "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, isced_f_ua = ?, isced_f_en = ?, knowledge_field_code = ? WHERE code = ?",
-                    (name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code, code)
+                    "UPDATE specialties SET name_ua = ?, short_name = ?, name_en = ?, isced_f_ua = ?, isced_f_en = ?, knowledge_field_code = ?, faculty_id = ? WHERE code = ?",
+                    (name_ua, short_name, name_en, isced_f_ua, isced_f_en, field_code, faculty_id, code)
                 )
                 conn.commit()
                 spec_changes = build_field_changes(
@@ -486,6 +498,7 @@ def manage_specialties():
                         'isced_f_ua': isced_f_ua,
                         'isced_f_en': isced_f_en,
                         'knowledge_field_code': field_code,
+                        'faculty_id': faculty_id,
                     },
                     {
                         'name_ua': 'Назва (укр.)',
@@ -494,7 +507,9 @@ def manage_specialties():
                         'isced_f_ua': 'ISCED-F (укр.)',
                         'isced_f_en': 'ISCED-F (англ.)',
                         'knowledge_field_code': 'Галузь знань',
+                        'faculty_id': 'Факультет',
                     },
+                    formatters={'faculty_id': _resolve_faculty_label},
                 )
                 flash("Спеціальність оновлено.", "success")
                 log_action(
@@ -589,16 +604,185 @@ def manage_specialties():
                (SELECT COUNT(*) FROM specialties s WHERE s.knowledge_field_code = k.code) AS specialties_count
         FROM knowledge_fields k ORDER BY k.code
     """).fetchall()
+    faculties = conn.execute("""
+        SELECT id, name_ua, short_name, name_en, sort_order, is_active
+        FROM faculties
+        ORDER BY is_active DESC, sort_order ASC, name_ua COLLATE UKRAINIAN
+    """).fetchall()
     specialties = conn.execute("""
-        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.isced_f_ua, s.isced_f_en, s.is_active, s.is_custom,
+        SELECT s.code, s.name_ua, s.short_name, s.name_en, s.isced_f_ua, s.isced_f_en,
+               s.faculty_id, s.is_active, s.is_custom,
                k.code AS field_code, k.name_ua AS field_name,
+               f.name_ua AS faculty_name, f.short_name AS faculty_short_name,
                (SELECT COUNT(*) FROM groups g WHERE g.specialty_code = s.code) AS groups_count
-        FROM specialties s JOIN knowledge_fields k ON k.code = s.knowledge_field_code
+        FROM specialties s
+        JOIN knowledge_fields k ON k.code = s.knowledge_field_code
+        LEFT JOIN faculties f ON f.id = s.faculty_id
         ORDER BY k.code, substr(s.code,1,1), CAST(substr(s.code,2) AS INTEGER)
     """).fetchall()
     conn.close()
 
-    return render_template("manage_specialties.html", fields=fields, specialties=specialties)
+    return render_template("manage_specialties.html", fields=fields, specialties=specialties, faculties=faculties)
+
+
+@admin_bp.route('/admin/manage_faculties', methods=['GET', 'POST'])
+@permission_required('manage_faculties')
+def manage_faculties():
+    """Довідник факультетів закладу: додавання, редагування, активація/деактивація та видалення."""
+    conn = get_db()
+    conn.row_factory = sqlite3.Row
+    ensure_faculty_schema(conn)
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+
+        if action == 'add':
+            name_ua = (request.form.get('name_ua') or '').strip()
+            short_name = (request.form.get('short_name') or '').strip() or None
+            name_en = (request.form.get('name_en') or '').strip() or None
+            sort_order = request.form.get('sort_order', type=int)
+            if sort_order is None:
+                sort_order = 100
+
+            if not name_ua:
+                flash("Заповніть назву факультету (укр.).", "error")
+            else:
+                try:
+                    cur = conn.execute(
+                        "INSERT INTO faculties (name_ua, short_name, name_en, sort_order, is_active) VALUES (?, ?, ?, ?, 1)",
+                        (name_ua, short_name, name_en, sort_order),
+                    )
+                    conn.commit()
+                    flash(f"Факультет «{name_ua}» додано.", "success")
+                    log_action(
+                        current_username(),
+                        f"додав факультет: {name_ua}",
+                        category='create',
+                        section='Довідники',
+                        entity_type='faculty',
+                        entity_id=cur.lastrowid,
+                        entity_name=name_ua,
+                        details=f"скорочення: {short_name or '—'}, порядок: {sort_order}",
+                    )
+                except sqlite3.IntegrityError:
+                    flash(f"Факультет з назвою «{name_ua}» вже існує.", "error")
+
+        elif action == 'edit':
+            fac_id = request.form.get('id', type=int)
+            name_ua = (request.form.get('name_ua') or '').strip()
+            short_name = (request.form.get('short_name') or '').strip() or None
+            name_en = (request.form.get('name_en') or '').strip() or None
+            sort_order = request.form.get('sort_order', type=int)
+            if sort_order is None:
+                sort_order = 100
+
+            if not fac_id or not name_ua:
+                flash("Заповніть назву факультету (укр.).", "error")
+            else:
+                old_fac = conn.execute("SELECT * FROM faculties WHERE id = ?", (fac_id,)).fetchone()
+                if not old_fac:
+                    flash("Факультет не знайдено.", "error")
+                else:
+                    try:
+                        conn.execute(
+                            "UPDATE faculties SET name_ua = ?, short_name = ?, name_en = ?, sort_order = ? WHERE id = ?",
+                            (name_ua, short_name, name_en, sort_order, fac_id),
+                        )
+                        cur_grp = conn.execute(
+                            "UPDATE groups SET faculty = ?, faculty_en = ? WHERE faculty_id = ?",
+                            (name_ua, name_en, fac_id),
+                        )
+                        updated_groups = cur_grp.rowcount or 0
+                        conn.commit()
+                        fac_changes = build_field_changes(
+                            old_fac,
+                            {
+                                'name_ua': name_ua,
+                                'short_name': short_name,
+                                'name_en': name_en,
+                                'sort_order': sort_order,
+                            },
+                            {
+                                'name_ua': 'Назва (укр.)',
+                                'short_name': 'Скорочена назва',
+                                'name_en': 'Назва (англ.)',
+                                'sort_order': 'Порядок сортування',
+                            },
+                        )
+                        extra_msg = f" Оновились дані в {updated_groups} груп(ах)." if updated_groups else ""
+                        flash(f"Факультет «{name_ua}» оновлено.{extra_msg}", "success")
+                        log_action(
+                            current_username(),
+                            f"редагував факультет: {name_ua}",
+                            category='update',
+                            section='Довідники',
+                            entity_type='faculty',
+                            entity_id=fac_id,
+                            entity_name=name_ua,
+                            changes=fac_changes,
+                            details=f"синхронізовано груп: {updated_groups}" if updated_groups else None,
+                        )
+                    except sqlite3.IntegrityError:
+                        flash(f"Факультет з назвою «{name_ua}» вже існує.", "error")
+
+        elif action == 'toggle_active':
+            fac_id = request.form.get('id', type=int)
+            row = conn.execute("SELECT id, name_ua, is_active FROM faculties WHERE id = ?", (fac_id,)).fetchone()
+            if row:
+                new_state = 0 if row['is_active'] else 1
+                conn.execute("UPDATE faculties SET is_active = ? WHERE id = ?", (new_state, fac_id))
+                conn.commit()
+                log_action(
+                    current_username(),
+                    f"{'увімкнув' if new_state else 'вимкнув'} факультет: {row['name_ua']}",
+                    category='update',
+                    section='Довідники',
+                    entity_type='faculty',
+                    entity_id=fac_id,
+                    entity_name=row['name_ua'],
+                )
+
+        elif action == 'delete':
+            fac_id = request.form.get('id', type=int)
+            row = conn.execute("SELECT id, name_ua FROM faculties WHERE id = ?", (fac_id,)).fetchone()
+            if row:
+                spec_cnt = conn.execute(
+                    "SELECT COUNT(*) AS c FROM specialties WHERE faculty_id = ?", (fac_id,)
+                ).fetchone()['c']
+                grp_cnt = conn.execute(
+                    "SELECT COUNT(*) AS c FROM groups WHERE faculty_id = ?", (fac_id,)
+                ).fetchone()['c']
+                if spec_cnt > 0 or grp_cnt > 0:
+                    flash(
+                        f"Неможливо видалити факультет «{row['name_ua']}» — "
+                        f"прив'язано спеціальностей: {spec_cnt}, груп: {grp_cnt}. "
+                        f"Вимкніть актуальність замість видалення.",
+                        "error",
+                    )
+                else:
+                    conn.execute("DELETE FROM faculties WHERE id = ?", (fac_id,))
+                    conn.commit()
+                    flash(f"Факультет «{row['name_ua']}» видалено.", "success")
+                    log_action(
+                        current_username(),
+                        f"видалив факультет: {row['name_ua']}",
+                        category='delete',
+                        section='Довідники',
+                        entity_type='faculty',
+                        entity_id=fac_id,
+                        entity_name=row['name_ua'],
+                    )
+
+    faculties = conn.execute("""
+        SELECT f.id, f.name_ua, f.short_name, f.name_en, f.sort_order, f.is_active,
+               (SELECT COUNT(*) FROM specialties s WHERE s.faculty_id = f.id) AS specialties_count,
+               (SELECT COUNT(*) FROM groups g WHERE g.faculty_id = f.id AND COALESCE(g.archived, 0) = 0) AS active_groups_count,
+               (SELECT COUNT(*) FROM groups g WHERE g.faculty_id = f.id) AS total_groups_count
+        FROM faculties f
+        ORDER BY f.is_active DESC, f.sort_order ASC, f.name_ua COLLATE UKRAINIAN
+    """).fetchall()
+    conn.close()
+    return render_template("manage_faculties.html", faculties=faculties)
 
 
 @admin_bp.route('/admin/manage_degree_levels', methods=['GET', 'POST'])

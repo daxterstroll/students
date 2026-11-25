@@ -100,9 +100,29 @@ def _set_header_values(ws, sheet):
         semester = semester_names.get(int(_get(sheet, 'semester')), str(_get(sheet, 'semester') or ''))
     except (TypeError, ValueError):
         semester = str(_get(sheet, 'semester') or '')
+    faculty_label = (_get(sheet, 'faculty') or '').strip()
+    sp_lookup = (_get(sheet, 'specialty_code') or _get(sheet, 'specialty') or '').strip()
+    if not faculty_label and sp_lookup:
+        _c_eff = None
+        try:
+            from routes.db import get_db
+            from routes.utils import lookup_specialty_faculty
+            _c_eff = get_db()
+            faculty_label, _ = lookup_specialty_faculty(_c_eff, sp_lookup)
+        except Exception:
+            faculty_label = ''
+        finally:
+            if _c_eff is not None:
+                try:
+                    _c_eff.close()
+                except Exception:
+                    pass
+    if not faculty_label:
+        faculty_label = _get(sheet, 'knowledge_area') or _get(sheet, 'department') or ''
+
     values = {
         'A1': _get(sheet, 'institution_name_and_status') or 'ПВНЗ «Європейський університет»\nЛьвівська філія',
-        'A3': f"Інститут, факультет, відділення      {_get(sheet, 'faculty') or _get(sheet, 'department') or 'Інформаційні системи та технології'}",
+        'A3': f"Інститут, факультет, відділення      {faculty_label}",
         'A4': f"Спеціальність           {_get(sheet, 'specialty_code') or ''} {_get(sheet, 'specialty') or ''}".strip(),
         'A5': f"Курс    {course}   Група       {_get(sheet, 'group_name') or ''}     ({_get(sheet, 'study_form') or ''})   {_get(sheet, 'academic_year') or ''}   навчальний рік",
         'A6': f"Освітній рівень  {_get(sheet, 'degree_level') or ''}",

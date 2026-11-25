@@ -943,6 +943,7 @@ FAQ_SECTION_PERMISSIONS = {
     ],
     # ═══ СЕКЦІЯ 4: СИСТЕМА (nav: 'system') ═══
     'system': [
+        'manage_faculties',
         'manage_specialties',
         'manage_degree_levels',
         'manage_educational_programs',
@@ -1044,6 +1045,7 @@ def student_list():
 
     search = request.args.get('search', '')
     group_id = request.args.get('group_id', type=int)
+    faculty = (request.args.get('faculty') or '').strip()
     degree_level = request.args.get('degree_level', '')
     study_form = request.args.get('study_form', '')
     course = request.args.get('course', type=int)
@@ -1130,6 +1132,9 @@ def student_list():
                g.isced_f_en,
                g.educational_program_en,
                g.knowledge_area_en,
+               g.faculty_id,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                (SELECT GROUP_CONCAT(g2.name, ' | ')
                 FROM student_enrollments e2
                 JOIN groups g2 ON g2.id = e2.group_id
@@ -1142,10 +1147,17 @@ def student_list():
         FROM students s
         LEFT JOIN military m ON m.student_id = s.id
         LEFT JOIN groups g ON s.group_id = g.id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN frozen_students fs ON fs.student_id = s.id AND fs.resolved_at IS NULL
         LEFT JOIN groups pg ON pg.id = fs.previous_group_id
     """
-    count_query = "SELECT COUNT(*) FROM students s LEFT JOIN groups g ON s.group_id = g.id"
+    count_query = (
+        "SELECT COUNT(*) FROM students s "
+        "LEFT JOIN groups g ON s.group_id = g.id "
+        "LEFT JOIN specialties sp ON sp.code = g.specialty_code "
+        "LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)"
+    )
     where_clauses = []
     if not include_archived:
         where_clauses.append("s.archived = FALSE")
@@ -1164,6 +1176,16 @@ def student_list():
             )
         """)
         params.extend([group_id, group_id])
+
+    if faculty == 'none':
+        where_clauses.append("COALESCE(g.faculty_id, sp.faculty_id) IS NULL AND COALESCE(TRIM(g.faculty), '') = ''")
+    elif faculty:
+        if faculty.isdigit():
+            where_clauses.append("COALESCE(g.faculty_id, sp.faculty_id) = ?")
+            params.append(int(faculty))
+        else:
+            where_clauses.append("COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') = ?")
+            params.append(faculty)
 
     if degree_level:
         where_clauses.append("g.degree_level = ?")
@@ -1219,6 +1241,7 @@ def student_list():
                 'students.html',
                 students=[],
                 search=search, group_id=group_id, groups=[], groups_by_degree={},
+                faculty=faculty, faculties_available=[],
                 degree_level=degree_level, degree_levels_available=[],
                 study_form=study_form, study_forms_available=[],
                 course=course, courses_available=[],
@@ -1352,6 +1375,15 @@ def student_list():
     licenses_available = conn.execute(
         "SELECT id, short_name_ua FROM institution_licenses WHERE is_active = 1 ORDER BY id"
     ).fetchall()
+    faculties_available = conn.execute(
+        """
+        SELECT id, name_ua, short_name
+        FROM faculties
+        WHERE is_active = 1
+           OR id IN (SELECT faculty_id FROM groups WHERE faculty_id IS NOT NULL)
+        ORDER BY sort_order ASC, name_ua COLLATE UKRAINIAN
+        """
+    ).fetchall()
 
     conn.close()
 
@@ -1360,6 +1392,7 @@ def student_list():
         students=students_with_filled_fields,
         search=search, group_id=group_id, groups=groups,
         groups_by_degree=groups_by_degree,
+        faculty=faculty, faculties_available=faculties_available,
         degree_level=degree_level, degree_levels_available=degree_levels_available,
         study_form=study_form, study_forms_available=study_forms_available,
         course=course, courses_available=courses_available,
@@ -2940,6 +2973,8 @@ def generate(student_id):
                g.qualification_name_en, g.degree_level_en, g.specialty_en,
                g.isced_f_ua, g.isced_f_en,
                g.educational_program_en, g.knowledge_area_en,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                il.name_ua  AS institution_name_and_status,
                il.name_en  AS institution_name_and_status_en,
                il.short_name_ua AS license_short_name_ua,
@@ -2952,6 +2987,8 @@ def generate(student_id):
                g.program_includes_reduced,       g.program_includes_reduced_en
         FROM students s
         LEFT JOIN groups g ON g.id = ?
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN student_enrollments e
                ON e.student_id = s.id AND e.group_id = g.id
         LEFT JOIN institution_licenses il

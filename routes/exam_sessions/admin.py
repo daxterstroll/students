@@ -684,9 +684,13 @@ def session_detail(session_id):
     es = conn.execute("""
         SELECT es.*, g.name AS group_name, g.course, g.study_form,
                g.start_year, g.specialty, g.specialty_code, g.degree_level,
-               g.knowledge_area, g.program_credits
+               g.knowledge_area, g.program_credits,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en
         FROM exam_sessions es
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         WHERE es.id = ?
     """, (session_id,)).fetchone()
     if not es or not user_can_access_group(conn, session, es['group_id']):
@@ -1218,13 +1222,17 @@ def sheet_detail(sheet_id):
     sheet = conn.execute("""
         SELECT ss.*, es.group_id, es.name AS session_name, es.academic_year,
                es.semester, g.name AS group_name, g.course, g.study_form,
-               g.specialty, g.degree_level, g.knowledge_area,
+               g.specialty, g.specialty_code, g.degree_level, g.knowledge_area,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                l.short_name_ua AS license_name, l.name_ua AS license_name_full,
                t.full_name AS teacher_full, t.short_name AS teacher_short,
                t.token AS teacher_token
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         WHERE ss.id = ?
@@ -1948,9 +1956,14 @@ def group_course_summary():
         return redirect(url_for('exam_sessions.sessions_list'))
 
     g = conn.execute("""
-        SELECT id, name, course, study_form, degree_level, specialty, specialty_code,
-               knowledge_area, institution_name_and_status
-        FROM groups WHERE id=?
+        SELECT g.id, g.name, g.course, g.study_form, g.degree_level, g.specialty, g.specialty_code,
+               g.knowledge_area, g.institution_name_and_status,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en
+        FROM groups g
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
+        WHERE g.id=?
     """, (group_id,)).fetchone()
     if not g:
         conn.close()
@@ -2052,11 +2065,15 @@ def sheet_excel(sheet_id):
                g.name AS group_name, g.course, g.study_form, g.specialty,
                g.degree_level, g.knowledge_area, g.specialty_code,
                g.institution_name_and_status,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                l.short_name_ua AS license_name,
                t.short_name AS teacher_short, t.full_name AS teacher_full
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         WHERE ss.id = ?
@@ -2088,11 +2105,15 @@ def sheet_word(sheet_id):
                g.name AS group_name, g.course, g.study_form, g.specialty,
                g.degree_level, g.knowledge_area, g.specialty_code,
                g.institution_name_and_status,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                l.short_name_ua AS license_name,
                t.short_name AS teacher_short, t.full_name AS teacher_full
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         LEFT JOIN teachers t ON t.id = ss.teacher_ref_id
         WHERE ss.id = ?
@@ -2122,9 +2143,13 @@ def session_summary_word(session_id):
     es = conn.execute("""
         SELECT es.*, g.name AS group_name, g.course, g.study_form, g.specialty,
                g.degree_level, g.knowledge_area, g.specialty_code,
-               g.institution_name_and_status
+               g.institution_name_and_status,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en
         FROM exam_sessions es
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         WHERE es.id = ?
     """, (session_id,)).fetchone()
     if not es or not user_can_access_group(conn, session, es['group_id']):
@@ -2176,9 +2201,13 @@ def session_summary_xlsx(session_id):
     es = conn.execute("""
         SELECT es.*, g.name AS group_name, g.course, g.study_form, g.specialty,
                g.specialty_code, g.degree_level, g.knowledge_area,
-               g.institution_name_and_status
+               g.institution_name_and_status,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en
         FROM exam_sessions es
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         WHERE es.id = ?
     """, (session_id,)).fetchone()
     if not es or not user_can_access_group(conn, session, es['group_id']):

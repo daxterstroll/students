@@ -175,11 +175,15 @@ def teacher_sheet(teacher_token, sheet_id):
     sheet = conn.execute("""
         SELECT ss.*, es.academic_year, es.semester, es.name AS session_name,
                g.name AS group_name, g.course, g.study_form, g.specialty,
-               g.degree_level, g.knowledge_area,
+               g.specialty_code, g.degree_level, g.knowledge_area,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                l.short_name_ua AS license_name
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         WHERE ss.id = ?
     """, (sheet_id,)).fetchone()
@@ -327,11 +331,15 @@ def teacher_grade_form(token):
     sheet = conn.execute("""
         SELECT ss.*, es.academic_year, es.semester, es.name AS session_name,
                g.name AS group_name, g.course, g.study_form, g.specialty,
-               g.degree_level, g.knowledge_area,
+               g.specialty_code, g.degree_level, g.knowledge_area,
+               COALESCE(NULLIF(TRIM(g.faculty), ''), fl.name_ua, '') AS faculty,
+               COALESCE(NULLIF(TRIM(g.faculty_en), ''), fl.name_en, '') AS faculty_en,
                l.short_name_ua AS license_name
         FROM session_sheets ss
         JOIN exam_sessions es ON es.id = ss.session_id
         JOIN groups g ON g.id = es.group_id
+        LEFT JOIN specialties sp ON sp.code = g.specialty_code
+        LEFT JOIN faculties fl ON fl.id = COALESCE(g.faculty_id, sp.faculty_id)
         LEFT JOIN institution_licenses l ON l.id = ss.license_id
         WHERE ss.token = ?
     """, (token,)).fetchone()

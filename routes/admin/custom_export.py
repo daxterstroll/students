@@ -132,6 +132,8 @@ COLUMN_GROUPS = [
         ('study_form', 'Форма навчання'),
         ('specialty', 'Спеціальність'),
         ('specialty_code', 'Код спеціальності'),
+        ('faculty', 'Факультет'),
+        ('faculty_en', 'Факультет (англ.)'),
         ('program_credits', 'Кредити програми'),
         ('program_credits_override', 'Кредити (скорочена)'),
         ('enrollment_status', 'Статус навчання'),
@@ -286,6 +288,16 @@ def _load_reference_data(conn):
         "SELECT * FROM groups"
     ).fetchall()}
 
+    ref['faculties'] = {f['id']: dict(f) for f in conn.execute(
+        "SELECT id, name_ua, short_name, name_en FROM faculties"
+    ).fetchall()}
+
+    ref['specialty_faculty'] = {}
+    for sp in conn.execute(
+        "SELECT code, faculty_id FROM specialties WHERE faculty_id IS NOT NULL"
+    ).fetchall():
+        ref['specialty_faculty'][sp['code']] = sp['faculty_id']
+
     ref['licenses'] = {l['id']: dict(l) for l in conn.execute(
         "SELECT * FROM institution_licenses"
     ).fetchall()}
@@ -348,6 +360,13 @@ def _build_record(student, enrollment, ref, today):
     gid = e.get('group_id')
     group = ref['groups'].get(gid, {}) if gid else {}
 
+    eff_faculty_id = group.get('faculty_id')
+    if not eff_faculty_id and group.get('specialty_code'):
+        eff_faculty_id = ref.get('specialty_faculty', {}).get(group.get('specialty_code'))
+    fac_row = ref.get('faculties', {}).get(eff_faculty_id, {}) if eff_faculty_id else {}
+    eff_faculty_ua = (group.get('faculty') or '').strip() or (fac_row.get('name_ua') or '')
+    eff_faculty_en = (group.get('faculty_en') or '').strip() or (fac_row.get('name_en') or '')
+
     lic_id = e.get('license_id') if e else s.get('license_id')
     license_row = ref['licenses'].get(lic_id, {}) if lic_id else {}
 
@@ -407,6 +426,8 @@ def _build_record(student, enrollment, ref, today):
         'study_form': group.get('study_form') or '',
         'specialty': group.get('specialty') or '',
         'specialty_code': group.get('specialty_code') or '',
+        'faculty': eff_faculty_ua,
+        'faculty_en': eff_faculty_en,
         'program_credits': group.get('program_credits') or '',
         'program_credits_override': e.get('program_credits_override') or '',
         # enrollment_status — українською для експорту;
@@ -477,6 +498,7 @@ def _build_record(student, enrollment, ref, today):
         '_has_deferral': bool((m.get('deferral_type') or '').strip()),
         '_has_edu_doc': bool(ed.get('id')),
         '_has_enrollment_order': s['id'] in ref['enrollment_students'],
+        '_faculty_id': eff_faculty_id,
         '_program_credits_override': e.get('program_credits_override'),
         '_group_program_credits': group.get('program_credits'),
         '_is_reduced': (
@@ -542,6 +564,7 @@ def _extract_filters(form):
         'max_age': _get_int(form, 'max_age'),
         'gender': (form.get('gender') or '').strip(),
         'group_id': _get_int(form, 'group_id'),
+        'faculty_id': (form.get('faculty_id') or '').strip(),
         'degree_level': (form.get('degree_level') or '').strip(),
         'study_form': (form.get('study_form') or '').strip(),
         'course': _get_int(form, 'course'),
@@ -578,6 +601,17 @@ def _matches(record, filters):
 
     if filters['group_id'] and record.get('group_id') != filters['group_id']:
         return False
+
+    if filters.get('faculty_id'):
+        if filters['faculty_id'] == 'none':
+            if record.get('_faculty_id') or (record.get('faculty') or '').strip():
+                return False
+        elif filters['faculty_id'].isdigit():
+            if record.get('_faculty_id') != int(filters['faculty_id']):
+                return False
+        else:
+            if (record.get('faculty') or '').strip() != filters['faculty_id']:
+                return False
 
     if filters['degree_level'] and record.get('degree_level') != filters['degree_level']:
         return False
@@ -876,8 +910,16 @@ def _prepare_filter_choices(conn):
         "ORDER BY specialty_code"
     ).fetchall()
 
+    faculties = conn.execute(
+        "SELECT id, name_ua, short_name FROM faculties "
+        "WHERE COALESCE(is_active, 1) = 1 "
+        "   OR id IN (SELECT faculty_id FROM groups WHERE faculty_id IS NOT NULL) "
+        "ORDER BY sort_order ASC, name_ua COLLATE UKRAINIAN"
+    ).fetchall()
+
     return {
         'groups': groups,
+        'faculties': faculties,
         'licenses': licenses,
         'degree_levels': degree_levels,
         'study_forms': study_forms,
