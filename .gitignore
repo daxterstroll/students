@@ -2,6 +2,7 @@ generated_docs/
 uploads/
 template_word/
 temp_preview/
+backups/
 logs/
 *.db
 *.db-shm

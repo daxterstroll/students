@@ -116,6 +116,13 @@ html[data-theme="dark"] .sys-card {
             </a>
         </li>
         <li class="nav-item">
+            <a class="nav-link {{ 'active' if active_tab == 'cloud' }}"
+               href="{{ url_for('system_ops.system_dashboard', tab='cloud') }}">
+                <i class="bi bi-cloud-upload me-1"></i>Хмарні копії
+                <span class="badge {{ 'bg-success' if cloud_enabled_count > 0 else 'bg-secondary' }} ms-1">{{ cloud_enabled_count }}/{{ cloud_provider_order|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
             <a class="nav-link {{ 'active' if active_tab == 'sessions' }}"
                href="{{ url_for('system_ops.system_dashboard', tab='sessions') }}">
                 <i class="bi bi-people-fill me-1"></i>Активні сесії
@@ -248,6 +255,21 @@ html[data-theme="dark"] .sys-card {
                             <i class="bi bi-plus-circle me-1"></i>Зробити копію
                         </button>
                     </div>
+                    <div class="col-12 mt-2">
+                        {% if cloud_enabled_count > 0 %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="createBackupCloudCheck" name="upload_to_cloud" value="1">
+                            <label class="form-check-label small" for="createBackupCloudCheck">
+                                Одразу вивантажити в увімкнені хмарні сховища ({{ cloud_enabled_count }})
+                            </label>
+                        </div>
+                        {% else %}
+                        <div class="small text-muted">
+                            <i class="bi bi-cloud-slash me-1"></i>Хмарні сховища не налаштовані —
+                            <a href="{{ url_for('system_ops.system_dashboard', tab='cloud') }}">підключити Google Диск / S3 / WebDAV / Telegram</a>.
+                        </div>
+                        {% endif %}
+                    </div>
                 </form>
                 <div class="row g-2 mt-3">
                     <div class="col-6">
@@ -328,6 +350,7 @@ html[data-theme="dark"] .sys-card {
                         <th>Дата створення</th>
                         <th>Створив</th>
                         <th>Розмір</th>
+                        <th>Хмара</th>
                         <th>Примітка</th>
                         <th class="text-end">Дії</th>
                     </tr>
@@ -350,8 +373,33 @@ html[data-theme="dark"] .sys-card {
                         <td class="small text-nowrap">{{ b.created_at }}</td>
                         <td class="small">{{ b.created_by }}</td>
                         <td class="small text-nowrap">{{ b.size_human }}</td>
+                        <td class="small">
+                            {% if b.cloud_uploads %}
+                            <div class="d-flex flex-wrap gap-1">
+                                {% for prov_key, up in b.cloud_uploads.items() %}
+                                <span class="badge {{ 'bg-success' if up.ok else 'bg-danger' }}"
+                                      title="{{ up.at }}: {{ up.message }}">
+                                    {% if prov_key == 'gdrive' %}GDrive{% elif prov_key == 's3' %}S3{% elif prov_key == 'webdav' %}WebDAV{% else %}TG{% endif %}
+                                    {{ '✓' if up.ok else '✕' }}
+                                </span>
+                                {% endfor %}
+                            </div>
+                            {% else %}
+                            <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
                         <td class="small text-muted">{{ b.note or '—' }}</td>
                         <td class="text-end text-nowrap">
+                            {% if cloud_enabled_count > 0 %}
+                            <form method="POST" action="{{ url_for('system_ops.upload_backup_cloud_route', filename=b.filename) }}"
+                                  class="d-inline">
+                                <input type="hidden" name="provider" value="all">
+                                <input type="hidden" name="next_tab" value="backups">
+                                <button type="submit" class="btn btn-sm btn-outline-info" title="Вивантажити в усі увімкнені хмарні сховища">
+                                    <i class="bi bi-cloud-arrow-up"></i>
+                                </button>
+                            </form>
+                            {% endif %}
                             <a href="{{ url_for('system_ops.download_backup_route', filename=b.filename) }}"
                                class="btn btn-sm btn-outline-secondary" title="Завантажити .db">
                                 <i class="bi bi-download"></i>
@@ -385,6 +433,601 @@ html[data-theme="dark"] .sys-card {
         </div>
         {% endif %}
     </div>
+    {% endif %}
+
+    {# ══════════════════════════════════════════════════════════════════
+       ВКЛАДКА 2.5: ХМАРНІ КОПІЇ (GOOGLE DRIVE, S3/R2/MINIO, WEBDAV, TELEGRAM)
+       ══════════════════════════════════════════════════════════════════ #}
+    {% if active_tab == 'cloud' %}
+    {% set gdrive = cloud_config.gdrive %}
+    {% set s3 = cloud_config.s3 %}
+    {% set webdav = cloud_config.webdav %}
+    {% set tg = cloud_config.telegram %}
+
+    <div class="sys-card p-4 mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h4 class="mb-1"><i class="bi bi-cloud-check me-2" style="color: var(--brass);"></i>Хмарне резервне копіювання БД</h4>
+                <div class="small text-muted">
+                    Офсайт-копії завжди знімаються з <strong>реальної бази даних</strong> (<code>{{ real_db_size }}</code>).
+                    Ключі та токени зберігаються локально на сервері в <code>cloud_backup_config.json</code> і ніколи не передаються у браузер.
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <form method="POST" action="{{ url_for('system_ops.cloud_upload_latest_route') }}">
+                    <input type="hidden" name="provider" value="all">
+                    <input type="hidden" name="create_new" value="0">
+                    <button type="submit" class="btn btn-outline-primary btn-sm" {{ 'disabled' if cloud_enabled_count == 0 or not backups }}>
+                        <i class="bi bi-cloud-upload me-1"></i>Вивантажити останню копію
+                    </button>
+                </form>
+                <form method="POST" action="{{ url_for('system_ops.cloud_upload_latest_route') }}">
+                    <input type="hidden" name="provider" value="all">
+                    <input type="hidden" name="create_new" value="1">
+                    <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if cloud_enabled_count == 0 }}>
+                        <i class="bi bi-plus-circle me-1"></i>Зробити свіжу копію й відправити в хмару
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- 1. GOOGLE DRIVE -->
+        <div class="col-xl-6">
+            <div class="sys-card p-4 h-100 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h5 class="mb-1"><i class="bi bi-google me-2 text-primary"></i>Google Диск</h5>
+                        <div class="small text-muted">
+                            15 ГБ безкоштовно на власному Google-акаунті (OAuth 2.0) або Спільний диск Google Workspace.
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        {% if gdrive.enabled %}
+                        <span class="badge bg-success">Увімкнено</span>
+                        {% elif gdrive.configured %}
+                        <span class="badge bg-warning text-dark">Вимкнено</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Не налаштовано</span>
+                        {% endif %}
+                        {% if gdrive.auto_upload %}
+                        <div class="mt-1"><span class="badge bg-info text-dark">Автощодня</span></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if gdrive.account_email or gdrive.last_uploaded_at or gdrive.last_error %}
+                <div class="sys-subbox p-2 px-3 mb-3 small">
+                    {% if gdrive.account_email %}
+                    <div><strong>Акаунт:</strong> {{ gdrive.account_email }}</div>
+                    {% endif %}
+                    {% if gdrive.last_uploaded_at %}
+                    <div class="text-success"><strong>Останнє вивантаження:</strong> {{ gdrive.last_uploaded_at }} ({{ gdrive.last_file }})</div>
+                    {% endif %}
+                    {% if gdrive.last_error %}
+                    <div class="text-danger"><strong>Помилка:</strong> {{ gdrive.last_error }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                {% if gdrive_manual_auth_url %}
+                <div class="alert alert-info mb-3 small">
+                    <div class="fw-bold mb-1">Крок 1. Відкрийте сторінку входу Google:</div>
+                    <a href="{{ gdrive_manual_auth_url }}" target="_blank" rel="noopener" class="btn btn-sm btn-primary mb-2">
+                        <i class="bi bi-box-arrow-up-right me-1"></i>Увійти в Google і дозволити доступ до Диску
+                    </a>
+                    <div class="mb-2 text-muted">
+                        Після підтвердження браузер переадресує на <code>http://127.0.0.1/?code=...</code> (сторінка «не вдається відкрити сайт» — це нормально).
+                        Скопіюйте <strong>повний URL з адресного рядка</strong> браузера та вставте сюди:
+                    </div>
+                    <form method="POST" action="{{ url_for('system_ops.cloud_gdrive_exchange_code_route') }}" class="d-flex gap-2">
+                        <input type="text" class="form-control form-control-sm" name="oauth_code_or_url" required
+                               placeholder="http://127.0.0.1/?state=...&code=4/0A...">
+                        <button type="submit" class="btn btn-sm btn-success text-nowrap">Завершити</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('system_ops.cloud_save_provider_route', provider='gdrive') }}"
+                      enctype="multipart/form-data" class="d-grid gap-2 flex-grow-1">
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Спосіб автентифікації</label>
+                            <select class="form-select form-select-sm" name="auth_mode" id="gdriveAuthMode"
+                                    onchange="toggleGdriveMode(this.value)">
+                                <option value="oauth" {{ 'selected' if gdrive.auth_mode != 'service_account' }}>OAuth 2.0 (для @gmail.com та Workspace)</option>
+                                <option value="service_account" {{ 'selected' if gdrive.auth_mode == 'service_account' }}>Service Account JSON (Shared Drive)</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Зберігати в хмарі (останніх копій)</label>
+                            <input type="number" min="0" max="200" class="form-control form-control-sm" name="keep_remote"
+                                   value="{{ gdrive.keep_remote }}" title="0 — зберігати всі копії без автоочищення">
+                        </div>
+                    </div>
+
+                    <div id="gdriveOAuthFields" class="{{ 'd-none' if gdrive.auth_mode == 'service_account' }}">
+                        <div class="row g-2">
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1">Google Client ID</label>
+                                <input type="text" class="form-control form-control-sm" name="client_id" id="gdriveClientIdInput"
+                                       value="{{ gdrive.client_id }}" placeholder="...apps.googleusercontent.com">
+                            </div>
+                            <div class="col-sm-6">
+                                <label class="form-label small mb-1">Google Client Secret</label>
+                                <input type="password" class="form-control form-control-sm" name="client_secret" id="gdriveClientSecretInput"
+                                       placeholder="{{ 'Збережено (' ~ gdrive.client_secret_preview ~ ') — залиште порожнім' if gdrive.has_client_secret else 'Вставте Client Secret' }}">
+                            </div>
+                        </div>
+                        <details class="mt-2 small">
+                            <summary class="text-muted" style="cursor: pointer;">Додатково: ручне введення Refresh Token та інструкція налаштування</summary>
+                            <div class="sys-subbox p-2 mt-2 d-grid gap-2">
+                                <div>
+                                    <label class="form-label small mb-1">Refresh Token (заповнюється автоматично після авторизації)</label>
+                                    <input type="password" class="form-control form-control-sm" name="refresh_token"
+                                           placeholder="{{ 'Збережено (' ~ gdrive.refresh_token_preview ~ ')' if gdrive.has_refresh_token else 'Отримайте кнопкою авторизації нижче' }}">
+                                </div>
+                                <div class="text-muted">
+                                    <strong>Як отримати Client ID / Secret:</strong><br>
+                                    1. Відкрийте Google Cloud Console → увімкніть <strong>Google Drive API</strong>.<br>
+                                    2. Створіть <strong>OAuth Client ID</strong>:
+                                    {% if is_local_intranet_host %}
+                                    оскільки сервер працює на локальному домені (<code>{{ request.host }}</code>), оберіть тип
+                                    <strong>Desktop app</strong> і натисніть «Авторизувати (.local / Desktop)».
+                                    {% else %}
+                                    оберіть <strong>Web application</strong> і додайте Redirect URI: <code>{{ gdrive_callback_url }}</code>.
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+
+                    <div id="gdriveServiceAccountFields" class="{{ '' if gdrive.auth_mode == 'service_account' else 'd-none' }}">
+                        <label class="form-label small mb-1">JSON-ключ Service Account (лише для Google Workspace Shared Drive)</label>
+                        <input type="file" accept=".json,application/json" class="form-control form-control-sm mb-2" name="service_account_file">
+                        <textarea class="form-control form-control-sm font-monospace" name="service_account_json" rows="2"
+                                  placeholder="{{ 'JSON-ключ уже збережено — завантажте новий файл або вставте текст для заміни' if gdrive.has_service_account_json else 'Або вставте вміст JSON-ключа сюди' }}"></textarea>
+                        <div class="form-text text-muted">Звичайний безкоштовний @gmail.com не дозволяє завантаження через Service Account — для @gmail.com використовуйте OAuth 2.0.</div>
+                    </div>
+
+                    <div>
+                        <label class="form-label small mb-1">ID або посилання на теку Google Диску (необов’язково)</label>
+                        <input type="text" class="form-control form-control-sm" name="folder_id" id="gdriveFolderIdInput"
+                               value="{{ gdrive.folder_id }}" placeholder="Наприклад: https://drive.google.com/drive/folders/1AbC...">
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-3 pt-1">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="enabled" value="1" id="gdEnabled" {{ 'checked' if gdrive.enabled }}>
+                            <label class="form-check-label small fw-semibold" for="gdEnabled">Увімкнути</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_upload" value="1" id="gdAuto" {{ 'checked' if gdrive.auto_upload }}>
+                            <label class="form-check-label small" for="gdAuto">Автощодня</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="compress_zip" value="1" id="gdZip" {{ 'checked' if gdrive.compress_zip }}>
+                            <label class="form-check-label small" for="gdZip">Стискати .zip</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-auto pt-2 border-top">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_gdrive_auth_start_route') }}"
+                                name="redirect_mode" value="{{ 'manual_loopback' if is_local_intranet_host else 'auto' }}"
+                                class="btn btn-outline-primary btn-sm"
+                                onclick="return syncGdriveOAuthHidden(this.form);">
+                            <i class="bi bi-google me-1"></i>{{ 'Авторизувати (.local / Desktop)' if is_local_intranet_host else 'Підключити через Google' }}
+                        </button>
+                        {% if is_local_intranet_host %}
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_gdrive_auth_start_route') }}"
+                                name="redirect_mode" value="auto"
+                                class="btn btn-outline-secondary btn-sm"
+                                title="Якщо сайт має публічний HTTPS-домен">
+                            <i class="bi bi-link-45deg"></i> Callback
+                        </button>
+                        {% endif %}
+                        {% if gdrive.configured %}
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_test_provider_route', provider='gdrive') }}"
+                                class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-plug me-1"></i>Перевірити
+                        </button>
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_disconnect_provider_route', provider='gdrive') }}"
+                                class="btn btn-outline-danger btn-sm ms-auto"
+                                onclick="return confirm('Очистити ключі Google Диску та відключити провайдер?');">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 2. S3-COMPATIBLE (R2, B2, AWS, MINIO) -->
+        <div class="col-xl-6">
+            <div class="sys-card p-4 h-100 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h5 class="mb-1"><i class="bi bi-bucket me-2 text-warning"></i>S3-сховище (R2 / Backblaze B2 / MinIO / AWS)</h5>
+                        <div class="small text-muted">
+                            Cloudflare R2 дає 10 ГБ/міс безкоштовно, MinIO можна розгорнути на сусідньому сервері університету.
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        {% if s3.enabled %}
+                        <span class="badge bg-success">Увімкнено</span>
+                        {% elif s3.configured %}
+                        <span class="badge bg-warning text-dark">Вимкнено</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Не налаштовано</span>
+                        {% endif %}
+                        {% if s3.auto_upload %}
+                        <div class="mt-1"><span class="badge bg-info text-dark">Автощодня</span></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if s3.last_uploaded_at or s3.last_error %}
+                <div class="sys-subbox p-2 px-3 mb-3 small">
+                    {% if s3.last_uploaded_at %}
+                    <div class="text-success"><strong>Останнє вивантаження:</strong> {{ s3.last_uploaded_at }} ({{ s3.last_file }})</div>
+                    {% endif %}
+                    {% if s3.last_error %}
+                    <div class="text-danger"><strong>Помилка:</strong> {{ s3.last_error }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('system_ops.cloud_save_provider_route', provider='s3') }}" class="d-grid gap-2 flex-grow-1">
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Пресет сервісу</label>
+                            <select class="form-select form-select-sm" name="preset" onchange="applyS3Preset(this.value)">
+                                <option value="r2" {{ 'selected' if s3.preset == 'r2' }}>Cloudflare R2 (10 ГБ free)</option>
+                                <option value="b2" {{ 'selected' if s3.preset == 'b2' }}>Backblaze B2 (10 ГБ free)</option>
+                                <option value="minio" {{ 'selected' if s3.preset == 'minio' }}>Локальний MinIO / Ceph</option>
+                                <option value="aws" {{ 'selected' if s3.preset == 'aws' }}>Amazon AWS S3</option>
+                                <option value="custom" {{ 'selected' if s3.preset == 'custom' }}>Інший S3-провайдер</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Endpoint URL</label>
+                            <input type="url" class="form-control form-control-sm" name="endpoint_url" id="s3EndpointInput"
+                                   value="{{ s3.endpoint_url }}" placeholder="https://<account_id>.r2.cloudflarestorage.com">
+                        </div>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1">Region</label>
+                            <input type="text" class="form-control form-control-sm" name="region" id="s3RegionInput"
+                                   value="{{ s3.region }}" placeholder="auto">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1">Назва бакету (Bucket)</label>
+                            <input type="text" class="form-control form-control-sm" name="bucket"
+                                   value="{{ s3.bucket }}" placeholder="students-backups">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1">Префікс (тека)</label>
+                            <input type="text" class="form-control form-control-sm" name="prefix"
+                                   value="{{ s3.prefix }}" placeholder="students-backups/">
+                        </div>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1">Access Key ID</label>
+                            <input type="text" class="form-control form-control-sm" name="access_key_id"
+                                   value="{{ s3.access_key_id }}" placeholder="Access Key">
+                        </div>
+                        <div class="col-sm-5">
+                            <label class="form-label small mb-1">Secret Access Key</label>
+                            <input type="password" class="form-control form-control-sm" name="secret_access_key"
+                                   placeholder="{{ 'Збережено (' ~ s3.secret_access_key_preview ~ ')' if s3.has_secret_access_key else 'Secret Key' }}">
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-1">Зберігати копій</label>
+                            <input type="number" min="0" max="200" class="form-control form-control-sm" name="keep_remote"
+                                   value="{{ s3.keep_remote }}">
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-3 pt-1">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="enabled" value="1" id="s3Enabled" {{ 'checked' if s3.enabled }}>
+                            <label class="form-check-label small fw-semibold" for="s3Enabled">Увімкнути</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_upload" value="1" id="s3Auto" {{ 'checked' if s3.auto_upload }}>
+                            <label class="form-check-label small" for="s3Auto">Автощодня</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="compress_zip" value="1" id="s3Zip" {{ 'checked' if s3.compress_zip }}>
+                            <label class="form-check-label small" for="s3Zip">Стискати .zip</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="path_style" value="1" id="s3PathStyle" {{ 'checked' if s3.path_style }}>
+                            <label class="form-check-label small" for="s3PathStyle">Path-style URL</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-auto pt-2 border-top">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                        {% if s3.configured %}
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_test_provider_route', provider='s3') }}"
+                                class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-plug me-1"></i>Перевірити
+                        </button>
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_disconnect_provider_route', provider='s3') }}"
+                                class="btn btn-outline-danger btn-sm ms-auto"
+                                onclick="return confirm('Очистити ключі S3 та відключити провайдер?');">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 3. WEBDAV (NEXTCLOUD / OWNCLOUD / NAS) -->
+        <div class="col-xl-6">
+            <div class="sys-card p-4 h-100 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h5 class="mb-1"><i class="bi bi-hdd-network me-2 text-info"></i>WebDAV (Nextcloud / ownCloud / NAS)</h5>
+                        <div class="small text-muted">
+                            Ідеально для корпоративного Nextcloud університету, Synology NAS або Hetzner Storage Box.
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        {% if webdav.enabled %}
+                        <span class="badge bg-success">Увімкнено</span>
+                        {% elif webdav.configured %}
+                        <span class="badge bg-warning text-dark">Вимкнено</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Не налаштовано</span>
+                        {% endif %}
+                        {% if webdav.auto_upload %}
+                        <div class="mt-1"><span class="badge bg-info text-dark">Автощодня</span></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if webdav.last_uploaded_at or webdav.last_error %}
+                <div class="sys-subbox p-2 px-3 mb-3 small">
+                    {% if webdav.last_uploaded_at %}
+                    <div class="text-success"><strong>Останнє вивантаження:</strong> {{ webdav.last_uploaded_at }} ({{ webdav.last_file }})</div>
+                    {% endif %}
+                    {% if webdav.last_error %}
+                    <div class="text-danger"><strong>Помилка:</strong> {{ webdav.last_error }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('system_ops.cloud_save_provider_route', provider='webdav') }}" class="d-grid gap-2 flex-grow-1">
+                    <div class="row g-2">
+                        <div class="col-sm-8">
+                            <label class="form-label small fw-semibold mb-1">Базовий WebDAV URL</label>
+                            <input type="url" class="form-control form-control-sm" name="base_url"
+                                   value="{{ webdav.base_url }}" placeholder="https://cloud.univ.edu/remote.php/dav/files/backup/">
+                        </div>
+                        <div class="col-sm-4">
+                            <label class="form-label small fw-semibold mb-1">Тека призначення</label>
+                            <input type="text" class="form-control form-control-sm" name="remote_dir"
+                                   value="{{ webdav.remote_dir }}" placeholder="students-backups">
+                        </div>
+                    </div>
+
+                    <div class="row g-2">
+                        <div class="col-sm-4">
+                            <label class="form-label small mb-1">Логін</label>
+                            <input type="text" class="form-control form-control-sm" name="username"
+                                   value="{{ webdav.username }}" placeholder="backup_user">
+                        </div>
+                        <div class="col-sm-5">
+                            <label class="form-label small mb-1">Пароль / App Password</label>
+                            <input type="password" class="form-control form-control-sm" name="password"
+                                   placeholder="{{ 'Збережено (' ~ webdav.password_preview ~ ')' if webdav.has_password else 'Пароль застосунку' }}">
+                        </div>
+                        <div class="col-sm-3">
+                            <label class="form-label small mb-1">Зберігати копій</label>
+                            <input type="number" min="0" max="200" class="form-control form-control-sm" name="keep_remote"
+                                   value="{{ webdav.keep_remote }}">
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-3 pt-1">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="enabled" value="1" id="wdEnabled" {{ 'checked' if webdav.enabled }}>
+                            <label class="form-check-label small fw-semibold" for="wdEnabled">Увімкнути</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_upload" value="1" id="wdAuto" {{ 'checked' if webdav.auto_upload }}>
+                            <label class="form-check-label small" for="wdAuto">Автощодня</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="compress_zip" value="1" id="wdZip" {{ 'checked' if webdav.compress_zip }}>
+                            <label class="form-check-label small" for="wdZip">Стискати .zip</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="verify_ssl" value="1" id="wdSsl" {{ 'checked' if webdav.verify_ssl }}>
+                            <label class="form-check-label small" for="wdSsl">Перевіряти SSL</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-auto pt-2 border-top">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                        {% if webdav.configured %}
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_test_provider_route', provider='webdav') }}"
+                                class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-plug me-1"></i>Перевірити
+                        </button>
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_disconnect_provider_route', provider='webdav') }}"
+                                class="btn btn-outline-danger btn-sm ms-auto"
+                                onclick="return confirm('Очистити пароль WebDAV та відключити провайдер?');">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- 4. TELEGRAM CHANNEL / CHAT -->
+        <div class="col-xl-6">
+            <div class="sys-card p-4 h-100 d-flex flex-column">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h5 class="mb-1"><i class="bi bi-telegram me-2 text-primary"></i>Приватний Telegram-канал / чат</h5>
+                        <div class="small text-muted">
+                            Миттєва доставка стисненої <code>.zip</code>-копії в закритий канал адмінів (ліміт Telegram — до 50 МБ на файл).
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        {% if tg.enabled %}
+                        <span class="badge bg-success">Увімкнено</span>
+                        {% elif tg.configured %}
+                        <span class="badge bg-warning text-dark">Вимкнено</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Не налаштовано</span>
+                        {% endif %}
+                        {% if tg.auto_upload %}
+                        <div class="mt-1"><span class="badge bg-info text-dark">Автощодня</span></div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if tg.last_uploaded_at or tg.last_error %}
+                <div class="sys-subbox p-2 px-3 mb-3 small">
+                    {% if tg.last_uploaded_at %}
+                    <div class="text-success"><strong>Останнє вивантаження:</strong> {{ tg.last_uploaded_at }} ({{ tg.last_file }})</div>
+                    {% endif %}
+                    {% if tg.last_error %}
+                    <div class="text-danger"><strong>Помилка:</strong> {{ tg.last_error }}</div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <form method="POST" action="{{ url_for('system_ops.cloud_save_provider_route', provider='telegram') }}" class="d-grid gap-2 flex-grow-1">
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Джерело токена бота</label>
+                            <select class="form-select form-select-sm" name="token_source" onchange="toggleTgToken(this.value)">
+                                <option value="military_bot" {{ 'selected' if tg.token_source != 'custom' }}>
+                                    Наявний бот ВОД {{ '(налаштовано)' if tg.has_military_bot_token else '(токен не задано)' }}
+                                </option>
+                                <option value="custom" {{ 'selected' if tg.token_source == 'custom' }}>Окремий токен бота для бекапів</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-6">
+                            <label class="form-label small fw-semibold mb-1">Chat ID або @channel</label>
+                            <input type="text" class="form-control form-control-sm" name="chat_id"
+                                   value="{{ tg.chat_id }}" placeholder="-1001234567890 або @my_backups">
+                        </div>
+                    </div>
+
+                    <div id="tgCustomTokenBox" class="{{ '' if tg.token_source == 'custom' else 'd-none' }}">
+                        <label class="form-label small mb-1">Окремий Bot Token</label>
+                        <input type="password" class="form-control form-control-sm" name="bot_token"
+                               placeholder="{{ 'Збережено (' ~ tg.bot_token_preview ~ ')' if tg.has_bot_token else '123456:ABC-DEF...' }}">
+                    </div>
+
+                    <div>
+                        <label class="form-label small mb-1">Префікс підпису до файлу</label>
+                        <input type="text" class="form-control form-control-sm" name="caption_prefix"
+                               value="{{ tg.caption_prefix }}" placeholder="🗄 Бекап БД">
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-3 pt-1">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="enabled" value="1" id="tgEnabled" {{ 'checked' if tg.enabled }}>
+                            <label class="form-check-label small fw-semibold" for="tgEnabled">Увімкнути</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="auto_upload" value="1" id="tgAuto" {{ 'checked' if tg.auto_upload }}>
+                            <label class="form-check-label small" for="tgAuto">Автощодня</label>
+                        </div>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" name="compress_zip" value="1" id="tgZip" {{ 'checked' if tg.compress_zip }}>
+                            <label class="form-check-label small" for="tgZip">Стискати .zip</label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2 mt-auto pt-2 border-top">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                        {% if tg.configured %}
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_test_provider_route', provider='telegram') }}"
+                                class="btn btn-outline-success btn-sm">
+                            <i class="bi bi-plug me-1"></i>Перевірити
+                        </button>
+                        <button type="submit" formaction="{{ url_for('system_ops.cloud_disconnect_provider_route', provider='telegram') }}"
+                                class="btn btn-outline-danger btn-sm ms-auto"
+                                onclick="return confirm('Відключити хмарне резервування в Telegram?');">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function toggleGdriveMode(mode) {
+        const oauthBox = document.getElementById('gdriveOAuthFields');
+        const saBox = document.getElementById('gdriveServiceAccountFields');
+        if (!oauthBox || !saBox) return;
+        const isSa = (mode === 'service_account');
+        oauthBox.classList.toggle('d-none', isSa);
+        saBox.classList.toggle('d-none', !isSa);
+    }
+    function toggleTgToken(source) {
+        const box = document.getElementById('tgCustomTokenBox');
+        if (!box) return;
+        box.classList.toggle('d-none', source !== 'custom');
+    }
+    function applyS3Preset(preset) {
+        const ep = document.getElementById('s3EndpointInput');
+        const reg = document.getElementById('s3RegionInput');
+        const ps = document.getElementById('s3PathStyle');
+        if (!ep || !reg) return;
+        if (preset === 'r2') {
+            ep.placeholder = 'https://<account_id>.r2.cloudflarestorage.com';
+            if (!reg.value || reg.value === 'us-east-1') reg.value = 'auto';
+            if (ps) ps.checked = true;
+        } else if (preset === 'b2') {
+            ep.placeholder = 'https://s3.eu-central-003.backblazeb2.com';
+            if (reg.value === 'auto') reg.value = 'eu-central-003';
+            if (ps) ps.checked = true;
+        } else if (preset === 'minio') {
+            ep.placeholder = 'http://192.168.1.10:9000';
+            if (reg.value === 'auto') reg.value = 'us-east-1';
+            if (ps) ps.checked = true;
+        } else if (preset === 'aws') {
+            ep.placeholder = 'https://s3.eu-central-1.amazonaws.com';
+            if (reg.value === 'auto') reg.value = 'eu-central-1';
+            if (ps) ps.checked = false;
+        }
+    }
+    function syncGdriveOAuthHidden(form) {
+        if (!form) return true;
+        const cid = document.getElementById('gdriveClientIdInput');
+        if (cid && !cid.value.trim()) {
+            // дозволяємо серверу показати дружнє попередження
+        }
+        return true;
+    }
+    </script>
     {% endif %}
 
     {# ══════════════════════════════════════════════════════════════════

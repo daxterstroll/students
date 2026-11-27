@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import gc
+import hmac
 import json
 import os
 import re
@@ -37,6 +38,20 @@ from flask import (
     url_for,
 )
 
+from routes.cloud_backups import (
+    PROVIDER_LABELS,
+    PROVIDER_ORDER,
+    build_gdrive_auth_url,
+    disconnect_cloud_provider,
+    exchange_gdrive_oauth_code,
+    extract_oauth_code_from_input,
+    get_cloud_config_masked,
+    get_cloud_config_raw,
+    save_cloud_provider_config,
+    test_cloud_provider,
+    upload_backup_to_enabled_providers,
+    upload_backup_to_provider,
+)
 from routes.config import PROJECT_ROOT
 from routes.db import (
     REAL_DB_PATH,
@@ -154,6 +169,34 @@ def _save_backups_meta(meta: dict) -> None:
     with open(tmp, 'w', encoding='utf-8') as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
     os.replace(tmp, BACKUPS_META_PATH)
+
+
+def record_backup_cloud_upload(filename: str, results: list[dict]) -> None:
+    """Фіксує результати вивантаження резервної копії у хмарні сховища."""
+    if not filename or not results:
+        return
+    with _BACKUP_LOCK:
+        meta = _load_backups_meta()
+        entry = meta.get(filename)
+        if not isinstance(entry, dict):
+            entry = {'filename': filename}
+        uploads = entry.get('cloud_uploads')
+        if not isinstance(uploads, dict):
+            uploads = {}
+        now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        for r in results:
+            prov = r.get('provider')
+            if not prov:
+                continue
+            uploads[prov] = {
+                'ok': bool(r.get('ok')),
+                'at': now_str,
+                'message': (r.get('message') or '')[:240],
+                'remote_name': r.get('remote_name') or '',
+            }
+        entry['cloud_uploads'] = uploads
+        meta[filename] = entry
+        _save_backups_meta(meta)
 
 
 def _format_size_human(num_bytes: int) -> str:
@@ -390,6 +433,7 @@ def list_sqlite_backups() -> list[dict]:
             'size_bytes': st.st_size,
             'size_human': _format_size_human(st.st_size),
             'mtime': st.st_mtime,
+            'cloud_uploads': info.get('cloud_uploads') if isinstance(info.get('cloud_uploads'), dict) else {},
         })
 
     items.sort(key=lambda x: x['mtime'], reverse=True)
@@ -498,6 +542,21 @@ def _backup_scheduler_loop() -> None:
                             'last_auto_backup_error': '',
                         })
                         logger.info(f"Авторезервування БД завершено: {entry['filename']}")
+                        try:
+                            cloud_results = upload_backup_to_enabled_providers(
+                                entry['filename'],
+                                trigger='auto',
+                                only_auto=True,
+                            )
+                            if cloud_results:
+                                record_backup_cloud_upload(entry['filename'], cloud_results)
+                                for cr in cloud_results:
+                                    if cr['ok']:
+                                        logger.info(f"Авто-вивантаження у {cr['label']}: {cr['message']}")
+                                    else:
+                                        logger.warning(f"Помилка авто-вивантаження у {cr['label']}: {cr['message']}")
+                        except Exception as ce:
+                            logger.error(f"Помилка хмарного авто-вивантаження: {ce}", exc_info=True)
                     else:
                         save_system_settings({
                             'last_auto_backup_error': err or 'Невідома помилка',
@@ -918,16 +977,23 @@ def list_active_sessions(current_sid: str | None = None) -> list[dict]:
 @permission_required('manage_system')
 def system_dashboard():
     tab = (request.args.get('tab') or 'sandbox').strip()
-    if tab not in ('sandbox', 'backups', 'sessions'):
+    if tab not in ('sandbox', 'backups', 'cloud', 'sessions'):
         tab = 'sandbox'
 
     settings = get_system_settings()
     backups = list_sqlite_backups()
     test_mode = get_test_mode_state()
     active_sessions = list_active_sessions(current_sid=session.get('session_sid'))
+    cloud_config = get_cloud_config_masked()
+    cloud_enabled_count = sum(1 for p in PROVIDER_ORDER if cloud_config[p].get('enabled'))
 
     real_db_size = _format_size_human(os.path.getsize(REAL_DB_PATH)) if os.path.exists(REAL_DB_PATH) else '—'
     test_db_size = _format_size_human(os.path.getsize(TEST_DB_PATH)) if os.path.exists(TEST_DB_PATH) else '—'
+
+    gdrive_callback_url = url_for('system_ops.cloud_gdrive_callback_route', _external=True)
+    host_only = (request.host or '').split(':', 1)[0].lower()
+    is_local_intranet_host = host_only.endswith('.local') or host_only in ('localhost', '127.0.0.1')
+    gdrive_manual_auth_url = session.get('gdrive_manual_auth_url', '')
 
     return render_template(
         'system_tools.html',
@@ -938,6 +1004,13 @@ def system_dashboard():
         active_sessions=active_sessions,
         real_db_size=real_db_size,
         test_db_size=test_db_size,
+        cloud_config=cloud_config,
+        cloud_provider_order=PROVIDER_ORDER,
+        cloud_provider_labels=PROVIDER_LABELS,
+        cloud_enabled_count=cloud_enabled_count,
+        gdrive_callback_url=gdrive_callback_url,
+        is_local_intranet_host=is_local_intranet_host,
+        gdrive_manual_auth_url=gdrive_manual_auth_url,
     )
 
 
@@ -972,6 +1045,7 @@ def stop_test_mode_route():
 @permission_required('manage_system')
 def create_backup_route():
     note = (request.form.get('note') or '').strip()
+    upload_to_cloud = request.form.get('upload_to_cloud') == '1'
     ok, entry, err = create_sqlite_backup(
         kind='manual',
         created_by=current_username(),
@@ -986,6 +1060,18 @@ def create_backup_route():
             details=note or f"розмір: {_format_size_human(entry['size_bytes'])}",
         )
         flash(f"Резервну копію «{entry['filename']}» створено ({_format_size_human(entry['size_bytes'])}).", 'success')
+        if upload_to_cloud:
+            results = upload_backup_to_enabled_providers(entry['filename'], trigger='manual', only_auto=False)
+            if results:
+                record_backup_cloud_upload(entry['filename'], results)
+                ok_list = [r['label'] for r in results if r['ok']]
+                err_list = [f"{r['label']}: {r['message']}" for r in results if not r['ok']]
+                if ok_list:
+                    flash(f"Успішно вивантажено в хмару: {', '.join(ok_list)}.", 'success')
+                if err_list:
+                    flash("Помилки вивантаження в хмару: " + ' | '.join(err_list), 'danger')
+            else:
+                flash('Жодне хмарне сховище ще не увімкнено у вкладці «Хмарні копії».', 'warning')
     else:
         flash(f"Не вдалося створити резервну копію: {err}", 'danger')
     return redirect(url_for('system_ops.system_dashboard', tab='backups'))
@@ -1079,6 +1165,322 @@ def delete_backup_route(filename):
     except Exception as e:
         flash(f"Не вдалося видалити файл: {e}", 'danger')
     return redirect(url_for('system_ops.system_dashboard', tab='backups'))
+
+
+@system_ops_bp.route('/admin/system/backups/<filename>/upload-cloud', methods=['POST'])
+@permission_required('manage_system')
+def upload_backup_cloud_route(filename):
+    provider = (request.form.get('provider') or 'all').strip()
+    next_tab = request.form.get('next_tab') or 'backups'
+    if next_tab not in ('backups', 'cloud'):
+        next_tab = 'backups'
+
+    if provider == 'all':
+        results = upload_backup_to_enabled_providers(filename, trigger='manual', only_auto=False)
+        if not results:
+            flash('Немає жодного увімкненого та налаштованого хмарного сховища.', 'warning')
+            return redirect(url_for('system_ops.system_dashboard', tab=next_tab))
+    else:
+        ok, msg, remote_name = upload_backup_to_provider(filename, provider, trigger='manual')
+        results = [{
+            'provider': provider,
+            'label': PROVIDER_LABELS.get(provider, provider),
+            'ok': ok,
+            'message': msg,
+            'remote_name': remote_name,
+        }]
+
+    record_backup_cloud_upload(filename, results)
+    ok_msgs = [f"{r['label']}: {r['message']}" for r in results if r['ok']]
+    err_msgs = [f"{r['label']}: {r['message']}" for r in results if not r['ok']]
+
+    if ok_msgs:
+        log_action(
+            current_username(),
+            f"вивантажив резервну копію БД {filename} у хмару",
+            category='system',
+            section='Система',
+            details='; '.join(ok_msgs)[:250],
+        )
+        flash(' · '.join(ok_msgs), 'success')
+    if err_msgs:
+        flash(' · '.join(err_msgs), 'danger')
+    return redirect(url_for('system_ops.system_dashboard', tab=next_tab))
+
+
+@system_ops_bp.route('/admin/system/cloud/upload-latest', methods=['POST'])
+@permission_required('manage_system')
+def cloud_upload_latest_route():
+    provider = (request.form.get('provider') or 'all').strip()
+    create_new = request.form.get('create_new') == '1'
+
+    target_filename = ''
+    if create_new:
+        ok, entry, err = create_sqlite_backup(
+            kind='manual',
+            created_by=current_username(),
+            note='Знімок перед хмарним вивантаженням',
+        )
+        if not ok or not entry:
+            flash(f"Не вдалося створити свіжу копію БД: {err}", 'danger')
+            return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+        target_filename = entry['filename']
+    else:
+        backups = list_sqlite_backups()
+        if not backups:
+            flash('Локальних копій ще немає — спочатку створіть резервну копію або увімкніть опцію «Створити нову».', 'warning')
+            return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+        target_filename = backups[0]['filename']
+
+    if provider == 'all':
+        results = upload_backup_to_enabled_providers(target_filename, trigger='manual', only_auto=False)
+        if not results:
+            flash('Спочатку налаштуйте й увімкніть хоча б одне хмарне сховище.', 'warning')
+            return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+    else:
+        ok, msg, remote_name = upload_backup_to_provider(target_filename, provider, trigger='manual')
+        results = [{
+            'provider': provider,
+            'label': PROVIDER_LABELS.get(provider, provider),
+            'ok': ok,
+            'message': msg,
+            'remote_name': remote_name,
+        }]
+
+    record_backup_cloud_upload(target_filename, results)
+    ok_msgs = [f"{r['label']}: {r['message']}" for r in results if r['ok']]
+    err_msgs = [f"{r['label']}: {r['message']}" for r in results if not r['ok']]
+    if ok_msgs:
+        log_action(
+            current_username(),
+            f"вивантажив резервну копію {target_filename} у хмарне сховище",
+            category='system',
+            section='Система',
+            details='; '.join(ok_msgs)[:250],
+        )
+        flash(' · '.join(ok_msgs), 'success')
+    if err_msgs:
+        flash(' · '.join(err_msgs), 'danger')
+    return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+
+@system_ops_bp.route('/admin/system/cloud/<provider>/save', methods=['POST'])
+@permission_required('manage_system')
+def cloud_save_provider_route(provider):
+    if provider not in PROVIDER_ORDER:
+        abort(404)
+
+    form_data = dict(request.form)
+    form_data['enabled'] = request.form.get('enabled') == '1'
+    form_data['auto_upload'] = request.form.get('auto_upload') == '1'
+    form_data['compress_zip'] = request.form.get('compress_zip') == '1'
+    form_data['path_style'] = request.form.get('path_style') == '1'
+    form_data['verify_ssl'] = request.form.get('verify_ssl') == '1'
+
+    if provider == 'gdrive':
+        sa_file = request.files.get('service_account_file')
+        if sa_file and sa_file.filename:
+            raw_bytes = sa_file.read(128 * 1024 + 1)
+            if len(raw_bytes) > 128 * 1024:
+                flash('JSON-файл Service Account занадто великий (макс. 128 КБ).', 'danger')
+                return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+            try:
+                form_data['service_account_json'] = raw_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                flash('Файл Service Account повинен бути у кодуванні UTF-8 JSON.', 'danger')
+                return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    ok, msg = save_cloud_provider_config(provider, form_data)
+    if ok:
+        log_action(
+            current_username(),
+            f"оновив налаштування хмарного сховища: {PROVIDER_LABELS[provider]}",
+            category='system',
+            section='Система',
+            details=f"enabled={form_data['enabled']}, auto_upload={form_data['auto_upload']}",
+        )
+        flash(msg, 'success')
+    else:
+        flash(msg, 'warning')
+    return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+
+@system_ops_bp.route('/admin/system/cloud/<provider>/test', methods=['POST'])
+@permission_required('manage_system')
+def cloud_test_provider_route(provider):
+    if provider not in PROVIDER_ORDER:
+        abort(404)
+    ok, msg = test_cloud_provider(provider)
+    log_action(
+        current_username(),
+        f"перевірив з'єднання з хмарним сховищем: {PROVIDER_LABELS[provider]}",
+        level='INFO' if ok else 'WARNING',
+        category='system',
+        section='Система',
+        details=msg[:240],
+    )
+    flash(msg, 'success' if ok else 'danger')
+    return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+
+@system_ops_bp.route('/admin/system/cloud/<provider>/disconnect', methods=['POST'])
+@permission_required('manage_system')
+def cloud_disconnect_provider_route(provider):
+    if provider not in PROVIDER_ORDER:
+        abort(404)
+    ok, msg = disconnect_cloud_provider(provider)
+    if provider == 'gdrive':
+        session.pop('gdrive_manual_auth_url', None)
+        session.pop('gdrive_oauth_state', None)
+        session.pop('gdrive_oauth_redirect_uri', None)
+    log_action(
+        current_username(),
+        f"відключив хмарне сховище: {PROVIDER_LABELS[provider]}",
+        level='WARNING',
+        category='system',
+        section='Система',
+    )
+    flash(msg, 'info' if ok else 'danger')
+    return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+
+@system_ops_bp.route('/admin/system/cloud/gdrive/auth-start', methods=['POST'])
+@permission_required('manage_system')
+def cloud_gdrive_auth_start_route():
+    # За потреби зберігаємо client_id / client_secret прямо зі стартової форми OAuth
+    cur = get_cloud_config_raw()['gdrive']
+    client_id = (request.form.get('client_id') or '').strip()
+    client_secret = (request.form.get('client_secret') or '').strip()
+    folder_id = (request.form.get('folder_id') or '').strip()
+    if client_id or client_secret or folder_id:
+        save_cloud_provider_config('gdrive', {
+            'enabled': bool(cur.get('enabled', False)),
+            'auto_upload': bool(cur.get('auto_upload', False)),
+            'compress_zip': bool(cur.get('compress_zip', True)),
+            'auth_mode': 'oauth',
+            'client_id': client_id or cur.get('client_id', ''),
+            'client_secret': client_secret,
+            'folder_id': folder_id if folder_id else cur.get('folder_id', ''),
+            'keep_remote': cur.get('keep_remote', 14),
+        })
+
+    cfg = get_cloud_config_raw()['gdrive']
+    cid = (cfg.get('client_id') or '').strip()
+    csec = (cfg.get('client_secret') or '').strip()
+    if not cid or not csec:
+        flash('Спочатку введіть і збережіть Google Client ID та Client Secret.', 'warning')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    redirect_mode = (request.form.get('redirect_mode') or 'auto').strip()
+    if redirect_mode == 'manual_loopback':
+        redirect_uri = 'http://127.0.0.1'
+    else:
+        redirect_uri = url_for('system_ops.cloud_gdrive_callback_route', _external=True)
+
+    state = secrets.token_urlsafe(24)
+    session['gdrive_oauth_state'] = state
+    session['gdrive_oauth_redirect_uri'] = redirect_uri
+    auth_url = build_gdrive_auth_url(cid, redirect_uri, state)
+
+    if redirect_mode == 'manual_loopback':
+        session['gdrive_manual_auth_url'] = auth_url
+        flash(
+            'Посилання для входу в Google згенеровано нижче. Перейдіть за ним, підтвердіть доступ, '
+            'а коли браузер переадресує на http://127.0.0.1/?code=... — скопіюйте повний URL із адресного рядка та вставте в крок 2.',
+            'info',
+        )
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    session.pop('gdrive_manual_auth_url', None)
+    return redirect(auth_url)
+
+
+@system_ops_bp.route('/admin/system/cloud/gdrive/callback')
+@permission_required('manage_system')
+def cloud_gdrive_callback_route():
+    err_param = (request.args.get('error') or '').strip()
+    if err_param:
+        flash(f"Google відхилив авторизацію: {err_param}", 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    expected_state = session.pop('gdrive_oauth_state', '')
+    got_state = (request.args.get('state') or '').strip()
+    if not expected_state or not got_state or not hmac.compare_digest(expected_state, got_state):
+        flash('Невалідний або прострочений параметр безпеки OAuth (state). Спробуйте підключити ще раз.', 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    code = (request.args.get('code') or '').strip()
+    if not code:
+        flash('Google не повернув код авторизації.', 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    redirect_uri = session.pop('gdrive_oauth_redirect_uri', '') or url_for('system_ops.cloud_gdrive_callback_route', _external=True)
+    return _finish_gdrive_oauth_exchange(code, redirect_uri)
+
+
+@system_ops_bp.route('/admin/system/cloud/gdrive/exchange-code', methods=['POST'])
+@permission_required('manage_system')
+def cloud_gdrive_exchange_code_route():
+    raw_input = request.form.get('oauth_code_or_url') or ''
+    code, url_state = extract_oauth_code_from_input(raw_input)
+    if not code:
+        flash('Не знайдено параметр code у вставленому рядку. Скопіюйте повний URL після редіректу Google або сам код.', 'warning')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    expected_state = session.get('gdrive_oauth_state', '')
+    if url_state and expected_state and not hmac.compare_digest(expected_state, url_state):
+        flash('Параметр безпеки state у вставленому URL не збігається з поточною сесією.', 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    session.pop('gdrive_oauth_state', None)
+    session.pop('gdrive_manual_auth_url', None)
+    redirect_uri = session.pop('gdrive_oauth_redirect_uri', '') or 'http://127.0.0.1'
+    return _finish_gdrive_oauth_exchange(code, redirect_uri)
+
+
+def _finish_gdrive_oauth_exchange(code: str, redirect_uri: str):
+    cfg = get_cloud_config_raw()['gdrive']
+    cid = (cfg.get('client_id') or '').strip()
+    csec = (cfg.get('client_secret') or '').strip()
+    if not cid or not csec:
+        flash('Відсутні Client ID або Client Secret Google.', 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    ok, token_data, err = exchange_gdrive_oauth_code(cid, csec, code, redirect_uri)
+    if not ok:
+        flash(err, 'danger')
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    rtok = (token_data.get('refresh_token') or '').strip() or cfg.get('refresh_token', '')
+    if not rtok:
+        flash(
+            'Google повернув access_token без refresh_token. Видаліть доступ застосунку в налаштуваннях Google-акаунту '
+            'або повторіть вхід із вибором акаунту.',
+            'warning',
+        )
+        return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
+
+    save_cloud_provider_config('gdrive', {
+        'enabled': True,
+        'auto_upload': bool(cfg.get('auto_upload', False)),
+        'compress_zip': bool(cfg.get('compress_zip', True)),
+        'auth_mode': 'oauth',
+        'client_id': cid,
+        'client_secret': csec,
+        'refresh_token': rtok,
+        'folder_id': cfg.get('folder_id', ''),
+        'keep_remote': cfg.get('keep_remote', 14),
+    })
+    ok_t, msg_t = test_cloud_provider('gdrive')
+    log_action(
+        current_username(),
+        "підключив Google Диск для хмарного резервування БД",
+        category='system',
+        section='Система',
+        details=msg_t[:240],
+    )
+    flash(f"Google Диск підключено! {msg_t}" if ok_t else f"Токен збережено, але перевірка повернула: {msg_t}", 'success' if ok_t else 'warning')
+    return redirect(url_for('system_ops.system_dashboard', tab='cloud'))
 
 
 @system_ops_bp.route('/admin/system/sessions/<sid>/revoke', methods=['POST'])
