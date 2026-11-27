@@ -46,7 +46,7 @@ from flask import (
 )
 
 from routes.config import PROJECT_ROOT
-from routes.db import get_db
+from routes.db import get_db, is_test_mode_active
 from routes.helpers import current_username
 from routes.parse_military_pdf import extract_photo_from_pdf, parse_reserve_plus_pdf
 from routes.photo import (
@@ -1523,6 +1523,8 @@ def _render_broadcast_message(template: str, student: dict, vod_month: str) -> s
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _tg_call(token: str, method: str, payload: dict | None = None, timeout: float = 15.0) -> tuple[bool, dict | list | None, str]:
+    if is_test_mode_active():
+        return False, None, 'Увімкнено тестовий режим: виклики Telegram API заблоковано, щоб не турбувати реальних студентів'
     url = f"https://api.telegram.org/bot{token}/{method}"
     try:
         resp = requests.post(url, json=payload or {}, timeout=timeout)
@@ -2638,6 +2640,10 @@ def _worker_loop() -> None:
     last_auto_check = 0.0
 
     while not _WORKER_STOP_EVENT.is_set():
+        if is_test_mode_active():
+            with _WORKER_LOCK:
+                _WORKER_STATE['running'] = False
+            break
         conn = None
         try:
             conn = get_db()
@@ -2742,6 +2748,8 @@ def _worker_loop() -> None:
 
 def start_bot_worker() -> tuple[bool, str]:
     global _WORKER_THREAD
+    if is_test_mode_active():
+        return False, 'Увімкнено тестовий режим: запуск Telegram-бота тимчасово заблоковано'
     with _WORKER_LOCK:
         if _WORKER_THREAD and _WORKER_THREAD.is_alive():
             return True, 'Бот уже працює'
@@ -2788,6 +2796,8 @@ def stop_bot_worker(disable_in_db: bool = True) -> tuple[bool, str]:
 
 def ensure_bot_started_if_enabled() -> None:
     """Викликається при старті застосунку: автозапускає воркер, якщо enabled=1 і є токен."""
+    if is_test_mode_active():
+        return
     ensure_telegram_vod_initialized()
     with _WORKER_LOCK:
         if _WORKER_THREAD and _WORKER_THREAD.is_alive():
@@ -2813,6 +2823,7 @@ def get_worker_status(conn=None) -> dict:
         alive = bool(_WORKER_THREAD and _WORKER_THREAD.is_alive())
         state = dict(_WORKER_STATE)
         state['running'] = alive
+    state['test_mode_active'] = is_test_mode_active()
     if conn is not None:
         s = _get_bot_settings(conn)
         state['enabled_in_db'] = bool(int(s.get('enabled') or 0))

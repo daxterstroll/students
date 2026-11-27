@@ -34,6 +34,12 @@ from routes.military_telegram import (
     get_pending_telegram_badge_count,
     military_telegram_bp,
 )
+from routes.db import get_test_mode_state
+from routes.system_ops import (
+    enforce_and_touch_session,
+    ensure_backup_scheduler_started,
+    system_ops_bp,
+)
 from routes.utils import logger
 from routes.gen_docx import format_grade
 
@@ -68,6 +74,12 @@ def block_templates_static_access():
 def enforce_csrf():
     """Глобальна перевірка CSRF-токена для мутуючих HTTP-методів."""
     return validate_csrf_request()
+
+
+@app.before_request
+def enforce_active_session():
+    """Перевіряє, чи не відкликано сеанс адміністратором, та оновлює активність."""
+    return enforce_and_touch_session()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -206,6 +218,7 @@ def ensure_telegram_vod_ready():
         ensure_telegram_vod_initialized()
         if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
             ensure_bot_started_if_enabled()
+            ensure_backup_scheduler_started()
         _TG_INIT_DONE = True
 
 
@@ -271,6 +284,7 @@ def inject_nav_context():
     Повертає порожні значення для незалогінених - навбар у цьому
     випадку взагалі не рендериться (див. layout.html).
     """
+    test_mode = get_test_mode_state()
     if not session.get('user_id'):
         return {
             'nav_sections': [],
@@ -279,6 +293,7 @@ def inject_nav_context():
             'is_admin': False,
             'perms': [],
             'eu_groups_catalog': {'degree_order': {}, 'groups': {}},
+            'test_mode': test_mode,
         }
 
     eu_groups_catalog = {'degree_order': {}, 'groups': {}}
@@ -352,6 +367,7 @@ def inject_nav_context():
         'is_admin': is_admin,
         'perms': list(perms),
         'eu_groups_catalog': eu_groups_catalog,
+        'test_mode': test_mode,
     }
 
 
@@ -407,6 +423,7 @@ app.register_blueprint(public_apply_bp)
 app.register_blueprint(public_update_bp)
 app.register_blueprint(exam_sessions_bp)
 app.register_blueprint(military_telegram_bp)
+app.register_blueprint(system_ops_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
 
@@ -455,9 +472,11 @@ if __name__ == '__main__':
         )
         if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
             ensure_bot_started_if_enabled()
+            ensure_backup_scheduler_started()
         app.run(debug=True, host=args.host, port=args.port)
     else:
         from waitress import serve
         ensure_bot_started_if_enabled()
+        ensure_backup_scheduler_started()
         logger.info(f"Запуск застосунку у production-режимі на {args.host}:{args.port}")
         serve(app, host=args.host, port=args.port)

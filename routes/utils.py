@@ -852,7 +852,9 @@ def log_action(
             logger.warning(f"audit_logs DB insert fallback ({username} / {action}): {db_exc}")
 
         # Людський запис у місячний текстовий файл .log
-        log_msg = f"👤 {username} - {action}"
+        from routes.db import is_test_mode_active
+        test_prefix = "[ТЕСТ] " if is_test_mode_active() else ""
+        log_msg = f"{test_prefix}👤 {username} - {action}"
         if mode:
             log_msg += f" (режим: {mode})"
         if final_section:

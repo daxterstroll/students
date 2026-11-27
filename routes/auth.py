@@ -94,6 +94,19 @@ def login():
                 session['username'] = canonical_username
                 session['is_admin'] = bool(user['is_admin']) or (user['role'] == 'admin')
                 session['permissions'] = json.loads(user['permissions'] or '[]')
+                try:
+                    from routes.system_ops import register_user_session
+                    session['session_sid'] = register_user_session(
+                        user_id=user['id'],
+                        username=canonical_username,
+                        role=user['role'],
+                        is_admin=session['is_admin'],
+                        ip_address=ip,
+                        user_agent=request.headers.get('User-Agent', ''),
+                        current_path=request.path,
+                    )
+                except Exception as _sess_err:
+                    logger.warning(f"Попередження реєстрації сесії: {_sess_err}")
                 log_action(
                     canonical_username,
                     "ввійшов у систему",
@@ -142,6 +155,7 @@ def logout():
     """Завершує сесію користувача, логує подію "вийшов із системи" та повертає на форму логіну."""
     username = current_username()
     group_ids = session.get('group_ids', [])
+    sid = session.get('session_sid')
     log_action(
         username,
         "вийшов із системи",
@@ -155,5 +169,10 @@ def logout():
         ip_address=client_ip(),
         details=f"IP: {client_ip()}"
     )
+    try:
+        from routes.system_ops import mark_session_logged_out
+        mark_session_logged_out(sid, actor=username)
+    except Exception:
+        pass
     session.clear()
     return redirect(url_for('auth.login'))

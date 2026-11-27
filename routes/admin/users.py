@@ -31,6 +31,7 @@ import re
 PERMISSION_DEFINITIONS = [
     # ─── Система ────────────────────────────────────────────────
     ('manage_users',                'Користувачі та права',                     'system'),
+    ('manage_system',               'Системні інструменти (бекапи, сесії, тестовий режим)', 'system'),
     ('view_logs',                   'Журнал дій',                                'system'),
     ('analytics',                   'Аналітика',                                 'system'),
     ('custom_export',               'Кастомний експорт даних',                    'system'),
