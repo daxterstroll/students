@@ -167,6 +167,8 @@ NAV_SECTIONS = [
              'icon': 'bi-file-earmark-excel',        'label': 'Кастомний експорт даних'},
             {'perm': 'view_logs',                    'url': 'admin.view_logs',
              'icon': 'bi-file-earmark-binary',       'label': 'Логування'},
+            {'perm': 'manage_system',                'url': 'system_ops.system_dashboard',
+             'icon': 'bi-hdd-stack',                 'label': 'Бекапи, сесії та тест-режим'},
         ],
     },
 ]

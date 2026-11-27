@@ -350,11 +350,16 @@
         <a href="{{ url_for('students.student_list') }}" class="btn btn-outline-secondary">
             <i class="bi bi-arrow-left me-2"></i>До списку
         </a>
-		{% if groups_data and student.status == 'active' and has_perm('manage_students') %}
-		<button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
-			<i class="bi bi-snow me-2"></i>Заморозити студента
-		</button>
-{% endif %}
+        <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#studentHistoryModal">
+                <i class="bi bi-clock-history me-1"></i>Історія змін картки
+            </button>
+            {% if groups_data and student.status == 'active' and has_perm('manage_students') %}
+            <button type="button" class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#freezeStudentModal">
+                <i class="bi bi-snow me-2"></i>Заморозити студента
+            </button>
+            {% endif %}
+        </div>
     </div>
 
     <div class="row g-4">
@@ -2097,5 +2102,110 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endif %}
+
+<!-- Модальне вікно історії змін картки студента -->
+<div class="modal fade" id="studentHistoryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-clock-history me-2" style="color: var(--brass);"></i>Історія змін картки студента
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" id="studentHistIncludeViews">
+                        <label class="form-check-label small" for="studentHistIncludeViews">Показувати перегляди картки</label>
+                    </div>
+                    {% if has_perm('view_logs') %}
+                    <a href="{{ url_for('admin.view_logs', q=student.last_name_UA ~ ' ' ~ student.first_name_UA) }}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-journal-text me-1"></i>Відкрити в повному журналі
+                    </a>
+                    {% endif %}
+                </div>
+                <div id="studentHistoryContainer" class="d-grid gap-2">
+                    <div class="text-center text-muted py-4 small">Натисніть, щоб завантажити історію...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const histModal = document.getElementById('studentHistoryModal');
+    const histContainer = document.getElementById('studentHistoryContainer');
+    const viewsToggle = document.getElementById('studentHistIncludeViews');
+    if (!histModal || !histContainer) return;
+
+    const historyUrl = "{{ url_for('system_ops.student_card_history_api', student_id=student.id) }}";
+    let loadedOnce = false;
+
+    function esc(s) {
+        return String(s || '').replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
+    function loadHistory() {
+        const incViews = viewsToggle && viewsToggle.checked ? '1' : '0';
+        histContainer.innerHTML = '<div class="text-center text-muted py-4 small"><span class="spinner-border spinner-border-sm me-2"></span>Завантаження історії...</div>';
+        fetch(historyUrl + '?include_views=' + incViews)
+            .then(r => r.json())
+            .then(data => {
+                if (!data || !data.ok) {
+                    histContainer.innerHTML = '<div class="alert alert-danger small mb-0">Не вдалося завантажити історію змін.</div>';
+                    return;
+                }
+                const entries = data.entries || [];
+                if (!entries.length) {
+                    histContainer.innerHTML = '<div class="text-center text-muted py-4 small">Змін за цією карткою в журналі аудиту поки що не зафіксовано.</div>';
+                    return;
+                }
+                histContainer.innerHTML = entries.map(item => {
+                    const diffsHtml = (item.changes && item.changes.length)
+                        ? '<div class="d-flex flex-wrap gap-1 mt-2">' + item.changes.map(c =>
+                            `<span class="student-hist-diff">` +
+                            `<span class="fw-semibold">${esc(c.label)}:</span> ` +
+                            `<span class="student-hist-old">${esc(c.old)}</span>` +
+                            `<span>→</span>` +
+                            `<span class="student-hist-new">${esc(c.new)}</span>` +
+                            `</span>`
+                        ).join('') + '</div>'
+                        : '';
+                    const detailsHtml = item.details_text
+                        ? `<div class="small text-muted mt-1">${esc(item.details_text)}</div>`
+                        : '';
+                    return (
+                        `<div class="student-hist-item">` +
+                        `<div class="d-flex justify-content-between align-items-start flex-wrap gap-2">` +
+                        `<div><strong>${esc(item.username)}</strong> · <span class="badge bg-secondary">${esc(item.section)}</span></div>` +
+                        `<div class="small text-muted font-monospace">${esc(item.created_at)}</div>` +
+                        `</div>` +
+                        `<div class="mt-1">${esc(item.action_text)}</div>` +
+                        detailsHtml +
+                        diffsHtml +
+                        `</div>`
+                    );
+                }).join('');
+            })
+            .catch(() => {
+                histContainer.innerHTML = '<div class="alert alert-danger small mb-0">Помилка з’єднання під час завантаження історії.</div>';
+            });
+    }
+
+    histModal.addEventListener('shown.bs.modal', function () {
+        if (!loadedOnce) {
+            loadedOnce = true;
+            loadHistory();
+        }
+    });
+    if (viewsToggle) {
+        viewsToggle.addEventListener('change', loadHistory);
+    }
+});
+</script>
 
 {% endblock %}

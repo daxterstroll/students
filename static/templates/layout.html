@@ -16,7 +16,7 @@
     <link href="{{ url_for('static', filename='style/bootstrap-5.3.8-dist/css/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style/bootstrap-icons-1.13.2/bootstrap-icons.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='style/fonts/fonts.css') }}" rel="stylesheet">
-    <link href="{{ url_for('static', filename='style/main.css', v='20261126b') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='style/main.css', v='20261127') }}" rel="stylesheet">
 
 <script>
     /* Застосовуємо збережену тему ДО відображення сторінки, щоб
@@ -202,6 +202,13 @@
 
             {# Десктоп #}
             <div class="d-none d-lg-flex align-items-center">
+                <button type="button" id="globalSearchBtnDesktop" class="btn btn-sm gs-trigger-btn me-2"
+                        data-bs-toggle="modal" data-bs-target="#globalSearchModal"
+                        title="Глобальний пошук (Ctrl+K)" aria-label="Швидкий пошук">
+                    <i class="bi bi-search" aria-hidden="true"></i>
+                    <span class="d-none d-xl-inline">Пошук</span>
+                    <span class="gs-kbd">Ctrl+K</span>
+                </button>
                 <button type="button" id="themeToggleDesktop" class="theme-toggle-btn btn btn-sm me-2"
                         title="Перемкнути тему" aria-label="Перемкнути тему">
                     <i class="bi bi-moon-stars" aria-hidden="true"></i>
@@ -224,6 +231,11 @@
                         <i class="bi bi-person-badge me-1" aria-hidden="true"></i>{{ session.get('username', 'user') }} · {{ role_label }}
                     </span>
                     <div class="d-flex gap-2">
+                        <button type="button" id="globalSearchBtnMobile" class="btn btn-sm gs-trigger-btn"
+                                data-bs-toggle="modal" data-bs-target="#globalSearchModal"
+                                title="Швидкий пошук" aria-label="Швидкий пошук">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                        </button>
                         <button type="button" id="themeToggleMobile" class="theme-toggle-btn btn btn-sm"
                                 title="Перемкнути тему" aria-label="Перемкнути тему">
                             <i class="bi bi-moon-stars" aria-hidden="true"></i>
@@ -241,6 +253,34 @@
         </div>
     </div>
 </nav>
+{% endif %}
+
+{% if test_mode is defined and test_mode.active %}
+<div class="test-mode-banner" role="alert">
+    <div class="container-fluid d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <span class="tmb-badge"><i class="bi bi-cone-striped me-1"></i>Тестовий режим</span>
+            <span>
+                <strong>УВАГА:</strong> ви працюєте з ізольованою копією бази даних{% if test_mode.started_at %} (від {{ test_mode.started_at }}){% endif %}.
+                <strong>Усі зміни, збереження та видалення НЕ будуть збережені</strong> після повернення до реальної БД. Telegram-розсилки заблоковано.
+            </span>
+        </div>
+        {% if session.get('user_id') and has_perm('manage_system') %}
+        <div class="d-flex align-items-center gap-2">
+            <a href="{{ url_for('system_ops.system_dashboard', tab='sandbox') }}" class="btn btn-sm btn-outline-dark fw-semibold">
+                <i class="bi bi-sliders me-1"></i>Керування
+            </a>
+            <form method="POST" action="{{ url_for('system_ops.stop_test_mode_route') }}" class="m-0"
+                  onsubmit="return confirm('Вийти з тестового режиму та повернути реальну БД? Усі зміни в тестовій копії буде скасовано.');">
+                <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+                <button type="submit" class="btn btn-sm btn-danger fw-bold">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Повернути реальну БД
+                </button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+</div>
 {% endif %}
 
 {#
@@ -422,6 +462,173 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+
+{% if session.get('user_id') %}
+<div class="modal fade" id="globalSearchModal" tabindex="-1" aria-labelledby="globalSearchLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content gs-modal-content">
+            <div class="gs-search-bar">
+                <i class="bi bi-search fs-5 text-muted" aria-hidden="true"></i>
+                <input type="text" id="globalSearchInput" autocomplete="off"
+                       placeholder="Шукати студента (ПІБ, ІПН, паспорт, ЄДЕБО, Оберіг), групу або наказ..."
+                       aria-label="Глобальний пошук">
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div id="globalSearchResults" class="gs-results">
+                <div class="text-center text-muted py-4 small">
+                    Введіть щонайменше 2 символи для пошуку по всій системі.
+                </div>
+            </div>
+            <div class="gs-footer-hint">
+                <span><kbd>↑</kbd> <kbd>↓</kbd> навігація · <kbd>Enter</kbd> відкрити · <kbd>Esc</kbd> закрити</span>
+                <span>Швидке відкриття: <kbd>Ctrl+K</kbd></span>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modalEl = document.getElementById('globalSearchModal');
+    const inputEl = document.getElementById('globalSearchInput');
+    const resEl = document.getElementById('globalSearchResults');
+    if (!modalEl || !inputEl || !resEl) return;
+
+    const searchApiUrl = "{{ url_for('system_ops.global_search_api') }}";
+    let timer = null;
+    let activeIdx = -1;
+    let currentAbort = null;
+
+    function escHtml(s) {
+        return String(s || '').replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+        });
+    }
+
+    function updateActive() {
+        const items = Array.from(resEl.querySelectorAll('.gs-item'));
+        items.forEach((el, i) => {
+            el.classList.toggle('is-active', i === activeIdx);
+            if (i === activeIdx) el.scrollIntoView({ block: 'nearest' });
+        });
+    }
+
+    function renderResults(data) {
+        const parts = [];
+        const students = data.students || [];
+        const groups = data.groups || [];
+        const orders = data.orders || [];
+
+        if (students.length) {
+            parts.push('<div class="gs-section-title"><i class="bi bi-person-lines-fill me-1"></i>Студенти</div>');
+            students.forEach(s => {
+                let stBadge = '';
+                if (s.status === 'frozen') stBadge = '<span class="badge bg-warning text-dark">Заморожений</span>';
+                else if (s.status === 'archived') stBadge = '<span class="badge bg-secondary">Архів</span>';
+                parts.push(
+                    `<a href="${escHtml(s.url)}" class="gs-item">` +
+                    `<div><div class="gs-item-title">${escHtml(s.title)}</div>` +
+                    `<div class="gs-item-sub">${escHtml(s.subtitle)}</div></div>` +
+                    `<div class="d-flex align-items-center gap-2">${stBadge}<i class="bi bi-arrow-return-left text-muted"></i></div>` +
+                    `</a>`
+                );
+            });
+        }
+        if (groups.length) {
+            parts.push('<div class="gs-section-title"><i class="bi bi-person-rolodex me-1"></i>Групи</div>');
+            groups.forEach(g => {
+                const arBadge = g.archived ? '<span class="badge bg-secondary">Архів</span>' : '';
+                parts.push(
+                    `<a href="${escHtml(g.url)}" class="gs-item">` +
+                    `<div><div class="gs-item-title">${escHtml(g.title)}</div>` +
+                    `<div class="gs-item-sub">${escHtml(g.subtitle)}</div></div>` +
+                    `<div class="d-flex align-items-center gap-2">${arBadge}<i class="bi bi-arrow-return-left text-muted"></i></div>` +
+                    `</a>`
+                );
+            });
+        }
+        if (orders.length) {
+            parts.push('<div class="gs-section-title"><i class="bi bi-journal-text me-1"></i>Накази</div>');
+            orders.forEach(o => {
+                parts.push(
+                    `<a href="${escHtml(o.url)}" class="gs-item">` +
+                    `<div><div class="gs-item-title">${escHtml(o.title)}</div>` +
+                    `<div class="gs-item-sub">${escHtml(o.subtitle)}</div></div>` +
+                    `<i class="bi bi-arrow-return-left text-muted"></i>` +
+                    `</a>`
+                );
+            });
+        }
+
+        if (!parts.length) {
+            resEl.innerHTML = '<div class="text-center text-muted py-4 small">Нічого не знайдено за вашим запитом.</div>';
+            activeIdx = -1;
+            return;
+        }
+        resEl.innerHTML = parts.join('');
+        activeIdx = 0;
+        updateActive();
+    }
+
+    function runSearch(q) {
+        q = (q || '').trim();
+        if (q.length < 2) {
+            resEl.innerHTML = '<div class="text-center text-muted py-4 small">Введіть щонайменше 2 символи для пошуку по всій системі.</div>';
+            activeIdx = -1;
+            return;
+        }
+        if (currentAbort) currentAbort.abort();
+        currentAbort = window.AbortController ? new AbortController() : null;
+        resEl.innerHTML = '<div class="text-center text-muted py-4 small"><span class="spinner-border spinner-border-sm me-2"></span>Пошук...</div>';
+        fetch(searchApiUrl + '?q=' + encodeURIComponent(q), currentAbort ? { signal: currentAbort.signal } : {})
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.ok) renderResults(data);
+            })
+            .catch(err => {
+                if (err && err.name === 'AbortError') return;
+                resEl.innerHTML = '<div class="text-center text-danger py-4 small">Помилка пошуку. Спробуйте ще раз.</div>';
+            });
+    }
+
+    inputEl.addEventListener('input', function () {
+        clearTimeout(timer);
+        const val = inputEl.value;
+        timer = setTimeout(() => runSearch(val), 180);
+    });
+
+    inputEl.addEventListener('keydown', function (e) {
+        const items = Array.from(resEl.querySelectorAll('.gs-item'));
+        if (!items.length) return;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = (activeIdx + 1) % items.length;
+            updateActive();
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = (activeIdx - 1 + items.length) % items.length;
+            updateActive();
+        } else if (e.key === 'Enter' && activeIdx >= 0 && items[activeIdx]) {
+            e.preventDefault();
+            window.location.href = items[activeIdx].getAttribute('href');
+        }
+    });
+
+    modalEl.addEventListener('shown.bs.modal', function () {
+        inputEl.focus();
+        inputEl.select();
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.key === 'л' || e.key === 'Л')) {
+            e.preventDefault();
+            if (window.bootstrap) {
+                bootstrap.Modal.getOrCreateInstance(modalEl).show();
+            }
+        }
+    });
+});
+</script>
+{% endif %}
 
 <!-- ❄️ Снігопад -->
 <script defer src="{{ url_for('static', filename='js/new_year_snow.js') }}"></script>

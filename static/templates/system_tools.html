@@ -1,0 +1,478 @@
+{% extends 'layout.html' %}
+{% block title %}Системні інструменти: бекапи, сесії, тестовий режим{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
+{% block content %}
+<style>
+.sys-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    box-shadow: 0 6px 20px -10px rgba(14,27,44,.12);
+}
+html[data-theme="dark"] .sys-card {
+    box-shadow: 0 8px 24px -10px rgba(0,0,0,.45);
+}
+.sys-subbox {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+.sys-tab-nav .nav-link {
+    color: var(--ink-text);
+    border: 1px solid var(--line);
+    background: var(--surface);
+    border-radius: 10px;
+    font-weight: 600;
+    padding: .55rem 1rem;
+    transition: all .18s ease;
+}
+.sys-tab-nav .nav-link:hover {
+    border-color: var(--brass);
+}
+.sys-tab-nav .nav-link.active {
+    background: var(--ink);
+    color: var(--brass-lt) !important;
+    border-color: var(--brass);
+}
+.sys-stat-tile {
+    background: var(--paper-2);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: .9rem 1.05rem;
+}
+.sys-stat-label {
+    font-size: .74rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    font-weight: 700;
+}
+.sys-stat-val {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--heading, var(--ink-text));
+}
+.sys-online-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #3f8a5b;
+    box-shadow: 0 0 0 3px rgba(63,138,91,.22);
+}
+.sys-idle-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--muted);
+}
+</style>
+
+<div class="container py-3">
+    <div class="page-header mb-4">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <h2 class="mb-1"><i class="bi bi-hdd-stack me-2"></i>Системні інструменти</h2>
+                <p class="mb-0 opacity-75">Тестовий режим (пісочниця БД), гарячі резервні копії SQLite та контроль активних сесій</p>
+            </div>
+            <div class="d-flex gap-2 flex-wrap">
+                {% if test_mode.active %}
+                <form method="POST" action="{{ url_for('system_ops.stop_test_mode_route') }}"
+                      onsubmit="return confirm('Вийти з тестового режиму та повернути реальну БД? Усі зміни в тестовій копії буде видалено.');">
+                    <button type="submit" class="btn btn-warning fw-bold">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>Повернути реальну БД
+                    </button>
+                </form>
+                {% else %}
+                <form method="POST" action="{{ url_for('system_ops.start_test_mode_route') }}"
+                      onsubmit="return confirm('Увімкнути тестовий режим на базі копії реальної БД?');">
+                    <button type="submit" class="btn btn-outline-light fw-semibold">
+                        <i class="bi bi-cone-striped me-1"></i>Запустити тестовий режим
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Вкладки -->
+    <ul class="nav nav-pills sys-tab-nav gap-2 mb-4" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link {{ 'active' if active_tab == 'sandbox' }}"
+               href="{{ url_for('system_ops.system_dashboard', tab='sandbox') }}">
+                <i class="bi bi-cone-striped me-1"></i>Тестовий режим (пісочниця)
+                {% if test_mode.active %}
+                <span class="badge bg-warning text-dark ms-1">АКТИВНИЙ</span>
+                {% endif %}
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {{ 'active' if active_tab == 'backups' }}"
+               href="{{ url_for('system_ops.system_dashboard', tab='backups') }}">
+                <i class="bi bi-archive me-1"></i>Резервні копії БД
+                <span class="badge bg-secondary ms-1">{{ backups|length }}</span>
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {{ 'active' if active_tab == 'sessions' }}"
+               href="{{ url_for('system_ops.system_dashboard', tab='sessions') }}">
+                <i class="bi bi-people-fill me-1"></i>Активні сесії
+                <span class="badge bg-primary ms-1">{{ active_sessions|length }}</span>
+            </a>
+        </li>
+    </ul>
+
+    {# ══════════════════════════════════════════════════════════════════
+       ВКЛАДКА 1: ТЕСТОВИЙ РЕЖИМ (ПІСОЧНИЦЯ БД)
+       ══════════════════════════════════════════════════════════════════ #}
+    {% if active_tab == 'sandbox' %}
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <div class="sys-card p-4 h-100">
+                <div class="d-flex justify-content-between align-items-start gap-2 mb-3">
+                    <div>
+                        <h4 class="mb-1">
+                            <i class="bi bi-cone-striped me-2" style="color: var(--brass);"></i>Ізольований тестовий режим
+                        </h4>
+                        <div class="small text-muted">
+                            Безпечна перевірка наказів, імпортів, оцінок, заявок і нових функцій на точній копії реальної бази даних.
+                        </div>
+                    </div>
+                    {% if test_mode.active %}
+                    <span class="badge bg-warning text-dark fs-6">УВІМКНЕНО</span>
+                    {% else %}
+                    <span class="badge bg-success-subtle text-success-emphasis border">Бойовий режим</span>
+                    {% endif %}
+                </div>
+
+                {% if test_mode.active %}
+                <div class="alert alert-warning mb-3">
+                    <div class="fw-bold mb-1">
+                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Зараз активний тестовий режим!
+                    </div>
+                    <div class="small">
+                        Увесь сайт тимчасово підключений до ізольованої копії бази даних
+                        (<code>students_test_sandbox.db</code>, розмір {{ test_db_size }}).
+                        <strong>Усі зміни, збереження, видалення, накази та імпорти НЕ будуть збережені</strong> — після натискання
+                        кнопки «Завершити тест і повернути реальну БД» копія буде видалена, а реальна база
+                        (<code>students.db</code>, {{ real_db_size }}) повернеться без жодної втрати даних.
+                    </div>
+                    <div class="small mt-2 text-muted">
+                        Запустив: <strong>{{ test_mode.started_by }}</strong> ·
+                        Час старту: <strong>{{ test_mode.started_at }}</strong>
+                        {% if test_mode.reset_at %}
+                        · Останній скид копії: <strong>{{ test_mode.reset_at }}</strong>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <form method="POST" action="{{ url_for('system_ops.stop_test_mode_route') }}"
+                          onsubmit="return confirm('Завершити тестовий режим і повернути реальну базу даних? Усі тестові зміни буде остаточно скасовано.');">
+                        <button type="submit" class="btn btn-danger fw-semibold">
+                            <i class="bi bi-check-circle me-1"></i>Завершити тест і повернути реальну БД
+                        </button>
+                    </form>
+                    <form method="POST" action="{{ url_for('system_ops.reset_test_mode_route') }}"
+                          onsubmit="return confirm('Оновити тестову копію свіжими даними з реальної БД? Поточні тестові зміни буде скинуто.');">
+                        <button type="submit" class="btn btn-outline-primary">
+                            <i class="bi bi-arrow-repeat me-1"></i>Скинути тестову копію до стану реальної БД
+                        </button>
+                    </form>
+                </div>
+                {% else %}
+                <div class="sys-subbox p-3 mb-3 small">
+                    <div class="fw-semibold mb-2">Як працює тестовий режим:</div>
+                    <ol class="mb-0 ps-3 d-grid gap-1">
+                        <li>Система робить консистентну гарячу копію реальної БД <code>students.db</code> ({{ real_db_size }}) у тимчасовий файл пісочниці.</li>
+                        <li>Всі сторінки сайту автоматично перемикаються на тестову копію, а вгорі на кожній сторінці (у тому числі на формі входу та публічних анкетах) з'являється яскраве попередження про тестовий режим.</li>
+                        <li>Фоновий Telegram-бот ставиться на паузу, а будь-які вихідні повідомлення студентам блокуються.</li>
+                        <li>Після завершення тестування одним кліком повертається реальна БД, а тимчасова копія видаляється.</li>
+                    </ol>
+                </div>
+
+                <form method="POST" action="{{ url_for('system_ops.start_test_mode_route') }}"
+                      onsubmit="return confirm('Створити копію БД і перевести сайт у тестовий режим?');">
+                    <button type="submit" class="btn btn-warning fw-bold">
+                        <i class="bi bi-play-circle-fill me-1"></i>Увімкнути тестовий режим (створити копію БД)
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            <div class="sys-card p-4 h-100">
+                <h5 class="mb-3"><i class="bi bi-shield-check me-2" style="color: var(--brass);"></i>Захист і обмеження пісочниці</h5>
+                <div class="d-grid gap-2 small">
+                    <div class="sys-subbox p-3">
+                        <div class="fw-semibold mb-1"><i class="bi bi-database-lock me-1 text-success"></i>Ізоляція бази даних</div>
+                        <div class="text-muted">Реальний файл <code>students.db</code> у тестовому режимі не модифікується. Резервні копії завжди знімаються саме з реальної БД.</div>
+                    </div>
+                    <div class="sys-subbox p-3">
+                        <div class="fw-semibold mb-1"><i class="bi bi-telegram me-1 text-info"></i>Блокування Telegram-розсилок</div>
+                        <div class="text-muted">Опитування бота та надсилання повідомлень студентам призупиняються автоматично, щоб тестові дії не дійшли до реальних людей.</div>
+                    </div>
+                    <div class="sys-subbox p-3">
+                        <div class="fw-semibold mb-1"><i class="bi bi-exclamation-circle me-1 text-warning"></i>Увага щодо файлів на диску</div>
+                        <div class="text-muted">У тестовому режимі не видаляйте реальні завантажені фото та скан-копії документів студентів — файли в <code>static/uploads/</code> спільні на диску.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ══════════════════════════════════════════════════════════════════
+       ВКЛАДКА 2: РЕЗЕРВНІ КОПІЇ БД (HOT BACKUP + ROTATION)
+       ══════════════════════════════════════════════════════════════════ #}
+    {% if active_tab == 'backups' %}
+    <div class="row g-4 mb-4">
+        <div class="col-lg-6">
+            <div class="sys-card p-4 h-100">
+                <h4 class="mb-2"><i class="bi bi-cloud-arrow-down me-2" style="color: var(--brass);"></i>Створити резервну копію зараз</h4>
+                <p class="small text-muted mb-3">
+                    Використовує вбудований SQLite Backup API — безпечно знімає точну копію <strong>реальної БД</strong>
+                    (<code>{{ real_db_size }}</code>) навіть під час активної роботи користувачів у режимі WAL.
+                </p>
+                <form method="POST" action="{{ url_for('system_ops.create_backup_route') }}" class="row g-2 align-items-end">
+                    <div class="col-sm-8">
+                        <label class="form-label small fw-semibold mb-1" for="backupNoteInput">Примітка (необов’язково)</label>
+                        <input type="text" class="form-control form-control-sm" id="backupNoteInput" name="note"
+                               placeholder="Наприклад: Перед імпортом нового курсу">
+                    </div>
+                    <div class="col-sm-4 d-grid">
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>Зробити копію
+                        </button>
+                    </div>
+                </form>
+                <div class="row g-2 mt-3">
+                    <div class="col-6">
+                        <div class="sys-stat-tile">
+                            <div class="sys-stat-label">Усього копій</div>
+                            <div class="sys-stat-val">{{ backups|length }}</div>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="sys-stat-tile">
+                            <div class="sys-stat-label">Останнє авто</div>
+                            <div class="sys-stat-val" style="font-size: .95rem;">
+                                {{ settings.last_auto_backup_at or 'Ще не виконувалось' }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="sys-card p-4 h-100">
+                <h4 class="mb-2"><i class="bi bi-clock-history me-2" style="color: var(--brass);"></i>Автоматичне резервування та ротація</h4>
+                <p class="small text-muted mb-3">
+                    Щодня у фоновому потоці створюється автоматична копія реальної БД, а старі автокопії прибираються за правилами ротації (ручні копії не видаляються автоматично).
+                </p>
+                <form method="POST" action="{{ url_for('system_ops.update_backup_settings_route') }}">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" role="switch" id="autoBackupEnabled"
+                               name="auto_backup_enabled" value="1" {{ 'checked' if settings.auto_backup_enabled }}>
+                        <label class="form-check-label fw-semibold" for="autoBackupEnabled">
+                            Увімкнути щоденне автоматичне резервування БД
+                        </label>
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-4">
+                            <label class="form-label small mb-1" for="autoHour">Година (0–23)</label>
+                            <input type="number" min="0" max="23" class="form-control form-control-sm" id="autoHour"
+                                   name="auto_backup_hour" value="{{ settings.auto_backup_hour }}">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-1" for="keepDays">Зберігати днів</label>
+                            <input type="number" min="1" max="365" class="form-control form-control-sm" id="keepDays"
+                                   name="auto_backup_keep_days" value="{{ settings.auto_backup_keep_days }}">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-1" for="maxFiles">Макс. автокопій</label>
+                            <input type="number" min="3" max="200" class="form-control form-control-sm" id="maxFiles"
+                                   name="auto_backup_max_files" value="{{ settings.auto_backup_max_files }}">
+                        </div>
+                    </div>
+                    {% if settings.last_auto_backup_error %}
+                    <div class="alert alert-danger py-2 small mb-2">
+                        Остання помилка автобекапу: {{ settings.last_auto_backup_error }}
+                    </div>
+                    {% endif %}
+                    <button type="submit" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-save me-1"></i>Зберегти налаштування
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="sys-card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Наявні резервні копії</h5>
+            <span class="small text-muted">Перед будь-яким відновленням автоматично створюється страхувальний знімок поточного стану</span>
+        </div>
+
+        {% if backups %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Файл</th>
+                        <th>Тип</th>
+                        <th>Дата створення</th>
+                        <th>Створив</th>
+                        <th>Розмір</th>
+                        <th>Примітка</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in backups %}
+                    <tr>
+                        <td class="font-monospace small">{{ b.filename }}</td>
+                        <td>
+                            {% if b.kind == 'manual' %}
+                            <span class="badge bg-primary">Ручна</span>
+                            {% elif b.kind == 'auto' %}
+                            <span class="badge bg-success">Авто</span>
+                            {% elif b.kind == 'pre_restore' %}
+                            <span class="badge bg-warning text-dark">До відновлення</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ b.kind_label }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="small text-nowrap">{{ b.created_at }}</td>
+                        <td class="small">{{ b.created_by }}</td>
+                        <td class="small text-nowrap">{{ b.size_human }}</td>
+                        <td class="small text-muted">{{ b.note or '—' }}</td>
+                        <td class="text-end text-nowrap">
+                            <a href="{{ url_for('system_ops.download_backup_route', filename=b.filename) }}"
+                               class="btn btn-sm btn-outline-secondary" title="Завантажити .db">
+                                <i class="bi bi-download"></i>
+                            </a>
+                            {% if not test_mode.active %}
+                            <form method="POST" action="{{ url_for('system_ops.restore_backup_route', filename=b.filename) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('УВАГА! Відновити реальну БД з копії «{{ b.filename }}»? Поточний стан буде збережено в окрему страхувальну копію.');">
+                                <button type="submit" class="btn btn-sm btn-outline-warning" title="Відновити з цієї копії">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('system_ops.delete_backup_route', filename=b.filename) }}"
+                                  class="d-inline"
+                                  onsubmit="return confirm('Видалити файл резервної копії «{{ b.filename }}»?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити копію">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-archive fs-2 d-block mb-2"></i>
+            Резервних копій поки що немає. Натисніть «Зробити копію», щоб створити перший знімок БД.
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# ══════════════════════════════════════════════════════════════════
+       ВКЛАДКА 3: АКТИВНІ СЕСІЇ КОРИСТУВАЧІВ
+       ══════════════════════════════════════════════════════════════════ #}
+    {% if active_tab == 'sessions' %}
+    <div class="sys-card p-4">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div>
+                <h4 class="mb-1"><i class="bi bi-people-fill me-2" style="color: var(--brass);"></i>Активні сесії користувачів</h4>
+                <div class="small text-muted">
+                    Поточні відкриті сеанси авторизованих користувачів (за останні 14 годин). Примусове завершення діє миттєво на наступному запиті користувача.
+                </div>
+            </div>
+            {% if active_sessions|length > 1 %}
+            <form method="POST" action="{{ url_for('system_ops.revoke_other_sessions_route') }}"
+                  onsubmit="return confirm('Примусово завершити ВСІ інші активні сесії, крім вашої поточної?');">
+                <button type="submit" class="btn btn-outline-danger btn-sm">
+                    <i class="bi bi-shield-x me-1"></i>Завершити всі інші сесії
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% if active_sessions %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Користувач</th>
+                        <th>Роль</th>
+                        <th>IP-адреса</th>
+                        <th>Браузер / ОС</th>
+                        <th>Остання сторінка</th>
+                        <th>Остання активність</th>
+                        <th>Вхід у систему</th>
+                        <th class="text-end">Дія</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in active_sessions %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <span class="{{ 'sys-online-dot' if s.online_recent else 'sys-idle-dot' }}"
+                                      title="{{ 'Онлайн (активність до 5 хв)' if s.online_recent else 'Неактивний' }}"></span>
+                                <strong>{{ s.username }}</strong>
+                                {% if s.is_current %}
+                                <span class="badge bg-success">Ви (поточна)</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if s.is_admin %}
+                            <span class="badge bg-danger">Адміністратор</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Працівник</span>
+                            {% endif %}
+                        </td>
+                        <td class="font-monospace small">{{ s.ip_address or '—' }}</td>
+                        <td class="small">{{ s.user_agent or '—' }}</td>
+                        <td class="font-monospace small text-muted">{{ s.current_path or '/' }}</td>
+                        <td class="small">
+                            <div>{{ s.idle_label }}</div>
+                            <div class="text-muted" style="font-size: .75rem;">{{ s.last_seen_at }}</div>
+                        </td>
+                        <td class="small text-nowrap">{{ s.created_at }}</td>
+                        <td class="text-end">
+                            {% if s.is_current %}
+                            <span class="text-muted small">—</span>
+                            {% else %}
+                            <form method="POST" action="{{ url_for('system_ops.revoke_session_route', sid=s.sid) }}"
+                                  onsubmit="return confirm('Примусово розлогінити користувача «{{ s.username }}» ({{ s.ip_address }})?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-box-arrow-right me-1"></i>Завершити
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">Активних сесій не знайдено.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
