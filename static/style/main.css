@@ -598,6 +598,24 @@ main.container {
             background-color: var(--paper-2);
             color: var(--ink-text);
         }
+        html[data-theme="dark"] .form-control:disabled,
+        html[data-theme="dark"] .form-control[readonly],
+        html[data-theme="dark"] .form-select:disabled {
+            background-color: var(--paper);
+            color: var(--muted);
+            border-color: var(--line);
+            opacity: 0.9;
+        }
+        html[data-theme="dark"] .form-check-input:not(:checked) {
+            background-color: var(--surface);
+            border-color: rgba(231, 226, 214, .32);
+        }
+        html[data-theme="dark"] .card .table:not(.es-table):not(.an-table):not(.lr-table):not(.spb-table):not(.tpl-table):not(.students-table):not(.logs-table):not(.batch-table):not(.grades) > thead > tr > th,
+        html[data-theme="dark"] .card .table:not(.es-table):not(.an-table):not(.lr-table):not(.spb-table):not(.tpl-table):not(.students-table):not(.logs-table):not(.batch-table):not(.grades) > thead > tr > td {
+            background-color: var(--surface);
+            color: var(--brass-lt);
+            border-bottom-color: var(--line);
+        }
         html[data-theme="dark"] .dropdown-item { color: var(--ink-text); }
         html[data-theme="dark"] .dropdown-item:hover,
         html[data-theme="dark"] .dropdown-item:focus {
@@ -759,28 +777,120 @@ main.container {
            --bs-table-* змінні окремо для кожного варіанту, тому кожен
            перевизначається окремо. */
         html[data-theme="dark"] .table-light {
-            --bs-table-bg: var(--paper-2);
+            --bs-table-bg: var(--surface);
             --bs-table-color: var(--ink-text);
             --bs-table-border-color: var(--line);
+            --bs-table-striped-bg: var(--surface);
+            --bs-table-striped-color: var(--ink-text);
+            --bs-table-active-bg: var(--surface);
+            --bs-table-active-color: var(--ink-text);
+            --bs-table-hover-bg: var(--surface);
+            --bs-table-hover-color: var(--ink-text);
+        }
+        html[data-theme="dark"] thead.table-light > tr > th,
+        html[data-theme="dark"] thead.table-light > tr > td {
+            background-color: var(--surface) !important;
+            color: var(--brass-lt) !important;
+            border-color: var(--line) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] tr.table-light > td,
+        html[data-theme="dark"] tr.table-light > th,
+        html[data-theme="dark"] td.table-light,
+        html[data-theme="dark"] th.table-light {
+            background-color: var(--surface) !important;
+            color: var(--ink-text) !important;
+            border-color: var(--line) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
         }
         html[data-theme="dark"] .table-secondary {
             --bs-table-bg: rgba(231,226,214,.10);
             --bs-table-color: var(--ink-text);
             --bs-table-border-color: var(--line);
+            --bs-table-striped-bg: rgba(231,226,214,.12);
+            --bs-table-striped-color: var(--ink-text);
+            --bs-table-active-bg: rgba(231,226,214,.16);
+            --bs-table-active-color: var(--ink-text);
+            --bs-table-hover-bg: rgba(231,226,214,.16);
+            --bs-table-hover-color: var(--ink-text);
+        }
+        html[data-theme="dark"] tr.table-secondary > td,
+        html[data-theme="dark"] tr.table-secondary > th,
+        html[data-theme="dark"] td.table-secondary,
+        html[data-theme="dark"] th.table-secondary {
+            background-color: rgba(231,226,214,.09) !important;
+            color: var(--ink-text) !important;
+            border-color: var(--line) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
         }
         html[data-theme="dark"] .table-dark {
             --bs-table-bg: var(--ink);
             --bs-table-color: #f4efe3;
+            --bs-table-hover-bg: var(--ink-2);
+            --bs-table-hover-color: #f4efe3;
+        }
+        html[data-theme="dark"] .table-primary {
+            --bs-table-bg: rgba(200,162,74,.16);
+            --bs-table-color: var(--ink-text);
+            --bs-table-border-color: var(--brass-semi);
+            --bs-table-striped-bg: rgba(200,162,74,.20);
+            --bs-table-striped-color: var(--ink-text);
+            --bs-table-active-bg: rgba(200,162,74,.24);
+            --bs-table-active-color: var(--ink-text);
+            --bs-table-hover-bg: rgba(200,162,74,.24);
+            --bs-table-hover-color: var(--ink-text);
+        }
+        html[data-theme="dark"] tr.table-primary > td,
+        html[data-theme="dark"] tr.table-primary > th,
+        html[data-theme="dark"] td.table-primary,
+        html[data-theme="dark"] th.table-primary {
+            background-color: rgba(200,162,74,.16) !important;
+            color: var(--ink-text) !important;
+            border-color: var(--brass-semi) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
         }
         html[data-theme="dark"] .table-success {
             --bs-table-bg: rgba(79,122,82,.25);
             --bs-table-color: #bfe3c2;
             --bs-table-border-color: rgba(79,122,82,.4);
+            --bs-table-striped-bg: rgba(79,122,82,.29);
+            --bs-table-striped-color: #d6f0d8;
+            --bs-table-active-bg: rgba(79,122,82,.34);
+            --bs-table-active-color: #d6f0d8;
+            --bs-table-hover-bg: rgba(79,122,82,.34);
+            --bs-table-hover-color: #d6f0d8;
+        }
+        html[data-theme="dark"] tr.table-success > td,
+        html[data-theme="dark"] tr.table-success > th,
+        html[data-theme="dark"] td.table-success,
+        html[data-theme="dark"] th.table-success {
+            background-color: rgba(79,122,82,.25) !important;
+            color: #bfe3c2 !important;
+            border-color: rgba(79,122,82,.42) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] .table-hover > tbody > tr.table-success:hover > td,
+        html[data-theme="dark"] .table-hover > tbody > tr.table-success:hover > th {
+            background-color: rgba(79,122,82,.34) !important;
+            color: #d6f0d8 !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
         }
         html[data-theme="dark"] .table-warning {
             --bs-table-bg: rgba(200,162,74,.20);
             --bs-table-color: var(--brass-lt);
             --bs-table-border-color: var(--brass-semi);
+            --bs-table-striped-bg: rgba(200,162,74,.24);
+            --bs-table-striped-color: #f7e3a8;
+            --bs-table-active-bg: rgba(200,162,74,.28);
+            --bs-table-active-color: #f7e3a8;
+            --bs-table-hover-bg: rgba(200,162,74,.28);
+            --bs-table-hover-color: #f7e3a8;
         }
         /* Дублюємо явними властивостями з !important - на одній зі
            сторінок (manage_education_documents, рядок з
@@ -788,15 +898,55 @@ main.container {
            чомусь лишалось світлим. Явні background-color/color на
            клітинках надійніші, ніж покладатись лише на змінні. */
         html[data-theme="dark"] tr.table-warning > td,
-        html[data-theme="dark"] tr.table-warning > th {
+        html[data-theme="dark"] tr.table-warning > th,
+        html[data-theme="dark"] td.table-warning,
+        html[data-theme="dark"] th.table-warning {
             background-color: rgba(200,162,74,.20) !important;
             color: var(--brass-lt) !important;
             border-color: var(--brass-semi) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] .table-hover > tbody > tr.table-warning:hover > td,
+        html[data-theme="dark"] .table-hover > tbody > tr.table-warning:hover > th {
+            background-color: rgba(200,162,74,.28) !important;
+            color: #f7e3a8 !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] tr.table-warning .text-muted {
+            color: #d4c6a3 !important;
         }
         html[data-theme="dark"] .table-danger {
-            --bs-table-bg: rgba(162,59,46,.22);
-            --bs-table-color: #f0b3ab;
-            --bs-table-border-color: rgba(162,59,46,.4);
+            --bs-table-bg: rgba(162,59,46,.24);
+            --bs-table-color: #f5c2bb;
+            --bs-table-border-color: rgba(162,59,46,.45);
+            --bs-table-striped-bg: rgba(162,59,46,.28);
+            --bs-table-striped-color: #ffd9d4;
+            --bs-table-active-bg: rgba(162,59,46,.34);
+            --bs-table-active-color: #ffd9d4;
+            --bs-table-hover-bg: rgba(162,59,46,.34);
+            --bs-table-hover-color: #ffd9d4;
+        }
+        html[data-theme="dark"] tr.table-danger > td,
+        html[data-theme="dark"] tr.table-danger > th,
+        html[data-theme="dark"] td.table-danger,
+        html[data-theme="dark"] th.table-danger {
+            background-color: rgba(162,59,46,.24) !important;
+            color: #f5c2bb !important;
+            border-color: rgba(162,59,46,.45) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] .table-hover > tbody > tr.table-danger:hover > td,
+        html[data-theme="dark"] .table-hover > tbody > tr.table-danger:hover > th {
+            background-color: rgba(162,59,46,.34) !important;
+            color: #ffd9d4 !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] tr.table-danger .text-muted {
+            color: #dfb8b2 !important;
         }
 		        /* table-info (блакитний) у темній темі: приглушений синій фон +
            світлий текст. Без цього фон лишається світлим, а
@@ -805,12 +955,29 @@ main.container {
             --bs-table-bg: rgba(74,110,168,.20);
             --bs-table-color: var(--ink-text);
             --bs-table-border-color: rgba(74,110,168,.4);
+            --bs-table-striped-bg: rgba(74,110,168,.24);
+            --bs-table-striped-color: var(--ink-text);
+            --bs-table-active-bg: rgba(74,110,168,.28);
+            --bs-table-active-color: var(--ink-text);
+            --bs-table-hover-bg: rgba(74,110,168,.28);
+            --bs-table-hover-color: var(--ink-text);
         }
         html[data-theme="dark"] tr.table-info > td,
-        html[data-theme="dark"] tr.table-info > th {
+        html[data-theme="dark"] tr.table-info > th,
+        html[data-theme="dark"] td.table-info,
+        html[data-theme="dark"] th.table-info {
             background-color: rgba(74,110,168,.20) !important;
             color: var(--ink-text) !important;
             border-color: rgba(74,110,168,.4) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
+        }
+        html[data-theme="dark"] .table-hover > tbody > tr.table-info:hover > td,
+        html[data-theme="dark"] .table-hover > tbody > tr.table-info:hover > th {
+            background-color: rgba(74,110,168,.28) !important;
+            color: var(--ink-text) !important;
+            --bs-table-bg-state: transparent !important;
+            box-shadow: none !important;
         }
 
         /* Списки (list-group) - Bootstrap за замовчуванням дає їм білий
@@ -998,6 +1165,7 @@ html[data-theme="dark"] .text-info    { color: #a9c2e8 !important; }
        --bs-badge-color, а звичайні текстові елементи успадкують
        --ink-text, який на приглушеному фоні добре читається. --- */
 html[data-theme="dark"] .bg-danger    { background-color: var(--stamp-semi) !important; }
+html[data-theme="dark"] .badge.bg-danger { background-color: var(--stamp) !important; color: #fff !important; }
 html[data-theme="dark"] .bg-secondary { background-color: rgba(231,226,214,.14) !important; }
 html[data-theme="dark"] .bg-success   { background-color: rgba(79,122,82,.35) !important; }
 html[data-theme="dark"] .bg-info      { background-color: rgba(74,110,168,.28) !important; }
@@ -1030,6 +1198,18 @@ html[data-theme="dark"] .text-bg-warning {
 html[data-theme="dark"] .text-bg-secondary {
     background-color: rgba(231,226,214,.22) !important;
     color: var(--ink-text) !important;
+}
+html[data-theme="dark"] .text-bg-info {
+    background-color: rgba(74,110,168,.35) !important;
+    color: #cfe0fa !important;
+}
+html[data-theme="dark"] .text-bg-success {
+    background-color: rgba(79,122,82,.38) !important;
+    color: #d1eed4 !important;
+}
+html[data-theme="dark"] .text-bg-primary {
+    background-color: var(--brass) !important;
+    color: var(--ink) !important;
 }
 
 /* ======================================================================
@@ -1108,6 +1288,20 @@ html[data-theme="dark"] .btn-outline-success {
     --bs-btn-focus-shadow-rgb: 200, 162, 74; /* золотий focus, а не жовтий Bootstrap */
 }
 
+/* .btn-outline-info у світлій темі Bootstrap дає яскравий блакитний #0dcaf0
+   на кремовому фоні --paper / --paper-2 — низький контраст. */
+.btn-outline-info {
+    --bs-btn-color: #274f7d;
+    --bs-btn-border-color: rgba(74, 110, 168, .55);
+    --bs-btn-hover-bg: #2f5f8f;
+    --bs-btn-hover-border-color: #2f5f8f;
+    --bs-btn-hover-color: #fff;
+    --bs-btn-active-bg: #274f7d;
+    --bs-btn-active-border-color: #274f7d;
+    --bs-btn-active-color: #fff;
+    --bs-btn-focus-shadow-rgb: 74, 110, 168;
+}
+
 html[data-theme="dark"] .btn-outline-warning {
     --bs-btn-color: var(--brass-lt);
     --bs-btn-border-color: var(--brass-semi);
@@ -1135,6 +1329,20 @@ html[data-theme="dark"] .btn-outline-dark {
     --bs-btn-hover-bg: var(--ink-text);
     --bs-btn-hover-border-color: var(--ink-text);
     --bs-btn-hover-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-dark {
+    background-color: var(--surface);
+    border-color: var(--brass-semi);
+    color: var(--brass-lt);
+    --bs-btn-bg: var(--surface);
+    --bs-btn-border-color: var(--brass-semi);
+    --bs-btn-color: var(--brass-lt);
+    --bs-btn-hover-bg: var(--brass);
+    --bs-btn-hover-border-color: var(--brass);
+    --bs-btn-hover-color: var(--ink);
+    --bs-btn-active-bg: var(--brass);
+    --bs-btn-active-border-color: var(--brass);
+    --bs-btn-active-color: var(--ink);
 }
 
 /* ── Modal: header/footer не завжди мають явний фон ───────────────── */
@@ -1204,7 +1412,7 @@ html[data-theme="dark"] .breadcrumb-item.active { color: var(--ink-text); }
 /* ── .card-header / .card-footer (Bootstrap default paper-2?) ─────── */
 html[data-theme="dark"] .card-header,
 html[data-theme="dark"] .card-footer {
-    background: var(--paper);
+    background-color: var(--paper);
     border-color: var(--line);
     color: var(--ink-text);
 }

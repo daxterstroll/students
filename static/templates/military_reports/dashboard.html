@@ -311,6 +311,12 @@
                         <i class="bi bi-file-earmark-zip me-2"></i>
                         <strong>Файли «Резерв+»</strong> — паки по місяцях і контроль оновлень
                     </a>
+                    {% if has_perm('manage_military_telegram') %}
+                    <a href="{{ url_for('military_telegram.telegram_dashboard') }}" class="btn btn-outline-info text-start">
+                        <i class="bi bi-telegram me-2"></i>
+                        <strong>Telegram-бот ВОД («Резерв+»)</strong> — розсилки та перевірка подач
+                    </a>
+                    {% endif %}
                     <a href="{{ url_for('military_reports.tck_offices') }}" class="btn btn-outline-secondary text-start">
                         <i class="bi bi-building me-2"></i>
                         <strong>Довідник ТЦК</strong>

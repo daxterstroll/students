@@ -96,6 +96,7 @@ PERMISSION_DEFINITIONS = [
 
     # ─── Військовий облік ───────────────────────────────────────
     ('manage_military_reports',     'Військовий облік (дашборд, додатки)',       'military'),
+    ('manage_military_telegram',    'Telegram-бот ВОД «Резерв+» (розсилки, прив’язка, перевірка)', 'military'),
 ]
 
 PERMISSIONS = [p[0] for p in PERMISSION_DEFINITIONS]

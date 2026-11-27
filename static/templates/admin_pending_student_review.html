@@ -391,7 +391,7 @@
 <div class="card mb-4" style="border: 2px solid var(--brass);">
     <div class="card-header py-3" style="background: var(--brass-soft); border-bottom: 1px solid var(--brass-semi);">
         <div class="d-flex align-items-center gap-3 flex-wrap">
-            <i class="bi bi-exclamation-triangle-fill fs-3" style="color: var(--brass-dark, #a5822f);"></i>
+            <i class="bi bi-exclamation-triangle-fill fs-3 dup-header-icon"></i>
             <div>
                 <h5 class="mb-0">У базі вже є студент з таким ПІБ і датою народження</h5>
                 <div class="small text-muted">
@@ -410,8 +410,8 @@
                     <img src="{{ url_for('static', filename=existing_full['photo']) }}"
                          class="rounded border" style="width:100px; height:133px; object-fit:cover;">
                     {% else %}
-                    <div class="border rounded d-flex align-items-center justify-content-center"
-                         style="width:100px; height:133px; margin:0 auto; background: var(--paper-2);">
+                    <div class="border rounded d-flex align-items-center justify-content-center review-subbox"
+                         style="width:100px; height:133px; margin:0 auto;">
                         <i class="bi bi-person-fill fs-1 text-muted"></i>
                     </div>
                     {% endif %}
@@ -484,8 +484,8 @@
             </div>
             <div class="d-flex flex-wrap gap-2">
                 {% for e in existing_enrollments %}
-                <div class="border rounded p-2 small"
-                     style="background: var(--paper-2); min-width: 220px;">
+                <div class="border rounded p-2 small review-subbox"
+                     style="min-width: 220px;">
                     <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
                         <strong>{{ e.group_name or ('#' ~ e.group_id) }}</strong>
                         {% if e.is_primary %}
@@ -577,7 +577,7 @@
         </div>
 
         {# ─── 4 варіанти дій ─── #}
-        <div class="border-top p-3" style="background: var(--paper-2);">
+        <div class="border-top p-3 review-actions-wrap">
             <h6 class="mb-3">
                 <i class="bi bi-check2-square me-1"></i>
                 Що зробити з цією заявкою?
@@ -699,7 +699,7 @@
     {% endif %}
 
 {% if row.document_type or row.document_number %}
-<div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+<div class="mb-3 p-2 border rounded review-subbox">
     <div class="small fw-semibold text-muted mb-2">
         <i class="bi bi-mortarboard me-1"></i>Документ про освіту із заявки
         {% if row.document_type %} — {{ row.document_type }}{% endif %}
@@ -803,7 +803,7 @@
 
     {# ═══ 2. До яких груп застосувати документ із заявки ═══ #}
     {% if active_enrolls|length > 1 %}
-    <div class="mb-3 p-3 rounded" style="background: var(--paper); border: 1px dashed var(--brass-semi);">
+    <div class="mb-3 p-3 rounded review-target-box">
         <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="small fw-semibold">
                 <i class="bi bi-signpost-split me-1"></i>
@@ -929,7 +929,7 @@
 {% endif %}
 
 	{% if row.passport_number %}
-	<div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+	<div class="mb-3 p-2 border rounded review-subbox">
 		<div class="small fw-semibold text-muted mb-2">
 			<i class="bi bi-person-vcard me-1"></i>Паспортні дані із заявки
 			{% if row.passport_document_type %}{{ row.passport_document_type }}{% endif %}
@@ -987,7 +987,7 @@
 
 		{# ═══ 2. До яких груп застосувати паспорт із заявки ═══ #}
 		{% if active_enrolls|length > 1 %}
-		<div class="mb-3 p-3 rounded" style="background: var(--paper); border: 1px dashed var(--brass-semi);">
+		<div class="mb-3 p-3 rounded review-target-box">
 			<div class="small fw-semibold mb-2">
 				<i class="bi bi-signpost-split me-1"></i>
 				До яких груп прив'язати паспорт із заявки:
@@ -1082,7 +1082,7 @@
         or row.military_registry_number or row.military_formed_at
         or military_scans %}
     {% if has_military_in_app %}
-    <div class="mb-3 p-2 border rounded" style="border-color: var(--line) !important; background: var(--paper-2);">
+    <div class="mb-3 p-2 border rounded review-subbox">
         <div class="small fw-semibold text-muted mb-2">
             <i class="bi bi-shield me-1"></i>Військові дані із заявки
         </div>
@@ -1808,8 +1808,41 @@
         padding: .85rem 1rem;
         flex: 1;
     }
-    html[data-theme="dark"] .action-card {
+    .dup-header-icon {
+        color: #a5822f;
+    }
+    html[data-theme="dark"] .dup-header-icon {
+        color: var(--brass-lt);
+    }
+    .review-actions-wrap {
         background: var(--paper-2);
+    }
+    html[data-theme="dark"] .review-actions-wrap {
+        background: var(--paper);
+    }
+    .review-subbox {
+        background: var(--paper-2);
+        border-color: var(--line) !important;
+    }
+    html[data-theme="dark"] .review-subbox {
+        background: var(--surface);
+    }
+    html[data-theme="dark"] .action-card .review-subbox {
+        background: var(--paper-2);
+    }
+    .review-target-box {
+        background: var(--paper);
+        border: 1px dashed var(--brass-semi);
+    }
+    html[data-theme="dark"] .review-target-box {
+        background: var(--brass-soft);
+    }
+    html[data-theme="dark"] .action-card {
+        background: var(--surface);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, .25);
+    }
+    html[data-theme="dark"] .action-card__header {
+        background: rgba(231, 226, 214, .03);
     }
 </style>
 
@@ -1825,23 +1858,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     bind('.js-doc-select-all',  '.js-doc-group-cb',  true);
     bind('.js-doc-select-none', '.js-doc-group-cb',  false);
-    bind('.js-pass-select-all', '.js-pass-group-cb', true);
-    bind('.js-pass-select-none', '.js-pass-group-cb', false);
-});
-</script>
-
-<script>
-document.addEventListener('DOMContentLoaded', function () {
-    function bind(sel, cbSel, state) {
-        document.querySelectorAll(sel).forEach(function (link) {
-            link.addEventListener('click', function (e) {
-                e.preventDefault();
-                document.querySelectorAll(cbSel).forEach(function (cb) { cb.checked = state; });
-            });
-        });
-    }
-    bind('.js-doc-select-all',  '.js-doc-group-cb', true);
-    bind('.js-doc-select-none', '.js-doc-group-cb', false);
     bind('.js-pass-select-all', '.js-pass-group-cb', true);
     bind('.js-pass-select-none', '.js-pass-group-cb', false);
 });

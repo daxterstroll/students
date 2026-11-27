@@ -1,0 +1,466 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Розбір подання ВОД #{{ sub.id }} — Telegram-бот{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>Повернутися до черги
+            </a>
+            {% if student %}
+            <a href="{{ url_for('students.student_details', student_id=student.id) }}" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-person-vcard me-1"></i>Картка студента
+            </a>
+            <a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-outline-info">
+                <i class="bi bi-shield-check me-1"></i>Військові дані
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            {% if sub.pdf_rel_path %}
+            <a href="{{ url_for('static', filename=sub.pdf_rel_path) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-file-earmark-pdf me-1"></i>Відкрити надісланий PDF
+            </a>
+            {% endif %}
+            <form method="POST" action="{{ url_for('military_telegram.telegram_submission_delete', sub_id=sub.id) }}"
+                  class="d-inline" onsubmit="return confirm('Видалити запис подання #{{ sub.id }} та його тимчасові файли?');">
+                <button type="submit" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-trash me-1"></i>Видалити запис
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {% set title_sub = (student.last_name_UA ~ ' ' ~ student.first_name_UA ~ ' ' ~ (student.middle_name_UA or ''))|trim if student else (sub.parsed_full_name or 'Студента не знайдено в БД') %}
+    {{ ui.page_header(
+        'bi-telegram',
+        'Подання ВОД з Telegram #' ~ sub.id,
+        title_sub
+    ) }}
+
+    {# ── Метадані подання та статус ── #}
+    <div class="card mb-4">
+        <div class="card-body py-3">
+            <div class="row g-3 small align-items-center">
+                <div class="col-md-3">
+                    <div class="text-muted">Статус обробки</div>
+                    <div class="mt-1">
+                        {% if sub.status == 'pending' %}
+                            <span class="badge bg-primary fs-6">Очікує підтвердження</span>
+                        {% elif sub.status == 'not_found' %}
+                            <span class="badge bg-danger fs-6">Не знайдено в БД</span>
+                        {% elif sub.status == 'approved' %}
+                            <span class="badge bg-success fs-6">Підтверджено</span>
+                            <div class="text-muted mt-1">{{ sub.reviewed_by }} · {{ (sub.reviewed_at or '')[:16] }}</div>
+                        {% elif sub.status == 'rejected' %}
+                            <span class="badge bg-secondary fs-6">Відхилено</span>
+                            <div class="text-muted mt-1">{{ sub.reviewed_by }} · {{ (sub.reviewed_at or '')[:16] }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted">Відправник у Telegram</div>
+                    <div class="fw-semibold mt-1">
+                        {% if sub.tg_username %}@{{ sub.tg_username }}{% else %}ID {{ sub.chat_id }}{% endif %}
+                        {% if sub.tg_first_name or sub.tg_last_name %}
+                            <span class="text-muted fw-normal">({{ (sub.tg_first_name or '') ~ ' ' ~ (sub.tg_last_name or '') }})</span>
+                        {% endif %}
+                    </div>
+                    <div class="mt-1">
+                        {% if sub.submitted_as_representative %}
+                        <span class="badge bg-info text-dark">Подано представником</span>
+                        {% else %}
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis">Пряма подача</span>
+                        {% endif %}
+                        {% if sub.tg_phone %}<span class="ms-1 font-monospace">{{ sub.tg_phone }}</span>{% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted">Розпізнано в PDF «Резерв+»</div>
+                    <div class="fw-semibold mt-1">{{ sub.parsed_full_name or '—' }}</div>
+                    <div class="text-muted">
+                        ДН: <span class="font-monospace">{{ sub.parsed_birth_date or '—' }}</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="text-muted">Дата формування та подачі</div>
+                    <div class="mt-1">
+                        Сформовано: <strong class="font-monospace">{{ sub.parsed_formed_at or '—' }}</strong>
+                        {% if sub.parsed_ym %}<span class="text-muted">({{ sub.parsed_ym }})</span>{% endif %}
+                    </div>
+                    <div class="text-muted">Надіслано: <span class="font-monospace">{{ (sub.created_at or '')[:16] }}</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Системні попередження: Не знайдено / Повтор за місяць / Минулий період / Відхилено ── #}
+    {% if sub.status == 'not_found' or not student %}
+    <div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
+        <i class="bi bi-person-x-fill fs-4"></i>
+        <div>
+            <strong>Студента не знайдено в базі даних за ПІБ та датою народження.</strong>
+            {% if sub.parse_error %}<div class="mt-1">{{ sub.parse_error }}</div>{% endif %}
+            <div class="small mt-1">Якщо це чинний студент (наприклад, розбіжність у написанні прізвища або дати народження), прив’яжіть подання вручну нижче.</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sub.is_monthly_duplicate %}
+    <div class="alert alert-warning d-flex align-items-start gap-2 mb-4">
+        <i class="bi bi-exclamation-triangle-fill fs-4"></i>
+        <div>
+            <strong>Повторне завантаження ВОД за цей місяць ({{ sub.duplicate_count }}-й раз)!</strong>
+            <div class="mt-1">{{ sub.duplicate_info }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sub.is_outdated_pdf %}
+    <div class="alert alert-secondary d-flex align-items-start gap-2 mb-4">
+        <i class="bi bi-calendar-x fs-5"></i>
+        <div>
+            <strong>Документ сформовано у попередньому періоді:</strong>
+            у PDF зазначено місяць <span class="font-monospace">{{ sub.parsed_ym }}</span>, тоді як подача відбулася у <span class="font-monospace">{{ sub.upload_ym }}</span>.
+        </div>
+    </div>
+    {% endif %}
+
+    {% if sub.status == 'rejected' and sub.reject_reason %}
+    <div class="alert alert-secondary mb-4">
+        <strong>Причина відхилення:</strong> {{ sub.reject_reason }}
+    </div>
+    {% endif %}
+
+    {# ── Блок ручного співставлення (для not_found або зміни прив'язки в pending) ── #}
+    {% if sub.status in ('not_found', 'pending') and active_students %}
+    <div class="card mb-4 {% if sub.status == 'not_found' %}border-danger{% endif %}">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>
+                <i class="bi bi-person-check me-1"></i>
+                {% if sub.status == 'not_found' %}Співставити зі студентом у БД{% else %}Переприв’язати подання до іншого студента{% endif %}
+            </strong>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('military_telegram.telegram_submission_rematch', sub_id=sub.id) }}" class="row g-2 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label small mb-1">Швидкий фільтр списку</label>
+                    <input type="text" class="form-control form-control-sm" id="rematchFilterInput" placeholder="Введіть прізвище, групу або ДН...">
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label small mb-1">Активний студент БД</label>
+                    <select class="form-select form-select-sm" name="student_id" id="rematchStudentSelect" required>
+                        <option value="">— оберіть студента —</option>
+                        {% for st in active_students %}
+                        <option value="{{ st.id }}" {% if sub.student_id == st.id %}selected{% endif %}>
+                            {{ st.full_name }} ({{ st.group_name or 'без групи' }}, {{ st.birth_date or 'без ДН' }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex gap-1">
+                    <button type="submit" class="btn btn-sm btn-primary flex-grow-1">
+                        <i class="bi bi-link-45deg me-1"></i>Прив’язати
+                    </button>
+                    {% if sub.status == 'not_found' %}
+                    <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#reviewRejectModal" title="Відхилити та повідомити в Telegram">
+                        <i class="bi bi-x-circle"></i>
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="col-12 d-flex flex-wrap gap-3 pt-1 small">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="also_link_tg" value="1" id="rematchAlsoLink" checked>
+                        <label class="form-check-label" for="rematchAlsoLink">Також прив’язати Telegram-чат відправника до цього студента</label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_representative" value="1" id="rematchIsRep"
+                               {% if sub.submitted_as_representative %}checked{% endif %}>
+                        <label class="form-check-label" for="rematchIsRep">Позначити чат як представника (не сам студент)</label>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+    {# ── Звірка змін і підтвердження (тільки якщо студент знайдений) ── #}
+    {% if student %}
+    <form method="POST" action="{{ url_for('military_telegram.telegram_submission_approve', sub_id=sub.id) }}" id="approveReviewForm">
+        <input type="hidden" name="explicit_fields" value="1">
+
+        {# 1. Військові поля #}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-shield-shaded me-2"></i>
+                    Військово-облікові дані (зміни):
+                    <span class="badge bg-warning text-dark">{{ mil_diff|length }}</span>
+                </h6>
+                {% if mil_diff and sub.status == 'pending' %}
+                <div class="form-check form-check-sm m-0">
+                    <input type="checkbox" class="form-check-input" id="toggleAllMil" checked>
+                    <label class="form-check-label small" for="toggleAllMil">Обрати всі</label>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                {% if mil_diff %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                {% if sub.status == 'pending' %}
+                                <th style="width:46px;" class="text-center">Онов.</th>
+                                {% endif %}
+                                <th style="width:230px;">Поле</th>
+                                <th style="width:36%;">Було в БД</th>
+                                <th style="width:36%;">З PDF «Резерв+»</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in mil_diff %}
+                            <tr>
+                                {% if sub.status == 'pending' %}
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input js-mil-cb"
+                                           name="apply_mil_field" value="{{ d.field }}" checked>
+                                </td>
+                                {% endif %}
+                                <td class="fw-semibold">{{ d.label }}</td>
+                                <td class="text-danger">
+                                    {% if d.old %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.old }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                                <td class="text-success">
+                                    {% if d.new %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.new }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-3 text-muted small">
+                    <i class="bi bi-check-circle text-success me-1"></i>
+                    Всі військові поля у PDF повністю збігаються з поточними даними в системі.
+                    Під час підтвердження PDF все одно буде збережено в архіві військового обліку студента.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        {# 2. Поля картки студента #}
+        {% if stu_diff %}
+        <div class="card mb-4 border-info">
+            <div class="card-header bg-info-subtle d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">
+                    <i class="bi bi-person-vcard me-2"></i>
+                    Дані картки студента (відмінності):
+                    <span class="badge bg-info text-dark">{{ stu_diff|length }}</span>
+                </h6>
+                {% if sub.status == 'pending' %}
+                <div class="form-check form-check-sm m-0">
+                    <input type="checkbox" class="form-check-input" id="toggleAllStu" checked>
+                    <label class="form-check-label small" for="toggleAllStu">Обрати всі</label>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                {% if sub.status == 'pending' %}
+                                <th style="width:46px;" class="text-center">Онов.</th>
+                                {% endif %}
+                                <th style="width:230px;">Поле картки</th>
+                                <th style="width:36%;">Було у картці</th>
+                                <th style="width:36%;">З PDF «Резерв+»</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in stu_diff %}
+                            <tr>
+                                {% if sub.status == 'pending' %}
+                                <td class="text-center">
+                                    <input type="checkbox" class="form-check-input js-stu-cb"
+                                           name="apply_stu_field" value="{{ d.field }}"
+                                           {% if d.new %}checked{% endif %}>
+                                </td>
+                                {% endif %}
+                                <td class="fw-semibold">{{ d.label }}</td>
+                                <td class="text-danger">
+                                    {% if d.old %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.old }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                                <td class="text-success">
+                                    {% if d.new %}<span style="white-space:pre-wrap; word-break:break-word;">{{ d.new }}</span>{% else %}<span class="text-muted fst-italic">— порожньо —</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# 3. Фото 3x4 #}
+        {% if sub.photo_rel_path %}
+        <div class="card mb-4 border-warning">
+            <div class="card-header bg-warning-subtle">
+                <h6 class="mb-0"><i class="bi bi-camera me-2"></i>Фото 3×4 витягнуто з PDF «Резерв+»</h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3 align-items-center">
+                    <div class="col-6 col-md-4 text-center">
+                        <div class="small text-muted mb-1">Поточне фото студента</div>
+                        {% if student.photo %}
+                        <img src="{{ url_for('static', filename=student.photo) }}" class="rounded border" style="width:120px; height:160px; object-fit:cover;">
+                        {% else %}
+                        <div class="d-flex align-items-center justify-content-center border rounded mx-auto" style="width:120px; height:160px;">
+                            <span class="small text-muted">немає</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-6 col-md-4 text-center">
+                        <div class="small text-muted mb-1">Фото з PDF</div>
+                        <img src="{{ url_for('static', filename=sub.photo_rel_path) }}" class="rounded border border-warning" style="width:120px; height:160px; object-fit:cover;">
+                    </div>
+                    {% if sub.status == 'pending' %}
+                    <div class="col-12 col-md-4">
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" name="apply_photo" value="1" id="applyPhotoChk"
+                                   {% if not student.photo %}checked{% endif %}>
+                            <label class="form-check-label fw-semibold" for="applyPhotoChk">
+                                Замінити фото студента в картці
+                            </label>
+                        </div>
+                        <div class="form-text">За замовчуванням увімкнено, якщо у студента ще немає фото.</div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {# Кнопки дій (лише для pending) #}
+        {% if sub.status == 'pending' %}
+        <div class="d-flex flex-wrap gap-2 mb-4">
+            <button type="submit" class="btn btn-success"
+                    onclick="return confirm('Підтвердити отримання ВОД, зберегти PDF у картку студента та повідомити в Telegram?');">
+                <i class="bi bi-check-circle-fill me-1"></i>Підтвердити отримання та оновити дані
+            </button>
+            <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#reviewRejectModal">
+                <i class="bi bi-x-circle me-1"></i>Відхилити подання
+            </button>
+        </div>
+        {% endif %}
+    </form>
+    {% endif %}
+
+    {# ── Повний вміст розпізнаного PDF ── #}
+    <details class="mt-3">
+        <summary class="text-muted small" style="cursor:pointer;">
+            <i class="bi bi-eye me-1"></i>Показати всі розпізнані поля з PDF «Резерв+»
+        </summary>
+        <div class="card mt-2">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 small">
+                        <tbody>
+                            {% for key, label in military_fields %}
+                            <tr>
+                                <th class="w-50 text-muted fw-normal">{{ label }}</th>
+                                <td>
+                                    {% set v = new_military.get(key) %}
+                                    {% if key == 'data_verified_on_time' %}{{ 'так' if v else 'ні' }}
+                                    {% elif v %}{{ v }}
+                                    {% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            <tr><th colspan="2" class="text-uppercase text-muted pt-3">Поля картки студента з PDF</th></tr>
+                            {% for key, label in student_fields %}
+                            <tr>
+                                <th class="w-50 text-muted fw-normal">{{ label }}</th>
+                                <td>
+                                    {% set v = new_student.get(key) %}
+                                    {% if v %}{{ v }}{% else %}<span class="text-muted">—</span>{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </details>
+</div>
+
+{# Модалка відхилення подання #}
+{% if sub.status in ('pending', 'not_found') %}
+<div class="modal fade" id="reviewRejectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('military_telegram.telegram_submission_reject', sub_id=sub.id) }}" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Відхилити подання #{{ sub.id }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label small mb-1">Причина відхилення (буде надіслана відправнику в Telegram):</label>
+                <textarea name="reject_reason" class="form-control form-control-sm" rows="3" required>Документ застарілий або не відповідає актуальному витягу «Резерв+»</textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button type="submit" class="btn btn-danger btn-sm">Відхилити та повідомити в Telegram</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const toggleMil = document.getElementById('toggleAllMil');
+    if (toggleMil) {
+        toggleMil.addEventListener('change', function () {
+            document.querySelectorAll('.js-mil-cb').forEach(cb => { cb.checked = toggleMil.checked; });
+        });
+    }
+    const toggleStu = document.getElementById('toggleAllStu');
+    if (toggleStu) {
+        toggleStu.addEventListener('change', function () {
+            document.querySelectorAll('.js-stu-cb').forEach(cb => { cb.checked = toggleStu.checked; });
+        });
+    }
+
+    const filterInput = document.getElementById('rematchFilterInput');
+    const selectEl = document.getElementById('rematchStudentSelect');
+    if (filterInput && selectEl) {
+        const allOptions = Array.from(selectEl.options).map(opt => ({
+            value: opt.value,
+            text: opt.text,
+            selected: opt.selected,
+        }));
+        filterInput.addEventListener('input', function () {
+            const q = filterInput.value.trim().toLowerCase();
+            const curVal = selectEl.value;
+            selectEl.innerHTML = '';
+            allOptions.forEach(item => {
+                if (!item.value || !q || item.text.toLowerCase().includes(q)) {
+                    const opt = document.createElement('option');
+                    opt.value = item.value;
+                    opt.text = item.text;
+                    if (item.value === curVal) opt.selected = true;
+                    selectEl.appendChild(opt);
+                }
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

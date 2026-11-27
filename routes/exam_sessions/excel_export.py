@@ -173,6 +173,23 @@ def _resolve_sheet_faculty(sheet):
     return faculty_label
 
 
+def _format_specialty(code, name):
+    code = str(code or '').strip()
+    name = str(name or '').strip()
+    if not code and not name:
+        return ''
+    if not code:
+        return name
+    if not name:
+        return code
+    if name == code or name.startswith(code + ' '):
+        return name
+    parts = name.split(None, 1)
+    if parts and parts[0].upper() == code.upper():
+        return name
+    return f'{code} {name}'.strip()
+
+
 def _fill_header(ws, sheet: dict):
     f_title = Font(name=_FONT, size=14, bold=True)
     f13 = Font(name=_FONT, size=13)
@@ -196,9 +213,8 @@ def _fill_header(ws, sheet: dict):
     except Exception:
         pass
 
-    spec_code = _get(sheet, 'specialty_code') or ''
-    spec_name = _get(sheet, 'specialty') or ''
-    _set(ws, 4, 1, f'Спеціальність           {spec_code} {spec_name}'.strip(), f13b)
+    spec_label = _format_specialty(_get(sheet, 'specialty_code'), _get(sheet, 'specialty'))
+    _set(ws, 4, 1, f'Спеціальність           {spec_label}'.strip(), f13b)
     try:
         ws.merge_cells('A4:G4')
     except Exception:
@@ -521,10 +537,11 @@ def build_group_course_summary_xlsx(group_meta: dict, sessions_blocks: list) -> 
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
 
     fac_suffix = f" · {group_meta['faculty']}" if group_meta.get('faculty') else ''
+    spec_label = _format_specialty(group_meta.get('specialty_code'), group_meta.get('specialty'))
     ws['A2'] = (
         f"Група {group_meta.get('group_name') or ''} · курс {_roman(group_meta.get('course'))} · "
         f"{group_meta.get('study_form') or ''} · {group_meta.get('degree_level') or ''} · "
-        f"{group_meta.get('specialty_code') or ''} {group_meta.get('specialty') or ''}{fac_suffix}"
+        f"{spec_label}{fac_suffix}"
     )
     ws['A2'].font = Font(name='Times New Roman', size=11)
 
@@ -869,11 +886,9 @@ def build_session_summary_xlsx(session_meta, sheets, by_sheet_students) -> Bytes
     r += 1
 
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)
-    spec_code = session_meta.get('specialty_code') or ''
-    spec_name = session_meta.get('specialty') or ''
-    spec_text = f"Спеціальність: {spec_code} {spec_name}".strip().rstrip(':').strip()
-    if spec_code or spec_name:
-        put(r, 1, spec_text, f_body, left)
+    spec_label = _format_specialty(session_meta.get('specialty_code'), session_meta.get('specialty'))
+    if spec_label:
+        put(r, 1, f"Спеціальність: {spec_label}", f_body, left)
     r += 1
 
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=cols)

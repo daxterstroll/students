@@ -642,7 +642,29 @@
                     </h2>
                     <div id="militaryCollapse" class="accordion-collapse collapse" data-bs-parent="#studentDetailsAccordion">
                         <div class="accordion-body">
-							<div class="d-flex justify-content-end mb-3 flex-wrap gap-2">
+							<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+								<div class="d-flex align-items-center flex-wrap gap-2">
+									{% if tg_links %}
+										{% for tl in tg_links %}
+										<span class="badge {% if tl.is_representative %}bg-info text-dark{% else %}bg-success{% endif %}">
+											<i class="bi bi-telegram me-1"></i>
+											{% if tl.is_representative %}Представник{% else %}Telegram прив’язано{% endif %}:
+											{% if tl.tg_username %}@{{ tl.tg_username }}{% else %}ID {{ tl.chat_id }}{% endif %}
+										</span>
+										{% endfor %}
+									{% else %}
+										<span class="badge bg-secondary-subtle text-secondary-emphasis">
+											<i class="bi bi-telegram me-1"></i>Telegram не прив’язано
+										</span>
+									{% endif %}
+									{% if has_perm('manage_military_telegram') %}
+									<button type="button" class="btn btn-sm btn-outline-info"
+											data-bs-toggle="modal" data-bs-target="#tgQuickInviteModal">
+										<i class="bi bi-qr-code me-1"></i>Запрошення в Telegram-бот
+									</button>
+									{% endif %}
+								</div>
+								<div class="d-flex gap-2">
 								{% if has_perm('manage_students') or has_perm('manage_military_reports') %}
 									{% if military %}
 										<a href="{{ url_for('students.military_data', student_id=student.id) }}" class="btn btn-sm btn-primary">
@@ -654,6 +676,7 @@
 										</a>
 									{% endif %}
 								{% endif %}
+								</div>
 							</div>
 
                             {% if military %}
@@ -1983,5 +2006,96 @@ document.querySelectorAll('select[name="target_type"]').forEach(function (typeSe
 })();
 </script>
 
+
+{% if has_perm('manage_military_telegram') %}
+<div class="modal fade" id="tgQuickInviteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-telegram text-info me-2"></i>Запрошення в Telegram-бот ВОД</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-3">
+                    Персональне посилання для прив’язки Telegram до картки
+                    <strong>{{ student.last_name_UA }} {{ student.first_name_UA }} {{ student.middle_name_UA or '' }}</strong>.
+                    Його можна передати студенту або його представнику (батькам/родичу/старості), якщо в студента немає Telegram.
+                </p>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="tgInviteRepCheck">
+                    <label class="form-check-label small" for="tgInviteRepCheck">
+                        Позначити за замовчуванням як <strong>представника</strong> (у студента немає Telegram)
+                    </label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small mb-1" for="tgInviteNoteInput">Примітка (необов’язково, напр. «Мама Олена»)</label>
+                    <input type="text" class="form-control form-control-sm" id="tgInviteNoteInput" placeholder="Хто подає документи">
+                </div>
+                <button type="button" class="btn btn-primary btn-sm w-100 mb-3" id="btnGenTgInvite">
+                    <i class="bi bi-link-45deg me-1"></i>Згенерувати персональне посилання та QR-код
+                </button>
+                <div id="tgInviteResultBox" class="d-none border rounded p-3 text-center">
+                    <div class="input-group input-group-sm mb-3">
+                        <input type="text" class="form-control font-monospace" id="tgInviteUrlInput" readonly>
+                        <button type="button" class="btn btn-outline-secondary" id="btnCopyTgInvite">
+                            <i class="bi bi-clipboard"></i>
+                        </button>
+                    </div>
+                    <img id="tgInviteQrImg" src="" alt="QR-код запрошення" class="img-fluid border rounded p-2 bg-white" style="max-width:210px;">
+                    <div class="small text-muted mt-2">Дійсне 30 днів.</div>
+                </div>
+                <div id="tgInviteErrorBox" class="alert alert-danger small py-2 d-none mt-2 mb-0"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const genBtn = document.getElementById('btnGenTgInvite');
+    const copyBtn = document.getElementById('btnCopyTgInvite');
+    const urlInput = document.getElementById('tgInviteUrlInput');
+    const qrImg = document.getElementById('tgInviteQrImg');
+    const resBox = document.getElementById('tgInviteResultBox');
+    const errBox = document.getElementById('tgInviteErrorBox');
+    if (genBtn) {
+        genBtn.addEventListener('click', function () {
+            errBox.classList.add('d-none');
+            const fd = new FormData();
+            if (document.getElementById('tgInviteRepCheck').checked) {
+                fd.append('is_representative_default', '1');
+            }
+            fd.append('note', document.getElementById('tgInviteNoteInput').value || '');
+            fetch("{{ url_for('military_telegram.telegram_student_quick_invite', student_id=student.id) }}", {
+                method: 'POST',
+                body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) {
+                    errBox.textContent = data.error || 'Помилка генерації';
+                    errBox.classList.remove('d-none');
+                    return;
+                }
+                urlInput.value = data.tg_url;
+                qrImg.src = data.qr_url;
+                resBox.classList.remove('d-none');
+            })
+            .catch(() => {
+                errBox.textContent = 'Помилка з’єднання із сервером';
+                errBox.classList.remove('d-none');
+            });
+        });
+    }
+    if (copyBtn && urlInput) {
+        copyBtn.addEventListener('click', function () {
+            navigator.clipboard?.writeText(urlInput.value).then(() => {
+                copyBtn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+                setTimeout(() => { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i>'; }, 1500);
+            });
+        });
+    }
+});
+</script>
+{% endif %}
 
 {% endblock %}

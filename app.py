@@ -28,6 +28,12 @@ from routes.military_reports import military_reports_bp
 from routes.public_apply import public_apply_bp
 from routes.public_update import public_update_bp
 from routes.exam_sessions import exam_sessions_bp
+from routes.military_telegram import (
+    ensure_bot_started_if_enabled,
+    ensure_telegram_vod_initialized,
+    get_pending_telegram_badge_count,
+    military_telegram_bp,
+)
 from routes.utils import logger
 from routes.gen_docx import format_grade
 
@@ -184,6 +190,25 @@ def ensure_faculties_migrated():
                 conn.close()
 
 
+_TG_INIT_LOCK = threading.Lock()
+_TG_INIT_DONE = False
+
+
+@app.before_request
+def ensure_telegram_vod_ready():
+    """Одноразово за процес ініціалізує таблиці Telegram-бота ВОД та запускає воркер, якщо бот увімкнений."""
+    global _TG_INIT_DONE
+    if _TG_INIT_DONE:
+        return
+    with _TG_INIT_LOCK:
+        if _TG_INIT_DONE:
+            return
+        ensure_telegram_vod_initialized()
+        if not app.debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            ensure_bot_started_if_enabled()
+        _TG_INIT_DONE = True
+
+
 _CATALOG_SYNC_LOCK = threading.Lock()
 _CATALOG_SYNCED_YEAR = None
 
@@ -267,6 +292,7 @@ def inject_nav_context():
             new_update_requests = conn.execute(
                 "SELECT COUNT(*) FROM update_requests WHERE status='submitted'"
             ).fetchone()[0]
+            pending_tg_vod = get_pending_telegram_badge_count(conn)
             try:
                 degree_rows = conn.execute(
                     "SELECT name_ua, id FROM degree_levels"
@@ -301,6 +327,7 @@ def inject_nav_context():
     except Exception:
         new_applications = 0
         new_update_requests = 0
+        pending_tg_vod = 0
 
     perms = set(session.get('permissions', []))
     is_admin = bool(session.get('is_admin', False))
@@ -319,6 +346,7 @@ def inject_nav_context():
         'nav_badges': {
             'nav_pending_applications': new_applications,
             'nav_pending_updates': new_update_requests,
+            'nav_pending_telegram_vod': pending_tg_vod,
         },
         'has_perm': has_perm,
         'is_admin': is_admin,
@@ -378,6 +406,7 @@ app.register_blueprint(military_reports_bp)
 app.register_blueprint(public_apply_bp)
 app.register_blueprint(public_update_bp)
 app.register_blueprint(exam_sessions_bp)
+app.register_blueprint(military_telegram_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
 
@@ -424,8 +453,11 @@ if __name__ == '__main__':
             f"Застосунок запущено в DEBUG-режимі (host={args.host}, port={args.port}). "
             "НІКОЛИ не використовуйте цей режим, якщо сервер доступний ззовні."
         )
+        if os.environ.get('WERKZEUG_RUN_MAIN') == 'true':
+            ensure_bot_started_if_enabled()
         app.run(debug=True, host=args.host, port=args.port)
     else:
         from waitress import serve
+        ensure_bot_started_if_enabled()
         logger.info(f"Запуск застосунку у production-режимі на {args.host}:{args.port}")
         serve(app, host=args.host, port=args.port)

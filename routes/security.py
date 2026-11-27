@@ -558,6 +558,8 @@ def authorize_and_serve_static():
             )
         elif top_folder == 'update_requests':
             allowed = has_any_permission('manage_update_requests')
+        elif top_folder == 'telegram_vod':
+            allowed = has_any_permission('manage_military_telegram', 'manage_military_reports')
     finally:
         conn.close()
 

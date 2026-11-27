@@ -224,6 +224,7 @@ AUDIT_SECTION_BY_PREFIX = [
     ('/admin/license_report', 'Звіт по ліцензіях'),
     ('/admin/export_photos', 'Фото студентів'),
     ('/import_grades', 'Імпорт оцінок'),
+    ('/admin/military/telegram', 'Військовий облік'),
     ('/military-reports', 'Військовий облік'),
     ('/session-grade', 'Сесії та відомості'),
     ('/analytics', 'Аналітика'),

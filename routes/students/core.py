@@ -934,6 +934,7 @@ FAQ_SECTION_PERMISSIONS = {
         'manage_passport_documents',
         'manage_diplomas',
         'manage_military_reports',
+        'manage_military_telegram',
         'manage_orders',
         'create_enrollment_order',
         'manage_expulsion',
@@ -1772,6 +1773,23 @@ def student_details(student_id):
         "ORDER BY COALESCE(short_name_ua, name_ua)"
     ).fetchall()
 
+    tg_links = []
+    tg_bot_username = ''
+    try:
+        from routes.military_telegram import ensure_telegram_vod_schema
+        ensure_telegram_vod_schema(conn)
+        tg_links = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM telegram_student_links WHERE student_id = ? AND is_active = 1 ORDER BY is_representative ASC, id DESC",
+                (student_id,),
+            ).fetchall()
+        ]
+        srow = conn.execute("SELECT bot_username FROM telegram_bot_settings WHERE id = 1").fetchone()
+        if srow:
+            tg_bot_username = srow['bot_username'] or ''
+    except Exception:
+        pass
+
     conn.close()
 
     return render_template(
@@ -1779,6 +1797,8 @@ def student_details(student_id):
         student=student_dict,
         military=military_dict,
         military_attachments=military_attachments,
+        tg_links=tg_links,
+        tg_bot_username=tg_bot_username,
         enrollments=enrollments,
         enrollment_corrections=enrollment_corrections,
         all_groups=all_groups,

@@ -120,10 +120,13 @@ def _set_header_values(ws, sheet):
     if not faculty_label:
         faculty_label = _get(sheet, 'knowledge_area') or _get(sheet, 'department') or ''
 
+    from routes.exam_sessions.excel_export import _format_specialty
+    spec_label = _format_specialty(_get(sheet, 'specialty_code'), _get(sheet, 'specialty'))
+
     values = {
         'A1': _get(sheet, 'institution_name_and_status') or 'ПВНЗ «Європейський університет»\nЛьвівська філія',
         'A3': f"Інститут, факультет, відділення      {faculty_label}",
-        'A4': f"Спеціальність           {_get(sheet, 'specialty_code') or ''} {_get(sheet, 'specialty') or ''}".strip(),
+        'A4': f"Спеціальність           {spec_label}".strip(),
         'A5': f"Курс    {course}   Група       {_get(sheet, 'group_name') or ''}     ({_get(sheet, 'study_form') or ''})   {_get(sheet, 'academic_year') or ''}   навчальний рік",
         'A6': f"Освітній рівень  {_get(sheet, 'degree_level') or ''}",
         'A7': f"ВІДОМІСТЬ  № {_get(sheet, 'statement_number')}." if _get(sheet, 'statement_number') else 'ВІДОМІСТЬ',

@@ -1,0 +1,1716 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Telegram-бот ВОД «Резерв+» — Військовий облік{% endblock %}
+{% block main_class %}container-fluid py-3 px-lg-4{% endblock %}
+
+{% block content %}
+<style>
+    .tg-chip-btn {
+        font-size: .76rem;
+        padding: .18rem .5rem;
+    }
+    .tg-filter-box {
+        max-height: 155px;
+        overflow-y: auto;
+        border: 1px solid var(--line);
+        border-radius: .375rem;
+        padding: .4rem .55rem;
+        background: var(--surface);
+    }
+    .tg-qbadge {
+        background: rgba(14, 27, 44, .12);
+        color: var(--ink-text);
+    }
+    .btn-primary .tg-qbadge {
+        background: rgba(14, 27, 44, .20);
+        color: var(--ink);
+    }
+    html[data-theme="dark"] .tg-qbadge {
+        background: rgba(231, 226, 214, .14);
+        color: var(--ink-text);
+    }
+    html[data-theme="dark"] .btn-primary .tg-qbadge {
+        background: rgba(14, 27, 44, .22);
+        color: var(--ink);
+    }
+    .tg-mono { font-family: 'JetBrains Mono', monospace; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div class="d-flex flex-wrap gap-2">
+        <a href="{{ url_for('military_reports.dashboard') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Дашборд ВО
+        </a>
+        <a href="{{ url_for('military_reports.military_files') }}" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-file-earmark-zip me-1"></i>Файли «Резерв+»
+        </a>
+    </div>
+
+    <div class="d-flex align-items-center flex-wrap gap-2">
+        {% if worker_status.running %}
+        <span class="badge bg-success py-2 px-3">
+            <i class="bi bi-broadcast me-1"></i>Бот активний
+            {% if worker_status.bot_username %}(@{{ worker_status.bot_username }}){% endif %}
+        </span>
+        {% else %}
+        <span class="badge bg-secondary py-2 px-3">
+            <i class="bi bi-pause-circle me-1"></i>Бот зупинено
+            {% if worker_status.bot_username %}(@{{ worker_status.bot_username }}){% endif %}
+        </span>
+        {% endif %}
+
+        {% if worker_status.last_poll_at %}
+        <span class="small text-muted">останнє опитування: {{ worker_status.last_poll_at }}</span>
+        {% endif %}
+
+        <form method="POST" action="{{ url_for('military_telegram.telegram_bot_action') }}" class="d-inline-flex gap-1">
+            {% if worker_status.running %}
+            <button type="submit" name="bot_action" value="restart" class="btn btn-sm btn-outline-warning" title="Перезапустити фоновий потік">
+                <i class="bi bi-arrow-clockwise me-1"></i>Перезапустити
+            </button>
+            <button type="submit" name="bot_action" value="stop" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-stop-fill me-1"></i>Зупинити
+            </button>
+            {% else %}
+            <button type="submit" name="bot_action" value="start" class="btn btn-sm btn-success">
+                <i class="bi bi-play-fill me-1"></i>Запустити бота
+            </button>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{{ ui.page_header(
+    'bi-telegram',
+    'Telegram-бот військового обліку («Резерв+»)',
+    'Прийом PDF від студентів або представників, сувора звірка за ПІБ та датою народження, контроль повторних подач і гнучкі розсилки'
+) }}
+
+{% if worker_status.last_error %}
+<div class="alert alert-danger d-flex align-items-center gap-2 py-2 small">
+    <i class="bi bi-exclamation-octagon-fill fs-5"></i>
+    <div><strong>Помилка бота:</strong> {{ worker_status.last_error }}</div>
+</div>
+{% endif %}
+
+{% if counts.not_found > 0 or unread_events > 0 %}
+<div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
+    <div class="small">
+        <i class="bi bi-bell-fill me-1"></i>
+        {% if counts.not_found > 0 %}
+        <strong>Увага:</strong> {{ counts.not_found }} PDF від не знайдених у БД студентів потребують перевірки.
+        {% endif %}
+        {% if unread_events > 0 %}
+        <span class="ms-2">Непрочитаних системних подій: <strong>{{ unread_events }}</strong> (вкладка «Налаштування та журнал»).</span>
+        {% endif %}
+    </div>
+    {% if unread_events > 0 %}
+    <form method="POST" action="{{ url_for('military_telegram.telegram_events_mark_read') }}" class="m-0">
+        <input type="hidden" name="tab" value="{{ active_tab }}">
+        <button type="submit" class="btn btn-sm btn-outline-dark">Позначити події прочитаними</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── KPI-картки ── #}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='pending') }}" class="card text-center border-primary h-100 text-decoration-none">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-primary">{{ counts.pending }}</div>
+                <div class="small text-muted">Очікують підтвердження</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='not_found') }}" class="card text-center border-danger h-100 text-decoration-none">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-danger">{{ counts.not_found }}</div>
+                <div class="small text-muted">Не знайдено в БД</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='duplicates') }}" class="card text-center border-warning h-100 text-decoration-none">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-warning">{{ counts.duplicates }}</div>
+                <div class="small text-muted">Повторних подач за місяць</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md-3">
+        <a href="{{ url_for('military_telegram.telegram_dashboard', tab='links') }}" class="card text-center border-success h-100 text-decoration-none">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-success">{{ links|length }}</div>
+                <div class="small text-muted">Прив’язаних чатів</div>
+            </div>
+        </a>
+    </div>
+</div>
+
+{# ── Навігація по вкладках ── #}
+<ul class="nav nav-tabs mb-3">
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'queue' %}active{% endif %}"
+           href="{{ url_for('military_telegram.telegram_dashboard', tab='queue') }}">
+            <i class="bi bi-inbox-fill me-1"></i>Черга перевірки PDF
+            {% if counts.attention %}<span class="badge bg-danger ms-1">{{ counts.attention }}</span>{% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'broadcast' %}active{% endif %}"
+           href="{{ url_for('military_telegram.telegram_dashboard', tab='broadcast') }}">
+            <i class="bi bi-megaphone-fill me-1"></i>Розсилки та фільтри
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'links' %}active{% endif %}"
+           href="{{ url_for('military_telegram.telegram_dashboard', tab='links') }}">
+            <i class="bi bi-link-45deg me-1"></i>Прив’язка та QR-запрошення
+            <span class="badge bg-secondary ms-1">{{ links|length }}</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'settings' %}active{% endif %}"
+           href="{{ url_for('military_telegram.telegram_dashboard', tab='settings') }}">
+            <i class="bi bi-gear-fill me-1"></i>Налаштування та журнал
+            {% if unread_events %}<span class="badge bg-warning text-dark ms-1">{{ unread_events }}</span>{% endif %}
+        </a>
+    </li>
+</ul>
+
+{# ════════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА 1: ЧЕРГА ПЕРЕВІРКИ PDF
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'queue' %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="btn-group btn-group-sm flex-wrap" role="group">
+            {% set qfilters = [
+                ('attention', 'Потребують уваги', counts.attention),
+                ('pending', 'На перевірці', counts.pending),
+                ('not_found', 'Не знайдені в БД', counts.not_found),
+                ('duplicates', 'Повторні за місяць', counts.duplicates),
+                ('approved', 'Підтверджені', counts.approved),
+                ('rejected', 'Відхилені', counts.rejected),
+                ('all', 'Усі', None),
+            ] %}
+            {% for qk, qlab, qcnt in qfilters %}
+            <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus=qk) }}"
+               class="btn {% if queue_filter == qk %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                {{ qlab }}{% if qcnt is not none %} <span class="badge tg-qbadge ms-1">{{ qcnt }}</span>{% endif %}
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if submissions %}
+        <button type="submit" form="bulkApproveForm" class="btn btn-sm btn-success"
+                onclick="return confirm('Підтвердити всі обрані коректні подання та оновити дані в БД?');">
+            <i class="bi bi-check2-all me-1"></i>Масово підтвердити обрані
+        </button>
+        {% endif %}
+    </div>
+
+    <div class="card-body p-0">
+        {% if submissions %}
+        <form id="bulkApproveForm" method="POST" action="{{ url_for('military_telegram.telegram_bulk_approve') }}">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;" class="text-center">
+                                <input type="checkbox" class="form-check-input" id="selectAllQueue">
+                            </th>
+                            <th>ID / Час</th>
+                            <th>Студент / Дані з PDF</th>
+                            <th>Сформовано в PDF</th>
+                            <th>Зміни та попередження</th>
+                            <th>Відправник Telegram</th>
+                            <th>Статус</th>
+                            <th class="text-end">Дії</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in submissions %}
+                        <tr class="{% if s.status == 'not_found' %}table-danger{% elif s.is_monthly_duplicate and s.status == 'pending' %}table-warning{% endif %}">
+                            <td class="text-center">
+                                {% if s.status == 'pending' and s.student_id %}
+                                <input type="checkbox" class="form-check-input js-queue-check" name="submission_ids" value="{{ s.id }}">
+                                {% endif %}
+                            </td>
+                            <td class="small tg-mono">
+                                #{{ s.id }}
+                                <div class="text-muted" style="font-size:.73rem;">{{ (s.created_at or '')[:16] }}</div>
+                            </td>
+                            <td>
+                                {% if s.student_id %}
+                                <a href="{{ url_for('students.student_details', student_id=s.student_id) }}" class="fw-semibold text-decoration-none">
+                                    {{ s.student_full_name }}
+                                </a>
+                                <div class="small text-muted">
+                                    {{ s.group_name or 'Без групи' }} · ДН: {{ s.db_birth_date or s.parsed_birth_date or '—' }}
+                                </div>
+                                {% else %}
+                                <div class="fw-semibold text-danger">{{ s.parsed_full_name or 'ПІБ не розпізнано' }}</div>
+                                <div class="small text-muted">ДН з PDF: {{ s.parsed_birth_date or '—' }}</div>
+                                {% if s.parse_error %}
+                                <div class="small text-danger">{{ s.parse_error }}</div>
+                                {% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                <span class="tg-mono">{{ s.parsed_formed_at or '—' }}</span>
+                                {% if s.is_outdated_pdf %}
+                                <div><span class="badge bg-secondary">минулий період ({{ s.parsed_ym }})</span></div>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if s.student_id %}
+                                <span class="badge bg-info-subtle text-info-emphasis">ВО: {{ s.mil_diff|length }}</span>
+                                <span class="badge bg-primary-subtle text-primary-emphasis">Картка: {{ s.stu_diff|length }}</span>
+                                {% if s.photo_rel_path %}<span class="badge bg-secondary-subtle text-secondary-emphasis">Фото 3×4</span>{% endif %}
+                                {% endif %}
+                                {% if s.is_monthly_duplicate %}
+                                <div class="mt-1">
+                                    <span class="badge bg-warning text-dark">
+                                        <i class="bi bi-exclamation-triangle-fill me-1"></i>Повторна подача за місяць (#{{ s.duplicate_count }})
+                                    </span>
+                                    <div class="text-muted" style="font-size:.72rem;">{{ s.duplicate_info }}</div>
+                                </div>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if s.tg_username %}@{{ s.tg_username }}{% else %}ID {{ s.chat_id }}{% endif %}
+                                {% if s.submitted_as_representative %}
+                                <div><span class="badge bg-info text-dark">Представник</span></div>
+                                {% endif %}
+                                {% if s.tg_phone %}<div class="text-muted tg-mono" style="font-size:.73rem;">{{ s.tg_phone }}</div>{% endif %}
+                            </td>
+                            <td class="small">
+                                {% if s.status == 'pending' %}
+                                <span class="badge bg-primary">Очікує перевірки</span>
+                                {% elif s.status == 'not_found' %}
+                                <span class="badge bg-danger">Не знайдено в БД</span>
+                                {% elif s.status == 'approved' %}
+                                <span class="badge bg-success">Підтверджено</span>
+                                <div class="text-muted" style="font-size:.72rem;">{{ s.reviewed_by }}</div>
+                                {% elif s.status == 'rejected' %}
+                                <span class="badge bg-secondary">Відхилено</span>
+                                <div class="text-muted" style="font-size:.72rem;">{{ s.reject_reason }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="text-end text-nowrap">
+                                {% if s.pdf_rel_path %}
+                                <a href="{{ url_for('static', filename=s.pdf_rel_path) }}" target="_blank"
+                                   class="btn btn-sm btn-outline-secondary" title="Відкрити PDF">
+                                    <i class="bi bi-file-earmark-pdf"></i>
+                                </a>
+                                {% endif %}
+                                <a href="{{ url_for('military_telegram.telegram_submission_review', sub_id=s.id) }}"
+                                   class="btn btn-sm btn-outline-primary" title="Детальний перегляд / звірка">
+                                    <i class="bi bi-eye me-1"></i>Розбір
+                                </a>
+                                {% if s.status == 'pending' and s.student_id %}
+                                <button type="button" class="btn btn-sm btn-success js-single-approve"
+                                        data-action="{{ url_for('military_telegram.telegram_submission_approve', sub_id=s.id) }}"
+                                        title="Швидко підтвердити всі військові поля">
+                                    <i class="bi bi-check-lg"></i>
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-danger js-open-reject"
+                                        data-action="{{ url_for('military_telegram.telegram_submission_reject', sub_id=s.id) }}"
+                                        data-name="{{ s.student_full_name or s.parsed_full_name }}"
+                                        title="Відхилити">
+                                    <i class="bi bi-x-lg"></i>
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+        {% else %}
+        <div class="p-5 text-center text-muted">
+            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+            У цьому розділі черги наразі немає записів.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА 2: РОЗСИЛКИ ТА ГНУЧКИЙ КОНСТРУКТОР ФІЛЬТРІВ
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'broadcast' %}
+<div class="row g-3">
+    <div class="col-lg-7">
+        {# Збережені пресети #}
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <span><i class="bi bi-bookmark-star me-1"></i><strong>Швидкі пресети фільтрів</strong></span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnResetFilters">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Скинути фільтри
+                </button>
+            </div>
+            <div class="card-body py-2">
+                <div class="d-flex flex-wrap gap-2">
+                    {% for pr in presets %}
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-primary js-load-preset"
+                                data-filter='{{ pr.filter_json }}'
+                                data-msg="{{ pr.message_template }}"
+                                title="{{ pr.description }}">
+                            {{ pr.name }}
+                        </button>
+                        <button type="button" class="btn btn-outline-info js-preset-to-rule"
+                                data-preset-id="{{ pr.id }}"
+                                data-preset-name="{{ pr.name }}"
+                                data-filter='{{ pr.filter_json }}'
+                                data-msg="{{ pr.message_template }}"
+                                title="Налаштувати авто-нагадування за розкладом для цього пресета">
+                            <i class="bi bi-alarm"></i>
+                        </button>
+                        <form method="POST" action="{{ url_for('military_telegram.telegram_preset_delete', preset_id=pr.id) }}"
+                              class="d-inline" onsubmit="return confirm('Видалити пресет «{{ pr.name }}»?');">
+                            <button type="submit" class="btn btn-outline-danger btn-sm" title="Видалити пресет">×</button>
+                        </form>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        {# Конструктор фільтрів (необмежена комбінація умов) #}
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-funnel-fill me-1"></i>Конструктор фільтрів (комбінуйте скільки завгодно умов)</strong>
+                <button type="button" class="btn btn-sm btn-primary" id="btnPreviewFilters">
+                    <i class="bi bi-search me-1"></i>Перевірити вибірку
+                </button>
+            </div>
+            <div class="card-body">
+                <form id="tgFilterForm" class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Пошук (ПІБ, телефон, email, РНОКПП, група)</label>
+                        <input type="text" class="form-control form-control-sm" name="search" id="fltSearch" placeholder="Пошуковий запит...">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">Місяць перевірки ВОД</label>
+                        <select class="form-select form-select-sm" name="vod_month" id="fltVodMonth">
+                            {% for m in month_options %}
+                            <option value="{{ m.ym }}" {% if m.ym == today_ym %}selected{% endif %}>{{ m.label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">Стан PDF «Резерв+»</label>
+                        <select class="form-select form-select-sm" name="vod_month_state" id="fltVodMonthState">
+                            <option value="any">Будь-який</option>
+                            <option value="missing_this_month" selected>Немає за обраний місяць</option>
+                            <option value="never_uploaded">Немає жодного PDF взагалі</option>
+                            <option value="outdated_prev_months">Є старий PDF, але не за цей місяць</option>
+                            <option value="already_submitted_or_pending">Вже подали / на перевірці</option>
+                            <option value="has_approved_this_month">Підтверджено за обраний місяць</option>
+                        </select>
+                    </div>
+
+                    {# Факультети #}
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold mb-1">Факультети</label>
+                        <div class="tg-filter-box">
+                            {% for fac in catalogs.faculties %}
+                            <div class="form-check">
+                                <input class="form-check-input js-flt-cb" type="checkbox" name="faculty_ids" value="{{ fac.id }}" id="fac_{{ fac.id }}">
+                                <label class="form-check-label small" for="fac_{{ fac.id }}">{{ fac.name_ua }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    {# Групи #}
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold mb-1">Групи (можна декілька)</label>
+                        <div class="tg-filter-box">
+                            {% for grp in catalogs.groups %}
+                            <div class="form-check">
+                                <input class="form-check-input js-flt-cb" type="checkbox" name="group_ids" value="{{ grp.id }}" id="grp_{{ grp.id }}">
+                                <label class="form-check-label small" for="grp_{{ grp.id }}">
+                                    {{ grp.name }} ({{ grp.course }} к., {{ grp.study_form }})
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    {# Курс, Форма, Ступінь #}
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold mb-1">Курс та форма навчання</label>
+                        <div class="tg-filter-box">
+                            <div class="small text-muted mb-1">Курси:</div>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                {% for c in catalogs.courses %}
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input js-flt-cb" type="checkbox" name="courses" value="{{ c }}" id="crs_{{ c }}">
+                                    <label class="form-check-label small" for="crs_{{ c }}">{{ c }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="small text-muted mb-1">Форма:</div>
+                            <div class="d-flex flex-wrap gap-2 mb-2">
+                                {% for sf in catalogs.study_forms %}
+                                <div class="form-check form-check-inline m-0">
+                                    <input class="form-check-input js-flt-cb" type="checkbox" name="study_forms" value="{{ sf }}" id="sf_{{ loop.index }}">
+                                    <label class="form-check-label small" for="sf_{{ loop.index }}">{{ sf }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="small text-muted mb-1">Ступінь:</div>
+                            {% for dl in catalogs.degree_levels %}
+                            <div class="form-check">
+                                <input class="form-check-input js-flt-cb" type="checkbox" name="degree_levels" value="{{ dl }}" id="dl_{{ loop.index }}">
+                                <label class="form-check-label small" for="dl_{{ loop.index }}">{{ dl }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    {# Вік і Стать #}
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Вік (25+, &lt;25, діапазон) та дата розрахунку</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <select class="form-select form-select-sm" name="age_mode" id="fltAgeMode">
+                                    <option value="any">Будь-який вік</option>
+                                    <option value="25_plus">25+ (25 років і більше)</option>
+                                    <option value="under_25">До 25 років (&lt; 25)</option>
+                                    <option value="range">Довільний діапазон (від..до)</option>
+                                </select>
+                            </div>
+                            <div class="col-3">
+                                <input type="number" class="form-control form-control-sm" name="age_min" id="fltAgeMin" placeholder="Від" min="14" max="99">
+                            </div>
+                            <div class="col-3">
+                                <input type="number" class="form-control form-control-sm" name="age_max" id="fltAgeMax" placeholder="До" min="14" max="99">
+                            </div>
+                            <div class="col-6">
+                                <input type="date" class="form-control form-control-sm" name="age_as_of" id="fltAgeAsOf" title="На яку дату рахувати вік (порожньо = сьогодні)">
+                            </div>
+                            <div class="col-6 d-flex align-items-center gap-3">
+                                <div class="form-check m-0">
+                                    <input class="form-check-input js-flt-cb" type="checkbox" name="genders" value="M" id="genM">
+                                    <label class="form-check-label small" for="genM">Чоловіки</label>
+                                </div>
+                                <div class="form-check m-0">
+                                    <input class="form-check-input js-flt-cb" type="checkbox" name="genders" value="F" id="genF">
+                                    <label class="form-check-label small" for="genF">Жінки</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Військовий статус і категорія #}
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Військовий статус та категорія Додатку 5</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="tg-filter-box">
+                                    {% for st_b in catalogs.status_badges %}
+                                    <div class="form-check">
+                                        <input class="form-check-input js-flt-cb" type="checkbox" name="military_statuses" value="{{ st_b }}" id="sb_{{ loop.index }}">
+                                        <label class="form-check-label small" for="sb_{{ loop.index }}">{{ st_b }}</label>
+                                    </div>
+                                    {% endfor %}
+                                    <div class="form-check">
+                                        <input class="form-check-input js-flt-cb" type="checkbox" name="military_statuses" value="__empty__" id="sb_empty">
+                                        <label class="form-check-label small text-muted" for="sb_empty">Статус не заповнено</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="tg-filter-box">
+                                    {% for ck, (clab, _) in catalogs.category_labels.items() %}
+                                    <div class="form-check">
+                                        <input class="form-check-input js-flt-cb" type="checkbox" name="military_categories" value="{{ ck }}" id="cat_{{ ck }}">
+                                        <label class="form-check-label small" for="cat_{{ ck }}">{{ clab }}</label>
+                                    </div>
+                                    {% endfor %}
+                                    <div class="form-check">
+                                        <input class="form-check-input js-flt-cb" type="checkbox" name="military_categories" value="other" id="cat_other">
+                                        <label class="form-check-label small text-muted" for="cat_other">Без категорії</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {# Додаткові військові та системні умови #}
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">Документ старіший за (днів)</label>
+                        <input type="number" class="form-control form-control-sm" name="formed_older_than_days" id="fltFormedDays" placeholder="напр. 30" min="1">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">Відстрочка спливає за (днів)</label>
+                        <input type="number" class="form-control form-control-sm" name="deferral_expiring_days" id="fltDefDays" placeholder="напр. 30" min="0">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">ВОД дійсний до за (днів)</label>
+                        <input type="number" class="form-control form-control-sm" name="valid_until_expiring_days" id="fltValDays" placeholder="напр. 30" min="0">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label small fw-semibold mb-1">Звернення до поліції</label>
+                        <select class="form-select form-select-sm" name="has_police_reason" id="fltPolice">
+                            <option value="any">Не важливо</option>
+                            <option value="yes">Є причина звернення</option>
+                            <option value="no">Без звернення</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold mb-1">Прив’язка до Telegram</label>
+                        <select class="form-select form-select-sm" name="tg_link_state" id="fltTgState">
+                            <option value="any">Усі студенти</option>
+                            <option value="linked">Тільки з прив’язаним Telegram</option>
+                            <option value="unlinked">Тільки без Telegram</option>
+                            <option value="representative">Тільки через представника</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label small fw-semibold mb-1">Ліцензії</label>
+                        <div class="tg-filter-box" style="max-height:95px;">
+                            {% for lic in catalogs.licenses %}
+                            <div class="form-check">
+                                <input class="form-check-input js-flt-cb" type="checkbox" name="license_ids" value="{{ lic.id }}" id="lic_{{ lic.id }}">
+                                <label class="form-check-label small" for="lic_{{ lic.id }}">{{ lic.short_name_ua or lic.name_ua }}</label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-flex flex-column justify-content-end gap-1 small">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="only_base_license" value="1" id="fltBaseLic">
+                            <label class="form-check-label" for="fltBaseLic">Тільки базова ліцензія</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="exclude_women_no_mil" value="1" id="fltExclWomen" checked>
+                            <label class="form-check-label" for="fltExclWomen">Виключити жінок без ВО</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="exclude_note_18" value="1" id="fltExclN18" checked>
+                            <label class="form-check-label" for="fltExclN18">Виключити вибулих (гр. 18)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="include_frozen" value="1" id="fltIncFrozen">
+                            <label class="form-check-label" for="fltIncFrozen">Включити заморожених</label>
+                        </div>
+                    </div>
+                </form>
+
+                {# Зберегти поточну комбінацію як пресет #}
+                <form method="POST" action="{{ url_for('military_telegram.telegram_preset_save') }}" id="savePresetForm" class="mt-3 pt-3 border-top row g-2 align-items-end">
+                    <input type="hidden" name="filter_json" id="presetFilterJson">
+                    <input type="hidden" name="message_template" id="presetMsgTpl">
+                    <div class="col-md-5">
+                        <input type="text" class="form-control form-control-sm" name="preset_name" placeholder="Назва нового пресета фільтрів..." required>
+                    </div>
+                    <div class="col-md-5">
+                        <input type="text" class="form-control form-control-sm" name="preset_description" placeholder="Короткий опис (необов’язково)">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-outline-primary w-100" id="btnPrepareSavePreset">
+                            <i class="bi bi-save me-1"></i>Зберегти
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# Права колонка: текст повідомлення + живий список одержувачів #}
+    <div class="col-lg-5">
+        <div class="card mb-3">
+            <div class="card-header">
+                <strong><i class="bi bi-send-fill me-1"></i>Повідомлення та відправка розсилки</strong>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('military_telegram.telegram_send_broadcast') }}" id="sendBroadcastForm"
+                      onsubmit="return prepareBroadcastSubmit();">
+                    <input type="hidden" name="filter_json" id="broadcastFilterJson">
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Назва розсилки (для журналу)</label>
+                        <input type="text" class="form-control form-control-sm" name="broadcast_title"
+                               value="Нагадування про надання ВОД «Резерв+»" required>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Текст повідомлення в Telegram</label>
+                        <textarea class="form-control form-control-sm" name="message_text" id="broadcastMsgText" rows="6" required>{{ settings.reminder_default_text }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <div class="small text-muted mb-1">Натисніть, щоб вставити змінну:</div>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for ph in ['{ПІБ}', "{Ім'я}", '{Група}', '{Курс}', '{Факультет}', '{Місяць}', '{Вік}', '{СтатусВО}'] %}
+                            <button type="button" class="btn btn-outline-secondary tg-chip-btn js-insert-ph" data-ph="{{ ph }}">{{ ph }}</button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="bi bi-telegram me-1"></i>Надіслати розсилку за обраним фільтром
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <strong>Попередній перегляд вибірки</strong>
+                <div id="previewStatsBadges" class="small">
+                    <span class="text-muted">Натисніть «Перевірити вибірку»</span>
+                </div>
+            </div>
+            <div class="card-body p-0" style="max-height: 360px; overflow-y: auto;">
+                <table class="table table-sm table-hover mb-0 align-middle small">
+                    <thead>
+                        <tr>
+                            <th>Студент / Група</th>
+                            <th>Вік</th>
+                            <th>ВОД</th>
+                            <th>Telegram</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewTableBody">
+                        <tr><td colspan="4" class="text-center text-muted py-4">Оберіть фільтри ліворуч та натисніть «Перевірити вибірку»</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# Автоматичні нагадування за розкладом (по конкретних фільтрах) #}
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <strong><i class="bi bi-alarm-fill me-1 text-info"></i>Автоматичні нагадування за розкладом (для певних фільтрів)</strong>
+                    <span class="badge bg-info text-dark ms-1">{{ auto_rules|selectattr('is_enabled')|list|length }} активних</span>
+                </div>
+                <button type="button" class="btn btn-sm btn-info" id="btnNewRuleFromCurrent">
+                    <i class="bi bi-plus-circle me-1"></i>Створити правило з поточного фільтра
+                </button>
+            </div>
+            <div class="card-body py-2 border-bottom small text-muted">
+                Наприклад: з <strong>15 по 25 число</strong> кожного місяця бот нагадуватиме студентам обраного фільтра
+                із заданою частотою на день (наприклад, 2–3 рази вдень), доки студент не надішле PDF «Резерв+» за цей місяць.
+                Для налаштування на основі пресета також можна натиснути <i class="bi bi-alarm"></i> біля будь-якого пресета вище.
+            </div>
+            <div class="card-body p-0">
+                {% if auto_rules %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle small">
+                        <thead>
+                            <tr>
+                                <th>Назва / Джерело</th>
+                                <th>Числа місяця</th>
+                                <th>Частота та час відправки</th>
+                                <th>Умова зупинки</th>
+                                <th>Статус / Останній запуск</th>
+                                <th class="text-end">Дії</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in auto_rules %}
+                            <tr class="{% if not r.is_enabled %}opacity-75{% endif %}">
+                                <td>
+                                    <div class="fw-semibold">{{ r.name }}</div>
+                                    {% if r.preset_name %}
+                                    <span class="badge bg-primary-subtle text-primary-emphasis">Пресет: {{ r.preset_name }}</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">Власний фільтр</span>
+                                    {% endif %}
+                                </td>
+                                <td class="tg-mono fw-semibold">
+                                    з {{ r.day_from }} по {{ r.day_to }} число
+                                </td>
+                                <td>
+                                    <div>
+                                        <strong>{{ r.times_per_day }} р./день</strong>
+                                        <span class="text-muted">({{ '%02d'|format(r.start_hour) }}:00–{{ '%02d'|format(r.end_hour) }}:00)</span>
+                                    </div>
+                                    <div class="tg-mono text-info" style="font-size:.75rem;">
+                                        {{ r.slots_preview|join(', ') }}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if r.stop_when_submitted %}
+                                    <span class="badge bg-success-subtle text-success-emphasis">До відправки PDF</span>
+                                    {% else %}
+                                    <span class="badge bg-warning-subtle text-warning-emphasis">Завжди за фільтром</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if r.is_enabled %}
+                                    <span class="badge bg-success">Активне</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Пауза</span>
+                                    {% endif %}
+                                    <span class="text-muted ms-1">сьогодні: <strong>{{ r.effective_sent_today }}</strong>/{{ r.times_per_day }}</span>
+                                    {% if r.last_run_summary %}
+                                    <div class="text-muted" style="font-size:.73rem;">{{ r.last_run_summary }}</div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-nowrap">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary js-load-rule-filter"
+                                            data-filter='{{ r.filter_json }}' data-msg="{{ r.message_template }}"
+                                            title="Завантажити фільтр у конструктор">
+                                        <i class="bi bi-funnel"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_run_now', rule_id=r.id) }}"
+                                          class="d-inline" onsubmit="return confirm('Виконати це правило нагадування прямо зараз?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-success" title="Запустити зараз">
+                                            <i class="bi bi-play-fill"></i>
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_toggle', rule_id=r.id) }}" class="d-inline">
+                                        <button type="submit" class="btn btn-sm btn-outline-warning"
+                                                title="{% if r.is_enabled %}Призупинити{% else %}Увімкнути{% endif %}">
+                                            <i class="bi {% if r.is_enabled %}bi-pause-fill{% else %}bi-power{% endif %}"></i>
+                                        </button>
+                                    </form>
+                                    <button type="button" class="btn btn-sm btn-outline-primary js-edit-auto-rule"
+                                            data-id="{{ r.id }}"
+                                            data-name="{{ r.name }}"
+                                            data-preset-id="{{ r.preset_id or '' }}"
+                                            data-filter='{{ r.filter_json }}'
+                                            data-msg="{{ r.message_template }}"
+                                            data-day-from="{{ r.day_from }}"
+                                            data-day-to="{{ r.day_to }}"
+                                            data-times="{{ r.times_per_day }}"
+                                            data-start-hour="{{ r.start_hour }}"
+                                            data-end-hour="{{ r.end_hour }}"
+                                            data-stop="{{ r.stop_when_submitted }}"
+                                            data-enabled="{{ r.is_enabled }}"
+                                            title="Редагувати розклад і фільтр">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                    <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_delete', rule_id=r.id) }}"
+                                          class="d-inline" onsubmit="return confirm('Видалити правило «{{ r.name }}»?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger" title="Видалити">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-3 text-center text-muted small">
+                    Поки немає правил за розкладом. Налаштуйте фільтр вище та натисніть «Створити правило з поточного фільтра» (або <i class="bi bi-alarm"></i> біля пресета).
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# Історія розсилок #}
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header"><strong><i class="bi bi-clock-history me-1"></i>Історія розсилок</strong></div>
+            <div class="card-body p-0">
+                {% if broadcasts %}
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0 align-middle small">
+                        <thead>
+                            <tr>
+                                <th>Дата</th>
+                                <th>Назва</th>
+                                <th>Підійшло</th>
+                                <th>З Telegram</th>
+                                <th>Без Telegram</th>
+                                <th>Доставлено чатів</th>
+                                <th>Помилок</th>
+                                <th>Автор</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for b in broadcasts %}
+                            <tr>
+                                <td class="tg-mono">{{ (b.created_at or '')[:16] }}</td>
+                                <td>
+                                    {{ b.title }}
+                                    {% if b.is_auto %}<span class="badge bg-info text-dark ms-1">Авто</span>{% endif %}
+                                </td>
+                                <td>{{ b.total_matched }}</td>
+                                <td class="text-success fw-semibold">{{ b.total_linked_students }}</td>
+                                <td class="text-muted">{{ b.total_unlinked_students }}</td>
+                                <td class="fw-semibold">{{ b.sent_chats_count }}</td>
+                                <td class="{% if b.failed_chats_count %}text-danger fw-bold{% else %}text-muted{% endif %}">{{ b.failed_chats_count }}</td>
+                                <td>{{ b.created_by }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted small">Розсилок ще не проводилося.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА 3: ПРИВ'ЯЗКА СТУДЕНТІВ ТА QR-ЗАПРОШЕННЯ (3 СПОСОБИ)
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'links' %}
+<div class="alert alert-info small mb-3">
+    <strong><i class="bi bi-info-circle-fill me-1"></i>Три способи прив’язки студента до Telegram (включно з випадком, коли у студента немає Telegram):</strong>
+    <ol class="mb-0 mt-1">
+        <li><strong>📱 Поділитися контактом (основний):</strong> студент натискає кнопку в боті; номер звіряється з полями <code>Телефон</code> та <code>Резервний телефон</code> у картці.</li>
+        <li><strong>🔗 Персональне або групове посилання / QR-код:</strong> генерується нижче (або прямо з картки студента). Якщо у студента немає Telegram — передайте посилання з прапорцем <em>«Представник»</em> батькам, родичу чи старості.</li>
+        <li><strong>📄 Автоприв’язка / режим представника через PDF:</strong> будь-хто (сам студент або представник через кнопку <em>«Подати за іншого студента»</em>) надсилає PDF «Резерв+»; бот знаходить студента за ПІБ + датою народження і прив’язує чат. Один представник може вести кількох студентів.</li>
+    </ol>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><strong><i class="bi bi-person-plus-fill me-1"></i>Персональне посилання + QR</strong></div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('military_telegram.telegram_invite_create') }}">
+                    <input type="hidden" name="scope" value="student">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Студент</label>
+                        <select class="form-select form-select-sm" name="student_id" required>
+                            <option value="">— оберіть студента —</option>
+                            {% for st in active_students %}
+                            <option value="{{ st.id }}">{{ st.full_name }} ({{ st.group_name or '—' }}, {{ st.birth_date or 'без ДН' }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="is_representative_default" value="1" id="invRepChk">
+                        <label class="form-check-label small" for="invRepChk">
+                            Для представника (у студента немає Telegram)
+                        </label>
+                    </div>
+                    <div class="mb-2">
+                        <input type="text" class="form-control form-control-sm" name="note" placeholder="Примітка (напр. Мама / Староста)">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">Термін дії (днів, порожньо = безстроково)</label>
+                        <input type="number" class="form-control form-control-sm" name="expires_days" value="30" min="1">
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm w-100">Створити персональне запрошення</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><strong><i class="bi bi-people-fill me-1"></i>Групове посилання + QR</strong></div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('military_telegram.telegram_invite_create') }}">
+                    <input type="hidden" name="scope" value="group">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Група</label>
+                        <select class="form-select form-select-sm" name="group_id" required>
+                            <option value="">— оберіть групу —</option>
+                            {% for grp in catalogs.groups %}
+                            <option value="{{ grp.id }}">{{ grp.name }} ({{ grp.course }} курс, {{ grp.study_form }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <input type="text" class="form-control form-control-sm" name="note" placeholder="Примітка (напр. Для чату групи)">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">Термін дії (днів)</label>
+                        <input type="number" class="form-control form-control-sm" name="expires_days" value="60" min="1">
+                    </div>
+                    <button type="submit" class="btn btn-info btn-sm w-100">Створити групове запрошення</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <div class="card h-100">
+            <div class="card-header"><strong><i class="bi bi-wrench me-1"></i>Ручна прив’язка за Chat ID</strong></div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('military_telegram.telegram_link_manual') }}">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1">Студент</label>
+                        <select class="form-select form-select-sm" name="student_id" required>
+                            <option value="">— оберіть студента —</option>
+                            {% for st in active_students %}
+                            <option value="{{ st.id }}">{{ st.full_name }} ({{ st.group_name or '—' }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <input type="text" class="form-control form-control-sm" name="chat_id" placeholder="Telegram Chat ID" required>
+                        </div>
+                        <div class="col-6">
+                            <input type="text" class="form-control form-control-sm" name="tg_username" placeholder="@username (необов.)">
+                        </div>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="is_representative" value="1" id="manRepChk">
+                        <label class="form-check-label small" for="manRepChk">Це представник студента</label>
+                    </div>
+                    <div class="mb-3">
+                        <input type="text" class="form-control form-control-sm" name="representative_note" placeholder="Примітка представника">
+                    </div>
+                    <button type="submit" class="btn btn-outline-primary btn-sm w-100">Зберегти прив’язку</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Активні посилання-запрошення #}
+{% if invites %}
+<div class="card mb-4">
+    <div class="card-header"><strong>Активні посилання-запрошення</strong></div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle small">
+                <thead>
+                    <tr>
+                        <th>Тип</th>
+                        <th>Призначення</th>
+                        <th>Посилання</th>
+                        <th>Примітка</th>
+                        <th>Використань</th>
+                        <th>Дійсне до</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for inv in invites %}
+                    {% set prefix = 's_' if inv.scope == 'student' else 'g_' %}
+                    {% set tg_url = ('https://t.me/' ~ settings.bot_username ~ '?start=' ~ prefix ~ inv.token) if settings.bot_username else ('?start=' ~ prefix ~ inv.token) %}
+                    <tr>
+                        <td>
+                            {% if inv.scope == 'student' %}<span class="badge bg-primary">Студент</span>
+                            {% else %}<span class="badge bg-info text-dark">Група</span>{% endif %}
+                            {% if inv.is_representative_default %}<span class="badge bg-warning text-dark">Представник</span>{% endif %}
+                        </td>
+                        <td class="fw-semibold">{{ inv.target_label }}</td>
+                        <td class="tg-mono">
+                            <a href="{{ tg_url }}" target="_blank" class="text-decoration-none">{{ tg_url }}</a>
+                        </td>
+                        <td>{{ inv.note or '—' }}</td>
+                        <td>{{ inv.uses_count }}{% if inv.max_uses %} / {{ inv.max_uses }}{% endif %}</td>
+                        <td>{{ (inv.expires_at or 'Безстроково')[:10] }}</td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary js-copy-url" data-url="{{ tg_url }}" title="Копіювати">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info js-show-qr"
+                                    data-url="{{ tg_url }}" data-title="{{ inv.target_label }}"
+                                    data-qr="{{ url_for('military_telegram.telegram_qr_svg', data=tg_url) }}" title="Показати QR">
+                                <i class="bi bi-qr-code"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('military_telegram.telegram_invite_revoke', inv_id=inv.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Відкликати">
+                                    <i class="bi bi-x-circle"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# Таблиця прив'язаних студентів #}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <strong>Прив’язані студенти та представники ({{ links|length }})</strong>
+    </div>
+    <div class="card-body p-0">
+        {% if links %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle small">
+                <thead>
+                    <tr>
+                        <th>Студент</th>
+                        <th>Група</th>
+                        <th>Telegram / Телефон</th>
+                        <th>Спосіб прив’язки</th>
+                        <th>Роль</th>
+                        <th>Оновлено</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in links %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('students.student_details', student_id=l.student_id) }}" class="fw-semibold text-decoration-none">
+                                {{ l.student_full_name }}
+                            </a>
+                        </td>
+                        <td>{{ l.group_name or '—' }}</td>
+                        <td>
+                            {% if l.tg_username %}@{{ l.tg_username }}{% endif %}
+                            <span class="text-muted tg-mono">(ID {{ l.chat_id }})</span>
+                            {% if l.tg_phone %}<div class="tg-mono text-success">{{ l.tg_phone }}</div>{% endif %}
+                        </td>
+                        <td>
+                            {% if l.link_method == 'contact' %}<span class="badge bg-success-subtle text-success-emphasis">Контакт (телефон)</span>
+                            {% elif l.link_method == 'invite_student' %}<span class="badge bg-primary-subtle text-primary-emphasis">Персональне посилання</span>
+                            {% elif l.link_method == 'invite_group' %}<span class="badge bg-info-subtle text-info-emphasis">Групове посилання</span>
+                            {% elif l.link_method == 'pdf_auto' %}<span class="badge bg-warning-subtle text-warning-emphasis">Автоприв’язка (PDF)</span>
+                            {% else %}<span class="badge bg-secondary-subtle text-secondary-emphasis">Вручну</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if l.is_representative %}
+                            <span class="badge bg-info text-dark">Представник</span>
+                            {% if l.representative_note %}<div class="text-muted" style="font-size:.72rem;">{{ l.representative_note }}</div>{% endif %}
+                            {% else %}
+                            <span class="badge bg-success">Особистий акаунт</span>
+                            {% endif %}
+                        </td>
+                        <td class="tg-mono text-muted">{{ (l.updated_at or '')[:16] }}</td>
+                        <td class="text-end text-nowrap">
+                            <form method="POST" action="{{ url_for('military_telegram.telegram_link_toggle_rep', link_id=l.id) }}" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-info" title="Перемкнути: студент / представник">
+                                    <i class="bi bi-people"></i>
+                                </button>
+                            </form>
+                            <form method="POST" action="{{ url_for('military_telegram.telegram_link_delete', link_id=l.id) }}"
+                                  class="d-inline" onsubmit="return confirm('Відв’язати цей Telegram-акаунт?');">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Відв’язати">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted small">Поки що жоден студент не прив’язаний до бота.</div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА 4: НАЛАШТУВАННЯ БОТА, АВТОНАГАДУВАННЯ ТА ЖУРНАЛ ПОДІЙ
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'settings' %}
+<div class="row g-3">
+    <div class="col-lg-6">
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-sliders me-1"></i>Підключення та тексти бота</strong>
+                <form method="POST" action="{{ url_for('military_telegram.telegram_bot_action') }}" class="m-0">
+                    <button type="submit" name="bot_action" value="test" class="btn btn-sm btn-outline-info">
+                        <i class="bi bi-plug me-1"></i>Перевірити з’єднання (getMe)
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('military_telegram.telegram_save_settings') }}">
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Токен Telegram-бота (від @BotFather)</label>
+                        <input type="password" class="form-control form-control-sm tg-mono" name="bot_token"
+                               placeholder="{% if masked_token %}Поточний: {{ masked_token }} (залиште порожнім, щоб не змінювати){% else %}123456789:AAH...{% endif %}">
+                        {% if settings.bot_username %}
+                        <div class="form-text">Підключено бота: <strong>@{{ settings.bot_username }}</strong> ({{ settings.bot_first_name }})</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Вітальне повідомлення (/start)</label>
+                        <textarea class="form-control form-control-sm" name="welcome_text" rows="4">{{ settings.welcome_text }}</textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Шаблон нагадування за замовчуванням</label>
+                        <textarea class="form-control form-control-sm" name="reminder_default_text" rows="3">{{ settings.reminder_default_text }}</textarea>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-semibold mb-1">Повідомлення при підтвердженні ({ПІБ}, {ДатаСформовано})</label>
+                        <textarea class="form-control form-control-sm" name="approval_text" rows="2">{{ settings.approval_text }}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-semibold mb-1">Повідомлення при відхиленні ({ПІБ}, {Причина})</label>
+                        <textarea class="form-control form-control-sm" name="rejection_text" rows="2">{{ settings.rejection_text }}</textarea>
+                    </div>
+
+                    <hr>
+                    <h6 class="small text-uppercase text-muted mb-2"><i class="bi bi-calendar-check me-1"></i>Автоматичне щомісячне нагадування</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="auto_remind_enabled" value="1" id="autoRemSwitch"
+                               {% if settings.auto_remind_enabled %}checked{% endif %}>
+                        <label class="form-check-label small" for="autoRemSwitch">
+                            Увімкнути щомісячну авто-розсилку студентам без «Резерв+» за поточний місяць
+                        </label>
+                    </div>
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Число місяця (1–28)</label>
+                            <input type="number" class="form-control form-control-sm" name="auto_remind_day" value="{{ settings.auto_remind_day or 5 }}" min="1" max="28">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Година запуску (0–23)</label>
+                            <input type="number" class="form-control form-control-sm" name="auto_remind_hour" value="{{ settings.auto_remind_hour or 10 }}" min="0" max="23">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small mb-1">JSON фільтр для авто-розсилки</label>
+                        <textarea class="form-control form-control-sm tg-mono" name="auto_remind_filter_json" rows="2">{{ settings.auto_remind_filter_json }}</textarea>
+                        {% if settings.last_auto_remind_ym %}
+                        <div class="form-text">Востаннє авто-розсилка спрацьовувала за: <strong>{{ settings.last_auto_remind_ym }}</strong></div>
+                        {% endif %}
+                        <div class="form-text mt-1">
+                            <i class="bi bi-alarm me-1"></i>Для повторюваних нагадувань по конкретних фільтрах (наприклад, з 15 по 25 число, кілька разів на день)
+                            перейдіть у вкладку <a href="{{ url_for('military_telegram.telegram_dashboard', tab='broadcast') }}">«Розсилки та фільтри»</a>.
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-save me-1"></i>Зберегти налаштування
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-journal-text me-1"></i>Журнал подій та попереджень бота</strong>
+                <form method="POST" action="{{ url_for('military_telegram.telegram_events_mark_read') }}" class="m-0">
+                    <input type="hidden" name="tab" value="settings">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary">Позначити прочитаним</button>
+                </form>
+            </div>
+            <div class="card-body p-0" style="max-height: 620px; overflow-y: auto;">
+                {% if events %}
+                <div class="list-group list-group-flush">
+                    {% for ev in events %}
+                    <div class="list-group-item {% if not ev.is_read %}border-start border-4 border-{{ ev.severity }}{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start gap-2">
+                            <div class="small fw-semibold">
+                                {% if ev.severity == 'danger' %}
+                                <span class="badge bg-danger me-1">Увага</span>
+                                {% elif ev.severity == 'warning' %}
+                                <span class="badge bg-warning text-dark me-1">Повтор / Попередж.</span>
+                                {% else %}
+                                <span class="badge bg-info-subtle text-info-emphasis me-1">Подія</span>
+                                {% endif %}
+                                {{ ev.title }}
+                            </div>
+                            <span class="small text-muted tg-mono text-nowrap">{{ (ev.created_at or '')[:16] }}</span>
+                        </div>
+                        {% if ev.details %}
+                        <div class="small text-muted mt-1">{{ ev.details }}</div>
+                        {% endif %}
+                        {% if ev.submission_id %}
+                        <div class="mt-1">
+                            <a href="{{ url_for('military_telegram.telegram_submission_review', sub_id=ev.submission_id) }}" class="small text-decoration-none">
+                                Відкрити подання #{{ ev.submission_id }} →
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted small">Подій ще не зафіксовано.</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{# Модалка відхилення подання #}
+<div class="modal fade" id="tgRejectModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" id="tgRejectForm" class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Відхилити подання ВОД</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <div class="small text-muted mb-2">Студент: <strong id="tgRejectStudentName"></strong></div>
+                <label class="form-label small mb-1">Причина відхилення (буде надіслана у Telegram):</label>
+                <textarea name="reject_reason" class="form-control form-control-sm" rows="3" required>Документ застарілий або дані не відповідають актуальному витягу «Резерв+»</textarea>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button type="submit" class="btn btn-danger btn-sm">Відхилити та повідомити в Telegram</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Модалка QR-коду #}
+<div class="modal fade" id="tgQrModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="tgQrModalTitle">QR-код запрошення</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="tgQrModalImg" src="" alt="QR" class="img-fluid border rounded p-2 bg-white mb-2">
+                <div id="tgQrModalUrl" class="small tg-mono text-break text-muted"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Модалка створення / редагування правила авто-нагадування #}
+<div class="modal fade" id="tgAutoRuleModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_save') }}" class="modal-content" id="tgAutoRuleForm">
+            <input type="hidden" name="rule_id" id="autoRuleId">
+            <input type="hidden" name="filter_json" id="autoRuleFilterJson">
+            <div class="modal-header">
+                <h5 class="modal-title" id="tgAutoRuleModalTitle"><i class="bi bi-alarm me-1"></i>Правило авто-нагадування за фільтром</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Назва правила</label>
+                        <input type="text" class="form-control form-control-sm" name="rule_name" id="autoRuleName"
+                               placeholder="Напр.: Нагадування 25+ (15–25 число)" required>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label small fw-semibold mb-1">Джерело фільтра</label>
+                        <select class="form-select form-select-sm" name="filter_source" id="autoRuleSource">
+                            <option value="constructor">Поточний фільтр (з конструктора / збережений у правилі)</option>
+                            <option value="preset">Збережений пресет фільтрів</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 d-none" id="autoRulePresetRow">
+                        <label class="form-label small fw-semibold mb-1">Оберіть пресет фільтрів</label>
+                        <select class="form-select form-select-sm" name="preset_id" id="autoRulePresetSelect">
+                            <option value="">— оберіть пресет —</option>
+                            {% for pr in presets %}
+                            <option value="{{ pr.id }}" data-filter='{{ pr.filter_json }}' data-msg="{{ pr.message_template }}">{{ pr.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small fw-semibold mb-1">З числа місяця (1–31)</label>
+                        <input type="number" class="form-control form-control-sm" name="day_from" id="autoRuleDayFrom" value="15" min="1" max="31" required>
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label class="form-label small fw-semibold mb-1">По число місяця (1–31)</label>
+                        <input type="number" class="form-control form-control-sm" name="day_to" id="autoRuleDayTo" value="25" min="1" max="31" required>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <label class="form-label small fw-semibold mb-1">Разів на день</label>
+                        <input type="number" class="form-control form-control-sm" name="times_per_day" id="autoRuleTimes" value="1" min="1" max="24" required>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <label class="form-label small fw-semibold mb-1">З години</label>
+                        <input type="number" class="form-control form-control-sm" name="start_hour" id="autoRuleStartH" value="9" min="0" max="23" required>
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <label class="form-label small fw-semibold mb-1">До години</label>
+                        <input type="number" class="form-control form-control-sm" name="end_hour" id="autoRuleEndH" value="20" min="0" max="23" required>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="small bg-body-secondary rounded px-2 py-1">
+                            <i class="bi bi-clock me-1"></i>Час відправки протягом дня:
+                            <strong id="autoRuleSlotsPreview" class="tg-mono text-primary">09:00</strong>
+                        </div>
+                    </div>
+
+                    <div class="col-12">
+                        <label class="form-label small fw-semibold mb-1">Текст нагадування ({ПІБ}, {Ім'я}, {Група}, {Місяць}, {Вік}, {СтатусВО})</label>
+                        <textarea class="form-control form-control-sm" name="message_template" id="autoRuleMsg" rows="4" required>{{ settings.reminder_default_text }}</textarea>
+                    </div>
+
+                    <div class="col-12 d-flex flex-wrap gap-3 small">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="stop_when_submitted" value="1" id="autoRuleStopSub" checked>
+                            <label class="form-check-label" for="autoRuleStopSub">
+                                Зупиняти нагадування студенту щойно він надішле PDF за поточний місяць
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_enabled" value="1" id="autoRuleEnabled" checked>
+                            <label class="form-check-label" for="autoRuleEnabled">Правило увімкнене</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Зберегти правило</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Прихована форма для одиночного підтвердження з рядка таблиці (щоб не було вкладених <form>) #}
+<form method="POST" id="singleApproveHiddenForm" class="d-none"></form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // Вибрати всі в черзі
+    const selectAll = document.getElementById('selectAllQueue');
+    if (selectAll) {
+        selectAll.addEventListener('change', function () {
+            document.querySelectorAll('.js-queue-check').forEach(cb => { cb.checked = selectAll.checked; });
+        });
+    }
+
+    // Швидке підтвердження рядка
+    document.querySelectorAll('.js-single-approve').forEach(btn => {
+        btn.addEventListener('click', function () {
+            if (!confirm('Підтвердити цей документ та оновити військові дані студента?')) return;
+            const frm = document.getElementById('singleApproveHiddenForm');
+            frm.action = btn.dataset.action;
+            frm.submit();
+        });
+    });
+
+    // Модалка відхилення
+    document.querySelectorAll('.js-open-reject').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('tgRejectForm').action = btn.dataset.action;
+            document.getElementById('tgRejectStudentName').textContent = btn.dataset.name || '';
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('tgRejectModal')).show();
+        });
+    });
+
+    // Копіювання URL і QR модалка
+    document.querySelectorAll('.js-copy-url').forEach(btn => {
+        btn.addEventListener('click', function () {
+            navigator.clipboard?.writeText(btn.dataset.url || '').then(() => {
+                btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+                setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i>'; }, 1400);
+            });
+        });
+    });
+    document.querySelectorAll('.js-show-qr').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('tgQrModalTitle').textContent = btn.dataset.title || 'QR-код';
+            document.getElementById('tgQrModalImg').src = btn.dataset.qr;
+            document.getElementById('tgQrModalUrl').textContent = btn.dataset.url || '';
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('tgQrModal')).show();
+        });
+    });
+
+    // Конструктор фільтрів (вкладка broadcast)
+    const fltForm = document.getElementById('tgFilterForm');
+    if (fltForm) {
+        function collectFiltersObject() {
+            const fd = new FormData(fltForm);
+            const obj = {
+                search: fd.get('search') || '',
+                faculty_ids: fd.getAll('faculty_ids'),
+                group_ids: fd.getAll('group_ids'),
+                courses: fd.getAll('courses'),
+                study_forms: fd.getAll('study_forms'),
+                degree_levels: fd.getAll('degree_levels'),
+                license_ids: fd.getAll('license_ids'),
+                only_base_license: !!fd.get('only_base_license'),
+                genders: fd.getAll('genders'),
+                age_mode: fd.get('age_mode') || 'any',
+                age_min: fd.get('age_min') || '',
+                age_max: fd.get('age_max') || '',
+                age_as_of: fd.get('age_as_of') || '',
+                military_statuses: fd.getAll('military_statuses'),
+                military_categories: fd.getAll('military_categories'),
+                exclude_women_no_mil: !!fd.get('exclude_women_no_mil'),
+                vod_month: fd.get('vod_month') || '',
+                vod_month_state: fd.get('vod_month_state') || 'any',
+                formed_older_than_days: fd.get('formed_older_than_days') || '',
+                deferral_expiring_days: fd.get('deferral_expiring_days') || '',
+                valid_until_expiring_days: fd.get('valid_until_expiring_days') || '',
+                has_police_reason: fd.get('has_police_reason') || 'any',
+                exclude_note_18: !!fd.get('exclude_note_18'),
+                tg_link_state: fd.get('tg_link_state') || 'any',
+                include_frozen: !!fd.get('include_frozen'),
+            };
+            return obj;
+        }
+
+        function applyFiltersObject(f) {
+            fltForm.reset();
+            if (f.search) document.getElementById('fltSearch').value = f.search;
+            if (f.vod_month) document.getElementById('fltVodMonth').value = f.vod_month;
+            if (f.vod_month_state) document.getElementById('fltVodMonthState').value = f.vod_month_state;
+            if (f.age_mode) document.getElementById('fltAgeMode').value = f.age_mode;
+            if (f.age_min !== undefined && f.age_min !== null) document.getElementById('fltAgeMin').value = f.age_min;
+            if (f.age_max !== undefined && f.age_max !== null) document.getElementById('fltAgeMax').value = f.age_max;
+            if (f.age_as_of) document.getElementById('fltAgeAsOf').value = f.age_as_of;
+            if (f.formed_older_than_days) document.getElementById('fltFormedDays').value = f.formed_older_than_days;
+            if (f.deferral_expiring_days !== undefined && f.deferral_expiring_days !== null) document.getElementById('fltDefDays').value = f.deferral_expiring_days;
+            if (f.valid_until_expiring_days !== undefined && f.valid_until_expiring_days !== null) document.getElementById('fltValDays').value = f.valid_until_expiring_days;
+            if (f.has_police_reason) document.getElementById('fltPolice').value = f.has_police_reason;
+            if (f.tg_link_state) document.getElementById('fltTgState').value = f.tg_link_state;
+
+            document.getElementById('fltBaseLic').checked = !!f.only_base_license;
+            document.getElementById('fltExclWomen').checked = f.exclude_women_no_mil !== false;
+            document.getElementById('fltExclN18').checked = f.exclude_note_18 !== false;
+            document.getElementById('fltIncFrozen').checked = !!f.include_frozen;
+
+            const multiMap = {
+                faculty_ids: f.faculty_ids || [],
+                group_ids: f.group_ids || [],
+                courses: f.courses || [],
+                study_forms: f.study_forms || [],
+                degree_levels: f.degree_levels || [],
+                license_ids: f.license_ids || [],
+                genders: f.genders || [],
+                military_statuses: f.military_statuses || [],
+                military_categories: f.military_categories || [],
+            };
+            Object.entries(multiMap).forEach(([name, vals]) => {
+                const strVals = new Set((vals || []).map(String));
+                fltForm.querySelectorAll(`input[name="${name}"]`).forEach(cb => {
+                    cb.checked = strVals.has(String(cb.value));
+                });
+            });
+        }
+
+        function escHtml(val) {
+            return String(val ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function runPreview() {
+            const badgesEl = document.getElementById('previewStatsBadges');
+            const tbody = document.getElementById('previewTableBody');
+            badgesEl.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+            const fd = new FormData(fltForm);
+            fetch("{{ url_for('military_telegram.telegram_filter_preview') }}", {
+                method: 'POST',
+                body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.ok) return;
+                badgesEl.innerHTML =
+                    `<span class="badge bg-primary me-1">Збіглося: ${Number(data.total_matched) || 0}</span>` +
+                    `<span class="badge bg-success me-1">Telegram є: ${Number(data.linked_count) || 0}</span>` +
+                    `<span class="badge bg-secondary">Без TG: ${Number(data.unlinked_count) || 0}</span>`;
+                if (!data.students.length) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-4">За цими фільтрами студентів не знайдено.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.students.map(st => {
+                    const tgBadge = st.is_linked
+                        ? (st.has_representative
+                            ? '<span class="badge bg-info text-dark">Представник</span>'
+                            : '<span class="badge bg-success">Підключено</span>')
+                        : '<span class="badge bg-secondary-subtle text-secondary-emphasis">Немає TG</span>';
+                    const vodBadge = st.has_att_in_month
+                        ? '<span class="badge bg-success-subtle text-success-emphasis">Є за місяць</span>'
+                        : (st.has_any_in_month
+                            ? '<span class="badge bg-primary-subtle text-primary-emphasis">На перевірці</span>'
+                            : `<span class="text-muted">${escHtml(st.formed_at || 'Немає')}</span>`);
+                    const ageTxt = st.age !== null && st.age !== undefined ? escHtml(st.age) : '—';
+                    return `<tr>
+                        <td><div class="fw-semibold">${escHtml(st.full_name)}</div><div class="text-muted" style="font-size:.73rem;">${escHtml(st.group_name || '—')}</div></td>
+                        <td>${ageTxt}</td>
+                        <td>${vodBadge}</td>
+                        <td>${tgBadge}</td>
+                    </tr>`;
+                }).join('');
+                if (data.truncated) {
+                    tbody.innerHTML += `<tr><td colspan="4" class="text-center text-muted">Показано перші 300 з ${Number(data.total_matched) || 0} студентів.</td></tr>`;
+                }
+            })
+            .catch(() => {
+                badgesEl.innerHTML = '<span class="text-danger">Помилка завантаження</span>';
+            });
+        }
+
+        document.getElementById('btnPreviewFilters').addEventListener('click', runPreview);
+        document.getElementById('btnResetFilters').addEventListener('click', function () {
+            fltForm.reset();
+            runPreview();
+        });
+
+        document.querySelectorAll('.js-load-preset').forEach(btn => {
+            btn.addEventListener('click', function () {
+                try {
+                    const obj = JSON.parse(btn.dataset.filter || '{}');
+                    applyFiltersObject(obj);
+                    if (btn.dataset.msg) {
+                        document.getElementById('broadcastMsgText').value = btn.dataset.msg;
+                    }
+                    runPreview();
+                } catch (e) {}
+            });
+        });
+
+        document.querySelectorAll('.js-insert-ph').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const ta = document.getElementById('broadcastMsgText');
+                const ph = btn.dataset.ph || '';
+                const start = ta.selectionStart || ta.value.length;
+                const end = ta.selectionEnd || ta.value.length;
+                ta.value = ta.value.slice(0, start) + ph + ta.value.slice(end);
+                ta.focus();
+            });
+        });
+
+        document.getElementById('savePresetForm').addEventListener('submit', function () {
+            document.getElementById('presetFilterJson').value = JSON.stringify(collectFiltersObject());
+            document.getElementById('presetMsgTpl').value = document.getElementById('broadcastMsgText').value;
+        });
+
+        window.prepareBroadcastSubmit = function () {
+            document.getElementById('broadcastFilterJson').value = JSON.stringify(collectFiltersObject());
+            return confirm('Запустити розсилку повідомлень у Telegram усім прив’язаним студентам за поточним фільтром?');
+        };
+
+        // Логіка модалки правил авто-нагадування за розкладом
+        const autoRuleModalEl = document.getElementById('tgAutoRuleModal');
+        if (autoRuleModalEl) {
+            const ruleSrc = document.getElementById('autoRuleSource');
+            const presetRow = document.getElementById('autoRulePresetRow');
+            const presetSel = document.getElementById('autoRulePresetSelect');
+            const slotsPrev = document.getElementById('autoRuleSlotsPreview');
+            const inTimes = document.getElementById('autoRuleTimes');
+            const inStartH = document.getElementById('autoRuleStartH');
+            const inEndH = document.getElementById('autoRuleEndH');
+
+            function updateSlotsPreview() {
+                const n = Math.max(1, Math.min(24, parseInt(inTimes.value || '1', 10) || 1));
+                const sh = Math.max(0, Math.min(23, parseInt(inStartH.value || '9', 10) || 0));
+                let eh = Math.max(0, Math.min(23, parseInt(inEndH.value || '20', 10) || 0));
+                if (eh < sh) eh = sh;
+                const sMin = sh * 60;
+                const eMin = eh * 60;
+                const slots = [];
+                if (n === 1) {
+                    slots.push(sMin);
+                } else if (eMin <= sMin) {
+                    for (let i = 0; i < n; i++) slots.push(Math.min(23 * 60 + 55, sMin + i * 30));
+                } else {
+                    const span = eMin - sMin;
+                    for (let i = 0; i < n; i++) slots.push(Math.round(sMin + i * span / (n - 1)));
+                }
+                slotsPrev.textContent = slots.map(m =>
+                    `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+                ).join(', ');
+            }
+
+            function syncSourceVisibility() {
+                presetRow.classList.toggle('d-none', ruleSrc.value !== 'preset');
+            }
+
+            [inTimes, inStartH, inEndH].forEach(el => el.addEventListener('input', updateSlotsPreview));
+            ruleSrc.addEventListener('change', syncSourceVisibility);
+            presetSel.addEventListener('change', function () {
+                const opt = presetSel.selectedOptions[0];
+                if (!opt || !opt.value) return;
+                document.getElementById('autoRuleFilterJson').value = opt.dataset.filter || '{}';
+                if (opt.dataset.msg) document.getElementById('autoRuleMsg').value = opt.dataset.msg;
+                if (!document.getElementById('autoRuleId').value && !document.getElementById('autoRuleName').value) {
+                    document.getElementById('autoRuleName').value = opt.textContent.trim();
+                }
+            });
+
+            function openAutoRuleModal(cfg) {
+                document.getElementById('autoRuleId').value = cfg.id || '';
+                document.getElementById('tgAutoRuleModalTitle').innerHTML = cfg.id
+                    ? '<i class="bi bi-alarm me-1"></i>Редагувати правило авто-нагадування'
+                    : '<i class="bi bi-alarm me-1"></i>Нове правило авто-нагадування за фільтром';
+                document.getElementById('autoRuleName').value = cfg.name || '';
+                ruleSrc.value = cfg.source || 'constructor';
+                presetSel.value = cfg.preset_id || '';
+                document.getElementById('autoRuleFilterJson').value = cfg.filter_json || JSON.stringify(collectFiltersObject());
+                document.getElementById('autoRuleDayFrom').value = cfg.day_from ?? 15;
+                document.getElementById('autoRuleDayTo').value = cfg.day_to ?? 25;
+                inTimes.value = cfg.times_per_day ?? 1;
+                inStartH.value = cfg.start_hour ?? 9;
+                inEndH.value = cfg.end_hour ?? 20;
+                document.getElementById('autoRuleMsg').value = cfg.msg || document.getElementById('broadcastMsgText').value;
+                document.getElementById('autoRuleStopSub').checked = cfg.stop_when_submitted !== false;
+                document.getElementById('autoRuleEnabled').checked = cfg.is_enabled !== false;
+                syncSourceVisibility();
+                updateSlotsPreview();
+                bootstrap.Modal.getOrCreateInstance(autoRuleModalEl).show();
+            }
+
+            document.getElementById('btnNewRuleFromCurrent')?.addEventListener('click', function () {
+                openAutoRuleModal({
+                    source: 'constructor',
+                    filter_json: JSON.stringify(collectFiltersObject()),
+                    msg: document.getElementById('broadcastMsgText').value,
+                });
+            });
+
+            document.querySelectorAll('.js-preset-to-rule').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    openAutoRuleModal({
+                        name: btn.dataset.presetName || '',
+                        source: 'preset',
+                        preset_id: btn.dataset.presetId || '',
+                        filter_json: btn.dataset.filter || '{}',
+                        msg: btn.dataset.msg || document.getElementById('broadcastMsgText').value,
+                    });
+                });
+            });
+
+            document.querySelectorAll('.js-edit-auto-rule').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    openAutoRuleModal({
+                        id: btn.dataset.id,
+                        name: btn.dataset.name,
+                        source: btn.dataset.presetId ? 'preset' : 'constructor',
+                        preset_id: btn.dataset.presetId || '',
+                        filter_json: btn.dataset.filter || '{}',
+                        msg: btn.dataset.msg || '',
+                        day_from: btn.dataset.dayFrom,
+                        day_to: btn.dataset.dayTo,
+                        times_per_day: btn.dataset.times,
+                        start_hour: btn.dataset.startHour,
+                        end_hour: btn.dataset.endHour,
+                        stop_when_submitted: btn.dataset.stop === '1',
+                        is_enabled: btn.dataset.enabled === '1',
+                    });
+                });
+            });
+
+            document.querySelectorAll('.js-load-rule-filter').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    try {
+                        applyFiltersObject(JSON.parse(btn.dataset.filter || '{}'));
+                        if (btn.dataset.msg) document.getElementById('broadcastMsgText').value = btn.dataset.msg;
+                        runPreview();
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                    } catch (e) {}
+                });
+            });
+        }
+
+        runPreview();
+    }
+});
+</script>
+{% endblock %}
