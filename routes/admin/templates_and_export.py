@@ -631,11 +631,27 @@ def _run_generation_job(job_id, students_data, selected_template, batch_id, user
     for student_dict, military_dict in students_data:
         with _JOBS_LOCK:
             job['current_name'] = f"{student_dict.get('last_name_UA','')} {student_dict.get('first_name_UA','')}"
-        filename = f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
+        filename = student_dict.pop('_custom_filename', None) or (
+            f"{student_dict['last_name_UA']}_{student_dict['first_name_UA']}.docx".replace(" ", "_")
+        )
         full_path = os.path.join(office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx")
         try:
-            gen_doc(student_dict, military_dict, template=selected_template, out=full_path, user_name=username)
-            doc_id = office_editor.create_editing_session(full_path, filename, user_id, batch_id=batch_id)
+            gen_doc(
+                student_dict,
+                military_dict,
+                template=selected_template,
+                out=full_path,
+                user_name=username,
+                record_log=True,
+            )
+            doc_id = office_editor.create_editing_session(
+                full_path,
+                filename,
+                user_id,
+                batch_id=batch_id,
+                student_id=student_dict.get('id'),
+                group_id=student_dict.get('group_id'),
+            )
             with _JOBS_LOCK:
                 job['succeeded'].append({
                     'doc_id': doc_id,
@@ -762,16 +778,31 @@ def generate_group_docs():
     # з'єднання з базою відкрите в цьому запиті - фоновий потік більше
     # не звертатиметься до conn з цього обробника (SQLite-з'єднання
     # прив'язане до потоку, у якому було створене).
+    from routes.diploma_supplements import get_diploma_settings, format_custom_filename
+
+    diploma_settings = get_diploma_settings(conn)
+    filename_mask = diploma_settings.get('filename_mask')
+    diploma_map = {}
+    for drow in conn.execute(
+        "SELECT student_id, group_id, diploma_number, appendix_number FROM diplomas"
+    ).fetchall():
+        diploma_map[(drow['student_id'], drow['group_id'])] = dict(drow)
+
     students_data = []
+    used_filenames = set()
     for student in students:
         student_dict = dict(student)
         if student_dict.get('enrollment_edebo_code'):
             student_dict['edebo_code'] = student_dict['enrollment_edebo_code']
-        # Група документа — з enrollment'а (який вже відфільтрований запитом),
-        # а не з students.group_id (основна група). Інакше при фільтрі по
-        # паралельній групі B предмети/дипломи підтягнуться з A.
         if student_dict.get('enrollment_group_id'):
             student_dict['group_id'] = student_dict['enrollment_group_id']
+        d_rec = diploma_map.get((student['id'], student_dict.get('group_id')))
+        custom_fn = format_custom_filename(student_dict, d_rec, filename_mask, '.docx')
+        if custom_fn in used_filenames:
+            stem, ext = os.path.splitext(custom_fn)
+            custom_fn = f"{stem}_{student['id']}{ext}"
+        used_filenames.add(custom_fn)
+        student_dict['_custom_filename'] = custom_fn
         military = conn.execute("SELECT * FROM military WHERE student_id=?", (student['id'],)).fetchone()
         students_data.append((student_dict, dict(military) if military else {}))
     conn.close()

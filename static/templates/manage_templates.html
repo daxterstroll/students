@@ -509,6 +509,7 @@
         --bs-btn-active-color: #ffffff;
     }
     html[data-theme="dark"] .tpl-page .btn-outline-secondary {
+        color: var(--ink-text);
         --bs-btn-color: var(--ink-text);
         --bs-btn-border-color: var(--line);
         --bs-btn-bg: var(--paper-2);
@@ -520,6 +521,7 @@
         --bs-btn-active-color: var(--brass-lt);
     }
     html[data-theme="dark"] .tpl-page .btn-outline-primary {
+        color: #a9c2e8;
         --bs-btn-color: #a9c2e8;
         --bs-btn-border-color: rgba(169, 194, 232, .48);
         --bs-btn-bg: transparent;
@@ -530,7 +532,20 @@
         --bs-btn-active-border-color: #a9c2e8;
         --bs-btn-active-color: #0e1b2c;
     }
+    html[data-theme="dark"] .tpl-page .btn-outline-info {
+        color: #a9c2e8;
+        --bs-btn-color: #a9c2e8;
+        --bs-btn-border-color: rgba(74, 110, 168, .55);
+        --bs-btn-bg: transparent;
+        --bs-btn-hover-bg: #a9c2e8;
+        --bs-btn-hover-border-color: #a9c2e8;
+        --bs-btn-hover-color: #0e1b2c;
+        --bs-btn-active-bg: #a9c2e8;
+        --bs-btn-active-border-color: #a9c2e8;
+        --bs-btn-active-color: #0e1b2c;
+    }
     html[data-theme="dark"] .tpl-page .btn-outline-warning {
+        color: var(--brass-lt);
         --bs-btn-color: var(--brass-lt);
         --bs-btn-border-color: var(--brass-semi);
         --bs-btn-hover-bg: var(--brass);
@@ -538,6 +553,7 @@
         --bs-btn-hover-color: #0e1b2c;
     }
     html[data-theme="dark"] .tpl-page .btn-outline-success {
+        color: #a8d4ad;
         --bs-btn-color: #a8d4ad;
         --bs-btn-border-color: rgba(117, 173, 122, .48);
         --bs-btn-hover-bg: #a8d4ad;
@@ -545,6 +561,7 @@
         --bs-btn-hover-color: #0e1b2c;
     }
     html[data-theme="dark"] .tpl-page .btn-outline-danger {
+        color: #f0b3ab;
         --bs-btn-color: #f0b3ab;
         --bs-btn-border-color: var(--stamp-semi);
         --bs-btn-hover-bg: var(--stamp);
@@ -571,6 +588,11 @@
             {% if has_perm('group_export') %}
             <a href="{{ url_for('admin.group_export') }}" class="btn btn-sm btn-outline-secondary">
                 <i class="bi bi-file-earmark-zip me-1"></i>Масова генерація
+            </a>
+            {% endif %}
+            {% if has_perm('manage_diplomas') %}
+            <a href="{{ url_for('diploma.hub') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-mortarboard me-1"></i>Додатки до диплома
             </a>
             {% endif %}
             <a href="{{ url_for('students.faq') }}#p-templates" class="btn btn-sm btn-outline-secondary">
@@ -762,7 +784,7 @@
                             <th>Доступ</th>
                             <th class="text-end">Розмір</th>
                             <th>Завантажено</th>
-                            <th class="text-end" style="width: 270px;">Дії</th>
+                            <th class="text-end" style="width: 315px;">Дії</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -805,6 +827,14 @@
                             </td>
                             <td class="text-end text-nowrap">
                                 <div class="d-inline-flex gap-1">
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-info js-test-tpl"
+                                            title="Тест-рендер і перевірка змінних на реальному студенту"
+                                            data-filename="{{ tpl.filename }}"
+                                            data-display-name="{{ tpl.display_name }}"
+                                            data-test-url="{{ url_for('diploma.test_render_template', filename=tpl.filename) }}">
+                                        <i class="bi bi-bug"></i>
+                                    </button>
                                     <a href="{{ url_for('admin.download_template', filename=tpl.filename) }}"
                                        class="btn btn-sm btn-outline-secondary" title="Завантажити .docx">
                                         <i class="bi bi-download"></i>
@@ -877,6 +907,13 @@
                         {% if tpl.uploaded_by %} · {{ tpl.uploaded_by }}{% endif %}
                     </div>
                     <div class="d-flex flex-wrap gap-2">
+                        <button type="button"
+                                class="btn btn-sm btn-outline-info js-test-tpl"
+                                data-filename="{{ tpl.filename }}"
+                                data-display-name="{{ tpl.display_name }}"
+                                data-test-url="{{ url_for('diploma.test_render_template', filename=tpl.filename) }}">
+                            <i class="bi bi-bug me-1"></i>Тест
+                        </button>
                         <a href="{{ url_for('admin.download_template', filename=tpl.filename) }}" class="btn btn-sm btn-outline-secondary">
                             <i class="bi bi-download me-1"></i>Скачати
                         </a>
@@ -1083,7 +1120,19 @@
                     ('{{ study_period_names }}', 'RichText (8 pt)', 'Заклади/періоди навчання (укр., Times New Roman 8 pt, кожен наступний період з нового рядка після ";")', 'Львівська філія ПВНЗ «Європейський університет»'),
                     ('{{ study_period_names_en }}', 'RichText (8 pt)', 'Заклади/періоди навчання (англ., Times New Roman 8 pt, багаторядковий RichText)', 'Lviv Branch of PHEE «European University»'),
                     ('{{ study_period_dates }}', 'RichText (8 pt)', 'Дати періодів навчання (укр.). Якщо дата кінця ≥ 30.09.2026: "з DD/MM/YYYY до DD/MM/YYYY", інакше "DD/MM/YYYY-DD/MM/YYYY"', 'з 01/09/2022 до 30/09/2026'),
-                    ('{{ study_period_dates_en }}', 'RichText (8 pt)', 'Дати періодів навчання (англ.). Для ≥ 30.09.2026: "from DD/MM/YYYY to DD/MM/YYYY"', 'from 01/09/2022 to 30/09/2026')
+                    ('{{ study_period_dates_en }}', 'RichText (8 pt)', 'Дати періодів навчання (англ.). Для ≥ 30.09.2026: "from DD/MM/YYYY to DD/MM/YYYY"', 'from 01/09/2022 to 30/09/2026'),
+                    ('{{ gpa_100 }}', 'float', 'Середній арифметичний бал за 100-бальною шкалою з усіх оцінених компонентів', '88.45'),
+                    ('{{ weighted_gpa_100 }}', 'float', 'Середньозважений бал за кредитами ЄКТС (100-бальна шкала)', '89.12'),
+                    ('{{ gpa_5 }}', 'float', 'Середній бал за 5-бальною шкалою (A=5, B/C=4, D/E=3)', '4.48'),
+                    ('{{ total_ects_credits }}', 'int/float', 'Фактична сума кредитів ЄКТС усіх компонентів студента', '240'),
+                    ('{{ total_hours }}', 'int', 'Загальний обсяг годин (total_ects_credits × 30)', '7200'),
+                    ('{{ excellent_pct }}', 'float', 'Відсоток оцінок «A» серед урахованих освітніх компонентів (%)', '78.5'),
+                    ('{{ excellent_count }}', 'int', 'Кількість оцінок «A» серед урахованих компонентів', '33'),
+                    ('{{ total_graded_count }}', 'int', 'Кількість урахованих оцінених освітніх компонентів для розрахунку відзнаки', '42'),
+                    ('{{ graduation_order_number }}', 'рядок', 'Номер останнього наказу про випуск (order_type="graduation") для студента', '184-с'),
+                    ('{{ graduation_order_date }}', 'DD.MM.YYYY', 'Дата наказу про випуск (укр. формат через крапку)', '30.06.2026'),
+                    ('{{ graduation_order_date_slash }}', 'DD/MM/YYYY', 'Дата наказу про випуск (формат ЄКТС через слеш)', '30/06/2026'),
+                    ('{{ diploma_with_honours_bool }}', 'bool', 'Логічна ознака (True/False) підсумкового статусу «Диплом з відзнакою» з урахуванням ручної фіксації', 'True')
                 ] %}
                 {% for token, vtype, desc, ex in diploma_vars %}
                 <div class="tpl-var-row js-var-row" data-search="{{ (token ~ ' ' ~ vtype ~ ' ' ~ desc ~ ' ' ~ ex)|lower }}">
@@ -1152,11 +1201,11 @@
                     <span class="tpl-type-tag">subjects / practices / courseworks / attestations</span>
                 </div>
                 {% set grade_vars = [
-                    ('{{ subjects_grades }}', 'list[dict]', 'Список навчальних дисциплін студента (відфільтрований за повною/скороченою програмою, з reduced_credits/reduced_type). У Word перебирайте циклом {%tr for s in subjects_grades %}.', 'Поля елемента s: s.id, s.code, s.name, s.credits, s.type, s.position, s.grade'),
-                    ('{{ practice_data }}', 'list[dict]', 'Список практик та оцінок студента. Перебір через {%tr for p in practice_data %}.', 'Поля елемента p: p.id, p.code, p.name, p.credits, p.type, p.position, p.grade'),
-                    ('{{ coursework_data }}', 'list[dict]', 'Список курсових робіт / проєктів студента. Перебір через {%tr for c in coursework_data %}.', 'Поля елемента c: c.id, c.code, c.name, c.credits, c.type, c.position, c.grade'),
-                    ('{{ attestation_data }}', 'list[dict]', 'Список атестацій / кваліфікаційних робіт. Крім стандартних полів містить тему роботи та готовий двомовний рядок display_name.', 'Поля елемента a: a.code, a.name, a.credits, a.type, a.grade, a.student_name (тема), a.display_name'),
-                    ('{{ a.display_name }}', 'рядок', 'Усередині циклу attestation_data: готова комбінація «Назва атестації «Тема» / Назва (EN) «Тема (EN)»» (автопереклад через DeepL). Якщо теми немає — виводить лише назву.', 'Кваліфікаційний іспит / Qualification exam або Робота «Тема» / Work «Topic»'),
+                    ('{{ subjects_grades }}', 'list[dict]', 'Список навчальних дисциплін студента (відфільтрований за повною/скороченою програмою, з reduced_credits/reduced_type). У Word перебирайте циклом {%tr for s in subjects_grades %}.', 'Поля елемента s: s.id, s.code, s.name, s.name_en, s.display_name, s.credits, s.type, s.position, s.grade'),
+                    ('{{ practice_data }}', 'list[dict]', 'Список практик та оцінок студента. Перебір через {%tr for p in practice_data %}.', 'Поля елемента p: p.id, p.code, p.name, p.name_en, p.display_name, p.credits, p.type, p.position, p.grade'),
+                    ('{{ coursework_data }}', 'list[dict]', 'Список курсових робіт / проєктів студента. Перебір через {%tr for c in coursework_data %}.', 'Поля елемента c: c.id, c.code, c.name, c.name_en, c.display_name, c.credits, c.type, c.position, c.grade'),
+                    ('{{ attestation_data }}', 'list[dict]', 'Список атестацій / кваліфікаційних робіт. Крім стандартних полів містить тему роботи (UA/EN) та готовий двомовний рядок display_name.', 'Поля елемента a: a.code, a.name, a.name_en, a.credits, a.type, a.grade, a.student_name (тема), a.topic_ua, a.topic_en, a.display_name'),
+                    ('{{ a.display_name }}', 'рядок', 'Усередині циклу attestation_data: готова комбінація «Назва атестації «Тема» / Назва (EN) «Тема (EN)»» (збережений переклад або DeepL). Якщо теми немає — виводить лише назву.', 'Кваліфікаційний іспит / Qualification exam або Робота «Тема» / Work «Topic»'),
                     ('{{ s.grade }}', 'рядок', 'Відформатована оцінка для екзамену чи заліку (порожня, якщо оцінка ще не виставлена)', 'Відмінно / Excellent 95 A  або  Зараховано / Passed 84 B')
                 ] %}
                 {% for token, vtype, desc, ex in grade_vars %}
@@ -1563,6 +1612,96 @@
 
 </div>
 
+{# ── Модальне вікно тест-рендера та діагностики шаблону ── #}
+<div class="modal fade" id="testTemplateModal" tabindex="-1" aria-labelledby="testModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title mb-0" id="testModalTitle">
+                        <i class="bi bi-bug me-2 text-info"></i>Тест-рендер і діагностика шаблону
+                    </h5>
+                    <div class="small text-muted">
+                        <span id="ttTplDisplay" class="fw-semibold"></span>
+                        (<code id="ttTplFilename"></code>)
+                    </div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body small">
+                <div class="row g-2 align-items-end mb-3">
+                    <div class="col-md-5">
+                        <label class="form-label fw-semibold mb-1" for="ttStudentSearch">Пошук студента</label>
+                        <input type="text" id="ttStudentSearch" class="form-control form-control-sm"
+                               placeholder="Прізвище або група...">
+                    </div>
+                    <div class="col-md-7">
+                        <label class="form-label fw-semibold mb-1" for="ttStudentSelect">Студент та група</label>
+                        <select id="ttStudentSelect" class="form-select form-select-sm"></select>
+                    </div>
+                </div>
+
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+                    <button type="button" id="ttRunBtn" class="btn btn-sm btn-primary">
+                        <i class="bi bi-play-fill me-1"></i>Запустити тест-рендер
+                    </button>
+                    <span id="ttLoading" class="text-muted d-none">
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>Перевірка XML та рендер...
+                    </span>
+                    <div id="ttResultActions" class="ms-auto d-none d-flex flex-wrap gap-2">
+                        <a id="ttEditLink" href="#" class="btn btn-sm btn-outline-primary d-none">
+                            <i class="bi bi-pencil-square me-1"></i>Відкрити в ONLYOFFICE
+                        </a>
+                        <a id="ttDownloadLink" href="#" class="btn btn-sm btn-outline-success d-none">
+                            <i class="bi bi-download me-1"></i>Завантажити тестовий .docx
+                        </a>
+                    </div>
+                </div>
+
+                <div id="ttErrorBox" class="alert alert-danger py-2 d-none mb-3"></div>
+
+                <div id="ttDiagBox" class="d-none">
+                    <div class="d-flex flex-wrap gap-2 mb-3" id="ttDiagBadges"></div>
+
+                    <div id="ttBrokenBox" class="alert alert-warning py-2 d-none mb-2">
+                        <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle me-1"></i>Підозрілі / розірвані теги Word XML:</div>
+                        <ul id="ttBrokenList" class="mb-0 ps-3"></ul>
+                    </div>
+
+                    <div id="ttUnknownBox" class="alert alert-danger py-2 d-none mb-2">
+                        <div class="fw-semibold mb-1"><i class="bi bi-question-circle me-1"></i>Невідомі змінні (відсутні в контексті):</div>
+                        <div id="ttUnknownList" class="d-flex flex-wrap gap-1"></div>
+                    </div>
+
+                    <div id="ttEmptyBox" class="alert alert-secondary py-2 d-none mb-2">
+                        <div class="fw-semibold mb-1">Порожні змінні для цього студента:</div>
+                        <div id="ttEmptyList" class="d-flex flex-wrap gap-1"></div>
+                    </div>
+
+                    <div class="border rounded p-2">
+                        <div class="fw-semibold mb-2">Заповнені змінні (<span id="ttFilledCount">0</span>):</div>
+                        <div class="table-responsive" style="max-height: 240px;">
+                            <table class="table table-sm table-striped mb-0">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 36%;">Змінна</th>
+                                        <th>Значення на прикладі студента</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="ttFilledBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span class="me-auto small text-muted">Тест-рендер не створює записів у журналі видачі додатків.</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Закрити</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {# ── Модальне вікно підтвердження видалення ── #}
 <div class="modal fade" id="deleteTemplateModal" tabindex="-1" aria-labelledby="deleteModalTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1869,6 +2008,242 @@ document.addEventListener('DOMContentLoaded', () => {
             const target = document.getElementById(btn.dataset.copyTarget);
             if (target) copyToClipboard(target.textContent || '', btn, false);
         });
+    });
+
+    // ── Тест-рендер та діагностика шаблонів ──
+    const testModalEl = document.getElementById('testTemplateModal');
+    const testModal = testModalEl && window.bootstrap ? new bootstrap.Modal(testModalEl) : null;
+    const ttTplDisplay = document.getElementById('ttTplDisplay');
+    const ttTplFilename = document.getElementById('ttTplFilename');
+    const ttStudentSearch = document.getElementById('ttStudentSearch');
+    const ttStudentSelect = document.getElementById('ttStudentSelect');
+    const ttRunBtn = document.getElementById('ttRunBtn');
+    const ttLoading = document.getElementById('ttLoading');
+    const ttErrorBox = document.getElementById('ttErrorBox');
+    const ttDiagBox = document.getElementById('ttDiagBox');
+    const ttDiagBadges = document.getElementById('ttDiagBadges');
+    const ttBrokenBox = document.getElementById('ttBrokenBox');
+    const ttBrokenList = document.getElementById('ttBrokenList');
+    const ttUnknownBox = document.getElementById('ttUnknownBox');
+    const ttUnknownList = document.getElementById('ttUnknownList');
+    const ttEmptyBox = document.getElementById('ttEmptyBox');
+    const ttEmptyList = document.getElementById('ttEmptyList');
+    const ttFilledCount = document.getElementById('ttFilledCount');
+    const ttFilledBody = document.getElementById('ttFilledBody');
+    const ttResultActions = document.getElementById('ttResultActions');
+    const ttEditLink = document.getElementById('ttEditLink');
+    const ttDownloadLink = document.getElementById('ttDownloadLink');
+    const studentsApiUrl = "{{ url_for('diploma.api_search_students') }}";
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+    let activeTestUrl = '';
+    let studentFetchTimer = null;
+
+    function clearEl(el) {
+        while (el && el.firstChild) el.removeChild(el.firstChild);
+    }
+
+    function appendCodeChips(container, items, badgeClass) {
+        clearEl(container);
+        items.forEach(item => {
+            const code = document.createElement('code');
+            code.className = badgeClass;
+            code.textContent = String(item);
+            container.appendChild(code);
+        });
+    }
+
+    async function loadStudentsForTest(q) {
+        if (!ttStudentSelect) return;
+        try {
+            const resp = await fetch(studentsApiUrl + '?q=' + encodeURIComponent(q || ''), {
+                headers: { 'Accept': 'application/json' },
+            });
+            const data = await resp.json();
+            clearEl(ttStudentSelect);
+            const list = (data && Array.isArray(data.students)) ? data.students : [];
+            if (!list.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'Студентів не знайдено';
+                ttStudentSelect.appendChild(opt);
+                return;
+            }
+            list.forEach(st => {
+                const opt = document.createElement('option');
+                opt.value = String(st.student_id || '');
+                opt.dataset.groupId = st.group_id ? String(st.group_id) : '';
+                opt.textContent = st.label || '';
+                ttStudentSelect.appendChild(opt);
+            });
+        } catch (err) {
+            clearEl(ttStudentSelect);
+            const opt = document.createElement('option');
+            opt.value = '';
+            opt.textContent = 'Помилка завантаження списку студентів';
+            ttStudentSelect.appendChild(opt);
+        }
+    }
+
+    function resetTestModalOutput() {
+        ttErrorBox?.classList.add('d-none');
+        if (ttErrorBox) ttErrorBox.textContent = '';
+        ttDiagBox?.classList.add('d-none');
+        ttResultActions?.classList.add('d-none');
+        ttEditLink?.classList.add('d-none');
+        ttDownloadLink?.classList.add('d-none');
+    }
+
+    document.querySelectorAll('.js-test-tpl').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeTestUrl = btn.dataset.testUrl || '';
+            if (ttTplDisplay) ttTplDisplay.textContent = btn.dataset.displayName || btn.dataset.filename || '';
+            if (ttTplFilename) ttTplFilename.textContent = btn.dataset.filename || '';
+            if (ttStudentSearch) ttStudentSearch.value = '';
+            resetTestModalOutput();
+            loadStudentsForTest('');
+            testModal?.show();
+        });
+    });
+
+    ttStudentSearch?.addEventListener('input', () => {
+        clearTimeout(studentFetchTimer);
+        studentFetchTimer = setTimeout(() => {
+            loadStudentsForTest(ttStudentSearch.value.trim());
+        }, 220);
+    });
+
+    ttRunBtn?.addEventListener('click', async () => {
+        if (!activeTestUrl) return;
+        const selectedOpt = ttStudentSelect?.selectedOptions?.[0];
+        const studentId = selectedOpt ? selectedOpt.value : '';
+        const groupId = selectedOpt ? (selectedOpt.dataset.groupId || '') : '';
+        if (!studentId) {
+            if (ttErrorBox) {
+                ttErrorBox.textContent = 'Оберіть студента зі списку.';
+                ttErrorBox.classList.remove('d-none');
+            }
+            return;
+        }
+        resetTestModalOutput();
+        ttRunBtn.disabled = true;
+        ttLoading?.classList.remove('d-none');
+
+        try {
+            const resp = await fetch(activeTestUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken,
+                },
+                body: JSON.stringify({
+                    student_id: Number(studentId),
+                    group_id: groupId ? Number(groupId) : null,
+                }),
+            });
+            const data = await resp.json();
+            if (!resp.ok && !data?.diagnostics) {
+                if (ttErrorBox) {
+                    ttErrorBox.textContent = data?.error || 'Не вдалося виконати тест-рендер шаблону.';
+                    ttErrorBox.classList.remove('d-none');
+                }
+                return;
+            }
+
+            const diag = data.diagnostics || {};
+            if (!diag.syntax_ok && diag.syntax_error && ttErrorBox) {
+                ttErrorBox.textContent = 'Помилка синтаксису шаблону: ' + diag.syntax_error;
+                ttErrorBox.classList.remove('d-none');
+            } else if (!data.render_ok && data.error && ttErrorBox) {
+                ttErrorBox.textContent = data.error;
+                ttErrorBox.classList.remove('d-none');
+            }
+
+            clearEl(ttDiagBadges);
+            const badges = [
+                {
+                    text: diag.syntax_ok ? 'Синтаксис Jinja: OK' : 'Помилка синтаксису Jinja',
+                    cls: diag.syntax_ok ? 'badge bg-success' : 'badge bg-danger',
+                },
+                {
+                    text: 'Розірваних XML-тегів: ' + String((diag.broken_tag_warnings || []).length),
+                    cls: (diag.broken_tag_warnings || []).length ? 'badge bg-warning text-dark' : 'badge bg-light text-dark border',
+                },
+                {
+                    text: 'Невідомих змінних: ' + String((diag.unknown_vars || []).length),
+                    cls: (diag.unknown_vars || []).length ? 'badge bg-danger' : 'badge bg-light text-dark border',
+                },
+                {
+                    text: 'Порожніх: ' + String((diag.empty_vars || []).length),
+                    cls: 'badge bg-secondary',
+                },
+                {
+                    text: 'Заповнених: ' + String((diag.filled_vars || []).length),
+                    cls: 'badge bg-primary',
+                },
+            ];
+            badges.forEach(b => {
+                const span = document.createElement('span');
+                span.className = b.cls;
+                span.textContent = b.text;
+                ttDiagBadges?.appendChild(span);
+            });
+
+            const broken = diag.broken_tag_warnings || [];
+            ttBrokenBox?.classList.toggle('d-none', broken.length === 0);
+            clearEl(ttBrokenList);
+            broken.forEach(w => {
+                const li = document.createElement('li');
+                li.textContent = String(w);
+                ttBrokenList?.appendChild(li);
+            });
+
+            const unknown = diag.unknown_vars || [];
+            ttUnknownBox?.classList.toggle('d-none', unknown.length === 0);
+            if (ttUnknownList) appendCodeChips(ttUnknownList, unknown, 'px-2 py-1 rounded bg-white border text-danger');
+
+            const emptyVars = diag.empty_vars || [];
+            ttEmptyBox?.classList.toggle('d-none', emptyVars.length === 0);
+            if (ttEmptyList) appendCodeChips(ttEmptyList, emptyVars, 'px-2 py-1 rounded bg-white border text-secondary');
+
+            const filled = diag.filled_vars || [];
+            if (ttFilledCount) ttFilledCount.textContent = String(filled.length);
+            clearEl(ttFilledBody);
+            filled.forEach(item => {
+                const tr = document.createElement('tr');
+                const tdName = document.createElement('td');
+                const code = document.createElement('code');
+                code.textContent = String(item.name || '');
+                tdName.appendChild(code);
+                const tdVal = document.createElement('td');
+                tdVal.className = 'text-break';
+                tdVal.textContent = String(item.preview || '');
+                tr.appendChild(tdName);
+                tr.appendChild(tdVal);
+                ttFilledBody?.appendChild(tr);
+            });
+
+            ttDiagBox?.classList.remove('d-none');
+
+            if (data.render_ok && (data.edit_url || data.download_url)) {
+                ttResultActions?.classList.remove('d-none');
+                if (data.edit_url && ttEditLink) {
+                    ttEditLink.href = data.edit_url;
+                    ttEditLink.classList.remove('d-none');
+                }
+                if (data.download_url && ttDownloadLink) {
+                    ttDownloadLink.href = data.download_url;
+                    ttDownloadLink.classList.remove('d-none');
+                }
+            }
+        } catch (err) {
+            if (ttErrorBox) {
+                ttErrorBox.textContent = 'Помилка зв’язку із сервером під час тест-рендера.';
+                ttErrorBox.classList.remove('d-none');
+            }
+        } finally {
+            ttRunBtn.disabled = false;
+            ttLoading?.classList.add('d-none');
+        }
     });
 });
 </script>

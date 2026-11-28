@@ -213,6 +213,7 @@ AUDIT_SECTION_BY_PREFIX = [
     ('/admin/pending_students', 'Заявки на реєстрацію'),
     ('/admin/update_requests', 'Заявки на оновлення'),
     ('/admin/study_periods', 'Періоди навчання'),
+    ('/admin/diploma-supplements', 'Дипломи та додатки'),
     ('/admin/diplomas', 'Дипломи та додатки'),
     ('/admin/groups', 'Групи та курси'),
     ('/admin/courses', 'Групи та курси'),

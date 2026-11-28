@@ -1,0 +1,1065 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Додатки до диплома — центр підготовки{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
+{% block content %}
+<style>
+    .ds-page {
+        --ds-ok-bg: rgba(79, 122, 82, .14);
+        --ds-ok-fg: #265436;
+        --ds-ok-bd: rgba(79, 122, 82, .35);
+        --ds-warn-bg: rgba(200, 162, 74, .18);
+        --ds-warn-fg: #75550c;
+        --ds-warn-bd: rgba(200, 162, 74, .46);
+        --ds-err-bg: var(--stamp-soft);
+        --ds-err-fg: #8f2d22;
+        --ds-err-bd: var(--stamp-semi);
+        --ds-info-bg: rgba(61, 104, 153, .13);
+        --ds-info-fg: #274f7d;
+        --ds-info-bd: rgba(61, 104, 153, .34);
+    }
+    html[data-theme="dark"] .ds-page {
+        --ds-ok-bg: rgba(79, 122, 82, .25);
+        --ds-ok-fg: #c2e6c5;
+        --ds-ok-bd: rgba(117, 173, 122, .42);
+        --ds-warn-bg: rgba(200, 162, 74, .20);
+        --ds-warn-fg: #f2d687;
+        --ds-warn-bd: rgba(227, 200, 122, .38);
+        --ds-err-bg: rgba(162, 59, 46, .28);
+        --ds-err-fg: #f5b8b0;
+        --ds-err-bd: rgba(216, 108, 95, .42);
+        --ds-info-bg: rgba(74, 110, 168, .22);
+        --ds-info-fg: #b4ccf0;
+        --ds-info-bd: rgba(120, 156, 214, .38);
+    }
+    .ds-num { font-variant-numeric: tabular-nums; }
+    .ds-mono { font-family: 'JetBrains Mono', monospace; }
+    .ds-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .ds-card-head {
+        background: var(--paper-2);
+        border-bottom: 1px solid var(--line);
+        padding: .8rem 1.05rem;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: .6rem;
+    }
+    .ds-kpi {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-top: 3px solid var(--brass);
+        border-radius: 10px;
+        padding: .75rem .9rem;
+        height: 100%;
+    }
+    .ds-kpi--ok { border-top-color: #3d7a53; }
+    .ds-kpi--warn { border-top-color: #c8a24a; }
+    .ds-kpi--err { border-top-color: #a23b2e; }
+    .ds-kpi--info { border-top-color: #3d6899; }
+    .ds-kpi__label {
+        font-size: .7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        color: var(--muted);
+        margin-bottom: .2rem;
+    }
+    .ds-kpi__val {
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: var(--ink-text);
+    }
+    .ds-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: .28rem;
+        padding: .18rem .5rem;
+        border-radius: 6px;
+        font-size: .74rem;
+        font-weight: 700;
+        border: 1px solid transparent;
+        white-space: nowrap;
+    }
+    .ds-badge--ok { background: var(--ds-ok-bg); color: var(--ds-ok-fg); border-color: var(--ds-ok-bd); }
+    .ds-badge--warn { background: var(--ds-warn-bg); color: var(--ds-warn-fg); border-color: var(--ds-warn-bd); }
+    .ds-badge--err { background: var(--ds-err-bg); color: var(--ds-err-fg); border-color: var(--ds-err-bd); }
+    .ds-badge--info { background: var(--ds-info-bg); color: var(--ds-info-fg); border-color: var(--ds-info-bd); }
+    .ds-badge--muted { background: var(--paper-2); color: var(--muted); border-color: var(--line); }
+
+    .ds-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .4rem;
+        border-bottom: 1px solid var(--line);
+        padding-bottom: .65rem;
+        margin-bottom: 1rem;
+    }
+    .ds-tab-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .4rem;
+        padding: .5rem .9rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink-text);
+        text-decoration: none;
+        font-size: .87rem;
+        font-weight: 600;
+        transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+    .ds-tab-link:hover {
+        border-color: var(--brass-semi);
+        background: var(--brass-soft);
+        color: var(--ink);
+    }
+    .ds-tab-link.is-active,
+    .ds-tab-link.is-active:hover {
+        background: var(--ink);
+        color: var(--brass-lt);
+        border-color: var(--ink);
+    }
+    html[data-theme="dark"] .ds-tab-link {
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .ds-tab-link:hover:not(.is-active) {
+        background: var(--surface);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .ds-tab-link.is-active,
+    html[data-theme="dark"] .ds-tab-link.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    .ds-filter-btn {
+        border: 1px solid var(--line);
+        background: var(--paper);
+        color: var(--ink-text);
+        border-radius: 7px;
+        padding: .3rem .65rem;
+        font-size: .79rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background .15s ease, color .15s ease, border-color .15s ease;
+    }
+    .ds-filter-btn:hover:not(.is-active) {
+        border-color: var(--brass-semi);
+        background: var(--brass-soft);
+        color: var(--ink);
+    }
+    .ds-filter-btn.is-active,
+    .ds-filter-btn.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    html[data-theme="dark"] .ds-filter-btn {
+        background: var(--paper-2);
+        color: var(--ink-text);
+        border-color: var(--line);
+    }
+    html[data-theme="dark"] .ds-filter-btn:hover:not(.is-active) {
+        background: var(--surface);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .ds-filter-btn.is-active,
+    html[data-theme="dark"] .ds-filter-btn.is-active:hover {
+        background: var(--brass);
+        color: var(--ink);
+        border-color: var(--brass);
+    }
+    .ds-table thead th {
+        background: var(--paper-2);
+        color: var(--muted);
+        font-size: .72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+    }
+    .ds-table tbody td {
+        border-color: var(--line);
+        vertical-align: middle;
+        font-size: .86rem;
+    }
+    .ds-mask-chip {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: .75rem;
+        padding: .15rem .45rem;
+        border-radius: 5px;
+        border: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--ink-text);
+        cursor: pointer;
+    }
+    .ds-mask-chip:hover { border-color: var(--brass); background: var(--brass-soft); color: var(--ink); }
+    html[data-theme="dark"] .ds-mask-chip:hover {
+        border-color: var(--brass);
+        background: var(--surface);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-secondary {
+        color: var(--ink-text);
+        border-color: var(--line);
+        background-color: var(--paper-2);
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-secondary:hover {
+        background-color: var(--surface);
+        border-color: var(--brass-semi);
+        color: var(--brass-lt);
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-primary {
+        color: #a9c2e8;
+        border-color: rgba(169, 194, 232, .48);
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-primary:hover {
+        background-color: #a9c2e8;
+        border-color: #a9c2e8;
+        color: #0e1b2c;
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-success {
+        color: #a8d4ad;
+        border-color: rgba(117, 173, 122, .52);
+    }
+    html[data-theme="dark"] .ds-page .btn-outline-success:hover {
+        background-color: #a8d4ad;
+        border-color: #a8d4ad;
+        color: #0e1b2c;
+    }
+</style>
+
+<div class="container py-4 ds-page">
+
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div class="d-flex flex-wrap gap-2">
+            {% if has_perm('group_export') %}
+            <a href="{{ url_for('admin.group_export', group_id=selected_group_id) if selected_group_id else url_for('admin.group_export') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-file-earmark-zip me-1"></i>Масова генерація
+            </a>
+            {% endif %}
+            <a href="{{ url_for('admin.manage_diplomas', group_id=selected_group_id) if selected_group_id else url_for('admin.manage_diplomas') }}" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-journal-bookmark me-1"></i>Швидке редагування номерів
+            </a>
+        </div>
+        {% if has_perm('manage_templates') %}
+        <a href="{{ url_for('admin.manage_templates') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-file-earmark-word me-1"></i>Шаблони та тест-рендер
+        </a>
+        {% endif %}
+    </div>
+
+    {{ ui.page_header(
+        'bi-award-fill',
+        'Центр підготовки додатків до диплома',
+        'Preflight-аудит готовності, контроль дипломів з відзнакою, теми робіт (UA/EN), імпорт ЄДЕБО та журнал друку'
+    ) }}
+
+    {# ── Вибір групи ── #}
+    <div class="ds-card mb-3">
+        <div class="p-3">
+            <form method="GET" action="{{ url_for('diploma.hub') }}" class="row g-2 align-items-end">
+                <input type="hidden" name="tab" value="{{ active_tab }}">
+                <div class="col-md-7">
+                    <label for="dsGroupSelect" class="form-label small fw-semibold mb-1">Навчальна група</label>
+                    <select id="dsGroupSelect" name="group_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                        <option value="">— Оберіть групу —</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}" {% if g.id == selected_group_id %}selected{% endif %}>
+                            {{ g.name }} ({{ g.start_year }}, {{ g.study_form }}, {{ g.program_credits }} кр.){% if g.archived %} [Архів]{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" id="includeArchivedChk" name="include_archived" value="1" {% if include_archived %}checked{% endif %} onchange="this.form.submit()">
+                        <label class="form-check-label small" for="includeArchivedChk">Показувати архівні / випускні групи</label>
+                    </div>
+                </div>
+                <div class="col-md-2 text-md-end">
+                    <button type="submit" class="btn btn-sm btn-primary w-100"><i class="bi bi-funnel me-1"></i>Відкрити</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if not selected_group %}
+        {{ ui.empty_state('bi-mortarboard', 'Оберіть групу вище, щоб провести аудит додатків до диплома, перевірити відзнаки, завантажити номери з ЄДЕБО або налаштувати теми робіт') }}
+    {% else %}
+
+    {# ── KPI по групі ── #}
+    <div class="row g-2 mb-3">
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi">
+                <div class="ds-kpi__label">Студентів</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.total }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi ds-kpi--ok">
+                <div class="ds-kpi__label">Повністю готові</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.ready }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi ds-kpi--warn">
+                <div class="ds-kpi__label">Зауваження</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.warn }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi ds-kpi--err">
+                <div class="ds-kpi__label">Блокери</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.blocked }}</div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi ds-kpi--info">
+                <div class="ds-kpi__label">З відзнакою / Межа</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.honours }} <span class="fs-6 text-muted fw-normal">/ {{ kpi.borderline }}</span></div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-xl-2">
+            <div class="ds-kpi ds-kpi--warn">
+                <div class="ds-kpi__label">Потребує передруку</div>
+                <div class="ds-kpi__val ds-num">{{ kpi.needs_reprint }}</div>
+            </div>
+        </div>
+    </div>
+
+    {# ── Вкладки ── #}
+    <div class="ds-tabs">
+        <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='audit', include_archived='1' if include_archived else None) }}"
+           class="ds-tab-link {% if active_tab == 'audit' %}is-active{% endif %}">
+            <i class="bi bi-clipboard-check"></i>Preflight-аудит і відзнака
+        </a>
+        <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='activities', include_archived='1' if include_archived else None) }}"
+           class="ds-tab-link {% if active_tab == 'activities' %}is-active{% endif %}">
+            <i class="bi bi-translate"></i>Теми робіт (UA/EN) та оцінки
+        </a>
+        <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='import', include_archived='1' if include_archived else None) }}"
+           class="ds-tab-link {% if active_tab == 'import' %}is-active{% endif %}">
+            <i class="bi bi-file-earmark-excel"></i>ЄДЕБО та нумерація
+        </a>
+        <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='logs', include_archived='1' if include_archived else None) }}"
+           class="ds-tab-link {% if active_tab == 'logs' %}is-active{% endif %}">
+            <i class="bi bi-printer"></i>Журнал друку і налаштування
+        </a>
+    </div>
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 1: PREFLIGHT ТА ВІДЗНАКА
+       ════════════════════════════════════════════════════════════════ #}
+    {% if active_tab == 'audit' %}
+    <div class="ds-card mb-3">
+        <div class="ds-card-head">
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <input type="text" id="auditSearch" class="form-control form-control-sm" style="width: 240px;" placeholder="Пошук студента, номера, ЄДЕБО...">
+                <div class="d-flex flex-wrap gap-1" id="auditFilterBtns">
+                    <button type="button" class="ds-filter-btn is-active" data-filter="all">Усі ({{ student_rows|length }})</button>
+                    <button type="button" class="ds-filter-btn" data-filter="issues">Є проблеми ({{ kpi.blocked + kpi.warn }})</button>
+                    <button type="button" class="ds-filter-btn" data-filter="honours">З відзнакою ({{ kpi.honours }})</button>
+                    <button type="button" class="ds-filter-btn" data-filter="borderline">На межі 68–74% ({{ kpi.borderline }})</button>
+                    <button type="button" class="ds-filter-btn" data-filter="reprint">Потребує передруку ({{ kpi.needs_reprint }})</button>
+                </div>
+            </div>
+            {% if available_templates and has_perm('group_export') and not selected_group.archived %}
+            <form method="POST" action="{{ url_for('admin.generate_group_docs') }}" class="d-flex flex-wrap align-items-center gap-2" id="quickGenForm">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                <select name="template" class="form-select form-select-sm" style="max-width: 250px;">
+                    {% for tpl in available_templates %}
+                    <option value="{{ tpl.path }}">{{ tpl.display_name }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" class="btn btn-sm btn-primary">
+                    <i class="bi bi-file-earmark-zip me-1"></i>Генерувати для відмічених
+                </button>
+            </form>
+            {% endif %}
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover ds-table mb-0" id="auditTable">
+                <thead>
+                    <tr>
+                        <th style="width:36px;" class="text-center">
+                            <input type="checkbox" class="form-check-input" id="auditCheckAll" checked title="Обрати всіх видимих">
+                        </th>
+                        <th>Студент / ЄДЕБО</th>
+                        <th>Диплом / Додаток / Випуск</th>
+                        <th>Успішність і кредити</th>
+                        <th>Диплом з відзнакою</th>
+                        <th>Preflight-перевірка</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in student_rows %}
+                    <tr class="js-audit-row"
+                        data-search="{{ (m.full_name_ua ~ ' ' ~ m.full_name_en ~ ' ' ~ m.edebo_code ~ ' ' ~ m.diploma_number ~ ' ' ~ m.appendix_number)|lower }}"
+                        data-status="{{ m.ready_status }}"
+                        data-honours="{{ '1' if m.final_honours else '0' }}"
+                        data-borderline="{{ '1' if m.honours_category == 'borderline' else '0' }}"
+                        data-reprint="{{ '1' if m.needs_reprint else '0' }}">
+                        <td class="text-center">
+                            <input type="checkbox" class="form-check-input js-gen-chk" form="quickGenForm" name="active_students" value="{{ m.student_id }}" checked>
+                        </td>
+                        <td>
+                            <div class="fw-semibold">
+                                <a href="{{ url_for('students.student_details', student_id=m.student_id) }}" class="text-decoration-none">
+                                    {{ m.full_name_ua }}
+                                </a>
+                            </div>
+                            <div class="small text-muted">
+                                {{ m.full_name_en or '— без латиниці —' }}
+                                {% if m.edebo_code %} · <span class="ds-mono">ЄДЕБО {{ m.edebo_code }}</span>{% endif %}
+                                {% if m.is_reduced %} · <span class="ds-badge ds-badge--info">Скорочена</span>{% endif %}
+                            </div>
+                        </td>
+                        <td class="small">
+                            <div>
+                                Д: <strong class="ds-mono">{{ m.diploma_number or '—' }}</strong>
+                                · Дод: <strong class="ds-mono">{{ m.appendix_number or '—' }}</strong>
+                            </div>
+                            {% if m.graduation_order_number %}
+                            <div class="text-muted">Наказ №{{ m.graduation_order_number }} від {{ m.graduation_order_date }}</div>
+                            {% else %}
+                            <div class="text-muted">Наказ про випуск: —</div>
+                            {% endif %}
+                        </td>
+                        <td class="small ds-num">
+                            <div>
+                                Ср. зваж.: <strong>{{ m.weighted_gpa_100 if m.weighted_gpa_100 is not none else '—' }}</strong>
+                                {% if m.gpa_5 is not none %}<span class="text-muted">({{ m.gpa_5 }}/5)</span>{% endif %}
+                            </div>
+                            <div class="text-muted">
+                                Кредити: <strong class="{% if not m.credits_match %}text-danger{% endif %}">{{ m.actual_credits }}</strong>/{{ m.expected_credits }}
+                                · Оцінок: {{ m.subjects_filled }}/{{ m.subjects_total }}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-column align-items-start gap-1">
+                                {% if m.final_honours %}
+                                    <span class="ds-badge ds-badge--ok"><i class="bi bi-award-fill"></i>З відзнакою ({{ m.excellent_pct }}%)</span>
+                                {% elif m.honours_category == 'borderline' %}
+                                    <span class="ds-badge ds-badge--warn"><i class="bi bi-exclamation-circle"></i>На межі ({{ m.excellent_pct }}%)</span>
+                                {% else %}
+                                    <span class="ds-badge ds-badge--muted">Звичайний ({{ m.excellent_pct }}%)</span>
+                                {% endif %}
+                                <div class="small text-muted">{{ m.honours_reason }}</div>
+                                <button type="button"
+                                        class="btn btn-link btn-sm p-0 text-decoration-none js-open-honours-modal"
+                                        data-student-id="{{ m.student_id }}"
+                                        data-student-name="{{ m.full_name_ua }}"
+                                        data-override="{{ m.honours_override }}"
+                                        data-note="{{ m.honours_note }}">
+                                    <i class="bi bi-sliders me-1"></i>Перевизначити
+                                </button>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex flex-wrap gap-1">
+                                {% if m.ready_status == 'ready' %}
+                                    <span class="ds-badge ds-badge--ok"><i class="bi bi-check-circle-fill"></i>Готово</span>
+                                {% endif %}
+                                {% if m.needs_reprint %}
+                                    <span class="ds-badge ds-badge--err"><i class="bi bi-arrow-repeat"></i>Потребує передруку</span>
+                                {% elif m.last_log %}
+                                    <span class="ds-badge ds-badge--info">{{ m.last_log.status }}</span>
+                                {% endif %}
+                                {% for issue in m.preflight_issues %}
+                                    <span class="ds-badge {% if issue.severity == 'error' %}ds-badge--err{% else %}ds-badge--warn{% endif %}">
+                                        {{ issue.label }}
+                                    </span>
+                                {% endfor %}
+                            </div>
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <div class="btn-group btn-group-sm">
+                                <a href="{{ url_for('students.edit_grades', student_id=m.student_id, group_id=selected_group_id) }}" class="btn btn-outline-secondary" title="Оцінки з предметів"><i class="bi bi-journal-check"></i></a>
+                                <a href="{{ url_for('students.edit_activities_grades', student_id=m.student_id, group_id=selected_group_id) }}" class="btn btn-outline-secondary" title="Практики / атестація / тема"><i class="bi bi-briefcase"></i></a>
+                                {% if has_perm('group_export') %}
+                                <a href="{{ url_for('students.generate', student_id=m.student_id, group_id=selected_group_id) }}" class="btn btn-outline-primary" title="Згенерувати документ"><i class="bi bi-file-earmark-word"></i></a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 2: ТЕМИ РОБІТ (UA/EN), ПЕРЕКЛАДИ ТА МАСОВІ ОЦІНКИ
+       ════════════════════════════════════════════════════════════════ #}
+    {% elif active_tab == 'activities' %}
+    <div class="ds-card mb-4">
+        <div class="ds-card-head">
+            <div>
+                <strong>Масове редагування практик, курсових, атестацій та тем кваліфікаційних робіт</strong>
+                <div class="small text-muted">Збережені англійські переклади тем автоматично підставляються в додаток без повторних звернень до DeepL.</div>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary js-batch-deepl" data-mode="topics" {% if not deepl_enabled %}disabled title="DEEPL_API_KEY не налаштовано"{% endif %}>
+                    <i class="bi bi-translate me-1"></i>Автоперекласти порожні теми (DeepL)
+                </button>
+            </div>
+        </div>
+        <form method="POST" action="{{ url_for('diploma.activities_bulk_save') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+            {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
+
+            <div class="table-responsive">
+                <table class="table table-sm ds-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Студент</th>
+                            {% for p in group_practices %}
+                            <th style="min-width:90px;">Практ.: {{ p.name }}</th>
+                            {% endfor %}
+                            {% for c in group_courseworks %}
+                            <th style="min-width:90px;">Курс.: {{ c.name }}</th>
+                            {% endfor %}
+                            {% for a in group_attestations %}
+                            <th style="min-width:90px;">Атест.: {{ a.name }}</th>
+                            <th style="min-width:230px;">Тема роботи (UA)</th>
+                            <th style="min-width:230px;">Тема роботи (EN)</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for m in student_rows %}
+                        <tr>
+                            <td class="fw-semibold text-nowrap">{{ m.full_name_ua }}</td>
+                            {% for p in group_practices %}
+                            {% set av = activity_values.get((m.student_id, 'practice', p.id), {}) %}
+                            <td>
+                                <input type="number" min="0" max="100" class="form-control form-control-sm ds-num"
+                                       name="grade_{{ m.student_id }}_practice_{{ p.id }}" value="{{ av.get('grade', '') }}" placeholder="0-100">
+                            </td>
+                            {% endfor %}
+                            {% for c in group_courseworks %}
+                            {% set av = activity_values.get((m.student_id, 'coursework', c.id), {}) %}
+                            <td>
+                                <input type="number" min="0" max="100" class="form-control form-control-sm ds-num"
+                                       name="grade_{{ m.student_id }}_coursework_{{ c.id }}" value="{{ av.get('grade', '') }}" placeholder="0-100">
+                            </td>
+                            {% endfor %}
+                            {% for a in group_attestations %}
+                            {% set av = activity_values.get((m.student_id, 'attestation', a.id), {}) %}
+                            <td>
+                                <input type="number" min="0" max="100" class="form-control form-control-sm ds-num"
+                                       name="grade_{{ m.student_id }}_attestation_{{ a.id }}" value="{{ av.get('grade', '') }}" placeholder="0-100">
+                            </td>
+                            <td>
+                                <input type="text" class="form-control form-control-sm js-topic-ua"
+                                       id="topic_ua_{{ m.student_id }}_{{ a.id }}"
+                                       name="topic_ua_{{ m.student_id }}_{{ a.id }}" value="{{ av.get('name', '') }}" placeholder="Тема українською...">
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm">
+                                    <input type="text" class="form-control"
+                                           id="topic_en_{{ m.student_id }}_{{ a.id }}"
+                                           name="topic_en_{{ m.student_id }}_{{ a.id }}" value="{{ av.get('name_en', '') }}" placeholder="Topic in English...">
+                                    {% if deepl_enabled %}
+                                    <button type="button" class="btn btn-outline-secondary js-single-deepl"
+                                            data-src="topic_ua_{{ m.student_id }}_{{ a.id }}"
+                                            data-dst="topic_en_{{ m.student_id }}_{{ a.id }}"
+                                            title="Перекласти через DeepL">
+                                        <i class="bi bi-translate"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="p-3 border-top d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-check2-circle me-1"></i>Зберегти оцінки та теми робіт
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div class="ds-card">
+        <div class="ds-card-head">
+            <div>
+                <strong>Англійські переклади назв дисциплін, практик, курсових та атестацій</strong>
+                <div class="small text-muted">Доступні у шаблонах через <code>{% raw %}{{ s.name_en }}{% endraw %}</code> та <code>{% raw %}{{ s.display_name }}{% endraw %}</code>.</div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-primary js-batch-deepl" data-mode="components" {% if not deepl_enabled %}disabled title="DEEPL_API_KEY не налаштовано"{% endif %}>
+                <i class="bi bi-translate me-1"></i>Перекласти порожні назви (DeepL)
+            </button>
+        </div>
+        <form method="POST" action="{{ url_for('diploma.subjects_en_bulk_save') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+            {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
+            <div class="table-responsive">
+                <table class="table table-sm ds-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Тип</th>
+                            <th>Код</th>
+                            <th>Назва (UA)</th>
+                            <th>Назва (EN)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for label, prefix, items in [
+                            ('Дисципліна', 'subj', group_subjects),
+                            ('Практика', 'prac', group_practices),
+                            ('Курсова', 'cw', group_courseworks),
+                            ('Атестація', 'att', group_attestations)
+                        ] %}
+                            {% for item in items %}
+                            <tr>
+                                <td><span class="ds-badge ds-badge--muted">{{ label }}</span></td>
+                                <td class="ds-mono small">{{ item.code }}</td>
+                                <td>{{ item.name }}</td>
+                                <td>
+                                    <input type="text" class="form-control form-control-sm" name="{{ prefix }}_en_{{ item.id }}" value="{{ item.name_en or '' }}" placeholder="English title...">
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="p-3 border-top d-flex justify-content-end">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-save me-1"></i>Зберегти переклади компонентів
+                </button>
+            </div>
+        </form>
+    </div>
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 3: ІМПОРТ З ЄДЕБО ТА ПАКЕТНА НУМЕРАЦІЯ
+       ════════════════════════════════════════════════════════════════ #}
+    {% elif active_tab == 'import' %}
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="ds-card h-100">
+                <div class="ds-card-head">
+                    <strong><i class="bi bi-file-earmark-excel me-1"></i>Імпорт номерів диплома/додатка з Excel (ЄДЕБО)</strong>
+                </div>
+                <div class="p-3">
+                    <p class="small text-muted">
+                        Завантажте файл <code>.xlsx</code> (вивантаження з ЄДЕБО або довільна таблиця з колонками «ЄДЕБО / ПІБ», «Номер диплома», «Номер додатка»). Перед збереженням ви побачите звірку з існуючими записами та попередження про дублі й розбіжності.
+                    </p>
+                    <form method="POST" action="{{ url_for('diploma.edebo_import_preview') }}" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                        <div class="mb-3">
+                            <label for="edeboExcelFile" class="form-label small fw-semibold">Файл Excel (.xlsx)</label>
+                            <input type="file" id="edeboExcelFile" name="excel_file" accept=".xlsx" class="form-control form-control-sm" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm">
+                            <i class="bi bi-search me-1"></i>Розібрати та звірити (прев’ю)
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="ds-card h-100">
+                <div class="ds-card-head">
+                    <strong><i class="bi bi-123 me-1"></i>Швидка пакетна нумерація діапазоном</strong>
+                </div>
+                <div class="p-3">
+                    <p class="small text-muted">
+                        Автоматично присвоює послідовні номери дипломів та додатків студентам групи за алфавітом.
+                    </p>
+                    <form method="POST" action="{{ url_for('diploma.auto_number') }}" class="row g-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                        {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
+                        <div class="col-4">
+                            <label class="form-label small mb-1">Префікс диплома</label>
+                            <input type="text" name="diploma_prefix" class="form-control form-control-sm" placeholder="Напр. B26">
+                        </div>
+                        <div class="col-8">
+                            <label class="form-label small mb-1">Початковий № диплома</label>
+                            <input type="number" name="diploma_start" class="form-control form-control-sm" placeholder="Напр. 1201">
+                        </div>
+                        <div class="col-4">
+                            <label class="form-label small mb-1">Префікс додатка</label>
+                            <input type="text" name="appendix_prefix" class="form-control form-control-sm" placeholder="Напр. D26">
+                        </div>
+                        <div class="col-8">
+                            <label class="form-label small mb-1">Початковий № додатка</label>
+                            <input type="number" name="appendix_start" class="form-control form-control-sm" placeholder="Напр. 5001">
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label small mb-1">Розрядність (нулів)</label>
+                            <input type="number" name="pad_len" min="1" max="12" value="6" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-7 d-flex align-items-end">
+                            <div class="form-check mb-1">
+                                <input class="form-check-input" type="checkbox" name="only_empty" value="1" id="onlyEmptyNum" checked>
+                                <label class="form-check-label small" for="onlyEmptyNum">Тільки для порожніх номерів</label>
+                            </div>
+                        </div>
+                        <div class="col-12 mt-2">
+                            <button type="submit" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-magic me-1"></i>Пронумерувати групу
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {# ════════════════════════════════════════════════════════════════
+       ВКЛАДКА 4: ЖУРНАЛ ДРУКУ ТА НАЛАШТУВАННЯ
+       ════════════════════════════════════════════════════════════════ #}
+    {% elif active_tab == 'logs' %}
+    <div class="ds-card mb-3">
+        <div class="ds-card-head">
+            <strong><i class="bi bi-sliders me-1"></i>Налаштування іменування файлів, відзнаки та PDF</strong>
+        </div>
+        <div class="p-3">
+            <form method="POST" action="{{ url_for('diploma.save_settings_route') }}" class="row g-3 align-items-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+                <div class="col-lg-6">
+                    <label for="filenameMaskInput" class="form-label small fw-semibold mb-1">Маска імені вихідного файлу (.docx / .pdf)</label>
+                    <input type="text" id="filenameMaskInput" name="filename_mask" class="form-control form-control-sm ds-mono"
+                           value="{{ settings.get('filename_mask', '{last_name_UA}_{first_name_UA}') }}">
+                    <div class="d-flex flex-wrap gap-1 mt-1">
+                        {% for tok in ['{last_name_UA}', '{first_name_UA}', '{middle_name_UA}', '{diploma_number}', '{appendix_number}', '{group_name}', '{edebo_code}', '{last_name_ENG}'] %}
+                        <button type="button" class="ds-mask-chip js-add-mask-tok" data-tok="{{ tok }}">{{ tok }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="honoursCwSwitch" name="honours_include_courseworks" value="1"
+                               {% if settings.get('honours_include_courseworks') == '1' %}checked{% endif %}>
+                        <label class="form-check-label small fw-semibold" for="honoursCwSwitch">
+                            Враховувати курсові роботи в 75% «A» для диплома з відзнакою
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" role="switch" id="duplexPadSwitch" name="pdf_duplex_pad" value="1"
+                               {% if settings.get('pdf_duplex_pad') == '1' %}checked{% endif %}>
+                        <label class="form-check-label small fw-semibold" for="duplexPadSwitch">
+                            Додавати порожній зворот у зведеному PDF при непарній кількості сторінок (двосторонній друк)
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Зберегти налаштування</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="ds-card">
+        <form method="POST" action="{{ url_for('diploma.update_log_status') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="group_id" value="{{ selected_group_id }}">
+            <div class="ds-card-head">
+                <strong><i class="bi bi-journal-check me-1"></i>Журнал генерації, друку та видачі</strong>
+                <div class="d-flex flex-wrap gap-1">
+                    <button type="submit" name="status" value="printed" class="btn btn-sm btn-outline-primary">Позначити «Надруковано»</button>
+                    <button type="submit" name="status" value="issued" class="btn btn-sm btn-outline-success">Позначити «Видано»</button>
+                    <button type="submit" name="status" value="generated" class="btn btn-sm btn-outline-secondary">Скинути на «Згенеровано»</button>
+                </div>
+            </div>
+            {% if logs_list %}
+            <div class="table-responsive">
+                <table class="table table-hover ds-table mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:36px;" class="text-center"><input type="checkbox" class="form-check-input" id="logCheckAll"></th>
+                            <th>Студент</th>
+                            <th>Диплом / Додаток</th>
+                            <th>Ср. бал / Кредити</th>
+                            <th>Шаблон і дата генерації</th>
+                            <th>Статус</th>
+                            <th>Друк / Видача</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lg in logs_list %}
+                        <tr>
+                            <td class="text-center"><input type="checkbox" class="form-check-input js-log-chk" name="log_ids" value="{{ lg.id }}"></td>
+                            <td class="fw-semibold">{{ lg.full_name }}</td>
+                            <td class="ds-mono small">{{ lg.diploma_number or '—' }} / {{ lg.appendix_number or '—' }}</td>
+                            <td class="small ds-num">
+                                {{ lg.weighted_gpa if lg.weighted_gpa is not none else '—' }}
+                                / {{ lg.total_credits if lg.total_credits is not none else '—' }} кр.
+                                {% if lg.honours_flag %}<span class="ds-badge ds-badge--ok ms-1">Відзнака</span>{% endif %}
+                            </td>
+                            <td class="small">
+                                <div class="ds-mono">{{ lg.template_name or '—' }}</div>
+                                <div class="text-muted">{{ lg.generated_at }} · {{ lg.generated_by }}</div>
+                            </td>
+                            <td>
+                                {% if lg.status == 'issued' %}
+                                    <span class="ds-badge ds-badge--ok">Видано</span>
+                                {% elif lg.status == 'printed' %}
+                                    <span class="ds-badge ds-badge--info">Надруковано</span>
+                                {% else %}
+                                    <span class="ds-badge ds-badge--muted">Згенеровано</span>
+                                {% endif %}
+                            </td>
+                            <td class="small text-muted">
+                                {% if lg.printed_at %}<div>Друк: {{ lg.printed_at }} ({{ lg.printed_by }})</div>{% endif %}
+                                {% if lg.issued_at %}<div>Видано: {{ lg.issued_at }} ({{ lg.issued_by }})</div>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted small">Для цієї групи ще немає записів у журналі генерації додатків.</div>
+            {% endif %}
+        </form>
+    </div>
+    {% endif %}
+
+    {% endif %}
+</div>
+
+{# ── Модальне вікно перевизначення диплома з відзнакою ── #}
+<div class="modal fade" id="honoursModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Диплом з відзнакою — <span id="hmStudentName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <div id="hmErrorBox" class="alert alert-danger py-2 small d-none"></div>
+                <input type="hidden" id="hmStudentId">
+                <div class="mb-3">
+                    <label for="hmOverrideSelect" class="form-label small fw-semibold">Режим визначення</label>
+                    <select id="hmOverrideSelect" class="form-select form-select-sm">
+                        <option value="">Автоматичний розрахунок за оцінками (рекомендовано)</option>
+                        <option value="force_yes">Підтвердити «Диплом з відзнакою» вручну</option>
+                        <option value="force_no">Скасувати «Диплом з відзнакою» вручну</option>
+                    </select>
+                </div>
+                <div class="mb-0">
+                    <label for="hmNoteInput" class="form-label small fw-semibold">Підстава / примітка (опційно)</label>
+                    <input type="text" id="hmNoteInput" class="form-control form-control-sm" maxlength="240" placeholder="Напр. рішення вченої ради / перерахунок...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Скасувати</button>
+                <button type="button" class="btn btn-sm btn-primary" id="hmSaveBtn">Зберегти</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+    const selectedGroupId = {{ selected_group_id or 'null' }};
+
+    // ── Фільтрація у таблиці Preflight ──
+    const auditSearch = document.getElementById('auditSearch');
+    const filterBtns = document.querySelectorAll('#auditFilterBtns [data-filter]');
+    const auditRows = document.querySelectorAll('.js-audit-row');
+    let activeAuditFilter = 'all';
+
+    function applyAuditFilter() {
+        const q = (auditSearch?.value || '').trim().toLowerCase();
+        auditRows.forEach(row => {
+            const hay = row.dataset.search || '';
+            const st = row.dataset.status;
+            const hon = row.dataset.honours === '1';
+            const bord = row.dataset.borderline === '1';
+            const rep = row.dataset.reprint === '1';
+            let ok = !q || hay.includes(q);
+            if (ok && activeAuditFilter === 'issues') ok = (st === 'blocked' || st === 'warn');
+            if (ok && activeAuditFilter === 'honours') ok = hon;
+            if (ok && activeAuditFilter === 'borderline') ok = bord;
+            if (ok && activeAuditFilter === 'reprint') ok = rep;
+            row.classList.toggle('d-none', !ok);
+        });
+    }
+    if (auditSearch) auditSearch.addEventListener('input', applyAuditFilter);
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeAuditFilter = btn.dataset.filter || 'all';
+            filterBtns.forEach(b => b.classList.toggle('is-active', b === btn));
+            applyAuditFilter();
+        });
+    });
+
+    const auditCheckAll = document.getElementById('auditCheckAll');
+    if (auditCheckAll) {
+        auditCheckAll.addEventListener('change', () => {
+            document.querySelectorAll('.js-gen-chk').forEach(chk => {
+                const tr = chk.closest('tr');
+                if (!tr || !tr.classList.contains('d-none')) {
+                    chk.checked = auditCheckAll.checked;
+                }
+            });
+        });
+    }
+
+    const logCheckAll = document.getElementById('logCheckAll');
+    if (logCheckAll) {
+        logCheckAll.addEventListener('change', () => {
+            document.querySelectorAll('.js-log-chk').forEach(chk => { chk.checked = logCheckAll.checked; });
+        });
+    }
+
+    // ── Модалка ручного перевизначення відзнаки ──
+    const hmEl = document.getElementById('honoursModal');
+    const hmModal = hmEl && window.bootstrap ? new bootstrap.Modal(hmEl) : null;
+    document.querySelectorAll('.js-open-honours-modal').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.getElementById('hmStudentId').value = btn.dataset.studentId || '';
+            document.getElementById('hmStudentName').textContent = btn.dataset.studentName || '';
+            document.getElementById('hmOverrideSelect').value = btn.dataset.override || '';
+            document.getElementById('hmNoteInput').value = btn.dataset.note || '';
+            if (hmModal) hmModal.show();
+        });
+    });
+
+    const hmSaveBtn = document.getElementById('hmSaveBtn');
+    if (hmSaveBtn) {
+        hmSaveBtn.addEventListener('click', async () => {
+            hmSaveBtn.disabled = true;
+            try {
+                const resp = await fetch("{{ url_for('diploma.honours_override') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({
+                        student_id: document.getElementById('hmStudentId').value,
+                        group_id: selectedGroupId,
+                        override: document.getElementById('hmOverrideSelect').value,
+                        note: document.getElementById('hmNoteInput').value,
+                    }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    window.location.reload();
+                } else {
+                    const errBox = document.getElementById('hmErrorBox');
+                    if (errBox) {
+                        errBox.textContent = data.error || 'Помилка збереження';
+                        errBox.classList.remove('d-none');
+                    }
+                }
+            } catch (e) {
+                const errBox = document.getElementById('hmErrorBox');
+                if (errBox) {
+                    errBox.textContent = 'Помилка з’єднання із сервером';
+                    errBox.classList.remove('d-none');
+                }
+            } finally {
+                hmSaveBtn.disabled = false;
+            }
+        });
+    }
+
+    // ── DeepL пакетний та точковий переклад ──
+    function showInlineNotice(msg) {
+        let box = document.getElementById('dsInlineNotice');
+        if (!box) {
+            box = document.createElement('div');
+            box.id = 'dsInlineNotice';
+            box.className = 'alert alert-warning alert-dismissible fade show small mb-3';
+            const container = document.querySelector('.ds-page');
+            if (container) container.prepend(box);
+        }
+        box.textContent = msg;
+    }
+
+    document.querySelectorAll('.js-batch-deepl').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            if (!selectedGroupId) return;
+            const origHtml = btn.innerHTML;
+            btn.disabled = true;
+            btn.textContent = 'Перекладаю...';
+            try {
+                const resp = await fetch("{{ url_for('diploma.translate_missing') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({ mode: btn.dataset.mode, group_id: selectedGroupId }),
+                });
+                const data = await resp.json();
+                if (data.ok) {
+                    window.location.reload();
+                } else {
+                    showInlineNotice(data.error || 'Не вдалося виконати переклад');
+                    btn.innerHTML = origHtml;
+                    btn.disabled = false;
+                }
+            } catch (e) {
+                showInlineNotice('Помилка з’єднання із сервером');
+                btn.innerHTML = origHtml;
+                btn.disabled = false;
+            }
+        });
+    });
+
+    document.querySelectorAll('.js-single-deepl').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const src = document.getElementById(btn.dataset.src);
+            const dst = document.getElementById(btn.dataset.dst);
+            if (!src || !dst || !src.value.trim()) return;
+            btn.disabled = true;
+            try {
+                const resp = await fetch("{{ url_for('diploma.translate_missing') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                    body: JSON.stringify({ mode: 'single', text: src.value.trim() }),
+                });
+                const data = await resp.json();
+                if (data.ok && data.translation) {
+                    dst.value = data.translation;
+                } else if (data.error) {
+                    showInlineNotice(data.error);
+                }
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    });
+
+    // ── Вставка токенів маски файлу ──
+    const maskInput = document.getElementById('filenameMaskInput');
+    document.querySelectorAll('.js-add-mask-tok').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!maskInput) return;
+            const tok = btn.dataset.tok || '';
+            const cur = maskInput.value || '';
+            maskInput.value = cur ? (cur + '_' + tok) : tok;
+            maskInput.focus();
+        });
+    });
+});
+</script>
+{% endblock %}

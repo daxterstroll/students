@@ -568,7 +568,7 @@ main.container {
             --heading:    var(--brass-lt);
         }
         html[data-theme="dark"] body { background: var(--paper); color: var(--ink-text); }
-        html[data-theme="dark"] a { color: var(--brass-lt); }
+        html[data-theme="dark"] a:not(.btn) { color: var(--brass-lt); }
         html[data-theme="dark"] .card,
         html[data-theme="dark"] .dropdown-menu,
         html[data-theme="dark"] .modal-content {
@@ -664,7 +664,12 @@ main.container {
             color: var(--muted);
         }
         html[data-theme="dark"] .btn-primary,
-        html[data-theme="dark"] .btn-add {
+        html[data-theme="dark"] .btn-primary:hover,
+        html[data-theme="dark"] .btn-primary:focus-visible,
+        html[data-theme="dark"] .btn-primary:active,
+        html[data-theme="dark"] .btn-add,
+        html[data-theme="dark"] .btn-add:hover,
+        html[data-theme="dark"] .btn-add:active {
             color: var(--ink);
             --bs-btn-color: var(--ink);
             --bs-btn-hover-color: var(--ink);
@@ -701,7 +706,8 @@ main.container {
             --bs-btn-active-color: var(--brass-lt);
         }
         html[data-theme="dark"] .btn-outline-secondary:hover,
-        html[data-theme="dark"] .btn-outline-secondary:focus-visible {
+        html[data-theme="dark"] .btn-outline-secondary:focus-visible,
+        html[data-theme="dark"] .btn-outline-secondary:active {
             background-color: var(--surface);
             color: var(--brass-lt);
             border-color: var(--brass-semi);
@@ -1255,6 +1261,8 @@ html[data-theme="dark"] .progress-stacked {
 
 /* ── Outline-кнопки у темній темі ──────────────────────────────────── */
 html[data-theme="dark"] .btn-outline-primary {
+    color: #a9c2e8;
+    border-color: rgba(169,194,232,.48);
     --bs-btn-color: #a9c2e8;
     --bs-btn-border-color: rgba(169,194,232,.48);
     --bs-btn-hover-bg: #a9c2e8;
@@ -1264,12 +1272,31 @@ html[data-theme="dark"] .btn-outline-primary {
     --bs-btn-active-border-color: #a9c2e8;
     --bs-btn-active-color: #0e1b2c;
 }
+html[data-theme="dark"] .btn-outline-primary:hover,
+html[data-theme="dark"] .btn-outline-primary:focus-visible,
+html[data-theme="dark"] .btn-outline-primary:active {
+    background-color: #a9c2e8;
+    border-color: #a9c2e8;
+    color: #0e1b2c;
+}
 html[data-theme="dark"] .btn-outline-success {
+    color: #a8d4ad;
+    border-color: rgba(79,122,82,.55);
     --bs-btn-color: #a8d4ad;
     --bs-btn-border-color: rgba(79,122,82,.55);
     --bs-btn-hover-bg: #a8d4ad;
     --bs-btn-hover-border-color: #a8d4ad;
     --bs-btn-hover-color: #0e1b2c;
+    --bs-btn-active-bg: #a8d4ad;
+    --bs-btn-active-border-color: #a8d4ad;
+    --bs-btn-active-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-success:hover,
+html[data-theme="dark"] .btn-outline-success:focus-visible,
+html[data-theme="dark"] .btn-outline-success:active {
+    background-color: #a8d4ad;
+    border-color: #a8d4ad;
+    color: #0e1b2c;
 }
 
 /* .btn-outline-warning у світлій темі Bootstrap дає чистий жовтий
@@ -1303,32 +1330,77 @@ html[data-theme="dark"] .btn-outline-success {
 }
 
 html[data-theme="dark"] .btn-outline-warning {
+    color: var(--brass-lt);
+    border-color: var(--brass-semi);
     --bs-btn-color: var(--brass-lt);
     --bs-btn-border-color: var(--brass-semi);
     --bs-btn-hover-bg: var(--brass);
     --bs-btn-hover-border-color: var(--brass);
     --bs-btn-hover-color: #0e1b2c;
+    --bs-btn-active-bg: var(--brass);
+    --bs-btn-active-border-color: var(--brass);
+    --bs-btn-active-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-warning:hover,
+html[data-theme="dark"] .btn-outline-warning:focus-visible,
+html[data-theme="dark"] .btn-outline-warning:active {
+    background-color: var(--brass);
+    border-color: var(--brass);
+    color: #0e1b2c;
 }
 html[data-theme="dark"] .btn-outline-info {
+    color: #a9c2e8;
+    border-color: rgba(74,110,168,.55);
     --bs-btn-color: #a9c2e8;
     --bs-btn-border-color: rgba(74,110,168,.55);
     --bs-btn-hover-bg: #a9c2e8;
     --bs-btn-hover-border-color: #a9c2e8;
     --bs-btn-hover-color: #0e1b2c;
+    --bs-btn-active-bg: #a9c2e8;
+    --bs-btn-active-border-color: #a9c2e8;
+    --bs-btn-active-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-info:hover,
+html[data-theme="dark"] .btn-outline-info:focus-visible,
+html[data-theme="dark"] .btn-outline-info:active {
+    background-color: #a9c2e8;
+    border-color: #a9c2e8;
+    color: #0e1b2c;
 }
 html[data-theme="dark"] .btn-outline-danger {
+    color: #f0b3ab;
+    border-color: var(--stamp-semi);
     --bs-btn-color: #f0b3ab;
     --bs-btn-border-color: var(--stamp-semi);
     --bs-btn-hover-bg: var(--stamp);
     --bs-btn-hover-border-color: var(--stamp);
     --bs-btn-hover-color: #fff;
+    --bs-btn-active-bg: var(--stamp);
+    --bs-btn-active-border-color: var(--stamp);
+    --bs-btn-active-color: #fff;
+}
+html[data-theme="dark"] .btn-outline-danger:hover,
+html[data-theme="dark"] .btn-outline-danger:focus-visible,
+html[data-theme="dark"] .btn-outline-danger:active {
+    background-color: var(--stamp);
+    border-color: var(--stamp);
+    color: #fff;
 }
 html[data-theme="dark"] .btn-outline-dark {
+    color: var(--ink-text);
+    border-color: var(--line);
     --bs-btn-color: var(--ink-text);
     --bs-btn-border-color: var(--line);
     --bs-btn-hover-bg: var(--ink-text);
     --bs-btn-hover-border-color: var(--ink-text);
     --bs-btn-hover-color: #0e1b2c;
+}
+html[data-theme="dark"] .btn-outline-dark:hover,
+html[data-theme="dark"] .btn-outline-dark:focus-visible,
+html[data-theme="dark"] .btn-outline-dark:active {
+    background-color: var(--ink-text);
+    border-color: var(--ink-text);
+    color: #0e1b2c;
 }
 html[data-theme="dark"] .btn-dark {
     background-color: var(--surface);

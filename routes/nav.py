@@ -102,6 +102,8 @@ NAV_SECTIONS = [
              'icon': 'bi-file-earmark-text',     'label': 'Документи освіти'},
             {'perm': 'manage_passport_documents', 'url': 'admin.manage_passport_documents',
              'icon': 'bi-person-vcard',          'label': 'Паспортні дані'},
+            {'perm': 'manage_diplomas',          'url': 'diploma.hub',
+             'icon': 'bi-award-fill',            'label': 'Додатки до диплома (центр)'},
             {'perm': 'manage_diplomas',          'url': 'admin.manage_diplomas',
              'icon': 'bi-journal-bookmark',      'label': 'Номери диплому / додатку'},
             {'perm': 'manage_military_reports',  'url': 'military_reports.dashboard',

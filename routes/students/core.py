@@ -3049,9 +3049,15 @@ def generate(student_id):
 
         military_dict = dict(military) if military else {}
 
-        display_name = (
-            f"{student['last_name_UA']}_{student['first_name_UA']}.docx"
-            .replace(' ', '_')
+        from routes.diploma_supplements import get_diploma_settings, format_custom_filename
+
+        diploma_row = conn.execute(
+            "SELECT diploma_number, appendix_number FROM diplomas WHERE student_id = ? AND group_id = ? ORDER BY id DESC LIMIT 1",
+            (student_id, gid),
+        ).fetchone()
+        mask = get_diploma_settings(conn).get('filename_mask')
+        display_name = format_custom_filename(
+            student_dict, dict(diploma_row) if diploma_row else None, mask, '.docx'
         )
         full_path = os.path.join(
             office_editor.SESSIONS_DIR, f"{uuid.uuid4().hex}.docx",
@@ -3062,9 +3068,14 @@ def generate(student_id):
                 student_dict, military_dict,
                 template=template, out=full_path,
                 user_name=current_username(),
+                record_log=True,
             )
             doc_id = office_editor.create_editing_session(
-                full_path, display_name, session['user_id'],
+                full_path,
+                display_name,
+                session['user_id'],
+                student_id=student_id,
+                group_id=gid,
             )
             conn.close()
             return redirect(url_for('office.edit', doc_id=doc_id))

@@ -1,0 +1,116 @@
+{% extends 'layout.html' %}
+{% import '_macros.html' as ui %}
+{% block title %}Звірка імпорту ЄДЕБО — {{ group_name }}{% endblock %}
+{% block main_class %}py-3{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="mb-3">
+        <a href="{{ url_for('diploma.hub', group_id=group_id, tab='import') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Повернутися до Центру додатків
+        </a>
+    </div>
+
+    {{ ui.page_header(
+        'bi-file-earmark-excel-fill',
+        'Прев’ю імпорту номерів диплома/додатка (' ~ group_name ~ ')',
+        'Файл: ' ~ filename ~ ' · Перевірте зіставлення студентів та попередження перед збереженням у базу даних'
+    ) }}
+
+    <form method="POST" action="{{ url_for('diploma.edebo_import_commit', token=token) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="card border-0 shadow-sm" style="border-radius: 12px; overflow: hidden;">
+            <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <span class="fw-semibold">Рядків у файлі: {{ preview_rows|length }}</span>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-check2-circle me-1"></i>Застосувати відмічені записи
+                </button>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th style="width:42px;" class="text-center">
+                                <input type="checkbox" class="form-check-input" id="edeboChkAll" checked>
+                            </th>
+                            <th>Рядок Excel</th>
+                            <th>Студент у БД (група {{ group_name }})</th>
+                            <th style="min-width:150px;">№ диплома</th>
+                            <th style="min-width:150px;">№ додатка</th>
+                            <th>Попередження та поточні дані</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in preview_rows %}
+                        <tr>
+                            <td class="text-center">
+                                <input type="checkbox" class="form-check-input js-edebo-chk" name="apply_{{ r.row }}" value="1"
+                                       {% if r.student_id and r.status != 'error' %}checked{% endif %}>
+                            </td>
+                            <td class="small">
+                                <div class="fw-semibold">#{{ r.row }} · {{ r.fio_excel or '—' }}</div>
+                                {% if r.edebo_excel %}
+                                <div class="text-muted">ЄДЕБО: <code>{{ r.edebo_excel }}</code></div>
+                                {% endif %}
+                                {% if r.match_method %}
+                                <span class="badge bg-info-subtle text-info-emphasis">{{ r.match_method }} ({{ r.match_score }}%)</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <select name="student_id_{{ r.row }}" class="form-select form-select-sm">
+                                    <option value="">— Не прив’язано —</option>
+                                    {% for st in students %}
+                                    <option value="{{ st.id }}" {% if st.id == r.student_id %}selected{% endif %}>
+                                        {{ st.last_name_UA }} {{ st.first_name_UA }} {{ st.middle_name_UA or '' }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td>
+                                <input type="text" name="diploma_{{ r.row }}" class="form-control form-control-sm font-monospace" value="{{ r.diploma_number }}">
+                                {% if r.existing_diploma %}
+                                <div class="form-text mt-0">Було: {{ r.existing_diploma }}</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <input type="text" name="appendix_{{ r.row }}" class="form-control form-control-sm font-monospace" value="{{ r.appendix_number }}">
+                                {% if r.existing_appendix %}
+                                <div class="form-text mt-0">Було: {{ r.existing_appendix }}</div>
+                                {% endif %}
+                            </td>
+                            <td class="small">
+                                {% if not r.warnings %}
+                                    <span class="badge bg-success-subtle text-success-emphasis">Готово до імпорту</span>
+                                {% else %}
+                                    {% for w in r.warnings %}
+                                    <div class="badge bg-warning-subtle text-warning-emphasis d-inline-block mb-1">{{ w }}</div>
+                                    {% endfor %}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <a href="{{ url_for('diploma.hub', group_id=group_id, tab='import') }}" class="btn btn-sm btn-outline-secondary">Скасувати</a>
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="bi bi-check2-circle me-1"></i>Імпортувати відмічені номери
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const allChk = document.getElementById('edeboChkAll');
+    if (allChk) {
+        allChk.addEventListener('change', () => {
+            document.querySelectorAll('.js-edebo-chk').forEach(c => { c.checked = allChk.checked; });
+        });
+    }
+});
+</script>
+{% endblock %}

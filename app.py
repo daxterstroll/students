@@ -40,6 +40,7 @@ from routes.system_ops import (
     ensure_backup_scheduler_started,
     system_ops_bp,
 )
+from routes.diploma_supplements import diploma_bp, ensure_diploma_supplement_schema
 from routes.utils import logger
 from routes.gen_docx import format_grade
 
@@ -197,6 +198,32 @@ def ensure_faculties_migrated():
             _FACULTY_SCHEMA_READY = True
         except Exception as e:
             logger.warning(f"Не вдалося виконати міграцію факультетів: {e}")
+        finally:
+            if conn is not None:
+                conn.close()
+
+
+_DIPLOMA_SCHEMA_LOCK = threading.Lock()
+_DIPLOMA_SCHEMA_READY = False
+
+
+@app.before_request
+def ensure_diploma_schema_migrated():
+    """Одноразово за процес ідемпотентно створює колонки та таблиці для додатків до диплома."""
+    global _DIPLOMA_SCHEMA_READY
+    if _DIPLOMA_SCHEMA_READY:
+        return
+    with _DIPLOMA_SCHEMA_LOCK:
+        if _DIPLOMA_SCHEMA_READY:
+            return
+        from routes.db import get_db
+        conn = None
+        try:
+            conn = get_db()
+            ensure_diploma_supplement_schema(conn)
+            _DIPLOMA_SCHEMA_READY = True
+        except Exception as e:
+            logger.warning(f"Не вдалося виконати міграцію схеми додатків до диплома: {e}")
         finally:
             if conn is not None:
                 conn.close()
@@ -424,6 +451,7 @@ app.register_blueprint(public_update_bp)
 app.register_blueprint(exam_sessions_bp)
 app.register_blueprint(military_telegram_bp)
 app.register_blueprint(system_ops_bp)
+app.register_blueprint(diploma_bp)
 app.jinja_env.filters['format_grade'] = format_grade
 
 

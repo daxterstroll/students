@@ -7,6 +7,20 @@
 
     {{ ui.page_header('bi-file-earmark-zip-fill', 'Масова генерація документів', 'Оберіть групу, рік народження та шаблон, щоб згенерувати документи для декількох студентів одразу') }}
 
+    {% if has_perm('manage_diplomas') %}
+    <div class="alert alert-light border d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3 py-2">
+        <div class="small">
+            <i class="bi bi-mortarboard-fill me-2" style="color: var(--brass);"></i>
+            <strong>Підготовка додатків до диплома:</strong>
+            перед масовим друком перевірте готовність групи, відзнаки, теми робіт і номери ЄДЕБО.
+        </div>
+        <a href="{{ url_for('diploma.hub', group_id=selected_group_id) if selected_group_id else url_for('diploma.hub') }}"
+           class="btn btn-sm btn-outline-primary">
+            <i class="bi bi-clipboard2-check me-1"></i>Відкрити центр підготовки додатків
+        </a>
+    </div>
+    {% endif %}
+
 {# ═══════════════════════════════════════════════════════════
    Обмеження масової генерації для паралельного навчання
    ═══════════════════════════════════════════════════════════ #}
@@ -160,6 +174,7 @@
         <div class="card">
             <div class="card-body p-0">
                 <form method="POST" action="{{ url_for('admin.group_export') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0 align-middle">
                             <thead>

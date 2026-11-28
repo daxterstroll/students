@@ -280,17 +280,19 @@ def _forcesave_and_wait(s, doc_id, timeout=15):
 # Публічне API для інших маршрутів (students.py / admin.py)
 # ============================================================
 
-def create_editing_session(file_path: str, display_name: str, user_id, batch_id: str = None):
+def create_editing_session(
+    file_path: str,
+    display_name: str,
+    user_id,
+    batch_id: str = None,
+    *,
+    student_id: int | None = None,
+    group_id: int | None = None,
+    log_id: int | None = None,
+):
     """
     Реєструє нову сесію редагування документа, який уже згенеровано на
     диску (file_path).
-
-    :param file_path: абсолютний шлях до .docx-файлу (файл вже повинен існувати)
-    :param display_name: ім'я файлу, яке побачить користувач (напр. "Іваненко_Петро.docx")
-    :param user_id: session['user_id'] власника сесії - для перевірки прав доступу при відкритті
-    :param batch_id: якщо задано - додає сесію до групи (масова генерація), щоб пізніше
-                      зібрати всі файли групи в один ZIP через /office/batch/<batch_id>/zip
-    :return: doc_id (str) для посилання /office/edit/<doc_id>
     """
     _cleanup_expired_sessions()
     doc_id = uuid.uuid4().hex
@@ -302,6 +304,9 @@ def create_editing_session(file_path: str, display_name: str, user_id, batch_id:
             'created_at': time.time(),
             'key': uuid.uuid4().hex,  # ONLYOFFICE "document key" - унікальний для поточної версії файлу
             'batch_id': batch_id,
+            'student_id': student_id,
+            'group_id': group_id,
+            'log_id': log_id,
             'save_event': threading.Event(),  # сигнал "callback щойно зберіг файл на диск"
         }
         if batch_id:
@@ -507,7 +512,7 @@ def callback(doc_id):
 
 @office_bp.route('/finalize/<doc_id>')
 def finalize(doc_id):
-    """Кнопка «Завершити і завантажити» - віддає користувачу поточну (можливо, відредаговану) версію файлу."""
+    """Кнопка «Завершити і завантажити» - віддає користувачу поточну (можливо, відредаговану) версію файлу у .docx або .pdf."""
     if 'user_id' not in session:
         return redirect(url_for('auth.login'))
 
@@ -521,6 +526,24 @@ def finalize(doc_id):
     if not os.path.exists(s['path']):
         flash('Файл не знайдено (можливо, сесія редагування застаріла)', 'danger')
         return redirect(url_for('students.student_list'))
+
+    fmt = (request.args.get('format') or 'docx').strip().lower()
+    if fmt == 'pdf':
+        from routes.diploma_supplements import convert_docx_to_pdf
+        pdf_path = resolve_under_dir(SESSIONS_DIR, f"{doc_id}.pdf")
+        if not pdf_path:
+            abort(400)
+        ok, err = convert_docx_to_pdf(s['path'], pdf_path, doc_id_for_onlyoffice=doc_id)
+        if not ok:
+            flash(err or 'Не вдалося конвертувати документ у PDF', 'danger')
+            return redirect(url_for('office.edit', doc_id=doc_id))
+        base_name = os.path.splitext(s['display_name'])[0]
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name=f"{base_name}.pdf",
+            mimetype='application/pdf',
+        )
 
     return send_file(s['path'], as_attachment=True,
                       download_name=s['display_name'],
@@ -596,3 +619,183 @@ def download_batch_zip(batch_id):
                 zipf.write(s['path'], arcname=display_name)
 
     return send_file(zip_path, as_attachment=True, download_name=f"{batch_id}.zip")
+
+
+@office_bp.route('/batch/<batch_id>/pdf-zip')
+@permission_required('group_export')
+def download_batch_pdf_zip(batch_id):
+    """Конвертує всі документи пакету в PDF та віддає одним ZIP-архівом."""
+    import shutil
+    import tempfile
+    from routes.diploma_supplements import convert_docx_to_pdf
+
+    _check_batch_access(batch_id)
+    items = get_batch_items(batch_id)
+    if not items:
+        flash('Пакет документів не знайдено (можливо, сесія застаріла)', 'danger')
+        return redirect(url_for('admin.group_export'))
+
+    for doc_id, _name in items:
+        with _LOCK:
+            s = _SESSIONS.get(doc_id)
+        if s:
+            _forcesave_and_wait(s, doc_id, timeout=10)
+
+    zip_path = resolve_under_dir(SESSIONS_DIR, f"batch_pdf_{batch_id}.zip")
+    if not zip_path:
+        abort(400)
+
+    tmp_dir = tempfile.mkdtemp(prefix='batch_pdf_')
+    converted_cnt = 0
+    last_err = ''
+    try:
+        with ZipFile(zip_path, 'w') as zipf:
+            for doc_id, display_name in items:
+                with _LOCK:
+                    s = _SESSIONS.get(doc_id)
+                if not s or not os.path.exists(s['path']):
+                    continue
+                pdf_out = os.path.join(tmp_dir, f"{doc_id}.pdf")
+                ok, err = convert_docx_to_pdf(s['path'], pdf_out, doc_id_for_onlyoffice=doc_id)
+                if ok and os.path.isfile(pdf_out):
+                    arcname = f"{os.path.splitext(display_name)[0]}.pdf"
+                    zipf.write(pdf_out, arcname=arcname)
+                    converted_cnt += 1
+                else:
+                    last_err = err or last_err
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if converted_cnt == 0:
+        flash(last_err or 'Не вдалося конвертувати документи пакету в PDF', 'danger')
+        return redirect(url_for('office.batch_view', batch_id=batch_id))
+
+    return send_file(zip_path, as_attachment=True, download_name=f"{batch_id}_pdf.zip")
+
+
+@office_bp.route('/batch/<batch_id>/merged-pdf')
+@permission_required('group_export')
+def download_batch_merged_pdf(batch_id):
+    """Збирає всі документи пакету в єдиний PDF для зручного друку."""
+    import shutil
+    import tempfile
+    from routes.db import get_db
+    from routes.diploma_supplements import (
+        convert_docx_to_pdf,
+        get_diploma_settings,
+        merge_pdfs_with_fitz,
+    )
+
+    _check_batch_access(batch_id)
+    items = get_batch_items(batch_id)
+    if not items:
+        flash('Пакет документів не знайдено (можливо, сесія застаріла)', 'danger')
+        return redirect(url_for('admin.group_export'))
+
+    for doc_id, _name in items:
+        with _LOCK:
+            s = _SESSIONS.get(doc_id)
+        if s:
+            _forcesave_and_wait(s, doc_id, timeout=10)
+
+    duplex_arg = request.args.get('duplex')
+    if duplex_arg in ('0', '1'):
+        duplex_pad = (duplex_arg == '1')
+    else:
+        conn = get_db()
+        try:
+            duplex_pad = get_diploma_settings(conn).get('pdf_duplex_pad') == '1'
+        finally:
+            conn.close()
+
+    merged_path = resolve_under_dir(SESSIONS_DIR, f"batch_merged_{batch_id}.pdf")
+    if not merged_path:
+        abort(400)
+
+    tmp_dir = tempfile.mkdtemp(prefix='batch_merge_')
+    pdf_paths = []
+    last_err = ''
+    try:
+        for doc_id, _display_name in items:
+            with _LOCK:
+                s = _SESSIONS.get(doc_id)
+            if not s or not os.path.exists(s['path']):
+                continue
+            pdf_out = os.path.join(tmp_dir, f"{doc_id}.pdf")
+            ok, err = convert_docx_to_pdf(s['path'], pdf_out, doc_id_for_onlyoffice=doc_id)
+            if ok and os.path.isfile(pdf_out):
+                pdf_paths.append(pdf_out)
+            else:
+                last_err = err or last_err
+
+        if not pdf_paths:
+            flash(last_err or 'Не вдалося конвертувати документи пакету в PDF', 'danger')
+            return redirect(url_for('office.batch_view', batch_id=batch_id))
+
+        ok_m, err_m = merge_pdfs_with_fitz(pdf_paths, merged_path, duplex_pad=duplex_pad)
+        if not ok_m:
+            flash(err_m or 'Не вдалося об’єднати PDF', 'danger')
+            return redirect(url_for('office.batch_view', batch_id=batch_id))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return send_file(
+        merged_path,
+        as_attachment=True,
+        download_name=f"print_{batch_id}.pdf",
+        mimetype='application/pdf',
+    )
+
+
+@office_bp.route('/batch/<batch_id>/mark-printed', methods=['POST'])
+@permission_required('group_export')
+def mark_batch_printed(batch_id):
+    """Позначає всі згенеровані додатки з пакета як «Надруковано» у журналі."""
+    from datetime import datetime
+    from routes.db import get_db
+    from routes.diploma_supplements import ensure_diploma_supplement_schema
+
+    _check_batch_access(batch_id)
+    with _LOCK:
+        doc_ids = list(_BATCHES.get(batch_id, []))
+        sessions = [_SESSIONS[d] for d in doc_ids if d in _SESSIONS]
+
+    if not sessions:
+        flash('Пакет документів не знайдено', 'warning')
+        return redirect(url_for('admin.group_export'))
+
+    user = current_username()
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    updated = 0
+    conn = get_db()
+    try:
+        ensure_diploma_supplement_schema(conn)
+        for s in sessions:
+            lid = s.get('log_id')
+            if lid:
+                cur = conn.execute(
+                    "UPDATE diploma_generation_logs SET status = 'printed', printed_at = COALESCE(printed_at, ?), printed_by = COALESCE(printed_by, ?) WHERE id = ?",
+                    (now_str, user, lid),
+                )
+                updated += cur.rowcount
+            elif s.get('student_id'):
+                row = conn.execute(
+                    """
+                    SELECT id FROM diploma_generation_logs
+                    WHERE student_id = ? AND COALESCE(group_id, -1) = COALESCE(?, -1)
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (s['student_id'], s.get('group_id')),
+                ).fetchone()
+                if row:
+                    conn.execute(
+                        "UPDATE diploma_generation_logs SET status = 'printed', printed_at = COALESCE(printed_at, ?), printed_by = COALESCE(printed_by, ?) WHERE id = ?",
+                        (now_str, user, row['id']),
+                    )
+                    updated += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    flash(f"Позначено «Надруковано» у журналі для {updated} документ(ів)", 'success')
+    return redirect(url_for('office.batch_view', batch_id=batch_id))

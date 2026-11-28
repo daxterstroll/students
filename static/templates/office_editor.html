@@ -94,10 +94,12 @@
         </div>
         <div class="actions">
             {% if batch_id %}
-            <a href="{{ url_for('office.download_batch_zip', batch_id=batch_id) }}" class="btn btn-outline"> Скачати zip</a>
+            <a href="{{ url_for('office.batch_view', batch_id=batch_id) }}" class="btn btn-outline">← До списку пакету</a>
+            <a href="{{ url_for('office.download_batch_zip', batch_id=batch_id) }}" class="btn btn-outline">Скачати zip</a>
             {% else %}
             <a href="{{ url_for('students.student_list') }}" class="btn btn-outline">← На головну</a>
             {% endif %}
+            <a href="{{ url_for('office.finalize', doc_id=doc_id, format='pdf') }}" class="btn btn-outline">PDF</a>
             <a href="{{ url_for('office.finalize', doc_id=doc_id) }}" class="btn btn-primary">⬇ Завершити і завантажити</a>
         </div>
     </div>

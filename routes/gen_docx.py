@@ -204,13 +204,16 @@ def format_grade(grade, subject_type):
 
 def get_subjects_grades(student_id, group_id):
     """Получение данных о предметах и их оценках."""
+    from routes.diploma_supplements import ensure_diploma_supplement_schema
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
+        ensure_diploma_supplement_schema(conn)
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT s.id, s.code, s.name, s.credits, s.reduced_credits, s.type, s.reduced_type, s.position, IFNULL(g.grade, '') AS grade
+            SELECT s.id, s.code, s.name, COALESCE(s.name_en, '') AS name_en,
+                   s.credits, s.reduced_credits, s.type, s.reduced_type, s.position, IFNULL(g.grade, '') AS grade
             FROM subjects s
             LEFT JOIN grades g ON g.subject_id = s.id AND g.student_id = ?
             WHERE s.group_id = ?
@@ -229,6 +232,9 @@ def get_subjects_grades(student_id, group_id):
                 subject.pop('reduced_type', None)
                 subject = {k: clean_text(v) for k, v in subject.items()}
                 subject['grade'] = format_grade(subject['grade'], subject['type']) if subject['grade'] else ''
+                subject['display_name'] = (
+                    f"{subject['name']} / {subject['name_en']}" if subject.get('name_en') else subject['name']
+                )
                 valid_subjects.append(subject)
             else:
                 global_logger.warning(f"Неполные данные предмета пропущены: {subject}")
@@ -241,13 +247,16 @@ def get_subjects_grades(student_id, group_id):
 
 def get_practice_data(student_id, group_id):
     """Получение данных о практиках и их оценках."""
+    from routes.diploma_supplements import ensure_diploma_supplement_schema
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
+        ensure_diploma_supplement_schema(conn)
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT p.id, p.code, p.name, p.credits, p.reduced_credits, p.type, p.reduced_type, p.position, IFNULL(ag.grade, '') AS grade
+            SELECT p.id, p.code, p.name, COALESCE(p.name_en, '') AS name_en,
+                   p.credits, p.reduced_credits, p.type, p.reduced_type, p.position, IFNULL(ag.grade, '') AS grade
             FROM practices p
             LEFT JOIN activity_grades ag ON ag.entity_id = p.id AND ag.entity_type = 'practice' AND ag.student_id = ?
             WHERE p.group_id = ?
@@ -266,6 +275,9 @@ def get_practice_data(student_id, group_id):
                 practice.pop('reduced_type', None)
                 practice = {k: clean_text(v) for k, v in practice.items()}
                 practice['grade'] = format_grade(practice['grade'], practice['type']) if practice['grade'] else ''
+                practice['display_name'] = (
+                    f"{practice['name']} / {practice['name_en']}" if practice.get('name_en') else practice['name']
+                )
                 valid_practices.append(practice)
             else:
                 global_logger.warning(f"Неполные данные практики пропущены: {practice}")
@@ -278,13 +290,16 @@ def get_practice_data(student_id, group_id):
 
 def get_coursework_data(student_id, group_id):
     """Получение данных о курсовых работах и их оценках."""
+    from routes.diploma_supplements import ensure_diploma_supplement_schema
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
+        ensure_diploma_supplement_schema(conn)
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT c.id, c.code, c.name, c.credits, c.reduced_credits, c.type, c.reduced_type, c.position, IFNULL(ag.grade, '') AS grade
+            SELECT c.id, c.code, c.name, COALESCE(c.name_en, '') AS name_en,
+                   c.credits, c.reduced_credits, c.type, c.reduced_type, c.position, IFNULL(ag.grade, '') AS grade
             FROM courseworks c
             LEFT JOIN activity_grades ag ON ag.entity_id = c.id AND ag.entity_type = 'coursework' AND ag.student_id = ?
             WHERE c.group_id = ?
@@ -303,6 +318,9 @@ def get_coursework_data(student_id, group_id):
                 coursework.pop('reduced_type', None)
                 coursework = {k: clean_text(v) for k, v in coursework.items()}
                 coursework['grade'] = format_grade(coursework['grade'], coursework['type']) if coursework['grade'] else ''
+                coursework['display_name'] = (
+                    f"{coursework['name']} / {coursework['name_en']}" if coursework.get('name_en') else coursework['name']
+                )
                 valid_courseworks.append(coursework)
             else:
                 global_logger.warning(f"Неполные данные курсовой работы пропущены: {coursework}")
@@ -315,14 +333,18 @@ def get_coursework_data(student_id, group_id):
 
 def get_attestation_data(student_id, group_id):
     """Получение данных об аттестациях и их оценках."""
+    from routes.diploma_supplements import ensure_diploma_supplement_schema
     conn = get_db()
     conn.row_factory = sqlite3.Row
     try:
+        ensure_diploma_supplement_schema(conn)
         is_reduced_program = is_student_on_reduced_program(conn, student_id, group_id)
 
         query = """
-            SELECT a.id, a.code, a.name, a.credits, a.reduced_credits, a.type, a.reduced_type,
-                   a.position, IFNULL(ag.grade, '') AS grade, IFNULL(ag.name, '') AS student_name
+            SELECT a.id, a.code, a.name, COALESCE(a.name_en, '') AS att_name_en,
+                   a.credits, a.reduced_credits, a.type, a.reduced_type,
+                   a.position, ag.id AS ag_id, IFNULL(ag.grade, '') AS grade,
+                   IFNULL(ag.name, '') AS student_name, IFNULL(ag.name_en, '') AS topic_en
             FROM attestations a
             LEFT JOIN activity_grades ag
                    ON ag.entity_id = a.id AND ag.entity_type = 'attestation' AND ag.student_id = ?
@@ -335,6 +357,7 @@ def get_attestation_data(student_id, group_id):
         results = conn.execute(query, params).fetchall()
         attestations = [dict(r) for r in results]
         valid_attestations = []
+        cache_dirty = False
 
         # Імпорт тут, а не зверху модуля — щоб уникнути циклічної залежності
         # (documents.py імпортує admin/__init__ тощо).
@@ -343,6 +366,9 @@ def get_attestation_data(student_id, group_id):
         for attestation in attestations:
             if all(key in attestation for key in ('id', 'code', 'name', 'credits', 'type',
                                                    'position', 'grade', 'student_name')):
+                raw_ag_id = attestation.pop('ag_id', None)
+                saved_att_en = (attestation.pop('att_name_en', '') or '').strip()
+                saved_topic_en = (attestation.pop('topic_en', '') or '').strip()
                 apply_track_overrides(attestation, is_reduced_program)
                 attestation.pop('reduced_credits', None)
                 attestation.pop('reduced_type', None)
@@ -352,11 +378,28 @@ def get_attestation_data(student_id, group_id):
                 # ── Складання комбінованого рядка «Назва атестації «Тема» / Назва атестації (EN) «Тема (EN)»» ──
                 name_ua = (attestation.get('name') or '').strip()
                 topic_ua = (attestation.get('student_name') or '').strip()
+                name_en = saved_att_en
+                topic_en = saved_topic_en
+
+                if name_ua and not name_en:
+                    name_en = translate_to_en(name_ua) or ''
+                if topic_ua and not topic_en:
+                    topic_en = translate_to_en(topic_ua) or ''
+                    if topic_en and raw_ag_id:
+                        try:
+                            conn.execute(
+                                "UPDATE activity_grades SET name_en = ? WHERE id = ? AND COALESCE(TRIM(name_en), '') = ''",
+                                (topic_en, raw_ag_id),
+                            )
+                            cache_dirty = True
+                        except Exception:
+                            pass
+
+                attestation['name_en'] = name_en
+                attestation['topic_ua'] = topic_ua
+                attestation['topic_en'] = topic_en
 
                 if name_ua and topic_ua:
-                    name_en = translate_to_en(name_ua) or ''
-                    topic_en = translate_to_en(topic_ua) or ''
-
                     ua_part = f'{name_ua} «{topic_ua}»'
                     if name_en and topic_en:
                         en_part = f'{name_en} «{topic_en}»'
@@ -368,13 +411,15 @@ def get_attestation_data(student_id, group_id):
                         attestation['display_name'] = ua_part
                 elif topic_ua:
                     # Назва атестації порожня — виводимо лише тему
-                    attestation['display_name'] = topic_ua
+                    attestation['display_name'] = f'{topic_ua} / {topic_en}' if topic_en else topic_ua
                 else:
-                    attestation['display_name'] = name_ua
+                    attestation['display_name'] = f'{name_ua} / {name_en}' if (name_ua and name_en) else name_ua
 
                 valid_attestations.append(attestation)
             else:
                 global_logger.warning(f"Неполные данные аттестации пропущены: {attestation}")
+        if cache_dirty:
+            conn.commit()
         return valid_attestations
     except Exception as e:
         global_logger.error(f"[get_attestation_data] Ошибка: {e}")
@@ -408,8 +453,21 @@ def apply_reduced_program_texts(student_dict):
     student_dict['program_credits'] = override
 
 
-def gen_doc(student: dict, military: dict, template='template.docx', out='out.docx', user_name='Система'):
+def gen_doc(
+    student: dict,
+    military: dict,
+    template='template.docx',
+    out='out.docx',
+    user_name='Система',
+    *,
+    record_log=False,
+    capture_context=None,
+):
     """Генерирует документ для студента на основе шаблона."""
+    from routes.diploma_supplements import (
+        compute_student_diploma_metrics,
+        record_diploma_generation,
+    )
     global_logger.debug(f"Запуск gen_doc: student_id={student.get('id', 'unknown')}, template={template}, out={out}")
 
     if not os.path.exists(template):
@@ -614,52 +672,81 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         context['accreditation_text'] = ''
         context['accreditation_text_en'] = ''
 
-    context['diploma_with_honor_text'] = ''
-    context['diploma_with_honor_text_en'] = ''
+    metrics = {}
+    if student_dict.get('id'):
+        try:
+            conn_m = get_db()
+            conn_m.row_factory = sqlite3.Row
+            try:
+                metrics = compute_student_diploma_metrics(
+                    conn_m,
+                    int(student_dict['id']),
+                    int(student_dict['group_id']) if student_dict.get('group_id') else None,
+                )
+            finally:
+                conn_m.close()
+        except Exception as e:
+            global_logger.warning(f"Помилка розрахунку метрик диплома: {e}")
 
-    all_grades = []
-    if context.get('subjects_grades'):
-        all_grades += context['subjects_grades']
-    if context.get('practice_data'):
-        all_grades += context['practice_data']
+    if metrics:
+        diploma_with_honours = bool(metrics.get('final_honours'))
+    else:
+        all_grades = []
+        if context.get('subjects_grades'):
+            all_grades += context['subjects_grades']
+        if context.get('practice_data'):
+            all_grades += context['practice_data']
 
-    total_grades = 0
-    excellent_count = 0
-    satisfactory_count = 0
-    fail_count = 0
+        total_grades = 0
+        excellent_count = 0
+        satisfactory_count = 0
+        fail_count = 0
 
-    for g in all_grades:
-        grade_text = g.get('grade', '')
-        if not grade_text:
-            continue
-        total_grades += 1
-        if ' A' in grade_text:
-            excellent_count += 1
-        elif ' D' in grade_text or ' E' in grade_text:
-            satisfactory_count += 1
-        elif ' Fx' in grade_text or ' F' in grade_text or 'Незадовільно' in grade_text or 'Fail' in grade_text:
-            fail_count += 1
+        for g in all_grades:
+            grade_text = g.get('grade', '')
+            if not grade_text:
+                continue
+            total_grades += 1
+            if ' A' in grade_text:
+                excellent_count += 1
+            elif ' D' in grade_text or ' E' in grade_text:
+                satisfactory_count += 1
+            elif ' Fx' in grade_text or ' F' in grade_text or 'Незадовільно' in grade_text or 'Fail' in grade_text:
+                fail_count += 1
 
-    attestation_grade = ''
-    if context.get('attestation_data'):
-        attestation_grade = next(
-            (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')), ''
+        attestation_grade = ''
+        if context.get('attestation_data'):
+            attestation_grade = next(
+                (g.get('grade', '') for g in context['attestation_data'] if g.get('grade')), ''
+            )
+
+        diploma_with_honours = (
+            total_grades > 0
+            and excellent_count / total_grades >= 0.75
+            and satisfactory_count == 0
+            and fail_count == 0
+            and ' A' in attestation_grade
         )
 
-    diploma_with_honours = (
-        total_grades > 0
-        and excellent_count / total_grades >= 0.75
-        and satisfactory_count == 0
-        and fail_count == 0
-        and ' A' in attestation_grade
-    )
-
+    context['diploma_with_honours_bool'] = diploma_with_honours
     if diploma_with_honours:
         context['diploma_with_honor_text'] = 'Диплом з відзнакою'
         context['diploma_with_honor_text_en'] = 'Diploma with honours'
     else:
         context['diploma_with_honor_text'] = 'Інформація відсутня'
         context['diploma_with_honor_text_en'] = 'Information is absent'
+
+    context['gpa_100'] = metrics['gpa_100'] if metrics.get('gpa_100') is not None else ''
+    context['weighted_gpa_100'] = metrics['weighted_gpa_100'] if metrics.get('weighted_gpa_100') is not None else ''
+    context['gpa_5'] = metrics['gpa_5'] if metrics.get('gpa_5') is not None else ''
+    context['total_ects_credits'] = metrics.get('total_ects_credits') or ''
+    context['total_hours'] = metrics.get('total_hours') or ''
+    context['excellent_pct'] = metrics.get('excellent_pct', 0)
+    context['excellent_count'] = metrics.get('excellent_count', 0)
+    context['total_graded_count'] = metrics.get('graded_count', 0)
+    context['graduation_order_number'] = metrics.get('graduation_order_number', '')
+    context['graduation_order_date'] = metrics.get('graduation_order_date', '')
+    context['graduation_order_date_slash'] = metrics.get('graduation_order_date_slash', '')
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
@@ -683,31 +770,15 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
                 dates_en = f"01/09/{start_year}–30/09/{end_year}"
 
         def _institution_short_name(full_text):
-            """Скорочує повну назву закладу до першої лапкової частини.
-
-            Приклади:
-              'Приватний ВНЗ «Європейський університет». Приватна форма...'
-                → 'Приватний ВНЗ «Європейський університет»'
-              "Private Higher Educational Institution 'European University'. Private..."
-                → "Private Higher Educational Institution 'European University'"
-
-            ПРОБЛЕМА, яку вирішує ця версія:
-              Київська ліцензія в seed-даних має UA з «...», а EN — з одинарними
-              лапками '...'. Попередня версія шукала тільки «» → на EN
-              повертала '' → fallback на default (Lviv Branch) → у документі
-              UA показував Київ, а EN — Львів. Тепер підтримуються всі типові
-              види лапок, і UA+EN беруться з ОДНІЄЇ ліцензії послідовно.
-            """
             if not full_text:
                 return ''
 
-            # Порядок важливий: спершу типографські «» та “”, потім прямі.
             quote_pairs = [
-                ('«', '»'),   # French quotes — укр. типографіка
-                ('“', '”'),   # curly double
-                ('„', '“'),   # German-style
-                ('"', '"'),   # straight double
-                ("'", "'"),   # straight single (SQLite seed: 'European University')
+                ('«', '»'),
+                ('“', '”'),
+                ('„', '“'),
+                ('"', '"'),
+                ("'", "'"),
             ]
 
             for open_q, close_q in quote_pairs:
@@ -740,6 +811,9 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
         context['diploma_number'] = ''
         context['appendix_number'] = ''
 
+    if isinstance(capture_context, dict):
+        capture_context.update(context)
+
     try:
         doc.render(context)
     except Exception as e:
@@ -754,6 +828,23 @@ def gen_doc(student: dict, military: dict, template='template.docx', out='out.do
     except Exception as e:
         global_logger.error(f"Ошибка при сохранении документа {out}: {e}")
         raise
+
+    if record_log and student_dict.get('id'):
+        try:
+            conn_log = get_db()
+            try:
+                record_diploma_generation(
+                    conn_log,
+                    int(student_dict['id']),
+                    int(student_dict['group_id']) if student_dict.get('group_id') else None,
+                    template,
+                    user_name,
+                    metrics=metrics or None,
+                )
+            finally:
+                conn_log.close()
+        except Exception as e:
+            global_logger.warning(f"Не вдалося записати в журнал генерації дипломів: {e}")
 
     return out
 
