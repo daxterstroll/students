@@ -470,14 +470,118 @@ def _get_report_dates():
         'reconciliation_deadline': date(year, 12, 1),
     }
 
+def ensure_military_license_schema(conn) -> None:
+    """
+    Ідемпотентно додає колонку `show_in_military` до `institution_licenses`.
+    При першому створенні колонки за замовчуванням вмикає Львівські ліцензії
+    (та базову ліцензію is_base = 1), щоб у списках військового обліку
+    і Telegram-бота по дефолту відображались лише Львівські ліцензії.
+    """
+    cols = {
+        (r['name'] if hasattr(r, 'keys') else r[1])
+        for r in conn.execute("PRAGMA table_info(institution_licenses)").fetchall()
+    }
+    if not cols or 'show_in_military' in cols:
+        return
+
+    conn.execute(
+        "ALTER TABLE institution_licenses ADD COLUMN show_in_military INTEGER NOT NULL DEFAULT 0"
+    )
+    rows = conn.execute(
+        "SELECT id, is_base, short_name_ua, name_ua FROM institution_licenses"
+    ).fetchall()
+    default_ids = []
+    for r in rows:
+        rid = r['id'] if hasattr(r, 'keys') else r[0]
+        is_b = r['is_base'] if hasattr(r, 'keys') else r[1]
+        sh = (r['short_name_ua'] if hasattr(r, 'keys') else r[2]) or ''
+        nm = (r['name_ua'] if hasattr(r, 'keys') else r[3]) or ''
+        if is_b or ('львів' in sh.casefold()) or ('львів' in nm.casefold()):
+            default_ids.append(int(rid))
+    if default_ids:
+        ph = ','.join('?' * len(default_ids))
+        conn.execute(
+            f"UPDATE institution_licenses SET show_in_military = 1 WHERE id IN ({ph})",
+            default_ids,
+        )
+    conn.commit()
+
+
+def _get_military_visible_licenses(conn) -> tuple[set[int], str]:
+    """
+    Повертає (set(license_id), 'Коротка1, Коротка2') для ліцензій, які
+    налаштовані для відображення у списках військового обліку (show_in_military = 1).
+    Якщо жодна не позначена — fallback на базову (is_base = 1) або Львівські.
+    """
+    ensure_military_license_schema(conn)
+    rows = conn.execute(
+        """
+        SELECT id, short_name_ua, name_ua
+        FROM institution_licenses
+        WHERE COALESCE(show_in_military, 0) = 1
+        ORDER BY COALESCE(is_base, 0) DESC, id ASC
+        """
+    ).fetchall()
+    if not rows:
+        rows = conn.execute(
+            """
+            SELECT id, short_name_ua, name_ua
+            FROM institution_licenses
+            WHERE COALESCE(is_base, 0) = 1
+            ORDER BY id ASC
+            """
+        ).fetchall()
+    if not rows:
+        all_rows = conn.execute(
+            "SELECT id, short_name_ua, name_ua FROM institution_licenses ORDER BY id ASC"
+        ).fetchall()
+        rows = [
+            r for r in all_rows
+            if 'львів' in ((r['short_name_ua'] if hasattr(r, 'keys') else r[1]) or '').casefold()
+            or 'львів' in ((r['name_ua'] if hasattr(r, 'keys') else r[2]) or '').casefold()
+        ]
+    ids: set[int] = set()
+    labels: list[str] = []
+    for r in rows:
+        rid = int(r['id'] if hasattr(r, 'keys') else r[0])
+        sh = ((r['short_name_ua'] if hasattr(r, 'keys') else r[1]) or '').strip()
+        nm = ((r['name_ua'] if hasattr(r, 'keys') else r[2]) or '').strip()
+        ids.add(rid)
+        lbl = sh or nm
+        if lbl and lbl not in labels:
+            labels.append(lbl)
+    return ids, (', '.join(labels) if labels else '—')
+
+
+def _set_military_visible_licenses(conn, license_ids: list[int] | set[int]) -> tuple[bool, str]:
+    """
+    Оновлює набір ліцензій `show_in_military = 1`.
+    Повертає (saved_ok, label_str). Порожній вибір заборонено.
+    """
+    ensure_military_license_schema(conn)
+    valid_rows = conn.execute("SELECT id FROM institution_licenses").fetchall()
+    valid_ids = {int(r['id'] if hasattr(r, 'keys') else r[0]) for r in valid_rows}
+    chosen = sorted({int(x) for x in license_ids if int(x) in valid_ids})
+    if not chosen:
+        _, cur_label = _get_military_visible_licenses(conn)
+        return False, cur_label
+    conn.execute("UPDATE institution_licenses SET show_in_military = 0")
+    ph = ','.join('?' * len(chosen))
+    conn.execute(
+        f"UPDATE institution_licenses SET show_in_military = 1 WHERE id IN ({ph})",
+        chosen,
+    )
+    conn.commit()
+    _, new_label = _get_military_visible_licenses(conn)
+    return True, new_label
+
+
 def _get_base_license_id(conn):
     """
     Повертає id базової ліцензії (institution_licenses.is_base = 1).
-    За Постановою №812 військовий облік ведеться для конкретного закладу
-    (Львівська філія ПВНЗ «Європейський університет»). Тому за замовчуванням
-    на дашборді, у списках груп і в Додатку 12 показуються лише студенти
-    цієї ліцензії (+ студенти без ліцензії, щоб їх не загубити).
+    За Постановою №812 військовий облік ведеться для конкретного закладу.
     """
+    ensure_military_license_schema(conn)
     row = conn.execute(
         "SELECT id FROM institution_licenses WHERE is_base = 1 LIMIT 1"
     ).fetchone()
@@ -488,6 +592,7 @@ def _get_base_license_id(conn):
 
 def _get_base_license_info(conn):
     """Повертає (id, short_name_ua, name_ua) базової ліцензії або (None, '', '')."""
+    ensure_military_license_schema(conn)
     row = conn.execute(
         "SELECT id, short_name_ua, name_ua FROM institution_licenses "
         "WHERE is_base = 1 LIMIT 1"
@@ -495,6 +600,7 @@ def _get_base_license_info(conn):
     if not row:
         return None, '', ''
     return row[0], (row[1] or ''), (row[2] or '')
+
 
 def _load_enrollment_licenses(conn) -> dict:
     """student_id → set(license_id) усіх активних enrollment'ів.
@@ -530,16 +636,24 @@ def _load_enrollment_license_shorts(conn) -> dict:
     return result
 
 
-def _has_base_license(student_id, enrollment_licenses, base_license_id):
-    """True, якщо студент має активний enrollment під базовою ліцензією,
-    АБО взагалі не має активних enrollment'ів з ліцензією (тоді показуємо
-    з бейджем «без ліцензії» — дані потребують виправлення)."""
+def _has_base_license(student_id, enrollment_licenses, base_license_id, student_license_id=None):
+    """True, якщо студент має активний enrollment під обраними ліцензіями ВО
+    (або students.license_id входить до них), АБО взагалі не має ліцензії
+    (тоді показуємо з бейджем «без ліцензії» — дані потребують виправлення)."""
     if base_license_id is None:
         return True
-    lic_ids = enrollment_licenses.get(student_id, set())
-    if not lic_ids:
+    if isinstance(base_license_id, (set, frozenset, list, tuple)):
+        allowed = {int(x) for x in base_license_id if x is not None}
+    else:
+        allowed = {int(base_license_id)}
+    if not allowed:
         return True
-    return base_license_id in lic_ids
+    lic_ids = enrollment_licenses.get(student_id, set())
+    if lic_ids:
+        return bool(set(lic_ids) & allowed)
+    if student_license_id is not None:
+        return int(student_license_id) in allowed
+    return True
 
 
 def _normalize_tck_key(value):
@@ -602,9 +716,10 @@ def dashboard():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    # Фільтр по базовій ліцензії (Постанова №812)
+    # Фільтр по налаштованих ліцензіях військового обліку (за замовчуванням — Львівська)
     show_all_licenses = request.args.get('show_all_licenses') == '1'
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    base_license_id, _, _ = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
     students = conn.execute("""
         SELECT s.id, s.gender, s.dismissed_at, s.license_id,
@@ -659,7 +774,7 @@ def dashboard():
         # Студент належить базовій ліцензії, якщо хоч один його АКТИВНИЙ
         # enrollment — під нею. Студенти без ліцензій показуються з бейджем.
         if not show_all_licenses:
-            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(s['id'], enrollment_licenses, allowed_license_ids, s['license_id']):
                 continue
 
         # ── 1. Заморожені — рахуємо окремо, далі не йдемо ──
@@ -778,7 +893,7 @@ def dashboard():
         # Ліцензія (Постанова №812)
         show_all_licenses=show_all_licenses,
         base_license_id=base_license_id,
-        base_license_label=base_license_short or base_license_name or '—',
+        base_license_label=base_license_label,
     )
     
 
@@ -863,8 +978,9 @@ def group_list(category):
     # ── Основні дані ─────────────────────────────────────────
     # Приєднуємо frozen_students, щоб знати, хто заморожений.
     # Архівні/відчислені (archived = 1) — завжди відсіюємо.
-    # Базова ліцензія (Постанова №812)
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    # Налаштовані ліцензії ВО (за замовчуванням — Львівська)
+    base_license_id, _, _ = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
 
     rows_raw = conn.execute("""
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
@@ -897,10 +1013,10 @@ def group_list(category):
     enrollment_licenses = _load_enrollment_licenses(conn)
     enrollment_license_shorts = _load_enrollment_license_shorts(conn)   
     for r in rows_raw:
-        # ── Фільтр базової ліцензії (Постанова №812) ──
+        # ── Фільтр ліцензій ВО (Постанова №812) ──
         # Без ліцензії (NULL) — показуємо завжди (з бейджем).
         if not show_all_licenses:
-            if not _has_base_license(r['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(r['id'], enrollment_licenses, allowed_license_ids, r['license_id']):
                 continue
 
         # Заморожені — тільки якщо увімкнено чекбокс
@@ -1037,7 +1153,7 @@ def group_list(category):
         include_dismissed=include_dismissed,
         show_all_licenses=show_all_licenses,
         base_license_id=base_license_id,
-        base_license_label=base_license_short or base_license_name or '—',
+        base_license_label=base_license_label,
         report_mode=report_mode,
         report_date_custom=report_date_custom,
         report_date_ua=_format_date_ua(report_date),
@@ -1237,7 +1353,7 @@ def issues_list():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
 
     groups = conn.execute("""
@@ -1274,9 +1390,9 @@ def issues_list():
     issue_counts = {k: 0 for k in ISSUE_LABELS}
 
     for r in rows_raw:
-        # Фільтр базової ліцензії (Постанова №812)
+        # Фільтр ліцензій ВО (Постанова №812)
         if not show_all_licenses:
-            if not _has_base_license(r['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(r['id'], enrollment_licenses, allowed_license_ids, r['license_id']):
                 continue
 
         # Заморожені
@@ -1404,7 +1520,7 @@ def issues_list():
         study_form_options=STUDY_FORM_OPTIONS,
         include_frozen=include_frozen,
         show_all_licenses=show_all_licenses,
-        base_license_label=base_license_short or base_license_name or '—',
+        base_license_label=base_license_label,
         enabled_issues=enabled,
         issue_labels=ISSUE_LABELS,
         issue_counts=issue_counts,
@@ -1471,10 +1587,11 @@ def summary():
     # Відсіюємо archived та заморожених.
     # Базова ліцензія (Постанова №812)
     show_all_licenses = request.args.get('show_all_licenses') == '1'
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    base_license_id, _, _ = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
 
     metrics = _compute_dodatok_12_metrics(
-        conn, report_date, show_all_licenses, base_license_id
+        conn, report_date, show_all_licenses, allowed_license_ids
     )
     conn.close()
 
@@ -1581,7 +1698,7 @@ def summary():
         dismissed_this_year=dismissed_this_year,
         show_all_licenses=show_all_licenses,
         base_license_id=base_license_id,
-        base_license_label=base_license_short or base_license_name or '—',
+        base_license_label=base_license_label,
         report_mode=report_mode,
         report_date_custom=report_date_custom,
         report_date_ua=_format_date_ua(report_date),
@@ -1685,7 +1802,7 @@ def _fetch_dodatok_5_rows(conn, category, report_date, show_all_licenses,
 
         # Фільтр ліцензії
         if not show_all_licenses:
-            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id, s['license_id']):
                 continue
 
         # Категорія
@@ -1833,11 +1950,11 @@ def export_dodatok_5(category):
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
 
     rows = _fetch_dodatok_5_rows(
         conn, category, report_date, show_all_licenses,
-        base_license_id, base_license_short or base_license_name,
+        allowed_license_ids, base_license_label,
         tck_filter=tck_filter,
         study_form=study_form,
     )
@@ -1861,7 +1978,7 @@ def export_dodatok_5(category):
 
     xlsx_io = generate_dodatok_5_xlsx(
         category, report_date, rows,
-        base_license_label=base_license_short or base_license_name,
+        base_license_label=base_license_label,
     )
 
     # ── Логування в журнал ──
@@ -1938,7 +2055,7 @@ def _compute_dodatok_12_metrics(conn, report_date, show_all_licenses, base_licen
 
     for s in students:
         if not show_all_licenses:
-            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(s['id'], enrollment_licenses, base_license_id, s['license_id']):
                 continue
 
         if not s['military_id']:
@@ -2000,12 +2117,8 @@ def _compute_dodatok_12_metrics(conn, report_date, show_all_licenses, base_licen
         for e in expelled_rows:
             if _year_from_order_date(e['order_date']) != report_year:
                 continue
-            if not show_all_licenses and base_license_id is not None:
-                lic_ids = enrollment_licenses.get(e['student_id'], set())
-                if lic_ids:
-                    if base_license_id not in lic_ids:
-                        continue
-                elif e['license_id'] is not None and e['license_id'] != base_license_id:
+            if not show_all_licenses and base_license_id:
+                if not _has_base_license(e['student_id'], enrollment_licenses, base_license_id, e['license_id']):
                     continue
             if not e['military_id']:
                 continue
@@ -2081,14 +2194,14 @@ def export_dodatok_12():
     conn = get_db()
     conn.row_factory = sqlite3.Row
 
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
 
     data = _fetch_dodatok_12_data(
-        conn, report_date, show_all_licenses, base_license_id,
+        conn, report_date, show_all_licenses, allowed_license_ids,
     )
     conn.close()
 
-    data['base_license_label'] = base_license_short or base_license_name or '—'
+    data['base_license_label'] = base_license_label
     data['show_all_licenses'] = show_all_licenses
 
     xlsx_io = generate_dodatok_12_xlsx(data, report_date)
@@ -2814,10 +2927,13 @@ def dodatok_4_list():
     status = (request.args.get('status') or 'need').strip()
     if status not in ('need', 'sent', 'all'):
         status = 'need'
+    show_all_licenses = request.args.get('show_all_licenses') == '1'
 
     conn = get_db()
     conn.row_factory = sqlite3.Row
     _ensure_dodatok4_columns(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
+    enrollment_licenses = _load_enrollment_licenses(conn)
 
     tck_offices = conn.execute("""
         SELECT name_ua FROM tck_offices WHERE is_active = 1
@@ -2826,7 +2942,7 @@ def dodatok_4_list():
 
     rows = conn.execute("""
         SELECT s.id, s.last_name_UA, s.first_name_UA, s.middle_name_UA,
-               s.birth_date, s.tax_id,
+               s.birth_date, s.tax_id, s.license_id,
                m.registry_number, m.military_registration_document,
                m.vos_code, m.military_rank, m.tck_name,
                m.change_credentials, m.reason_for_changing_credentials,
@@ -2843,6 +2959,9 @@ def dodatok_4_list():
 
     filtered = []
     for r in rows:
+        if not show_all_licenses:
+            if not _has_base_license(r['id'], enrollment_licenses, allowed_license_ids, r['license_id']):
+                continue
         needs = _dodatok4_needs_resend(r)
         if status == 'need' and not needs:
             continue
@@ -2886,6 +3005,8 @@ def dodatok_4_list():
         study_form_options=STUDY_FORM_OPTIONS,
         status=status,
         tck_offices=tck_offices,
+        show_all_licenses=show_all_licenses,
+        base_license_label=base_license_label,
     )
 
 
@@ -3252,7 +3373,7 @@ def _collect_military_files_overview(
     Уся помісячна прив'язка будується СТРОГО за датою «Сформовано:», зчитаною
     безпосередньо з самого PDF-файлу (без підміни датою завантаження uploaded_at).
     """
-    base_license_id, base_license_short, base_license_name = _get_base_license_info(conn)
+    allowed_license_ids, base_license_label = _get_military_visible_licenses(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
 
     students = conn.execute("""
@@ -3295,7 +3416,7 @@ def _collect_military_files_overview(
 
     for s in students:
         if not show_all_licenses:
-            if not _has_base_license(s['id'], enrollment_licenses, base_license_id):
+            if not _has_base_license(s['id'], enrollment_licenses, allowed_license_ids, s['license_id']):
                 continue
 
         if s['frozen_id'] and not include_frozen:
@@ -3474,7 +3595,7 @@ def _collect_military_files_overview(
         'need_contact_rows': need_contact_rows,
         'month_options': month_options,
         'month_student_counts': month_student_counts,
-        'base_license_label': base_license_short or base_license_name or '—',
+        'base_license_label': base_license_label,
     }
 
 

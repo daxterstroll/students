@@ -22,13 +22,13 @@
         Вимикайте перемикачем ті, що вже не актуальні - вони зникнуть зі списку вибору при додаванні студента, але наявні студенти з цією ліцензією продовжать працювати без змін.
         Оформлення поновлення або зміна ліцензій — на сторінках «ПОНОВЛЕННЯ» та «ПОНОВЛЕННЯ: додати студентів» (з наказом).
         <hr class="my-2">
+        <strong><i class="bi bi-shield-check me-1 text-primary"></i>У списках ВО (Військовий облік та Telegram-бот)</strong> —
+        виберіть одну або декілька ліцензій, які за замовчуванням показуватимуться на дашборді, у списках Додатку 4/5/12, файлах та зведенні Telegram-бота
+        (за замовчуванням увімкнена Львівська; за потреби можна додати ще Київську тощо).
+        Зараз обрані: <strong>{{ (licenses|selectattr('show_in_military')|map(attribute='short_name_ua')|list|join(', ')) or 'не призначено' }}</strong>.
+        <br>
         <strong><i class="bi bi-star-fill me-1 text-info"></i>Базова ліцензія</strong> —
-        це ліцензія закладу, для якого ведеться військовий облік
-        (модуль «Військовий облік», Постанова №812). Може бути рівно одна.
-        На дашборді, у списках груп і в Додатку 12 за замовчуванням показуються
-        <strong>тільки студенти базової ліцензії</strong> (плюс студенти без ліцензії — з бейджем «без ліцензії»,
-        щоб їх не загубити). Решта ліцензій доступна через чекбокс «Показати всі ліцензії».
-        Зараз базова: <strong>{{ (licenses|selectattr('is_base')|map(attribute='short_name_ua')|first) or 'не призначена' }}</strong>.
+        основна ліцензія закладу (може бути одна): <strong>{{ (licenses|selectattr('is_base')|map(attribute='short_name_ua')|first) or 'не призначена' }}</strong>.
     </div>
 
     <div class="card mb-4">
@@ -71,7 +71,10 @@
                             <th class="text-center" style="width:110px;" title="Актуальна для вибору при додаванні студента">
                                 Актуальна
                             </th>
-                            <th class="text-center" style="width:120px;" title="Базова ліцензія — для якої ведеться військовий облік (Постанова №812)">
+                            <th class="text-center" style="width:130px;" title="Показувати у списках військового обліку та Telegram-бота за замовчуванням">
+                                У списках ВО
+                            </th>
+                            <th class="text-center" style="width:120px;" title="Базова ліцензія закладу">
                                 Базова
                             </th>
                             <th class="text-end" style="width:160px;"></th>
@@ -82,11 +85,18 @@
                         <tr class="{% if not l.is_active %}text-muted{% endif %}{% if l.is_base %} license-base-row{% endif %}">
                             <td class="fw-semibold">
                                 {{ l.short_name_ua or '—' }}
+                                {% if l.show_in_military %}
+                                <span class="badge bg-primary-subtle text-primary-emphasis ms-1"
+                                      style="font-size:.65rem;"
+                                      title="Відображається у списках військового обліку та Telegram-бота">
+                                    <i class="bi bi-shield-check"></i> ВО
+                                </span>
+                                {% endif %}
                                 {% if l.is_base %}
                                 <span class="badge bg-warning-subtle text-warning-emphasis ms-1"
                                       style="font-size:.65rem;"
-                                      title="Базова ліцензія для військового обліку (Постанова №812)">
-                                    <i class="bi bi-star-fill"></i> для військ. обліку
+                                      title="Базова ліцензія закладу">
+                                    <i class="bi bi-star-fill"></i> базова
                                 </span>
                                 {% endif %}
                             </td>
@@ -102,6 +112,16 @@
                                 </form>
                             </td>
                             <td class="text-center">
+                                <form method="POST" class="d-inline">
+                                    <input type="hidden" name="action" value="toggle_military_visible">
+                                    <input type="hidden" name="id" value="{{ l.id }}">
+                                    <button type="submit" class="btn btn-sm {% if l.show_in_military %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+                                            title="Увімкнути або вимкнути показ у списках військового обліку за замовчуванням">
+                                        {{ 'так' if l.show_in_military else 'ні' }}
+                                    </button>
+                                </form>
+                            </td>
+                            <td class="text-center">
                                 {% if l.is_base %}
                                 <span class="badge bg-warning-subtle text-warning-emphasis"
                                       title="Ця ліцензія зараз базова">
@@ -109,7 +129,7 @@
                                 </span>
                                 {% else %}
                                 <form method="POST" class="d-inline"
-                                      onsubmit="return confirm('Призначити «{{ l.short_name_ua or l.name_ua }}» базовою ліцензією?\n\nДашборд, списки груп і Додаток 12 за замовчуванням показуватимуть тільки студентів цієї ліцензії (плюс студентів без ліцензії).');">
+                                      onsubmit="return confirm('Призначити «{{ l.short_name_ua or l.name_ua }}» базовою ліцензією?\n\nВона також буде додана до списків військового обліку.');">
                                     <input type="hidden" name="action" value="set_base">
                                     <input type="hidden" name="id" value="{{ l.id }}">
                                     <button type="submit" class="btn btn-sm btn-outline-warning"

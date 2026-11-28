@@ -463,11 +463,24 @@
 {% if active_tab == 'groups' and group_summary %}
 <div class="card mb-3">
     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <strong><i class="bi bi-clipboard2-data me-1"></i>Зведення здачі «Резерв+» по групах за {{ group_summary.vod_month_label }}</strong>
+        <div class="d-flex align-items-center flex-wrap gap-2">
+            <strong><i class="bi bi-clipboard2-data me-1"></i>Зведення здачі «Резерв+» по групах за {{ group_summary.vod_month_label }}</strong>
+            <span class="badge bg-warning-subtle text-warning-emphasis"
+                  title="За замовчуванням показуються лише налаштовані ліцензії ВО">
+                <i class="bi bi-star-fill me-1"></i>
+                {% if grp_filters.gall_lic %}Усі ліцензії{% else %}Ліцензії: {{ military_license_label }}{% endif %}
+            </span>
+            <a href="{{ url_for('military_telegram.telegram_dashboard', tab='settings') }}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2"
+               title="Налаштувати, які ліцензії показувати за замовчуванням">
+                <i class="bi bi-sliders me-1"></i>Налаштувати ліцензії
+            </a>
+        </div>
         <form method="POST" action="{{ url_for('military_telegram.telegram_group_summary_send') }}" class="m-0"
               onsubmit="return confirm('Надіслати індивідуальні зведення по боржниках усім налаштованим старостам/кураторам груп з незданими ВОД?');">
             <input type="hidden" name="vod_month" value="{{ group_summary.vod_month }}">
             <input type="hidden" name="gage" value="{{ grp_filters.gage }}">
+            <input type="hidden" name="gall_lic" value="{{ '1' if grp_filters.gall_lic else '' }}">
             <input type="hidden" name="send_all_missing" value="1">
             <button type="submit" class="btn btn-sm btn-success"
                     {% if group_summary.totals.groups_with_missing == 0 %}disabled{% endif %}>
@@ -526,6 +539,11 @@
                     <input class="form-check-input" type="checkbox" name="gmissing" value="1" id="grpOnlyMissingChk"
                            {% if grp_filters.gmissing %}checked{% endif %}>
                     <label class="form-check-label small" for="grpOnlyMissingChk">Лише з боржниками</label>
+                </div>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" name="gall_lic" value="1" id="grpAllLicChk"
+                           {% if grp_filters.gall_lic %}checked{% endif %} onchange="this.form.submit()">
+                    <label class="form-check-label small" for="grpAllLicChk">Показати всі ліцензії</label>
                 </div>
             </div>
             <div class="col-12 col-md-1 d-flex gap-1">
@@ -661,6 +679,7 @@
                                 <input type="hidden" name="vod_month" value="{{ group_summary.vod_month }}">
                                 <input type="hidden" name="group_id" value="{{ g.group_id }}">
                                 <input type="hidden" name="gage" value="{{ grp_filters.gage }}">
+                                <input type="hidden" name="gall_lic" value="{{ '1' if grp_filters.gall_lic else '' }}">
                                 <button type="submit" class="btn btn-sm btn-outline-success"
                                         {% if not has_target %}disabled title="Спочатку вкажіть Chat ID старости або куратора"{% else %}title="Надіслати зведення в Telegram"{% endif %}>
                                     <i class="bi bi-telegram"></i>
@@ -981,8 +1000,10 @@
                     </div>
                     <div class="col-md-4 d-flex flex-column justify-content-end gap-1 small">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="only_base_license" value="1" id="fltBaseLic">
-                            <label class="form-check-label" for="fltBaseLic">Тільки базова ліцензія</label>
+                            <input class="form-check-input" type="checkbox" name="only_base_license" value="1" id="fltBaseLic" checked>
+                            <label class="form-check-label" for="fltBaseLic">
+                                Тільки обрані ліцензії ВО ({{ military_license_label }})
+                            </label>
                         </div>
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="exclude_women_no_mil" value="1" id="fltExclWomen" checked>
@@ -1668,6 +1689,38 @@
                     </div>
 
                     <hr>
+                    <h6 class="small text-uppercase text-muted mb-2"><i class="bi bi-award me-1"></i>Ліцензії для списків та зведень військового обліку</h6>
+                    <input type="hidden" name="military_licenses_submitted" value="1">
+                    <div class="small text-muted mb-2">
+                        Оберіть одну або декілька ліцензій, які за замовчуванням показуватимуться на дашборді, у списках Додатку 4/5/12, файлах та зведеннях Telegram-бота (за замовчуванням — Львівська).
+                    </div>
+                    <div class="border rounded p-2 mb-3 bg-body-tertiary">
+                        {% for lic in catalogs.licenses %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="military_license_ids"
+                                   value="{{ lic.id }}" id="setMilLic_{{ lic.id }}"
+                                   {% if lic.show_in_military %}checked{% endif %}>
+                            <label class="form-check-label small" for="setMilLic_{{ lic.id }}">
+                                <strong>{{ lic.short_name_ua or lic.name_ua }}</strong>
+                                {% if lic.short_name_ua and lic.name_ua and lic.short_name_ua != lic.name_ua %}
+                                <span class="text-muted">— {{ lic.name_ua }}</span>
+                                {% endif %}
+                                {% if lic.is_base %}
+                                <span class="badge bg-warning-subtle text-warning-emphasis ms-1">базова</span>
+                                {% endif %}
+                            </label>
+                        </div>
+                        {% endfor %}
+                        {% if has_perm('manage_licenses') %}
+                        <div class="mt-2 pt-2 border-top small">
+                            <a href="{{ url_for('admin.manage_licenses') }}" class="text-decoration-none">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>Керувати довідником ліцензій
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <hr>
                     <h6 class="small text-uppercase text-muted mb-2"><i class="bi bi-hdd-stack me-1"></i>Автоочищення тимчасових файлів черги</h6>
                     <div class="form-check form-switch mb-2">
                         <input class="form-check-input" type="checkbox" name="auto_cleanup_enabled" value="1" id="autoCleanSwitch"
@@ -2110,7 +2163,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (f.has_police_reason) document.getElementById('fltPolice').value = f.has_police_reason;
             if (f.tg_link_state) document.getElementById('fltTgState').value = f.tg_link_state;
 
-            document.getElementById('fltBaseLic').checked = !!f.only_base_license;
+            document.getElementById('fltBaseLic').checked = (f.only_base_license !== undefined)
+                ? !!f.only_base_license
+                : !(f.license_ids && f.license_ids.length);
             document.getElementById('fltExclWomen').checked = f.exclude_women_no_mil !== false;
             document.getElementById('fltExclN18').checked = f.exclude_note_18 !== false;
             document.getElementById('fltIncFrozen').checked = !!f.include_frozen;

@@ -68,6 +68,18 @@
                 <div class="col-md-1">
                     <button type="submit" class="btn btn-sm btn-outline-secondary w-100">OK</button>
                 </div>
+                <div class="col-12 pt-1">
+                    <div class="form-check mb-0">
+                        <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
+                               id="showAllLicensesDod4" {% if show_all_licenses %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <label class="form-check-label small" for="showAllLicensesDod4">
+                            <i class="bi bi-star text-warning"></i>
+                            Показати всі ліцензії
+                            <span class="text-muted">(зараз: {{ base_license_label }})</span>
+                        </label>
+                    </div>
+                </div>
             </form>
         </div>
     </div>

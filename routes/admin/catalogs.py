@@ -903,8 +903,10 @@ def manage_licenses():
     Усі підрахунки/перевірки нижче враховують ОБИДВА джерела через
     UNION, щоб не пропустити реальне використання ліцензії.
     """
+    from routes.military_reports import ensure_military_license_schema
     conn = get_db()
     conn.row_factory = sqlite3.Row
+    ensure_military_license_schema(conn)
 
     if request.method == 'POST':
         action = request.form.get('action')
@@ -917,6 +919,43 @@ def manage_licenses():
             if row:
                 log_action(current_username(), f"{'увімкнув' if row['is_active'] else 'вимкнув'} ліцензію: {row['short_name_ua']}")
 
+        elif action == 'toggle_military_visible':
+            license_id = request.form.get('id', type=int)
+            row = conn.execute(
+                "SELECT id, short_name_ua, name_ua, COALESCE(show_in_military, 0) AS show_in_military "
+                "FROM institution_licenses WHERE id = ?",
+                (license_id,),
+            ).fetchone()
+            if not row:
+                flash("Ліцензію не знайдено.", 'error')
+            else:
+                cur_val = int(row['show_in_military'] or 0)
+                if cur_val == 1:
+                    cnt = conn.execute(
+                        "SELECT COUNT(*) AS c FROM institution_licenses WHERE COALESCE(show_in_military, 0) = 1"
+                    ).fetchone()['c']
+                    if cnt <= 1:
+                        flash("Потрібно залишити обраною хоча б одну ліцензію для списків військового обліку.", 'warning')
+                        cur_val = None
+                if cur_val is not None:
+                    new_val = 0 if cur_val == 1 else 1
+                    conn.execute(
+                        "UPDATE institution_licenses SET show_in_military = ? WHERE id = ?",
+                        (new_val, license_id),
+                    )
+                    conn.commit()
+                    label = row['short_name_ua'] or row['name_ua']
+                    flash(
+                        f"Ліцензію «{label}» {'додано до списків' if new_val else 'прибрано зі списків'} військового обліку.",
+                        'success',
+                    )
+                    log_action(
+                        current_username(),
+                        f"{'додав до' if new_val else 'прибрав зі'} списків військового обліку ліцензію: {label} (ID {license_id})",
+                        category='update',
+                        section='Військовий облік',
+                    )
+
         elif action == 'set_base':
             license_id = request.form.get('id')
             row = conn.execute(
@@ -925,13 +964,14 @@ def manage_licenses():
             ).fetchone()
             if row:
                 conn.execute("UPDATE institution_licenses SET is_base = 0 WHERE is_base = 1")
-                conn.execute("UPDATE institution_licenses SET is_base = 1 WHERE id = ?", (license_id,))
+                conn.execute(
+                    "UPDATE institution_licenses SET is_base = 1, show_in_military = 1 WHERE id = ?",
+                    (license_id,),
+                )
                 conn.commit()
                 label = row['short_name_ua'] or row['name_ua']
                 flash(
-                    f"Базову ліцензію змінено на «{label}». "
-                    f"Дашборд, списки груп і Додаток 12 тепер за замовчуванням "
-                    f"показують студентів цієї ліцензії.",
+                    f"Базову ліцензію змінено на «{label}» (також увімкнена для списків військового обліку).",
                     'success',
                 )
                 log_action(
@@ -1055,7 +1095,7 @@ def manage_licenses():
     licenses = []
     for r in conn.execute("""
         SELECT l.id, l.name_ua, l.short_name_ua, l.name_en, l.short_name_en,
-               l.is_active, l.is_base
+               l.is_active, l.is_base, COALESCE(l.show_in_military, 0) AS show_in_military
         FROM institution_licenses l
         ORDER BY l.is_base DESC, l.id
     """).fetchall():

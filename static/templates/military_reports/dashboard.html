@@ -91,10 +91,23 @@
         <h5 class="section-title mb-0">Групи персонального обліку</h5>
         <div class="d-flex align-items-center gap-2 small">
             <span class="badge bg-warning-subtle text-warning-emphasis"
-                  title="За Постановою №812 військовий облік ведеться для базової ліцензії">
+                  title="За замовчуванням показуються студенти налаштованих ліцензій військового обліку">
                 <i class="bi bi-star-fill me-1"></i>
-                Ліцензія: {{ base_license_label }}
+                Ліцензії: {{ base_license_label }}
             </span>
+            {% if has_perm('manage_licenses') %}
+            <a href="{{ url_for('admin.manage_licenses') }}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2"
+               title="Налаштувати ліцензії для списків військового обліку">
+                <i class="bi bi-sliders"></i>
+            </a>
+            {% elif has_perm('manage_military_telegram') %}
+            <a href="{{ url_for('military_telegram.telegram_dashboard', tab='settings') }}"
+               class="btn btn-sm btn-outline-secondary py-0 px-2"
+               title="Налаштувати ліцензії для списків військового обліку">
+                <i class="bi bi-sliders"></i>
+            </a>
+            {% endif %}
             <form method="GET" class="d-inline m-0">
                 <div class="form-check form-check-inline mb-0">
                     <input class="form-check-input" type="checkbox" name="show_all_licenses" value="1"
@@ -303,7 +316,7 @@
                         <i class="bi bi-bar-chart-fill me-2"></i>
                         <strong>Додаток 12</strong> — відомість оперативного обліку
                     </a>
-                    <a href="{{ url_for('military_reports.dodatok_4_list') }}" class="btn btn-outline-primary text-start">
+                    <a href="{{ url_for('military_reports.dodatok_4_list', show_all_licenses=('1' if show_all_licenses else None)) }}" class="btn btn-outline-primary text-start">
                         <i class="bi bi-file-earmark-ruled me-2"></i>
                         <strong>Додаток 4</strong> — повідомлення про зміну облікових даних
                     </a>

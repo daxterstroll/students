@@ -398,6 +398,12 @@ def ensure_telegram_vod_schema(conn) -> None:
         ('escalation_last_summary', "TEXT NOT NULL DEFAULT ''"),
     ])
 
+    try:
+        from routes.military_reports import ensure_military_license_schema
+        ensure_military_license_schema(conn)
+    except Exception:
+        pass
+
     # Початкові корисні пресети фільтрів (одноразово)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS _patch_migrations (
@@ -1394,7 +1400,7 @@ def query_filtered_students(conn, raw_filters) -> dict:
         CATEGORY_LABELS,
         NOTE_18_EXCLUDES_FROM_DODATOK_5,
         _detect_category,
-        _get_base_license_id,
+        _get_military_visible_licenses,
         _has_base_license,
         _is_woman_without_military,
         _load_attachment_formed_map,
@@ -1407,7 +1413,7 @@ def query_filtered_students(conn, raw_filters) -> dict:
     ref_age_date = _parse_date_obj(f['age_as_of']) or today
     vod_month = f['vod_month']
 
-    base_license_id = _get_base_license_id(conn)
+    allowed_license_ids, _ = _get_military_visible_licenses(conn)
     enrollment_licenses = _load_enrollment_licenses(conn)
 
     # Мапа факультетів (група -> факультет, або спеціальність -> факультет)
@@ -1508,10 +1514,10 @@ def query_filtered_students(conn, raw_filters) -> dict:
         eff_fac_name = eff_fac['name_ua'] if eff_fac else (s['group_faculty_name'] or '')
 
         # Ліцензія
-        if f['only_base_license'] and not _has_base_license(sid, enrollment_licenses, base_license_id):
+        if f['only_base_license'] and not _has_base_license(sid, enrollment_licenses, allowed_license_ids, s['license_id']):
             continue
-        eff_license_id = enrollment_licenses.get(sid) or s['license_id']
-        if f['license_ids'] and eff_license_id not in f['license_ids']:
+        eff_lids = enrollment_licenses.get(sid) or ({int(s['license_id'])} if s['license_id'] is not None else set())
+        if f['license_ids'] and not (eff_lids & set(f['license_ids'])):
             continue
 
         # Група / факультет / курс / форма / ступінь / стать
@@ -1807,17 +1813,21 @@ def build_group_vod_compliance_summary(
     хто здав (підтверджено / на перевірці), хто НЕ здав, і приєднує контакти старост/кураторів.
     """
     ensure_telegram_vod_schema(conn)
-    flt = _parse_filter_dict(raw_filters or {})
+    raw_in = raw_filters if isinstance(raw_filters, dict) else {}
+    flt = _parse_filter_dict(raw_in)
     if vod_month and re.match(r'^\d{4}-\d{2}$', str(vod_month).strip()):
         flt['vod_month'] = str(vod_month).strip()
     # Для повної картини по групах беремо всіх студентів обраної вибірки (без фільтра «лише боржники»)
     flt['vod_month_state'] = 'any'
+    # Дефолтно показуємо лише налаштовані ліцензії ВО (Львівську тощо), якщо явно не задано інше
+    if 'only_base_license' not in raw_in and not raw_in.get('show_all_licenses') and not flt.get('license_ids'):
+        flt['only_base_license'] = True
     # Дефолтно не обмежуємо прив'язкою TG, щоб бачити реальну картину здачі в групі
-    if not raw_filters or 'tg_link_state' not in raw_filters:
+    if 'tg_link_state' not in raw_in:
         flt['tg_link_state'] = 'any'
-    if not raw_filters or 'exclude_women_no_mil' not in raw_filters:
+    if 'exclude_women_no_mil' not in raw_in:
         flt['exclude_women_no_mil'] = True
-    if not raw_filters or 'exclude_note_18' not in raw_filters:
+    if 'exclude_note_18' not in raw_in:
         flt['exclude_note_18'] = True
 
     res = query_filtered_students(conn, flt)
@@ -2880,6 +2890,8 @@ def _prepare_rule_filter(raw_filter_json: str, ym_now: str, stop_when_submitted:
     if not isinstance(flt, dict):
         flt = {}
     flt['vod_month'] = ym_now
+    if 'only_base_license' not in flt and not flt.get('license_ids'):
+        flt['only_base_license'] = True
     if stop_when_submitted:
         vms = flt.get('vod_month_state')
         if not vms or vms in ('any', 'already_submitted_or_pending', 'has_approved_this_month'):
@@ -3430,7 +3442,11 @@ def _run_scheduled_auto_reminder_if_due(conn, token: str, settings: dict) -> Non
         flt = json.loads(settings.get('auto_remind_filter_json') or '{}')
     except Exception:
         flt = {}
+    if not isinstance(flt, dict):
+        flt = {}
     flt['vod_month'] = ym_now
+    if 'only_base_license' not in flt and not flt.get('license_ids'):
+        flt['only_base_license'] = True
     if not flt.get('vod_month_state') or flt.get('vod_month_state') == 'any':
         flt['vod_month_state'] = 'missing_this_month'
 
@@ -3784,9 +3800,13 @@ def _load_filter_catalogs(conn) -> dict:
             "SELECT name_ua FROM degree_levels WHERE COALESCE(is_active, 1) = 1 ORDER BY id"
         ).fetchall()
     ]
+    from routes.military_reports import _get_military_visible_licenses, ensure_military_license_schema
+    ensure_military_license_schema(conn)
+    _, mil_lic_label = _get_military_visible_licenses(conn)
     licenses = [
         dict(r) for r in conn.execute(
-            "SELECT id, short_name_ua, name_ua, is_base FROM institution_licenses WHERE COALESCE(is_active, 1) = 1 ORDER BY is_base DESC, name_ua"
+            "SELECT id, short_name_ua, name_ua, is_base, COALESCE(show_in_military, 0) AS show_in_military "
+            "FROM institution_licenses WHERE COALESCE(is_active, 1) = 1 ORDER BY is_base DESC, id"
         ).fetchall()
     ]
     status_badges = [
@@ -3800,6 +3820,7 @@ def _load_filter_catalogs(conn) -> dict:
         'groups': groups,
         'degree_levels': degree_levels,
         'licenses': licenses,
+        'military_license_label': mil_lic_label,
         'study_forms': STUDY_FORM_OPTIONS,
         'courses': courses,
         'status_badges': status_badges,
@@ -4069,6 +4090,7 @@ def telegram_dashboard():
     grp_course = request.args.get('gcourse', type=int)
     grp_group_id = request.args.get('ggroup', type=int)
     grp_only_missing = bool(request.args.get('gmissing') == '1')
+    grp_all_licenses = bool(request.args.get('gall_lic') == '1')
     grp_age_mode = (request.args.get('gage') or 'any').strip()
     group_summary = None
     if active_tab == 'groups':
@@ -4078,6 +4100,7 @@ def telegram_dashboard():
             'courses': [grp_course] if grp_course else [],
             'group_ids': [grp_group_id] if grp_group_id else [],
             'age_mode': grp_age_mode if grp_age_mode in ('any', '25_plus', 'under_25') else 'any',
+            'only_base_license': not grp_all_licenses,
             'exclude_women_no_mil': True,
             'exclude_note_18': True,
         }
@@ -4104,6 +4127,7 @@ def telegram_dashboard():
         masked_token=_mask_token(settings.get('bot_token') or ''),
         worker_status=worker_status,
         catalogs=catalogs,
+        military_license_label=catalogs.get('military_license_label') or '—',
         counts=counts,
         submissions=submissions,
         links=links,
@@ -4126,6 +4150,7 @@ def telegram_dashboard():
             'gcourse': grp_course,
             'ggroup': grp_group_id,
             'gmissing': grp_only_missing,
+            'gall_lic': grp_all_licenses,
             'gage': grp_age_mode,
         },
         vod_storage_stats=vod_storage_stats,
@@ -5170,6 +5195,13 @@ def telegram_save_settings():
     auto_cleanup_include_not_found = 1 if request.form.get('auto_cleanup_include_not_found') else 0
     auto_cleanup_include_approved = 1 if request.form.get('auto_cleanup_include_approved') else 0
 
+    licenses_submitted = request.form.get('military_licenses_submitted') == '1'
+    selected_license_ids = [
+        int(x) for x in request.form.getlist('military_license_ids')
+        if str(x).strip().isdigit()
+    ]
+    mil_lic_details = ''
+
     conn = get_db()
     try:
         cur_settings = _get_bot_settings(conn)
@@ -5214,6 +5246,13 @@ def telegram_save_settings():
                 auto_cleanup_include_not_found, auto_cleanup_include_approved,
             ),
         )
+        if licenses_submitted:
+            from routes.military_reports import _set_military_visible_licenses
+            lic_ok, mil_label = _set_military_visible_licenses(conn, selected_license_ids)
+            if not lic_ok:
+                flash('Потрібно залишити обраною хоча б одну ліцензію для списків військового обліку.', 'warning')
+            else:
+                mil_lic_details = f"ліцензії ВО: {mil_label}"
         conn.commit()
     finally:
         conn.close()
@@ -5227,6 +5266,7 @@ def telegram_save_settings():
         "оновив налаштування Telegram-бота ВОД",
         category='update',
         section='Військовий облік',
+        details=mil_lic_details,
     )
     flash('Налаштування Telegram-бота збережено.', 'success')
     return redirect(url_for('military_telegram.telegram_dashboard', tab='settings'))
@@ -5344,6 +5384,7 @@ def telegram_group_summary_send():
     vod_month = (request.form.get('vod_month') or date.today().strftime('%Y-%m')).strip()
     group_id = request.form.get('group_id', type=int)
     age_mode = (request.form.get('gage') or 'any').strip()
+    gall_lic = request.form.get('gall_lic') == '1'
     send_all_missing = bool(request.form.get('send_all_missing') == '1')
     custom_chat_id = (request.form.get('custom_chat_id') or '').strip()
 
@@ -5360,6 +5401,7 @@ def telegram_group_summary_send():
             'vod_month': vod_month,
             'group_ids': [group_id] if (group_id and not send_all_missing) else [],
             'age_mode': age_mode if age_mode in ('any', '25_plus', 'under_25') else 'any',
+            'only_base_license': not gall_lic,
             'exclude_women_no_mil': True,
             'exclude_note_18': True,
         }
@@ -5409,7 +5451,12 @@ def telegram_group_summary_send():
     finally:
         conn.close()
 
-    return redirect(url_for('military_telegram.telegram_dashboard', tab='groups', gmonth=vod_month))
+    return redirect(url_for(
+        'military_telegram.telegram_dashboard',
+        tab='groups',
+        gmonth=vod_month,
+        gall_lic='1' if gall_lic else None,
+    ))
 
 
 @military_telegram_bp.route('/admin/military/telegram/bot/action', methods=['POST'])

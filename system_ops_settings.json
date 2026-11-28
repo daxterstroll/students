@@ -3,8 +3,8 @@
   "auto_backup_hour": 3,
   "auto_backup_keep_days": 14,
   "auto_backup_max_files": 30,
-  "last_auto_backup_date": "2026-11-27",
-  "last_auto_backup_at": "2026-11-27 19:02:03",
-  "last_auto_backup_file": "students_auto_20261127_190203.db",
+  "last_auto_backup_date": "2026-11-28",
+  "last_auto_backup_at": "2026-11-28 03:00:18",
+  "last_auto_backup_file": "students_auto_20261128_030017.db",
   "last_auto_backup_error": ""
 }
