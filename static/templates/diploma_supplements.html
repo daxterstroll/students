@@ -265,7 +265,7 @@
     {{ ui.page_header(
         'bi-award-fill',
         'Центр підготовки додатків до диплома',
-        'Preflight-аудит готовності, контроль дипломів з відзнакою, теми робіт (UA/EN), імпорт ЄДЕБО та журнал друку'
+        'Preflight-аудит готовності, контроль дипломів з відзнакою, теми робіт (UA/EN) та журнал друку'
     ) }}
 
     {# ── Вибір групи ── #}
@@ -298,7 +298,7 @@
     </div>
 
     {% if not selected_group %}
-        {{ ui.empty_state('bi-mortarboard', 'Оберіть групу вище, щоб провести аудит додатків до диплома, перевірити відзнаки, завантажити номери з ЄДЕБО або налаштувати теми робіт') }}
+        {{ ui.empty_state('bi-mortarboard', 'Оберіть групу вище, щоб провести аудит додатків до диплома, перевірити відзнаки або налаштувати теми робіт') }}
     {% else %}
 
     {# ── KPI по групі ── #}
@@ -350,10 +350,6 @@
         <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='activities', include_archived='1' if include_archived else None) }}"
            class="ds-tab-link {% if active_tab == 'activities' %}is-active{% endif %}">
             <i class="bi bi-translate"></i>Теми робіт (UA/EN) та оцінки
-        </a>
-        <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='import', include_archived='1' if include_archived else None) }}"
-           class="ds-tab-link {% if active_tab == 'import' %}is-active{% endif %}">
-            <i class="bi bi-file-earmark-excel"></i>ЄДЕБО та нумерація
         </a>
         <a href="{{ url_for('diploma.hub', group_id=selected_group_id, tab='logs', include_archived='1' if include_archived else None) }}"
            class="ds-tab-link {% if active_tab == 'logs' %}is-active{% endif %}">
@@ -656,85 +652,7 @@
     </div>
 
     {# ════════════════════════════════════════════════════════════════
-       ВКЛАДКА 3: ІМПОРТ З ЄДЕБО ТА ПАКЕТНА НУМЕРАЦІЯ
-       ════════════════════════════════════════════════════════════════ #}
-    {% elif active_tab == 'import' %}
-    <div class="row g-3">
-        <div class="col-lg-6">
-            <div class="ds-card h-100">
-                <div class="ds-card-head">
-                    <strong><i class="bi bi-file-earmark-excel me-1"></i>Імпорт номерів диплома/додатка з Excel (ЄДЕБО)</strong>
-                </div>
-                <div class="p-3">
-                    <p class="small text-muted">
-                        Завантажте файл <code>.xlsx</code> (вивантаження з ЄДЕБО або довільна таблиця з колонками «ЄДЕБО / ПІБ», «Номер диплома», «Номер додатка»). Перед збереженням ви побачите звірку з існуючими записами та попередження про дублі й розбіжності.
-                    </p>
-                    <form method="POST" action="{{ url_for('diploma.edebo_import_preview') }}" enctype="multipart/form-data">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="group_id" value="{{ selected_group_id }}">
-                        <div class="mb-3">
-                            <label for="edeboExcelFile" class="form-label small fw-semibold">Файл Excel (.xlsx)</label>
-                            <input type="file" id="edeboExcelFile" name="excel_file" accept=".xlsx" class="form-control form-control-sm" required>
-                        </div>
-                        <button type="submit" class="btn btn-primary btn-sm">
-                            <i class="bi bi-search me-1"></i>Розібрати та звірити (прев’ю)
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-        <div class="col-lg-6">
-            <div class="ds-card h-100">
-                <div class="ds-card-head">
-                    <strong><i class="bi bi-123 me-1"></i>Швидка пакетна нумерація діапазоном</strong>
-                </div>
-                <div class="p-3">
-                    <p class="small text-muted">
-                        Автоматично присвоює послідовні номери дипломів та додатків студентам групи за алфавітом.
-                    </p>
-                    <form method="POST" action="{{ url_for('diploma.auto_number') }}" class="row g-2">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="group_id" value="{{ selected_group_id }}">
-                        {% if include_archived %}<input type="hidden" name="include_archived" value="1">{% endif %}
-                        <div class="col-4">
-                            <label class="form-label small mb-1">Префікс диплома</label>
-                            <input type="text" name="diploma_prefix" class="form-control form-control-sm" placeholder="Напр. B26">
-                        </div>
-                        <div class="col-8">
-                            <label class="form-label small mb-1">Початковий № диплома</label>
-                            <input type="number" name="diploma_start" class="form-control form-control-sm" placeholder="Напр. 1201">
-                        </div>
-                        <div class="col-4">
-                            <label class="form-label small mb-1">Префікс додатка</label>
-                            <input type="text" name="appendix_prefix" class="form-control form-control-sm" placeholder="Напр. D26">
-                        </div>
-                        <div class="col-8">
-                            <label class="form-label small mb-1">Початковий № додатка</label>
-                            <input type="number" name="appendix_start" class="form-control form-control-sm" placeholder="Напр. 5001">
-                        </div>
-                        <div class="col-5">
-                            <label class="form-label small mb-1">Розрядність (нулів)</label>
-                            <input type="number" name="pad_len" min="1" max="12" value="6" class="form-control form-control-sm">
-                        </div>
-                        <div class="col-7 d-flex align-items-end">
-                            <div class="form-check mb-1">
-                                <input class="form-check-input" type="checkbox" name="only_empty" value="1" id="onlyEmptyNum" checked>
-                                <label class="form-check-label small" for="onlyEmptyNum">Тільки для порожніх номерів</label>
-                            </div>
-                        </div>
-                        <div class="col-12 mt-2">
-                            <button type="submit" class="btn btn-outline-primary btn-sm">
-                                <i class="bi bi-magic me-1"></i>Пронумерувати групу
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    {# ════════════════════════════════════════════════════════════════
-       ВКЛАДКА 4: ЖУРНАЛ ДРУКУ ТА НАЛАШТУВАННЯ
+       ВКЛАДКА 3: ЖУРНАЛ ДРУКУ ТА НАЛАШТУВАННЯ
        ════════════════════════════════════════════════════════════════ #}
     {% elif active_tab == 'logs' %}
     <div class="ds-card mb-3">

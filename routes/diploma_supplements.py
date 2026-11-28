@@ -8,17 +8,14 @@ routes/diploma_supplements.py
   3. Масове введення/редагування оцінок за практики/курсові/атестації та
      двомовних тем кваліфікаційних робіт (UA + EN із збереженням у БД і
      пакетним автоперекладом через DeepL);
-  4. Імпорт номерів диплома/додатка з Excel (ЄДЕБО) із перевіркою дублів і
-     розбіжностей, а також швидка пакетна нумерація діапазоном;
-  5. Конвертація .docx -> .pdf (LibreOffice / ONLYOFFICE ConvertService) та
+  4. Конвертація .docx -> .pdf (LibreOffice / ONLYOFFICE ConvertService) та
      збірка єдиного PDF для друку (з опцією додавання порожнього звороту);
-  6. Журнал генерації/друку/видачі з автодетектом «Потребує передруку» за
+  5. Журнал генерації/друку/видачі з автодетектом «Потребує передруку» за
      SHA-256 підписом даних;
-  7. Діагностика та тестовий рендер .docx-шаблонів на реальному студенту.
+  6. Діагностика та тестовий рендер .docx-шаблонів на реальному студенту.
 """
 from __future__ import annotations
 
-import difflib
 import hashlib
 import io
 import json
@@ -29,7 +26,6 @@ import sqlite3
 import subprocess
 import tempfile
 import threading
-import time
 import uuid
 import zipfile
 from datetime import datetime
@@ -49,7 +45,6 @@ from flask import (
     session,
     url_for,
 )
-from openpyxl import load_workbook
 from werkzeug.utils import secure_filename
 
 from routes.config import (
@@ -59,15 +54,10 @@ from routes.config import (
     ONLYOFFICE_JWT_SECRET,
     ONLYOFFICE_PUBLIC_URL,
     ONLYOFFICE_VERIFY_SSL,
-    PROJECT_ROOT,
 )
 from routes.db import get_db
 from routes.helpers import current_username, sort_ukrainian
-from routes.security import (
-    is_safe_hex_token,
-    resolve_under_dir,
-    validate_upload_file,
-)
+from routes.security import resolve_under_dir
 from routes.user_scope import get_allowed_group_ids
 from routes.utils import (
     TEMPLATE_FOLDER,
@@ -84,9 +74,6 @@ diploma_bp = Blueprint('diploma', __name__)
 
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
-
-EDEBO_PREVIEW_DIR = os.path.join(PROJECT_ROOT, 'static', 'uploads', 'tmp', 'edebo_preview')
-EDEBO_PREVIEW_TTL = 6 * 3600
 
 DEFAULT_DIPLOMA_SETTINGS = {
     'filename_mask': '{last_name_UA}_{first_name_UA}',
@@ -1122,88 +1109,6 @@ def _translate_text_deepl(text: str) -> str:
 
 
 # ============================================================
-# Імпорт номерів диплома/додатка з Excel (ЄДЕБО)
-# ============================================================
-
-def _cleanup_old_edebo_previews() -> None:
-    if not os.path.isdir(EDEBO_PREVIEW_DIR):
-        return
-    now = time.time()
-    for f in os.listdir(EDEBO_PREVIEW_DIR):
-        p = os.path.join(EDEBO_PREVIEW_DIR, f)
-        try:
-            if os.path.isfile(p) and now - os.path.getmtime(p) > EDEBO_PREVIEW_TTL:
-                os.remove(p)
-        except OSError:
-            pass
-
-
-def _norm_header(h) -> str:
-    s = str(h or '').strip().lower()
-    s = re.sub(r'\s+', ' ', s)
-    return s
-
-
-def _norm_fio(s) -> str:
-    s = str(s or '').lower()
-    s = s.replace('ʼ', "'").replace('’', "'")
-    s = re.sub(r'\(.*?\)', ' ', s)
-    s = re.sub(r"[^\w\s'-]", ' ', s, flags=re.UNICODE)
-    return ' '.join(s.split())
-
-
-def _detect_edebo_columns(headers: list[str]) -> dict[str, int | None]:
-    """Автоматично визначає індекси колонок у таблиці ЄДЕБО або довільному Excel."""
-    mapping = {
-        'edebo_code': None,
-        'fio_ua': None,
-        'last_name': None,
-        'first_name': None,
-        'middle_name': None,
-        'fio_en': None,
-        'birth_date': None,
-        'diploma_number': None,
-        'appendix_number': None,
-    }
-    for idx, raw in enumerate(headers):
-        h = _norm_header(raw)
-        if not h:
-            continue
-        if mapping['edebo_code'] is None and any(k in h for k in ('єдебо', 'edebo', 'код картки', 'ідентифікатор')):
-            mapping['edebo_code'] = idx
-        elif mapping['appendix_number'] is None and any(k in h for k in ('додат', 'appendix', 'supplement')):
-            mapping['appendix_number'] = idx
-        elif mapping['diploma_number'] is None and ('диплом' in h or 'diploma' in h or 'реєстраційний номер' in h):
-            mapping['diploma_number'] = idx
-        elif mapping['fio_en'] is None and any(k in h for k in ('англ', 'latin', 'eng', 'english')):
-            mapping['fio_en'] = idx
-        elif mapping['birth_date'] is None and any(k in h for k in ('народж', 'birth')):
-            mapping['birth_date'] = idx
-        elif mapping['last_name'] is None and h in ('прізвище', 'призвище'):
-            mapping['last_name'] = idx
-        elif mapping['first_name'] is None and h in ("ім'я", 'імя', 'ім’я'):
-            mapping['first_name'] = idx
-        elif mapping['middle_name'] is None and ('по батькові' in h or 'по-батькові' in h):
-            mapping['middle_name'] = idx
-        elif mapping['fio_ua'] is None and any(k in h for k in ('піб', 'фіо', 'здобувач', 'студент', 'прізвище')):
-            mapping['fio_ua'] = idx
-    return mapping
-
-
-def _clean_doc_num(val) -> str:
-    if val is None:
-        return ''
-    if isinstance(val, float) and val.is_integer():
-        s = str(int(val))
-    else:
-        s = str(val).strip()
-    s = re.sub(r'\s+', '', s)
-    if s.isdigit():
-        s = s.zfill(6)
-    return s
-
-
-# ============================================================
 # Маршрути Центру додатків до диплома
 # ============================================================
 
@@ -1278,7 +1183,7 @@ def hub():
     groups = _load_accessible_groups(conn, include_archived=include_archived)
     selected_group_id = request.args.get('group_id', type=int)
     active_tab = (request.args.get('tab') or 'audit').strip()
-    if active_tab not in ('audit', 'activities', 'import', 'logs'):
+    if active_tab not in ('audit', 'activities', 'logs'):
         active_tab = 'audit'
 
     if selected_group_id and not any(g['id'] == selected_group_id for g in groups):
@@ -1694,398 +1599,6 @@ def translate_missing():
 
     conn.close()
     return jsonify({'ok': True, 'translated_count': translated_count})
-
-
-@diploma_bp.route('/admin/diploma-supplements/auto-number', methods=['POST'])
-@permission_required('manage_diplomas')
-def auto_number():
-    """Пакетна послідовна нумерація дипломів/додатків діапазоном для групи."""
-    group_id = request.form.get('group_id', type=int)
-    if not group_id:
-        flash('Не обрано групу', 'danger')
-        return redirect(url_for('diploma.hub'))
-
-    dip_start_raw = (request.form.get('diploma_start') or '').strip()
-    app_start_raw = (request.form.get('appendix_start') or '').strip()
-    dip_prefix = (request.form.get('diploma_prefix') or '').strip()
-    app_prefix = (request.form.get('appendix_prefix') or '').strip()
-    only_empty = request.form.get('only_empty') == '1'
-    pad_len = request.form.get('pad_len', type=int) or 6
-    pad_len = max(1, min(12, pad_len))
-
-    if not dip_start_raw and not app_start_raw:
-        flash('Вкажіть початковий номер диплома або додатка', 'warning')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    try:
-        dip_num = int(dip_start_raw) if dip_start_raw else None
-        app_num = int(app_start_raw) if app_start_raw else None
-    except ValueError:
-        flash('Початковий номер має бути цілим числом', 'danger')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    conn = get_db()
-    ensure_diploma_supplement_schema(conn)
-    students = _get_group_students_for_diploma(conn, group_id)
-    updated = 0
-
-    try:
-        for st in students:
-            sid = st['id']
-            existing = conn.execute(
-                "SELECT id, diploma_number, appendix_number FROM diplomas WHERE student_id = ? AND group_id = ?",
-                (sid, group_id),
-            ).fetchone()
-            cur_dip = (existing['diploma_number'] or '').strip() if existing else ''
-            cur_app = (existing['appendix_number'] or '').strip() if existing else ''
-
-            new_dip = cur_dip
-            new_app = cur_app
-            changed = False
-
-            if dip_num is not None and (not only_empty or not cur_dip):
-                new_dip = f"{dip_prefix}{str(dip_num).zfill(pad_len)}"
-                dip_num += 1
-                changed = True
-            if app_num is not None and (not only_empty or not cur_app):
-                new_app = f"{app_prefix}{str(app_num).zfill(pad_len)}"
-                app_num += 1
-                changed = True
-
-            if not changed:
-                continue
-
-            if existing:
-                conn.execute(
-                    "UPDATE diplomas SET diploma_number = ?, appendix_number = ? WHERE id = ?",
-                    (new_dip, new_app, existing['id']),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO diplomas (student_id, group_id, diploma_number, appendix_number) VALUES (?, ?, ?, ?)",
-                    (sid, group_id, new_dip, new_app),
-                )
-            updated += 1
-        conn.commit()
-        log_action(
-            current_username(),
-            f"пакетно пронумерував дипломи/додатки для групи ID {group_id}",
-            group_ids=[group_id],
-            category='update',
-            section='Дипломи та додатки',
-            details=f"оновлено студентів: {updated}",
-        )
-        flash(f"Пронумеровано студентів: {updated}", 'success')
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"auto_number error: {e}", exc_info=True)
-        flash('Помилка пакетної нумерації', 'danger')
-    finally:
-        conn.close()
-
-    return redirect(url_for('diploma.hub', group_id=group_id, tab='audit', include_archived=request.form.get('include_archived') or None))
-
-
-@diploma_bp.route('/admin/diploma-supplements/edebo-import/preview', methods=['POST'])
-@permission_required('manage_diplomas')
-def edebo_import_preview():
-    """Розбирає завантажений Excel (ЄДЕБО або таблицю номерів) і показує прев'ю зіставлення."""
-    _cleanup_old_edebo_previews()
-    group_id = request.form.get('group_id', type=int)
-    if not group_id:
-        flash('Спочатку оберіть групу', 'danger')
-        return redirect(url_for('diploma.hub'))
-
-    file = request.files.get('excel_file')
-    if not file or not file.filename:
-        flash('Оберіть файл Excel (.xlsx)', 'danger')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    ok_file, err_file = validate_upload_file(file, {'.xlsx'})
-    if not ok_file:
-        flash(err_file, 'danger')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    tmp_xlsx = os.path.join(tempfile.gettempdir(), f"edebo_{uuid.uuid4().hex}.xlsx")
-    file.save(tmp_xlsx)
-
-    conn = get_db()
-    ensure_diploma_supplement_schema(conn)
-    try:
-        wb = load_workbook(tmp_xlsx, data_only=True, read_only=True)
-        ws = wb.active
-        all_rows = [list(r) for r in ws.iter_rows(values_only=True)]
-        wb.close()
-    except Exception as e:
-        conn.close()
-        try:
-            os.remove(tmp_xlsx)
-        except OSError:
-            pass
-        flash(f"Не вдалося прочитати Excel: {e}", 'danger')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-    finally:
-        try:
-            os.remove(tmp_xlsx)
-        except OSError:
-            pass
-
-    if len(all_rows) < 2:
-        conn.close()
-        flash('У файлі замало рядків (потрібен рядок заголовків і хоча б один рядок даних)', 'warning')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    # Знаходимо рядок заголовків серед перших 10 рядків
-    header_idx = 0
-    col_map = _detect_edebo_columns(all_rows[0])
-    for idx in range(min(10, len(all_rows))):
-        cand_map = _detect_edebo_columns(all_rows[idx])
-        if (cand_map['diploma_number'] is not None or cand_map['appendix_number'] is not None) and (
-            cand_map['edebo_code'] is not None or cand_map['fio_ua'] is not None or cand_map['last_name'] is not None
-        ):
-            header_idx = idx
-            col_map = cand_map
-            break
-
-    if col_map['diploma_number'] is None and col_map['appendix_number'] is None:
-        conn.close()
-        flash('Не знайдено колонок з номером диплома або додатка (очікуються назви типу «Номер диплома», «Номер додатка»).', 'danger')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    group_row = conn.execute("SELECT id, name, start_year FROM groups WHERE id = ?", (group_id,)).fetchone()
-    students = _get_group_students_for_diploma(conn, group_id)
-
-    # Поточні номери в групі та інші дублі в БД
-    existing_by_student = {}
-    for d in conn.execute(
-        "SELECT student_id, diploma_number, appendix_number FROM diplomas WHERE group_id = ?",
-        (group_id,),
-    ).fetchall():
-        existing_by_student[d['student_id']] = dict(d)
-
-    all_dip_owners = {}
-    all_app_owners = {}
-    for d in conn.execute("SELECT student_id, group_id, diploma_number, appendix_number FROM diplomas").fetchall():
-        if d['diploma_number']:
-            all_dip_owners.setdefault(d['diploma_number'].zfill(6), []).append((d['student_id'], d['group_id']))
-        if d['appendix_number']:
-            all_app_owners.setdefault(d['appendix_number'].zfill(6), []).append((d['student_id'], d['group_id']))
-
-    by_edebo = {
-        str(s['edebo_code']).strip(): s for s in students if s.get('edebo_code') and str(s['edebo_code']).strip()
-    }
-    student_candidates = [
-        (s, _norm_fio(f"{s['last_name_UA']} {s['first_name_UA']} {s['middle_name_UA'] or ''}"))
-        for s in students
-    ]
-
-    preview_rows = []
-    seen_dip_in_file = set()
-    seen_app_in_file = set()
-
-    for r_num, row in enumerate(all_rows[header_idx + 1:], start=header_idx + 2):
-        if not row or all(c is None or str(c).strip() == '' for c in row):
-            continue
-
-        def _cell(key):
-            ci = col_map.get(key)
-            if ci is None or ci >= len(row):
-                return ''
-            return '' if row[ci] is None else str(row[ci]).strip()
-
-        edebo_val = _cell('edebo_code')
-        if col_map['last_name'] is not None:
-            fio_excel = ' '.join(x for x in (_cell('last_name'), _cell('first_name'), _cell('middle_name')) if x)
-        else:
-            fio_excel = _cell('fio_ua')
-
-        fio_en_excel = _cell('fio_en')
-        birth_excel = _cell('birth_date')
-        dip_val = _clean_doc_num(row[col_map['diploma_number']]) if col_map['diploma_number'] is not None and col_map['diploma_number'] < len(row) else ''
-        app_val = _clean_doc_num(row[col_map['appendix_number']]) if col_map['appendix_number'] is not None and col_map['appendix_number'] < len(row) else ''
-
-        if not dip_val and not app_val:
-            continue
-
-        matched_st = None
-        match_method = ''
-        match_score = 0.0
-
-        if edebo_val and edebo_val in by_edebo:
-            matched_st = by_edebo[edebo_val]
-            match_method = 'ЄДЕБО'
-            match_score = 100.0
-        elif fio_excel:
-            norm_ex = _norm_fio(fio_excel)
-            best_st, best_sc = None, 0.0
-            for st_obj, st_norm in student_candidates:
-                sc = difflib.SequenceMatcher(None, norm_ex, st_norm).ratio()
-                if sc > best_sc:
-                    best_st, best_sc = st_obj, sc
-            if best_st and best_sc >= 0.72:
-                matched_st = best_st
-                match_method = 'ПІБ'
-                match_score = round(best_sc * 100, 1)
-
-        warnings = []
-        status = 'ok'
-        if not matched_st:
-            status = 'error'
-            warnings.append('Студента не знайдено у групі')
-        else:
-            if fio_en_excel:
-                db_en = f"{matched_st.get('last_name_ENG') or ''} {matched_st.get('first_name_ENG') or ''}".strip().lower()
-                if db_en and db_en != fio_en_excel.lower():
-                    warnings.append(f"EN у базі «{matched_st.get('last_name_ENG')} {matched_st.get('first_name_ENG')}» ≠ «{fio_en_excel}»")
-            if birth_excel and matched_st.get('birth_date'):
-                if _to_slash_date(birth_excel) != _to_slash_date(matched_st['birth_date']):
-                    warnings.append(f"Д/н у базі {matched_st['birth_date']} ≠ {birth_excel}")
-
-        if dip_val:
-            if dip_val in seen_dip_in_file:
-                warnings.append(f'Дубль диплома {dip_val} у файлі')
-                status = 'warn' if status == 'ok' else status
-            seen_dip_in_file.add(dip_val)
-            owners = [o for o in all_dip_owners.get(dip_val, []) if not matched_st or o != (matched_st['id'], group_id)]
-            if owners:
-                warnings.append(f'Номер диплома {dip_val} вже зайнятий у БД')
-                status = 'warn' if status == 'ok' else status
-
-        if app_val:
-            if app_val in seen_app_in_file:
-                warnings.append(f'Дубль додатка {app_val} у файлі')
-                status = 'warn' if status == 'ok' else status
-            seen_app_in_file.add(app_val)
-            owners = [o for o in all_app_owners.get(app_val, []) if not matched_st or o != (matched_st['id'], group_id)]
-            if owners:
-                warnings.append(f'Номер додатка {app_val} вже зайнятий у БД')
-                status = 'warn' if status == 'ok' else status
-
-        ex_rec = existing_by_student.get(matched_st['id'], {}) if matched_st else {}
-        preview_rows.append({
-            'row': r_num,
-            'edebo_excel': edebo_val,
-            'fio_excel': fio_excel,
-            'student_id': matched_st['id'] if matched_st else None,
-            'student_name': f"{matched_st['last_name_UA']} {matched_st['first_name_UA']} {matched_st['middle_name_UA'] or ''}".strip() if matched_st else '',
-            'match_method': match_method,
-            'match_score': match_score,
-            'diploma_number': dip_val,
-            'appendix_number': app_val,
-            'existing_diploma': (ex_rec.get('diploma_number') or '').strip(),
-            'existing_appendix': (ex_rec.get('appendix_number') or '').strip(),
-            'warnings': warnings,
-            'status': status,
-        })
-
-    conn.close()
-    if not preview_rows:
-        flash('У файлі не знайдено рядків із номерами дипломів чи додатків', 'warning')
-        return redirect(url_for('diploma.hub', group_id=group_id, tab='import'))
-
-    os.makedirs(EDEBO_PREVIEW_DIR, exist_ok=True)
-    token = uuid.uuid4().hex
-    state_path = resolve_under_dir(EDEBO_PREVIEW_DIR, f"{token}.json")
-    with open(state_path, 'w', encoding='utf-8') as f:
-        json.dump({
-            'user_id': session.get('user_id'),
-            'group_id': group_id,
-            'group_name': group_row['name'] if group_row else f'#{group_id}',
-            'filename': secure_filename(file.filename),
-            'rows': preview_rows,
-            'created_at': time.time(),
-        }, f, ensure_ascii=False)
-
-    return render_template(
-        'diploma_edebo_preview.html',
-        token=token,
-        group_id=group_id,
-        group_name=group_row['name'] if group_row else f'#{group_id}',
-        filename=secure_filename(file.filename),
-        preview_rows=preview_rows,
-        students=students,
-    )
-
-
-@diploma_bp.route('/admin/diploma-supplements/edebo-import/commit/<token>', methods=['POST'])
-@permission_required('manage_diplomas')
-def edebo_import_commit(token):
-    """Застосовує підтверджений імпорт номерів диплома/додатка з Excel."""
-    if not is_safe_hex_token(token):
-        flash('Некоректний токен сесії імпорту', 'danger')
-        return redirect(url_for('diploma.hub'))
-    state_path = resolve_under_dir(EDEBO_PREVIEW_DIR, f"{token}.json")
-    if not state_path or not os.path.isfile(state_path):
-        flash('Сесія імпорту застаріла або не знайдена', 'warning')
-        return redirect(url_for('diploma.hub'))
-
-    with open(state_path, 'r', encoding='utf-8') as f:
-        state = json.load(f)
-    if state.get('user_id') != session.get('user_id') and not session.get('is_admin'):
-        flash('Доступ до цієї сесії імпорту заборонено', 'danger')
-        return redirect(url_for('diploma.hub'))
-
-    group_id = state['group_id']
-    conn = get_db()
-    ensure_diploma_supplement_schema(conn)
-    saved = 0
-
-    try:
-        for item in state.get('rows', []):
-            r_num = item['row']
-            if not request.form.get(f"apply_{r_num}"):
-                continue
-            sid = request.form.get(f"student_id_{r_num}", type=int) or item.get('student_id')
-            if not sid:
-                continue
-            dip_num = (request.form.get(f"diploma_{r_num}") or item.get('diploma_number') or '').strip()
-            app_num = (request.form.get(f"appendix_{r_num}") or item.get('appendix_number') or '').strip()
-            if dip_num.isdigit():
-                dip_num = dip_num.zfill(6)
-            if app_num.isdigit():
-                app_num = app_num.zfill(6)
-
-            existing = conn.execute(
-                "SELECT id, diploma_number, appendix_number FROM diplomas WHERE student_id = ? AND group_id = ?",
-                (sid, group_id),
-            ).fetchone()
-            if existing:
-                conn.execute(
-                    "UPDATE diplomas SET diploma_number = ?, appendix_number = ? WHERE id = ?",
-                    (
-                        dip_num or existing['diploma_number'] or '',
-                        app_num or existing['appendix_number'] or '',
-                        existing['id'],
-                    ),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO diplomas (student_id, group_id, diploma_number, appendix_number) VALUES (?, ?, ?, ?)",
-                    (sid, group_id, dip_num, app_num),
-                )
-            saved += 1
-        conn.commit()
-        try:
-            os.remove(state_path)
-        except OSError:
-            pass
-        log_action(
-            current_username(),
-            f"імпортував номери диплома/додатка з Excel ({state.get('filename')}) для групи {state.get('group_name')}",
-            group_ids=[group_id],
-            category='import',
-            section='Дипломи та додатки',
-            details=f"оновлено записів: {saved}",
-        )
-        flash(f"Успішно оновлено номерів диплома/додатка: {saved}", 'success')
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"edebo_import_commit error: {e}", exc_info=True)
-        flash('Помилка збереження імпортованих номерів', 'danger')
-    finally:
-        conn.close()
-
-    return redirect(url_for('diploma.hub', group_id=group_id, tab='audit'))
 
 
 @diploma_bp.route('/admin/diploma-supplements/logs/status', methods=['POST'])
