@@ -117,8 +117,11 @@
         font-variant-numeric: tabular-nums;
     }
 
-    /* Кнопки керування в межах сторінки */
+    /* Кнопки керування в межах сторінки (явні кольори для світлої та темної тем) */
     .faq-page .btn-outline-secondary {
+        color: var(--ink-text);
+        border-color: var(--line);
+        background-color: var(--paper);
         --bs-btn-color: var(--ink-text);
         --bs-btn-border-color: var(--line);
         --bs-btn-bg: var(--paper);
@@ -127,12 +130,133 @@
         --bs-btn-hover-color: var(--ink);
     }
     html[data-theme="dark"] .faq-page .btn-outline-secondary {
+        color: var(--ink-text);
+        border-color: var(--line);
+        background-color: var(--paper-2);
         --bs-btn-color: var(--ink-text);
         --bs-btn-border-color: var(--line);
         --bs-btn-bg: var(--paper-2);
         --bs-btn-hover-bg: var(--surface);
         --bs-btn-hover-border-color: var(--brass-semi);
         --bs-btn-hover-color: var(--brass-lt);
+    }
+    .faq-page .btn-outline-primary {
+        color: #1d4e89;
+        border-color: rgba(29, 78, 137, .42);
+        background-color: rgba(29, 78, 137, .06);
+    }
+    .faq-page .btn-outline-primary:hover {
+        color: #fff;
+        background-color: #1d4e89;
+        border-color: #1d4e89;
+    }
+    html[data-theme="dark"] .faq-page .btn-outline-primary {
+        color: #9cc2f5;
+        border-color: rgba(156, 194, 245, .45);
+        background-color: rgba(88, 146, 224, .12);
+    }
+    html[data-theme="dark"] .faq-page .btn-outline-primary:hover {
+        color: #0e1b2c;
+        background-color: #9cc2f5;
+        border-color: #9cc2f5;
+    }
+
+    /* Панель швидких сценаріїв та клавішні підказки */
+    .faq-kbd {
+        display: inline-block;
+        padding: .08rem .38rem;
+        font-size: .74rem;
+        font-family: 'JetBrains Mono', monospace;
+        border-radius: 5px;
+        border: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--muted);
+    }
+    .faq-quick-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .38rem;
+        margin-top: .75rem;
+        padding-top: .75rem;
+        border-top: 1px dashed var(--line);
+    }
+    .faq-quick-label {
+        font-size: .75rem;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: .04em;
+        margin-right: .25rem;
+    }
+    .faq-quick-link {
+        display: inline-flex;
+        align-items: center;
+        gap: .32rem;
+        padding: .24rem .6rem;
+        border-radius: 7px;
+        border: 1px solid var(--line);
+        background: var(--paper-2);
+        color: var(--ink-text);
+        font-size: .78rem;
+        font-weight: 600;
+        text-decoration: none;
+        transition: border-color .15s ease, background-color .15s ease, color .15s ease;
+    }
+    .faq-quick-link:hover {
+        border-color: var(--brass);
+        background: var(--brass-soft);
+        color: var(--ink);
+    }
+    html[data-theme="dark"] .faq-quick-link:hover {
+        background: var(--surface);
+        color: var(--brass-lt);
+    }
+
+    /* Мобільний зміст довідки */
+    .faq-mobile-toc {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    .faq-mobile-toc__btn {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: .5rem;
+        padding: .75rem 1rem;
+        background: var(--paper-2);
+        color: var(--heading);
+        border: 0;
+        font-weight: 700;
+        font-size: .9rem;
+        text-align: left;
+    }
+    .faq-mobile-toc__body {
+        padding: .75rem .9rem;
+        max-height: 55vh;
+        overflow-y: auto;
+        border-top: 1px solid var(--line);
+    }
+
+    .faq-meta-actions {
+        display: inline-flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: .35rem;
+        margin-left: auto;
+    }
+    .faq-meta-actions .btn {
+        font-size: .76rem;
+        padding: .2rem .55rem;
+        line-height: 1.35;
+    }
+    .faq-target-flash {
+        box-shadow: 0 0 0 3px var(--brass-soft);
+        border-color: var(--brass) !important;
+        transition: box-shadow .35s ease;
     }
 
     /* Бокова навігація (Зміст) */
@@ -560,14 +684,17 @@
         'Зрозумілий путівник по всіх розділах системи — від першого входу до видачі диплома'
     ) }}
 
-    {# ── Панель пошуку, фільтрів категорій та масового згортання ── #}
+    {# ── Панель пошуку, фільтрів категорій та швидких переходів ── #}
     <div class="faq-toolbar">
         <div class="row g-2 align-items-center mb-3">
             <div class="col-12 col-md-7 col-lg-8">
                 <div class="input-group faq-search-box">
                     <span class="input-group-text"><i class="bi bi-search"></i></span>
                     <input type="search" id="faqSearchInput" class="form-control"
-                           placeholder="Пошук по довідці (напр.: диплом, Резерв+, ліцензія, паралельне, пароль, відомість)...">
+                           placeholder="Пошук по довідці (напр.: диплом, Резерв+, ліцензія, бекап, пісочниця, тест-рендер)...">
+                    <span class="input-group-text d-none d-sm-flex" title="Натисніть / на клавіатурі для швидкого пошуку">
+                        <span class="faq-kbd">/</span>
+                    </span>
                     <button type="button" class="btn btn-outline-secondary d-none" id="faqSearchClear" title="Очистити пошук">
                         <i class="bi bi-x-lg"></i>
                     </button>
@@ -586,42 +713,83 @@
 
         <div class="faq-filter-bar" id="faqCategoryFilters" role="tablist" aria-label="Фільтр розділів довідки">
             <button type="button" class="faq-chip-btn is-active" data-cat="all">
-                <i class="bi bi-grid"></i> Усі розділи
+                <i class="bi bi-grid"></i> Усі розділи <span class="faq-chip-count" data-cat-count="all"></span>
             </button>
             <button type="button" class="faq-chip-btn" data-cat="basics">
-                <i class="bi bi-compass"></i> Основи роботи
+                <i class="bi bi-compass"></i> Основи роботи <span class="faq-chip-count" data-cat-count="basics"></span>
             </button>
             {% if session.get('is_admin') %}
             <button type="button" class="faq-chip-btn" data-cat="diploma-guide">
-                <i class="bi bi-mortarboard"></i> Диплом за 10 кроків
+                <i class="bi bi-mortarboard"></i> Диплом за 10 кроків <span class="faq-chip-count" data-cat-count="diploma-guide"></span>
             </button>
             {% endif %}
             {% if 'students' in (faq_sections or []) %}
             <button type="button" class="faq-chip-btn" data-cat="students">
-                <i class="bi bi-people"></i> Студенти
+                <i class="bi bi-people"></i> Студенти <span class="faq-chip-count" data-cat-count="students"></span>
             </button>
             {% endif %}
             {% if 'academic' in (faq_sections or []) %}
             <button type="button" class="faq-chip-btn" data-cat="academic">
-                <i class="bi bi-book"></i> Навчання
+                <i class="bi bi-book"></i> Навчання <span class="faq-chip-count" data-cat-count="academic"></span>
             </button>
             {% endif %}
             {% if 'documents' in (faq_sections or []) %}
             <button type="button" class="faq-chip-btn" data-cat="documents">
-                <i class="bi bi-folder2-open"></i> Документи та накази
+                <i class="bi bi-folder2-open"></i> Документи та накази <span class="faq-chip-count" data-cat-count="documents"></span>
             </button>
             {% endif %}
             {% if 'system' in (faq_sections or []) %}
             <button type="button" class="faq-chip-btn" data-cat="system">
-                <i class="bi bi-gear"></i> Система
+                <i class="bi bi-gear"></i> Система <span class="faq-chip-count" data-cat-count="system"></span>
             </button>
             {% endif %}
             {% if session.get('is_admin') %}
             <button type="button" class="faq-chip-btn" data-cat="rules">
-                <i class="bi bi-exclamation-circle"></i> Важливі правила
+                <i class="bi bi-exclamation-circle"></i> Важливі правила <span class="faq-chip-count" data-cat-count="rules"></span>
             </button>
             {% endif %}
         </div>
+
+        {% if has_perm('manage_diplomas') or has_perm('manage_military_telegram') or has_perm('manage_military_reports') or has_perm('manage_templates') or has_perm('manage_system') or has_perm('manage_exam_sessions') %}
+        <div class="faq-quick-bar" id="faqQuickTasks">
+            <span class="faq-quick-label"><i class="bi bi-lightning-charge-fill me-1"></i>Швидкий перехід:</span>
+            {% if has_perm('manage_diplomas') %}
+            <a href="#p-diploma-hub" class="faq-quick-link js-faq-jump" data-target-collapse="#p-diploma-hub">
+                <i class="bi bi-award-fill"></i>Додатки до диплома
+            </a>
+            {% endif %}
+            {% if session.get('is_admin') %}
+            <a href="#sec-diploma-guide" class="faq-quick-link js-faq-jump">
+                <i class="bi bi-list-ol"></i>10 кроків випуску
+            </a>
+            {% endif %}
+            {% if has_perm('manage_templates') %}
+            <a href="#p-templates" class="faq-quick-link js-faq-jump" data-target-collapse="#p-templates">
+                <i class="bi bi-bug"></i>Тест-рендер шаблонів
+            </a>
+            {% endif %}
+            {% if has_perm('manage_military_telegram') %}
+            <a href="#p-mil-telegram" class="faq-quick-link js-faq-jump" data-target-collapse="#p-mil-telegram">
+                <i class="bi bi-telegram"></i>Бот ВОД і ескалація
+            </a>
+            {% endif %}
+            {% if has_perm('manage_military_reports') %}
+            <a href="#p-mil-dashboard" class="faq-quick-link js-faq-jump" data-target-collapse="#p-mil-dashboard">
+                <i class="bi bi-sliders"></i>Ліцензії у ВО
+            </a>
+            {% endif %}
+            {% if has_perm('manage_exam_sessions') %}
+            <a href="#p-exam-sessions" class="faq-quick-link js-faq-jump" data-target-collapse="#p-exam-sessions">
+                <i class="bi bi-clipboard2-check"></i>Сесії та відомості
+            </a>
+            {% endif %}
+            {% if has_perm('manage_system') %}
+            <a href="#p-system-tools" class="faq-quick-link js-faq-jump" data-target-collapse="#p-system-tools">
+                <i class="bi bi-cloud-upload"></i>Хмарні бекапи і тест-режим
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 
     <div class="row g-4 align-items-start">
@@ -737,6 +905,7 @@
                     <a href="#p-passport" class="faq-toc-link" data-target-collapse="#p-passport">Паспортні дані</a>
                     {% endif %}
                     {% if has_perm('manage_diplomas') %}
+                    <a href="#p-diploma-hub" class="faq-toc-link" data-target-collapse="#p-diploma-hub">Додатки до диплома (центр)</a>
                     <a href="#p-diplomas" class="faq-toc-link" data-target-collapse="#p-diplomas">Номери диплому / додатку</a>
                     {% endif %}
                     {% if has_perm('manage_military_reports') %}
@@ -817,6 +986,9 @@
                     {% if has_perm('view_logs') %}
                     <a href="#p-logs" class="faq-toc-link" data-target-collapse="#p-logs">Логування</a>
                     {% endif %}
+                    {% if has_perm('manage_system') %}
+                    <a href="#p-system-tools" class="faq-toc-link" data-target-collapse="#p-system-tools">Бекапи, сесії та тест-режим</a>
+                    {% endif %}
                 </div>
                 {% endif %}
 
@@ -831,6 +1003,17 @@
 
         {# ── Права колонка: Основний вміст довідки ── #}
         <div class="col-12 col-lg-9">
+
+            {# Мобільний зміст довідки (для телефонів і планшетів < 992px) #}
+            <div class="faq-mobile-toc d-lg-none mb-3">
+                <button type="button" class="faq-mobile-toc__btn" data-bs-toggle="collapse" data-bs-target="#faqMobileTocCollapse" aria-expanded="false" aria-controls="faqMobileTocCollapse">
+                    <span><i class="bi bi-list-nested me-2"></i>Зміст довідки (швидкий перехід)</span>
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+                <div id="faqMobileTocCollapse" class="collapse">
+                    <div class="faq-mobile-toc__body" id="faqMobileTocBody"></div>
+                </div>
+            </div>
 
             {# Порожній стан пошуку #}
             <div id="faqEmptySearch" class="faq-empty-search d-none mb-4">
@@ -853,14 +1036,15 @@
                     <span class="faq-status-tag faq-status-tag--info">Для всіх користувачів</span>
                 </div>
                 <div class="faq-panel__body">
-                    <p class="mb-3">Якщо ви відкрили систему вперше — прочитайте ці 4 короткі правила. Вони пояснюють, як тут усе влаштовано без складних технічних слів.</p>
+                    <p class="mb-3">Якщо ви відкрили систему вперше — прочитайте ці короткі правила. Вони пояснюють, як тут усе влаштовано без складних технічних слів.</p>
 
                     <div class="faq-basics-grid mb-3">
                         <div class="faq-mini-box">
-                            <div class="faq-mini-box__title"><i class="bi bi-person-check-fill"></i>1. Вхід і тема екрана</div>
+                            <div class="faq-mini-box__title"><i class="bi bi-person-check-fill"></i>1. Вхід, тема та швидкий пошук</div>
                             <div class="small">
-                                <strong>Логін не залежить від великих чи малих літер:</strong> можна ввести <code>Ivan</code>, <code>ivan</code> або <code>IVAN</code> — система впустить однаково. А ось пароль треба вводити точно.<br>
-                                У правому верхньому куті є кнопка <strong>сонця / місяця</strong> — вона миттєво перемикає світлу та темну тему.
+                                <strong>Логін не залежить від регістру літер:</strong> можна ввести <code>Ivan</code>, <code>ivan</code> або <code>IVAN</code> — система впустить однаково (пароль треба вводити точно).<br>
+                                У шапці сайту є швидкий глобальний пошук <span class="faq-kbd">Ctrl+K</span> (по ПІБ, ІПН, паспорту, ЄДЕБО, Оберіг, групах і наказах), кнопка теми <strong>сонце / місяць</strong> та кнопка <strong>Довідка</strong>.<br>
+                                Якщо увімкнено <strong>Тестовий режим</strong>, вгорі з'являється яскравий банер — зміни тоді не потрапляють у бойову БД.
                             </div>
                         </div>
 
@@ -868,7 +1052,7 @@
                             <div class="faq-mini-box__title"><i class="bi bi-shield-lock-fill"></i>2. Чому ви бачите не всі кнопки</div>
                             <div class="small">
                                 У верхньому меню є до 4 розділів: <strong>Студенти</strong>, <strong>Навчання</strong>, <strong>Документи та накази</strong> і <strong>Система</strong>.<br>
-                                Кожен працівник бачить <strong>лише ті сторінки й групи студентів</strong>, до яких адміністратор надав йому доступ. Наприклад, хтось може лише переглядати картки або ставити оцінки у відомостях, а хтось — створювати накази.
+                                Кожен працівник бачить <strong>лише ті сторінки й групи студентів</strong>, до яких адміністратор надав йому доступ. Наприклад, хтось може лише переглядати картки або ставити оцінки у відомостях, а хтось — створювати накази. Усі зміни фіксуються в журналі «Було → Стало».
                             </div>
                         </div>
 
@@ -884,14 +1068,14 @@
                             <div class="faq-mini-box__title"><i class="bi bi-award-fill"></i>4. «Паралельне навчання» і «Ліцензія»</div>
                             <div class="small">
                                 <strong>Паралельне навчання</strong> — коли студент одночасно вчиться у 2+ групах (наприклад, на бакалавра й на магістра, або в різних філіях).<br>
-                                <strong>Ліцензія</strong> закріплюється <em>окремо за кожною групою студента</em>. Тому одна й та сама людина може в одній групі навчатися за Львівською ліцензією, а в іншій — за Польською.
+                                <strong>Ліцензія</strong> закріплюється <em>окремо за кожною групою студента</em>. Тому одна й та сама людина може в одній групі навчатися за Львівською ліцензією, а в іншій — за Польською чи Київською. Для списків військового обліку можна гнучко налаштувати, які ліцензії показувати за замовчуванням.
                             </div>
                         </div>
                     </div>
 
                     <div class="faq-callout faq-callout--info mb-0">
                         <i class="bi bi-lightbulb me-1"></i>
-                        <strong>Підказка:</strong> у меню довідки нижче ви бачите лише ті розділи, на які у вас є права. Кожен пункт пояснює: навіщо ця сторінка потрібна, як її знайти і що робити крок за кроком.
+                        <strong>Підказка:</strong> у довіднику нижче ви бачите лише розділи, на які у вас є права. У кожному пункті є кнопка <strong>«Відкрити сторінку»</strong> для миттєвого переходу та <strong>«Посилання»</strong>, щоб поділитися інструкцією з колегою. Натисніть <span class="faq-kbd">/</span> будь-де на сторінці, щоб одразу почати пошук по довідці.
                     </div>
                 </div>
             </section>
@@ -908,7 +1092,7 @@
                     <span class="faq-status-tag faq-status-tag--ok">Покроковий план</span>
                 </div>
                 <div class="faq-panel__body">
-                    <p class="mb-3">Порядок важливий: кожен наступний крок бере дані з попереднього. Якщо частину кроків уже зроблено раніше (наприклад, група та предмети давно заведені) — просто переконайтеся, що там усе актуально, і переходьте далі.</p>
+                    <p class="mb-3">Порядок важливий: кожен наступний крок бере дані з попереднього. Якщо частину кроків уже зроблено раніше — перевірте готовність у <strong>Документи та накази → Додатки до диплома (центр)</strong> через Preflight-аудит і переходьте до випуску.</p>
 
                     <div class="faq-callout faq-callout--warn mb-3">
                         <i class="bi bi-exclamation-triangle-fill me-1"></i>
@@ -945,10 +1129,10 @@
                         <div class="faq-step">
                             <span class="faq-step__num">3</span>
                             <div>
-                                <span class="faq-step__title">Заповніть предмети групи</span>
-                                <span class="faq-step__path">Навчання → Предмети (або Імпорт предметів (Excel))</span>
+                                <span class="faq-step__title">Заповніть предмети групи (укр. та англ.)</span>
+                                <span class="faq-step__path">Навчання → Предмети (або Додатки до диплома (центр) → Теми робіт (UA/EN) та оцінки)</span>
                                 <div class="faq-step__desc">
-                                    Для кожного предмета вкажіть: код, назву українською, назву англійською, кредити й тип (залік/екзамен). У додатку до диплома предмети йтимуть у тому самому порядку, що й тут.
+                                    Для кожного предмета вкажіть код, назву українською, назву англійською (у Центрі додатків є пакетне заповнення та автопереклад DeepL), кредити й тип (залік/екзамен). У додатку до диплома предмети йтимуть у тому самому порядку, що й тут.
                                 </div>
                             </div>
                         </div>
@@ -959,7 +1143,7 @@
                                 <span class="faq-step__title">Додайте практики, курсові та атестацію</span>
                                 <span class="faq-step__path">Навчання → Практика / атестація / курсові</span>
                                 <div class="faq-step__desc">
-                                    Так само додайте коди, назви обома мовами та кредити. Для атестації (захисту кваліфікаційної роботи) окремо на кроці 6 кожному студенту вписується тема роботи.
+                                    Так само додайте коди, назви обома мовами та кредити. Для атестації (захисту кваліфікаційної роботи) окремо на кроці 6 кожному студенту вписується тема роботи (UA та EN).
                                 </div>
                             </div>
                         </div>
@@ -967,11 +1151,11 @@
                         <div class="faq-step">
                             <span class="faq-step__num">5</span>
                             <div>
-                                <span class="faq-step__title">Виставте оцінки з предметів</span>
-                                <span class="faq-step__path">Картка студента → Оцінки (або Навчання → Імпорт оцінок / Сесії та відомості → Перенос оцінок)</span>
+                                <span class="faq-step__title">Виставте оцінки з предметів і перевірте відзнаки</span>
+                                <span class="faq-step__path">Картка студента → Оцінки / Імпорт оцінок / Перенос оцінок із сесій</span>
                                 <div class="faq-step__desc">
                                     Оцінки можна вносити вручну, завантажити зі зведеного Excel-файлу або перенести із затверджених екзаменаційних відомостей.<br>
-                                    <strong>«Диплом з відзнакою» визначається автоматично:</strong> якщо у студента не менше <strong>75%</strong> оцінок <code>A</code>, немає жодної оцінки <code>D</code>, <code>E</code>, <code>Fx</code>, <code>F</code> і підсумкова атестація складена на <code>A</code>.
+                                    <strong>«Диплом з відзнакою» та середній бал рахуються автоматично:</strong> зважений середній бал за кредитами (<code>weighted_gpa_100</code>, <code>gpa_5</code>) і правило <strong>&ge;75%</strong> оцінок <code>A</code> без <code>D/E/Fx/F</code> та з атестацією на <code>A</code>. У <strong>Центрі додатків до диплома</strong> видно студентів «На межі 68–74%», можна увімкнути/вимкнути врахування курсових робіт і за потреби <strong>перевизначити відзнаку вручну</strong> із зазначенням підстави.
                                 </div>
                             </div>
                         </div>
@@ -979,10 +1163,10 @@
                         <div class="faq-step">
                             <span class="faq-step__num">6</span>
                             <div>
-                                <span class="faq-step__title">Виставте оцінки за практики, курсові й атестацію</span>
-                                <span class="faq-step__path">Картка студента → Практика та атестація (або через сторінку «Практика / атестація / курсові»)</span>
+                                <span class="faq-step__title">Внесіть оцінки практик/курсових та теми робіт (UA/EN)</span>
+                                <span class="faq-step__path">Додатки до диплома (центр) → вкладка «Теми робіт (UA/EN) та оцінки»</span>
                                 <div class="faq-step__desc">
-                                    Вкажіть бали за кожну активність і впишіть тему дипломної/кваліфікаційної роботи (укр. та англ.) для атестації.
+                                    Зручна єдина таблиця на всю групу: бали за практики, курсові й атестацію, теми робіт українською та англійською з можливістю <strong>автоперекладу DeepL</strong> (збережені переклади кешуються в БД і не витрачають ліміт повторно).
                                 </div>
                             </div>
                         </div>
@@ -1001,10 +1185,10 @@
                         <div class="faq-step">
                             <span class="faq-step__num">8</span>
                             <div>
-                                <span class="faq-step__title">Призначте номери диплома і додатка</span>
-                                <span class="faq-step__path">Документи та накази → Номери диплому / додатку</span>
+                                <span class="faq-step__title">Призначте номери диплома і додатка (або завантажте з ЄДЕБО)</span>
+                                <span class="faq-step__path">Додатки до диплома (центр) → вкладка «ЄДЕБО та нумерація» (або Номери диплому / додатку)</span>
                                 <div class="faq-step__desc">
-                                    Номери вводяться <strong>окремо для кожної групи студента</strong>. Писати нулі попереду не обов'язково — система сама доповнить номер до 6 цифр (наприклад, <code>125</code> стане <code>000125</code>).
+                                    Номери зберігаються <strong>окремо для кожної групи студента</strong>. Можна імпортувати таблицю прямо з ЄДЕБО (із попередньою звіркою та пошуком дублів), пронумерувати групу автоматично за префіксом і діапазоном або ввести вручну (система доповнить короткі номери нулями до 6 цифр).
                                 </div>
                             </div>
                         </div>
@@ -1012,10 +1196,10 @@
                         <div class="faq-step">
                             <span class="faq-step__num">9</span>
                             <div>
-                                <span class="faq-step__title">Перевірте акредитацію спеціальності</span>
-                                <span class="faq-step__path">Система → Акредитації</span>
+                                <span class="faq-step__title">Проведіть Preflight-аудит і тест-рендер шаблону</span>
+                                <span class="faq-step__path">Додатки до диплома (центр) → «Preflight-аудит» · Система → Шаблони документів</span>
                                 <div class="faq-step__desc">
-                                    Переконайтеся, що для пари «ступінь + спеціальність» вашої групи є текст акредитації українською та англійською мовами.
+                                    Перед друком відкрийте <strong>Preflight-аудит</strong>: система покаже по кожному студенту блокери й зауваження (пропущені оцінки, невідповідність кредитів, порожні англ. назви чи теми, відсутній номер додатка, паспорт/латиниця). А в <strong>Шаблонах документів</strong> запустіть <strong>«Тест-рендер і діагностику»</strong>, щоб перевірити шаблон на розірвані Word-теги й незаповнені змінні.
                                 </div>
                             </div>
                         </div>
@@ -1023,10 +1207,10 @@
                         <div class="faq-step">
                             <span class="faq-step__num faq-step__num--done">10</span>
                             <div>
-                                <span class="faq-step__title">Згенеруйте та скачайте готовий документ</span>
-                                <span class="faq-step__path">Картка студента → Генерувати документ (або Студенти → Масова генерація документів)</span>
+                                <span class="faq-step__title">Згенеруйте пакет, перевірте в ONLYOFFICE та роздрукуйте PDF</span>
+                                <span class="faq-step__path">Додатки до диплома (центр) → «Генерувати для відмічених» · або Масова генерація документів</span>
                                 <div class="faq-step__desc">
-                                    Якщо студент навчається в кількох групах — спершу оберіть потрібну групу. Система відкриє попередній перегляд (за потреби текст можна підправити прямо в браузері) й дозволить скачати готовий Word-файл <code>.docx</code>. Для всієї групи за раз використовуйте «Масову генерацію документів».
+                                    Відкриється сторінка готового пакету з налаштованою маскою імен файлів: будь-який додаток можна відкрити в <strong>ONLYOFFICE</strong>, скачати <code>.docx ZIP</code>, <code>.pdf ZIP</code> або <strong>Єдиний PDF для друку</strong> (зокрема у <strong>двосторонньому режимі</strong> з автоматичним порожнім зворотом для непарних сторінок). Після друку позначте пакет «Надруковано» / «Видано» — якщо згодом у студента зміняться оцінки чи номери, центр одразу попередить статусом <strong>«Потребує передруку»</strong>.
                                 </div>
                             </div>
                         </div>
@@ -1319,19 +1503,26 @@
                 <div class="accordion-item faq-searchable" data-faq-cat="students">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-export">
-                            <i class="bi bi-file-zip"></i>Масова генерація документів
+                            <i class="bi bi-file-zip"></i>Масова генерація документів (пакет, PDF та ONLYOFFICE)
                         </button>
                     </h2>
                     <div id="p-export" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <div class="faq-meta-row">
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Студенти → Масова генерація документів</span>
-                                <span>Створення Word-документів (додатків до диплома, довідок тощо) одразу для всієї групи одним архівом.</span>
+                                <span>Створення документів (додатків до диплома, довідок тощо) одразу для всієї групи з вибором формату та правкою.</span>
                             </div>
-                            <ol class="mb-0">
-                                <li>Оберіть потрібну <strong>групу</strong> (за потреби уточніть рік народження або конкретних студентів).</li>
-                                <li>Виберіть <strong>шаблон документа</strong> (наприклад, «Додаток до диплома»).</li>
-                                <li>Натисніть «Згенерувати» — система збере готові файли для всіх вибраних студентів. Для студентів із паралельним навчанням підставляються оцінки, номери диплома та ліцензія <strong>саме тієї групи, яку ви обрали</strong>.</li>
+                            <ol class="mb-2">
+                                <li>Оберіть потрібну <strong>групу</strong> (за потреби уточніть рік народження або окремих студентів) і <strong>шаблон документа</strong>.</li>
+                                <li>Натисніть «Згенерувати» — для студентів із паралельним навчанням підставляться оцінки, номери диплома та ліцензія <strong>саме обраної групи</strong>, а імена файлів сформуються за налаштованою маскою.</li>
+                                <li>На сторінці готового пакету можна:
+                                    <ul class="mt-1 mb-0">
+                                        <li>відкрити будь-який файл в <strong>ONLYOFFICE</strong> для індивідуальної правки або скачати окремий <code>.docx</code> / <code>.pdf</code>;</li>
+                                        <li>завантажити весь пакет одним кліком як <strong>.docx ZIP</strong> або <strong>.pdf ZIP</strong>;</li>
+                                        <li>вивантажити <strong>«Єдиний PDF для друку»</strong> або <strong>«Єдиний PDF (двосторонній)»</strong> (автоматично додає порожню зворотну сторінку після документів із непарною кількістю сторінок);</li>
+                                        <li>позначити весь пакет <strong>«Надруковано»</strong> у журналі видачі додатків.</li>
+                                    </ul>
+                                </li>
                             </ol>
                         </div>
                     </div>
@@ -1796,6 +1987,35 @@
                 {% if has_perm('manage_diplomas') %}
                 <div class="accordion-item faq-searchable" data-faq-cat="documents">
                     <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-diploma-hub">
+                            <i class="bi bi-award-fill"></i>Додатки до диплома (центр підготовки)
+                        </button>
+                    </h2>
+                    <div id="p-diploma-hub" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <div class="faq-meta-row">
+                                <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Документи та накази → Додатки до диплома (центр)</span>
+                                <span>Єдиний командний пункт випуску: аудит готовності групи, відзнаки, теми робіт (UA/EN), ЄДЕБО, масова генерація та журнал друку.</span>
+                            </div>
+                            <div class="faq-body-block">
+                                <div class="faq-subhead"><i class="bi bi-grid-1x2"></i>4 вкладки робочого простору</div>
+                                <ul class="mb-2">
+                                    <li><strong>Preflight-аудит і відзнака:</strong> верхні KPI («Повністю готові», «Зауваження», «Блокери», «З відзнакою / Межа», «Потребує передруку») та швидкі фільтри. Показує точні причини зауважень/блокерів по кожному студенту, зважений середній бал (<code>weighted_gpa_100</code>, <code>gpa_5</code>), фактичні кредити, дозволяє <strong>перевизначити диплом з відзнакою вручну</strong> з приміткою та в 1 клік запустити генерацію пакету для відмічених студентів.</li>
+                                    <li><strong>Теми робіт (UA/EN) та оцінки:</strong> зведена групова таблиця для одночасного редагування оцінок за практики, курсові, атестацію та тем кваліфікаційних робіт українською й англійською, плюс таблиця EN-назв дисциплін. Доступний <strong>автопереклад DeepL</strong> (перекладені назви кешуються в БД, щоб не витрачати ліміт повторно).</li>
+                                    <li><strong>ЄДЕБО та нумерація:</strong> безпечний імпорт номерів диплома й додатка з Excel (ЄДЕБО) із попереднім переглядом, звіркою конфліктів та дублів, а також <strong>пакетна автонумерація</strong> групи за алфавітом (префікс, стартовий номер, кількість нулів).</li>
+                                    <li><strong>Журнал друку і налаштування:</strong> конструктор маски імені вихідного файлу (напр. <code>{last_name_UA}_{first_name_UA}</code>), перемикач <strong>врахування курсових робіт у 75% «A»</strong>, тумблер <strong>порожнього звороту в єдиному PDF</strong> для двостороннього друку та журнал статусів (<code>Згенеровано → Надруковано → Видано</code>).</li>
+                                </ul>
+                            </div>
+                            <div class="faq-callout faq-callout--info mb-0">
+                                <i class="bi bi-arrow-repeat me-1"></i>
+                                <strong>Контроль передруку:</strong> при генерації система запам'ятовує контрольний «відбиток» даних студента (ПІБ, оцінки, теми, номери, відзнака). Якщо після друку хтось змінить оцінку або номер, біля студента автоматично з'явиться статус <strong>«Потребує передруку»</strong>.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="accordion-item faq-searchable" data-faq-cat="documents">
+                    <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-diplomas">
                             <i class="bi bi-journal-bookmark"></i>Номери диплому / додатку
                         </button>
@@ -1804,11 +2024,12 @@
                         <div class="accordion-body">
                             <div class="faq-meta-row">
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Документи та накази → Номери диплому / додатку</span>
-                                <span>Присвоєння реєстраційних номерів диплома і додатка для кожної групи випуску.</span>
+                                <span>Швидке ручне присвоєння реєстраційних номерів диплома і додатка для обраної групи.</span>
                             </div>
                             <ul class="mb-0">
                                 <li>Можна вводити короткий номер без початкових нулів (напр. <code>57</code>) — система автоматично доповнить його до 6 цифр (<code>000057</code>).</li>
                                 <li><strong>Окремо для кожної групи:</strong> якщо студент закінчує дві різні програми, для кожної групи зберігається свій власний номер диплома і додатка.</li>
+                                <li>Для масового завантаження з ЄДЕБО або автоматичної нумерації діапазоном скористайтесь вкладкою <strong>«ЄДЕБО та нумерація»</strong> у <strong>Центрі додатків до диплома</strong>.</li>
                             </ul>
                         </div>
                     </div>
@@ -1819,7 +2040,7 @@
                 <div class="accordion-item faq-searchable" data-faq-cat="documents">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-dashboard">
-                            <i class="bi bi-shield-fill-check"></i>Військовий облік (Додаток 5) — Дашборд та експорт
+                            <i class="bi bi-shield-fill-check"></i>Військовий облік (Додаток 5) — Дашборд, ліцензії та експорт
                         </button>
                     </h2>
                     <div id="p-mil-dashboard" class="accordion-collapse collapse">
@@ -1829,7 +2050,7 @@
                                 <span>Зведена панель військового обліку закладу за Постановою №812 та вивантаження списків Додатка 5.</span>
                             </div>
                             <ul class="mb-0">
-                                <li><strong>Базова ліцензія за замовчуванням:</strong> на дашборді показуються студенти, які мають активне навчання під базовою ліцензією закладу (з зірочкою). За потреби можна перемкнути фільтр «Показати всі ліцензії».</li>
+                                <li><strong>Налаштовувані ліцензії ВО за замовчуванням:</strong> на дашборді, у списках Додатку 4/5/12, файлах «Резерв+» та зведеннях бота показуються студенти з активним навчанням під <strong>обраними ліцензіями ВО</strong> (за замовчуванням — Львівська). У <strong>Система → Ліцензії</strong> або в налаштуваннях Telegram-бота можна в будь-який момент додати/прибрати ліцензії (наприклад, додати Київську), а на самій сторінці — тимчасово увімкнути чекбокс «Показати всі ліцензії».</li>
                                 <li>На екрані видно розбивку по 4 категоріях Додатка 5, вибулих за віком, відрахованих у поточному році, мобілізованих та блок <strong>«Потребують уваги»</strong>.</li>
                                 <li>У кожній категорії доступна кнопка <strong>«Згенерувати .xlsx»</strong> — у готовий Excel-файл Додатка 5 потрапляють саме ті студенти, які відібрані фільтрами на екрані.</li>
                             </ul>
@@ -1969,32 +2190,32 @@
                 <div class="accordion-item faq-searchable" data-faq-cat="documents">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-mil-telegram">
-                            <i class="bi bi-telegram"></i>Telegram-бот ВОД («Резерв+») — розсилки, прив’язка та перевірка
+                            <i class="bi bi-telegram"></i>Telegram-бот ВОД («Резерв+») — розсилки, ескалація, ризики й очищення
                         </button>
                     </h2>
                     <div id="p-mil-telegram" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <div class="faq-meta-row">
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Документи та накази → Telegram-бот ВОД (Резерв+)</span>
-                                <span>Вбудований бот для прийому PDF «Резерв+» від студентів (або їхніх представників), цільових сповіщень за фільтрами та підтвердження на сайті.</span>
+                                <span>Вбудований бот для прийому PDF «Резерв+» від студентів/представників, автонагадувань, ескалації старостам, контролю ризиків і очищення черги.</span>
                             </div>
 
                             <div class="faq-body-block">
                                 <div class="faq-subhead"><i class="bi bi-link-45deg"></i>Три способи прив’язки студента до Telegram (зокрема, якщо студент не має Telegram)</div>
                                 <ol class="mb-2">
-                                    <li><strong>Основний — кнопка «📱 Поділитися контактом (телефоном)»:</strong> студент натискає кнопку в боті; система нормалізує номер і шукає збіг в основному (<code>phone</code>) або резервному (<code>phone_backup</code>) номері активної картки. Якщо знайдено одного студента — прив’язує миттєво. Якщо той самий номер (наприклад, батьків) вказано у кількох студентів — пропонує обрати потрібного чи прив’язати обох.</li>
-                                    <li><strong>Персональне або групове посилання-запрошення та QR-код:</strong> відповідальний працівник генерує на сторінці бота або у картці студента лінк виду <code>https://t.me/bot?start=s_...</code> (для конкретного студента) або <code>g_...</code> (для всієї групи). Якщо в студента немає Telegram, персональне посилання з опцією <em>«Представник»</em> передається батькам, родичу чи старості.</li>
-                                    <li><strong>Автоприв’язка / режим представника при надсиланні PDF:</strong> навіть без попередньої прив’язки будь-хто (студент чи представник через кнопку «👥 Подати за іншого студента») може надіслати PDF «Резерв+». Система звіряє <strong>ПІБ + дату народження</strong> з БД активних студентів, створює прив’язку та запитує, чи це особистий акаунт, чи представник. Один Telegram-акаунт представника може бути прив’язаний одразу до кількох студентів.</li>
+                                    <li><strong>Основний — кнопка «📱 Поділитися контактом (телефоном)»:</strong> студент натискає кнопку в боті; система нормалізує номер і шукає збіг в основному (<code>phone</code>) або резервному (<code>phone_backup</code>) номері активної картки. Якщо той самий номер (напр., батьків) у кількох студентів — пропонує обрати потрібного чи прив’язати обох.</li>
+                                    <li><strong>Персональне або групове посилання-запрошення та QR-код:</strong> відповідальний працівник генерує лінк виду <code>?start=s_...</code> (студенту) або <code>g_...</code> (групі). Для представника (батьків, родича, старости) використовується опція <em>«Представник»</em>.</li>
+                                    <li><strong>Автоприв’язка / режим представника при надсиланні PDF:</strong> будь-хто (студент або представник через кнопку «👥 Подати за іншого студента») надсилає PDF «Резерв+» — система звіряє <strong>ПІБ + дату народження</strong> з активними студентами й створює прив’язку.</li>
                                 </ol>
                             </div>
 
                             <div class="faq-body-block">
-                                <div class="faq-subhead"><i class="bi bi-funnel"></i>Гнучкі фільтри розсилки та перевірка подач</div>
+                                <div class="faq-subhead"><i class="bi bi-funnel"></i>Авторозсилки, ескалація старостам та аналіз черги</div>
                                 <ul class="mb-0">
-                                    <li><strong>Фільтри розсилок та авто-правила за розкладом:</strong> можна комбінувати будь-яку кількість умов (факультет, групи, курси, форма навчання, ступінь, ліцензія, стать, вік <code>25+</code> / <code>&lt;25</code> / діапазон, військовий статус і категорія, відсутність свіжого PDF за місяць, завершення відстрочки, звернення до поліції, конкретні студенти). Конфігурації зберігаються в пресети; для будь-якого фільтра або пресета можна налаштувати <strong>персональне авто-нагадування за розкладом</strong> (наприклад, з 15 по 25 число місяця, по 1–24 рази на день у вказані години, із автоматичним припиненням нагадувань щойно студент надішле PDF).</li>
-                                    <li><strong>Контроль відсутніх у БД:</strong> якщо ПІБ + дата народження у PDF не знайдено серед активних студентів — бот одразу повідомляє відправника, а файл потрапляє на вкладку «Не знайдено в БД» з можливістю ручної прив’язки.</li>
-                                    <li><strong>Контроль повторних подач за місяць:</strong> якщо за цей місяць вже є підтверджений файл або інше подання в черзі, система маркує запис попередженням <em>«Повторна подача за місяць (N-й раз)»</em>, інформує студента та відповідального працівника.</li>
-                                    <li><strong>Модерація:</strong> перед оновленням БД відповідальний працівник бачить точний diff військових полів, картки та фото 3×4, після підтвердження дані записуються в облік, а студент отримує повідомлення в Telegram.</li>
+                                    <li><strong>Гнучкі фільтри, пресети та авто-правила:</strong> комбінуйте будь-які умови (факультет, групи, курси, форма, ступінь, налаштовані ліцензії ВО, стать, вік <code>25+</code> / <code>&lt;25</code>, статус ВО, відсутність свіжого PDF, завершення відстрочки, звернення до поліції) та налаштовуйте щомісячні вікна розсилки (напр. 15–25 число, з автостопом після подачі).</li>
+                                    <li><strong>Ескалація та зведення для старост/кураторів:</strong> в авто-правилі можна увімкнути <strong>ескалацію в останні N днів вікна</strong> (напр., 23–25 числа): бот і вкладка груп автоматично формують по кожній групі зведення <em>«хто здав / хто не здав»</em> та надсилають призначеним старостам/кураторам або на додаткові Chat ID координаторів.</li>
+                                    <li><strong>Автосверка критичних ризиків при розборі PDF:</strong> у черзі модерації рядки підсвічуються кольором і бейджами не лише для «Не знайдено в БД» та «Повтор за місяць», а й при виявленні ризиків — <strong>розшуку / звернення до поліції</strong>, <strong>зміни ТЦК</strong>, <strong>зняття/виключення з обліку</strong> або <strong>закінчення / втрати відстрочки</strong>, щоб відповідальний бачив загрозу ще до відкриття картки.</li>
+                                    <li><strong>Модерація та автоочищення черги:</strong> при підтвердженні показується точний diff усіх полів ВО та фото 3×4. У налаштуваннях працює <strong>щоденне та ручне автоочищення</strong> старих тимчасових PDF/фото з папки <code>static/uploads/telegram_vod/</code> (відхилених, дублюючих, <code>not_found</code> або підтверджених старше 1–60 міс., за замовчуванням 6 міс.) — подання зі статусом <code>pending</code> та архіви в картках студентів ніколи не видаляються.</li>
                                 </ul>
                             </div>
                         </div>
@@ -2016,7 +2237,7 @@
                                 <span>Єдиний архів усіх наказів закладу: зарахування, переведення, відрахування, випуск, поновлення, зміна ПІБ.</span>
                             </div>
                             <ul class="mb-2">
-                                <li>Можна фільтрувати за типом наказу, шукати за номером/приміткою або натиснути фільтр <strong>«Лише дублікати номерів»</strong> (дублікати позначаються бейджем <code>×N</code>).</li>
+                                <li>Можна фільтрувати за типом наказу, шукати за <strong>номером наказу</strong>, <strong>ПІБ студента</strong> (поле <em>«Студент (ПІБ)»</em> — знаходить усі накази, де фігурує людина), <strong>назвою чи приміткою</strong> або натиснути фільтр <strong>«Лише дублікати номерів»</strong> (позначаються бейджем <code>×N</code>).</li>
                                 <li>Усередині наказу видно всіх прикріплених студентів і скан-копії. Студента можна перенести в інший наказ того ж типу в один клік.</li>
                             </ul>
                             <div class="faq-callout faq-callout--danger mb-0">
@@ -2266,17 +2487,18 @@
                 <div class="accordion-item faq-searchable" data-faq-cat="system">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-licenses">
-                            <i class="bi bi-award"></i>Ліцензії
+                            <i class="bi bi-award"></i>Ліцензії (та видимість у військовому обліку)
                         </button>
                     </h2>
                     <div id="p-licenses" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <div class="faq-meta-row">
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Система → Ліцензії</span>
-                                <span>Список ліцензій/філій закладу (наприклад, Львівська, Київська, Польська).</span>
+                                <span>Список ліцензій/філій закладу (наприклад, Львівська, Київська, Польська) та керування фільтром ВО.</span>
                             </div>
                             <ul class="mb-0">
-                                <li><strong>Зірочка («Базова ліцензія»):</strong> позначає основну ліцензію закладу (може бути тільки одна), за якою за замовчуванням формується військовий облік (Додаток 5 і файли «Резерв+»).</li>
+                                <li><strong>Зірочка («Базова ліцензія»):</strong> позначає основну ліцензію закладу (може бути тільки одна).</li>
+                                <li><strong>Видимість у військовому обліку (перемикач):</strong> ви самі обираєте одну або кілька ліцензій, які за замовчуванням показуються в Додатках 4/5/12, файлах «Резерв+» та зведеннях Telegram-бота (за замовчуванням — Львівська, але за потреби можна в будь-який день додати ще Київську чи іншу ліцензію).</li>
                                 <li>Видалити ліцензію можна лише тоді, коли під нею не навчається жоден активний студент.</li>
                             </ul>
                         </div>
@@ -2330,18 +2552,19 @@
                 <div class="accordion-item faq-searchable" data-faq-cat="system">
                     <h2 class="accordion-header">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-templates">
-                            <i class="bi bi-file-earmark-arrow-up"></i>Шаблони документів і довідник змінних
+                            <i class="bi bi-file-earmark-arrow-up"></i>Шаблони документів, діагностика та тест-рендер
                         </button>
                     </h2>
                     <div id="p-templates" class="accordion-collapse collapse">
                         <div class="accordion-body">
                             <div class="faq-meta-row">
                                 <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Система → Шаблони документів</span>
-                                <span>Керування Word-шаблонами (<code>.docx</code>), з яких система генерує дипломи, додатки, довідки й відомості.</span>
+                                <span>Керування Word-шаблонами (<code>.docx</code>), перевірка синтаксису та довідник усіх змінних системи.</span>
                             </div>
                             <ul class="mb-0">
-                                <li><strong>Зручні фільтри видимості:</strong> можна перемикати показ шаблонів (<em>Усі / Видимі / Приховані / Тільки адмін</em>), задавати зрозумілу назву, опис, оновлювати файл або приховувати застарілий шаблон зі списку вибору.</li>
-                                <li><strong>Актуальний довідник змінних і приклади для Word:</strong> на окремих вкладках цієї сторінки зібрані <strong>всі доступні поля системи</strong> (особисті дані, фото, група, ліцензія, скорочена програма, диплом і відзнака, акредитація, періоди навчання, освіта, цикли предметів/практик/атестації, військовий облік та змінні відомостей сесії). Будь-яку змінну можна скопіювати в 1 клік або взяти готовий приклад коду для вставки у Word!</li>
+                                <li><strong>Зручні фільтри видимості:</strong> перемикайте показ шаблонів (<em>Усі / Видимі / Приховані / Тільки адмін</em>), задавайте назву, опис або оновлюйте файл без зміни коду.</li>
+                                <li><strong>Тест-рендер і діагностика шаблону:</strong> кнопка перевірки на кожному шаблоні дає змогу обрати будь-якого реального студента й одразу побачити: чи коректний синтаксис Jinja, чи немає <strong>розірваних Word XML-тегів</strong>, які змінні невідомі чи порожні, а які заповнилися — і відкрити тестовий результат в <strong>ONLYOFFICE</strong> або скачати <code>.docx</code> (без запису в журнал видачі додатків).</li>
+                                <li><strong>Оновлений довідник змінних і прикладів:</strong> усі поля системи включно з новими змінними випуску (<code>gpa_100</code>, <code>weighted_gpa_100</code>, <code>gpa_5</code>, <code>total_ects_credits</code>, <code>total_hours</code>, <code>excellent_pct</code>, <code>graduation_order_number</code> / <code>date</code>, <code>diploma_with_honours_bool</code>) — із копіюванням в 1 клік.</li>
                             </ul>
                         </div>
                     </div>
@@ -2450,6 +2673,37 @@
                 </div>
                 {% endif %}
 
+                {% if has_perm('manage_system') %}
+                <div class="accordion-item faq-searchable" data-faq-cat="system">
+                    <h2 class="accordion-header">
+                        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#p-system-tools">
+                            <i class="bi bi-hdd-stack"></i>Бекапи, хмарні копії, сесії та тест-режим
+                        </button>
+                    </h2>
+                    <div id="p-system-tools" class="accordion-collapse collapse">
+                        <div class="accordion-body">
+                            <div class="faq-meta-row">
+                                <span class="faq-path-chip"><i class="bi bi-signpost-2"></i> Система → Бекапи, сесії та тест-режим</span>
+                                <span>Ізольована пісочниця БД, локальні й хмарні резервні копії та контроль активних користувачів.</span>
+                            </div>
+                            <ul class="mb-2">
+                                <li><strong>Тестовий режим (пісочниця):</strong> створює точну ізольовану копію реальної БД <code>students_test_sandbox.db</code>. Усі сторінки працюють із копією (з банером-попередженням вгорі), фоновий Telegram-бот призупиняється, а вихідні повідомлення студентам блокуються. Після перевірки наказів чи імпортів повернення реальної БД відбувається в 1 клік.</li>
+                                <li><strong>Резервні копії БД (Hot Backup):</strong> знімають консистентний знімок реальної БД через SQLite Backup API навіть під час роботи в режимі WAL, із ротацією, автобекапами та створенням страхувальної копії перед кожним відновленням.</li>
+                                <li><strong>Хмарні копії (офсайт):</strong> автоматичне (щодня) або ручне вивантаження в одне чи декілька сховищ одночасно:
+                                    <ul class="mt-1 mb-0">
+                                        <li><strong>Google Диск</strong> (OAuth 2.0 для звичайного <code>@gmail.com</code> / Workspace або Service Account для Shared Drive);</li>
+                                        <li><strong>S3-сховище</strong> (Cloudflare R2, Backblaze B2, локальний MinIO або AWS S3);</li>
+                                        <li><strong>WebDAV</strong> (Nextcloud, ownCloud, Synology NAS, Hetzner Storage Box);</li>
+                                        <li><strong>Приватний Telegram-канал / чат</strong> (стиснутий <code>.zip</code> до 50 МБ).</li>
+                                    </ul>
+                                </li>
+                                <li><strong>Активні сесії:</strong> перегляд хто зараз онлайн із примусовим завершенням вибраної сесії або всіх інших сесій користувачів.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% endif %}
 
             </div>
@@ -2466,11 +2720,12 @@
                     <span class="faq-status-tag faq-status-tag--warn">Пам'ятка адміністратора</span>
                 </div>
                 <div class="faq-panel__body">
-                    <p class="mb-2">Усе працює стабільно, але про ці 5 особливостей варто пам'ятати, щоб не припуститися прикрих помилок:</p>
+                    <p class="mb-2">Усе працює стабільно, але про ці 6 особливостей варто пам'ятати, щоб не припуститися прикрих помилок:</p>
                     <ul class="mb-0">
                         <li class="mb-1"><strong>Оновлення довідників не міняє старі групи автоматично:</strong> якщо ви виправили назву спеціальності, освітньої програми чи кваліфікації — відкрийте потрібну групу на редагування і натисніть «Зберегти», щоб підтягнувся новий текст.</li>
                         <li class="mb-1"><strong>Загальні періоди навчання у паралельних студентів:</strong> якщо період навчання не прив'язаний до конкретної групи, він показується в документах усіх груп цього студента. Якщо треба розмежувати філії — прив'яжіть період до потрібної групи в картці студента або через «Періоди навчання».</li>
                         <li class="mb-1"><strong>Ручне архівування групи:</strong> позначає архівними лише тих студентів, для яких ця група основна (в інших активних групах паралельні студенти не архівуються).</li>
+                        <li class="mb-1"><strong>Тестовий режим і файли на диску:</strong> база даних у пісочниці повністю ізольована, але папка <code>static/uploads/</code> (фото, скани паспортів/наказів) спільна на диску — не видаляйте реальні файли студентів під час тесту.</li>
                         <li class="mb-1"><strong>Журнал військових даних у картці:</strong> показує останні 200 змін. Глибша історія за попередні місяці завжди зберігається в розділі <strong>Система → Логування</strong>.</li>
                         <li><strong>Об'єднання наказів не можна скасувати:</strong> при злитті наказів одного типу всі студенти та скани переходять у головний наказ, а решта наказів видаляється безповоротно.</li>
                     </ul>
@@ -2483,6 +2738,66 @@
 
 </div>
 
+<script id="faqPageLinksData" type="application/json">
+{{ {
+    'p-students': url_for('students.student_list') if (has_perm('manage_students') or has_perm('view_student_completeness') or has_perm('view_student_card')) else '',
+    'p-pending': url_for('admin.pending_students') if has_perm('manage_pending_students') else '',
+    'p-update-requests': url_for('admin.update_requests') if has_perm('manage_update_requests') else '',
+    'p-frozen': url_for('admin.frozen_students') if has_perm('manage_frozen_students') else '',
+    'p-archive': url_for('admin.archive') if has_perm('archive') else '',
+    'p-export': url_for('admin.group_export') if has_perm('group_export') else '',
+    'p-export-photos': url_for('admin.export_photos') if has_perm('group_export') else '',
+    'p-import-students': url_for('students.import_from_excel') if has_perm('import_from_excel') else '',
+    'p-photo-bulk': url_for('photo_bulk.bulk_upload') if has_perm('bulk_photos') else '',
+    'p-groups': url_for('admin.manage_groups') if has_perm('manage_groups') else '',
+    'p-courses': url_for('admin.courses') if has_perm('manage_courses') else '',
+    'p-subjects': url_for('admin.manage_subjects') if has_perm('manage_subjects') else '',
+    'p-activities': url_for('admin.manage_activities') if has_perm('manage_activities') else '',
+    'p-periods': url_for('admin.manage_study_periods_bulk_assign') if has_perm('study_periods') else '',
+    'p-exam-sessions': url_for('exam_sessions.sessions_list') if (has_perm('manage_exam_sessions') or has_perm('reopen_exam_sheets')) else '',
+    'p-teachers': url_for('exam_sessions.teachers_list') if has_perm('manage_exam_sessions') else '',
+    'p-teacher-stats': url_for('exam_sessions.teacher_stats_dashboard') if has_perm('manage_exam_sessions') else '',
+    'p-transfer-grades': url_for('exam_sessions.transfer_queue') if has_perm('transfer_exam_grades') else '',
+    'p-exam-history': url_for('exam_sessions.history_index') if has_perm('view_exam_session_history') else '',
+    'p-import-subjects': url_for('admin.import_subjects') if has_perm('import_subjects') else '',
+    'p-import-grades': url_for('import_grades.upload') if has_perm('import_grades') else '',
+    'p-course-transfer': url_for('admin.course_transfer') if has_perm('manage_course_transfer') else '',
+    'p-graduation': url_for('admin.graduation') if has_perm('manage_graduation') else '',
+    'p-edudocs': url_for('admin.manage_education_documents') if has_perm('manage_education_documents') else '',
+    'p-passport': url_for('admin.manage_passport_documents') if has_perm('manage_passport_documents') else '',
+    'p-diploma-hub': url_for('diploma.hub') if has_perm('manage_diplomas') else '',
+    'p-diplomas': url_for('admin.manage_diplomas') if has_perm('manage_diplomas') else '',
+    'p-mil-dashboard': url_for('military_reports.dashboard') if has_perm('manage_military_reports') else '',
+    'p-mil-files': url_for('military_reports.military_files') if has_perm('manage_military_reports') else '',
+    'p-mil-issues': url_for('military_reports.issues_list') if has_perm('manage_military_reports') else '',
+    'p-mil-dodatok12': url_for('military_reports.summary') if has_perm('manage_military_reports') else '',
+    'p-mil-dodatok4': url_for('military_reports.dodatok_4_list') if has_perm('manage_military_reports') else '',
+    'p-mil-tck': url_for('military_reports.tck_offices') if has_perm('manage_military_reports') else '',
+    'p-mil-telegram': url_for('military_telegram.telegram_dashboard') if has_perm('manage_military_telegram') else '',
+    'p-orders': url_for('admin.orders_list') if has_perm('manage_orders') else '',
+    'p-enrollment-order': url_for('admin.enrollment_order') if has_perm('create_enrollment_order') else '',
+    'p-expulsion': url_for('admin.expulsion') if has_perm('manage_expulsion') else '',
+    'p-license-transfer': url_for('admin.renewal_students') if has_perm('manage_license_transfer') else '',
+    'p-import-edudocs': url_for('admin.import_docs_preview') if has_perm('import_education_docs') else '',
+    'p-import-passports': url_for('admin.import_passport_documents') if has_perm('import_passport_documents') else '',
+    'p-military-bulk': url_for('students.military_bulk_import_pdf') if has_perm('import_military_pdf') else '',
+    'p-faculties': url_for('admin.manage_faculties') if has_perm('manage_faculties') else '',
+    'p-specialties': url_for('admin.manage_specialties') if has_perm('manage_specialties') else '',
+    'p-degree-levels': url_for('admin.manage_degree_levels') if has_perm('manage_degree_levels') else '',
+    'p-edu-programs': url_for('admin.manage_educational_programs') if has_perm('manage_educational_programs') else '',
+    'p-qualification-names': url_for('admin.manage_qualification_names') if has_perm('manage_qualification_names') else '',
+    'p-licenses': url_for('admin.manage_licenses') if has_perm('manage_licenses') else '',
+    'p-accred': url_for('admin.manage_accreditations') if has_perm('manage_accreditations') else '',
+    'p-users': url_for('admin.manage_users') if has_perm('manage_users') else '',
+    'p-templates': url_for('admin.manage_templates') if has_perm('manage_templates') else '',
+    'p-license-report': url_for('admin.license_report') if has_perm('license_report') else '',
+    'p-analytics': url_for('analytics.dashboard') if has_perm('analytics') else '',
+    'p-custom-export': url_for('admin.custom_export') if has_perm('custom_export') else '',
+    'p-logs': url_for('admin.view_logs') if has_perm('view_logs') else '',
+    'p-system-tools': url_for('system_ops.system_dashboard') if has_perm('manage_system') else ''
+}|tojson }}
+</script>
+
 <script>
 (function () {
     const searchInput = document.getElementById('faqSearchInput');
@@ -2493,11 +2808,12 @@
     const filterBar = document.getElementById('faqCategoryFilters');
     const emptyBox = document.getElementById('faqEmptySearch');
     const resetBtn = document.getElementById('faqResetSearchBtn');
+    const desktopTocEl = document.getElementById('faqToc');
+    const mobileTocBody = document.getElementById('faqMobileTocBody');
+    const mobileTocCollapseEl = document.getElementById('faqMobileTocCollapse');
 
     const searchableEls = Array.from(document.querySelectorAll('.faq-searchable'));
     const catHeaders = Array.from(document.querySelectorAll('[data-faq-cat-header]'));
-    const tocGroups = Array.from(document.querySelectorAll('[data-toc-cat]'));
-    const tocLinks = Array.from(document.querySelectorAll('#faqToc a.faq-toc-link'));
     const collapses = Array.from(document.querySelectorAll('#faqAccordion .accordion-collapse'));
 
     let activeCat = 'all';
@@ -2515,6 +2831,125 @@
         if (!el || typeof bootstrap === 'undefined' || !bootstrap.Collapse) return;
         bootstrap.Collapse.getOrCreateInstance(el, { toggle: false }).hide();
     }
+
+    // Дзеркалюємо зміст у мобільну версію, щоб не дублювати розмітку
+    if (desktopTocEl && mobileTocBody) {
+        Array.from(desktopTocEl.querySelectorAll('.faq-toc-group')).forEach(function (grp) {
+            mobileTocBody.appendChild(grp.cloneNode(true));
+        });
+    }
+
+    const tocGroups = Array.from(document.querySelectorAll('[data-toc-cat]'));
+    const tocLinks = Array.from(document.querySelectorAll('.faq-toc-link'));
+    const jumpLinks = Array.from(document.querySelectorAll('.faq-toc-link, .js-faq-jump'));
+
+    // Підрахунок елементів по категоріях у кнопках фільтру
+    (function populateCategoryCounts() {
+        const counts = { all: searchableEls.length };
+        searchableEls.forEach(function (el) {
+            const c = el.getAttribute('data-faq-cat') || '';
+            counts[c] = (counts[c] || 0) + 1;
+        });
+        document.querySelectorAll('[data-cat-count]').forEach(function (badge) {
+            const key = badge.getAttribute('data-cat-count');
+            if (counts[key] !== undefined) {
+                badge.textContent = '(' + counts[key] + ')';
+            }
+        });
+    })();
+
+    // Вставка кнопок «Відкрити сторінку» та «Посилання» в розділи
+    (function enhanceSectionActions() {
+        let pageLinks = {};
+        try {
+            const rawEl = document.getElementById('faqPageLinksData');
+            if (rawEl) pageLinks = JSON.parse(rawEl.textContent || '{}');
+        } catch (e) { pageLinks = {}; }
+
+        function makeCopyBtn(anchorId) {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-outline-secondary faq-copy-btn';
+            btn.setAttribute('data-faq-anchor', anchorId);
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-link-45deg me-1';
+            const lbl = document.createElement('span');
+            lbl.textContent = 'Посилання';
+            btn.appendChild(icon);
+            btn.appendChild(lbl);
+
+            btn.addEventListener('click', function () {
+                const url = window.location.origin + window.location.pathname + '#' + anchorId;
+                const finish = function () {
+                    icon.className = 'bi bi-check2 me-1';
+                    lbl.textContent = 'Скопійовано';
+                    setTimeout(function () {
+                        icon.className = 'bi bi-link-45deg me-1';
+                        lbl.textContent = 'Посилання';
+                    }, 1500);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(url).then(finish).catch(finish);
+                } else {
+                    const tmp = document.createElement('input');
+                    tmp.value = url;
+                    document.body.appendChild(tmp);
+                    tmp.select();
+                    try { document.execCommand('copy'); } catch (e) {}
+                    document.body.removeChild(tmp);
+                    finish();
+                }
+                if (window.history && window.history.replaceState) {
+                    window.history.replaceState(null, '', '#' + anchorId);
+                }
+            });
+            return btn;
+        }
+
+        function makeOpenBtn(href) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.className = 'btn btn-sm btn-outline-primary faq-open-btn';
+            const icon = document.createElement('i');
+            icon.className = 'bi bi-box-arrow-up-right me-1';
+            const lbl = document.createElement('span');
+            lbl.textContent = 'Відкрити сторінку';
+            a.appendChild(icon);
+            a.appendChild(lbl);
+            return a;
+        }
+
+        document.querySelectorAll('#faqAccordion .accordion-collapse[id]').forEach(function (col) {
+            const anchorId = col.id;
+            const body = col.querySelector('.accordion-body');
+            if (!body) return;
+            const actions = document.createElement('div');
+            actions.className = 'faq-meta-actions';
+            if (pageLinks[anchorId]) {
+                actions.appendChild(makeOpenBtn(pageLinks[anchorId]));
+            }
+            actions.appendChild(makeCopyBtn(anchorId));
+
+            let metaRow = body.querySelector('.faq-meta-row');
+            if (!metaRow) {
+                metaRow = document.createElement('div');
+                metaRow.className = 'faq-meta-row';
+                body.insertBefore(metaRow, body.firstChild);
+            }
+            metaRow.appendChild(actions);
+        });
+
+        document.querySelectorAll('.faq-panel[id]').forEach(function (panel) {
+            const head = panel.querySelector('.faq-panel__head');
+            if (!head) return;
+            const wrap = document.createElement('div');
+            wrap.className = 'd-flex align-items-center gap-2';
+            const tag = head.querySelector('.faq-status-tag');
+            if (tag) wrap.appendChild(tag);
+            wrap.appendChild(makeCopyBtn(panel.id));
+            head.appendChild(wrap);
+        });
+    })();
 
     function applyFilter() {
         const q = norm(searchInput ? searchInput.value : '');
@@ -2551,7 +2986,7 @@
             hdr.classList.toggle('d-none', !hasVisible);
         });
 
-        // Синхронізація бокового змісту (TOC)
+        // Синхронізація бокового та мобільного змісту (TOC)
         tocGroups.forEach(function (grp) {
             const cat = grp.getAttribute('data-toc-cat');
             const catMatch = (activeCat === 'all' || cat === activeCat);
@@ -2584,15 +3019,58 @@
         }
     }
 
+    function setActiveCategory(cat) {
+        activeCat = cat || 'all';
+        if (filterBar) {
+            filterBar.querySelectorAll('.faq-chip-btn').forEach(function (b) {
+                b.classList.toggle('is-active', b.getAttribute('data-cat') === activeCat);
+            });
+        }
+        applyFilter();
+    }
+
+    function jumpToAnchor(href, collapseSel) {
+        if (!href || !href.startsWith('#')) return;
+        let target = document.querySelector(href);
+        if (!target) return;
+
+        // Якщо розділ був прихований фільтром або пошуком — скидаємо фільтр, щоб перехід точно спрацював
+        const holder = target.closest('.faq-searchable') || target;
+        if (holder.classList.contains('d-none')) {
+            if (searchInput) searchInput.value = '';
+            setActiveCategory('all');
+        }
+
+        const colEl = collapseSel ? document.querySelector(collapseSel) : (target.classList.contains('accordion-collapse') ? target : null);
+        if (colEl) openCollapse(colEl);
+
+        tocLinks.forEach(function (other) {
+            other.classList.toggle('is-active', other.getAttribute('href') === href);
+        });
+
+        if (mobileTocCollapseEl && mobileTocCollapseEl.classList.contains('show')) {
+            closeCollapse(mobileTocCollapseEl);
+        }
+
+        if (window.history && window.history.replaceState) {
+            window.history.replaceState(null, '', href);
+        }
+
+        const scrollTarget = target.closest('.accordion-item') || target;
+        setTimeout(function () {
+            const navH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-height') || '64', 10) || 64;
+            const y = scrollTarget.getBoundingClientRect().top + window.scrollY - navH - 16;
+            window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+            scrollTarget.classList.add('faq-target-flash');
+            setTimeout(function () { scrollTarget.classList.remove('faq-target-flash'); }, 1100);
+        }, 90);
+    }
+
     if (filterBar) {
         filterBar.addEventListener('click', function (e) {
             const btn = e.target.closest('.faq-chip-btn[data-cat]');
             if (!btn) return;
-            activeCat = btn.getAttribute('data-cat') || 'all';
-            filterBar.querySelectorAll('.faq-chip-btn').forEach(function (b) {
-                b.classList.toggle('is-active', b === btn);
-            });
-            applyFilter();
+            setActiveCategory(btn.getAttribute('data-cat') || 'all');
         });
     }
 
@@ -2609,13 +3087,7 @@
     if (resetBtn) {
         resetBtn.addEventListener('click', function () {
             if (searchInput) searchInput.value = '';
-            activeCat = 'all';
-            if (filterBar) {
-                filterBar.querySelectorAll('.faq-chip-btn').forEach(function (b) {
-                    b.classList.toggle('is-active', b.getAttribute('data-cat') === 'all');
-                });
-            }
-            applyFilter();
+            setActiveCategory('all');
         });
     }
 
@@ -2635,33 +3107,59 @@
         });
     }
 
-    // Клік по змісту: відкриваємо потрібний пункт акордеону й плавно прокручуємо
-    tocLinks.forEach(function (lnk) {
+    jumpLinks.forEach(function (lnk) {
         lnk.addEventListener('click', function (e) {
             const href = lnk.getAttribute('href') || '';
-            const collapseSel = lnk.getAttribute('data-target-collapse');
-            const target = href.startsWith('#') ? document.querySelector(href) : null;
-            if (!target) return;
-
+            if (!href.startsWith('#') || !document.querySelector(href)) return;
             e.preventDefault();
-            if (collapseSel) {
-                const colEl = document.querySelector(collapseSel);
-                if (colEl) openCollapse(colEl);
-            }
-            tocLinks.forEach(function (other) {
-                other.classList.toggle('is-active', other === lnk);
-            });
-
-            const scrollTarget = target.closest('.accordion-item') || target;
-            setTimeout(function () {
-                const navH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--nav-height') || '64', 10) || 64;
-                const y = scrollTarget.getBoundingClientRect().top + window.scrollY - navH - 16;
-                window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
-            }, 80);
+            jumpToAnchor(href, lnk.getAttribute('data-target-collapse'));
         });
     });
 
+    // Синхронізуємо URL-хеш при ручному відкритті пункту акордеону
+    collapses.forEach(function (col) {
+        col.addEventListener('shown.bs.collapse', function () {
+            if (!col.id) return;
+            const hash = '#' + col.id;
+            tocLinks.forEach(function (lnk) {
+                lnk.classList.toggle('is-active', lnk.getAttribute('href') === hash);
+            });
+            if (window.history && window.history.replaceState && (!searchInput || !searchInput.value)) {
+                window.history.replaceState(null, '', hash);
+            }
+        });
+    });
+
+    // Гаряча клавіша "/" для фокусу в пошуку по довідці
+    document.addEventListener('keydown', function (e) {
+        if (!searchInput) return;
+        const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+        const isEditable = tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable);
+        if (e.key === '/' && !isEditable && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+        } else if (e.key === 'Escape' && document.activeElement === searchInput) {
+            if (searchInput.value) {
+                searchInput.value = '';
+                applyFilter();
+            } else {
+                searchInput.blur();
+            }
+        }
+    });
+
     applyFilter();
+
+    // Авто-відкриття розділу, якщо прийшли за прямим посиланням /faq#p-...
+    if (window.location.hash && window.location.hash.length > 1) {
+        const h = window.location.hash;
+        const targetEl = document.querySelector(h);
+        if (targetEl) {
+            const colSel = targetEl.classList.contains('accordion-collapse') ? h : null;
+            setTimeout(function () { jumpToAnchor(h, colSel); }, 60);
+        }
+    }
 })();
 </script>
 {% endblock %}

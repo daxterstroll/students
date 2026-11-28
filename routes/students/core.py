@@ -938,6 +938,7 @@ FAQ_SECTION_PERMISSIONS = {
         'manage_orders',
         'create_enrollment_order',
         'manage_expulsion',
+        'manage_license_transfer',
         'import_education_docs',
         'import_passport_documents',
         'import_military_pdf',
@@ -958,6 +959,7 @@ FAQ_SECTION_PERMISSIONS = {
         'analytics',
         'custom_export',
         'view_logs',
+        'manage_system',
     ],
 }
 
