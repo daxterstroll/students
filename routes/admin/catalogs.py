@@ -354,55 +354,112 @@ def manage_accreditations():
     """CRUD-сторінка довідників акредитацій (ступінь + спеціальність + текст українською/англійською) для підстановки в документи."""
     conn = get_db()
     cursor = conn.cursor()
+    try:
+        if request.method == 'POST' and 'add' in request.form:
+            degree = (request.form.get('degree') or '').strip()
+            specialty = (request.form.get('specialty') or '').strip()
+            text_ua = (request.form.get('text_ua') or '').strip()
+            text_en = (request.form.get('text_en') or '').strip()
+            if not degree or not specialty or not text_ua:
+                flash("Оберіть ступінь, спеціальність та заповніть текст акредитації українською.", "error")
+            else:
+                cursor.execute("""
+                    INSERT INTO accreditations (degree, specialty, text_ua, text_en) VALUES (?, ?, ?, ?)
+                """, (degree, specialty, text_ua, text_en))
+                conn.commit()
+                flash("Акредитацію додано.", "success")
+                log_action(
+                    current_username(),
+                    f"додав акредитацію: {degree} / {specialty}"
+                )
+            return redirect(url_for('admin.manage_accreditations'))
 
-    if request.method == 'POST' and 'add' in request.form:
-        degree = request.form.get('degree')
-        specialty = request.form.get('specialty')
-        text_ua = request.form.get('text_ua')
-        text_en = request.form.get('text_en')
-        cursor.execute("""
-            INSERT INTO accreditations (degree, specialty, text_ua, text_en) VALUES (?, ?, ?, ?)
-        """, (degree, specialty, text_ua, text_en))
-        conn.commit()
-        log_action(
-            current_username(),
-            f"додав акредитацію: {degree} / {specialty}"
+        if request.method == 'POST' and 'edit' in request.form:
+            acc_id = request.form.get('id')
+            degree = (request.form.get('degree') or '').strip()
+            specialty = (request.form.get('specialty') or '').strip()
+            text_ua = (request.form.get('text_ua') or '').strip()
+            text_en = (request.form.get('text_en') or '').strip()
+            if not acc_id or not degree or not specialty or not text_ua:
+                flash("Оберіть ступінь, спеціальність та заповніть текст акредитації українською.", "error")
+            else:
+                cursor.execute("""
+                    UPDATE accreditations SET degree=?, specialty=?, text_ua=?, text_en=? WHERE id=?
+                """, (degree, specialty, text_ua, text_en, acc_id))
+                conn.commit()
+                flash("Акредитацію оновлено.", "success")
+                log_action(
+                    current_username(),
+                    f"редагував акредитацію ID {acc_id}: {degree} / {specialty}"
+                )
+            return redirect(url_for('admin.manage_accreditations'))
+
+        if request.method == 'POST' and 'delete' in request.form:
+            acc_id = request.form.get('id')
+            row = cursor.execute("SELECT degree, specialty FROM accreditations WHERE id=?", (acc_id,)).fetchone()
+            cursor.execute("DELETE FROM accreditations WHERE id=?", (acc_id,))
+            conn.commit()
+            flash("Акредитацію видалено.", "success")
+            log_action(
+                current_username(),
+                f"ВИДАЛИВ акредитацію ID {acc_id}: {row[0] if row else ''} / {row[1] if row else ''}"
+            )
+            return redirect(url_for('admin.manage_accreditations'))
+
+        has_degree_levels = _table_exists(conn, 'degree_levels')
+        if has_degree_levels:
+            degree_levels = cursor.execute(
+                "SELECT id, name_ua, name_en, is_active FROM degree_levels ORDER BY is_active DESC, id"
+            ).fetchall()
+            accreditations = cursor.execute("""
+                SELECT a.id, a.degree, a.specialty, a.text_ua, a.text_en
+                FROM accreditations a
+                LEFT JOIN degree_levels dl ON dl.name_ua = a.degree
+                ORDER BY COALESCE(dl.id, 999999), a.degree COLLATE UKRAINIAN, a.specialty COLLATE UKRAINIAN
+            """).fetchall()
+        else:
+            degree_levels = []
+            accreditations = cursor.execute(
+                "SELECT id, degree, specialty, text_ua, text_en FROM accreditations ORDER BY degree, specialty"
+            ).fetchall()
+
+        groups = cursor.execute("""
+            SELECT DISTINCT specialty
+            FROM groups
+            WHERE archived = FALSE AND specialty IS NOT NULL AND TRIM(specialty) != ''
+            ORDER BY specialty COLLATE UKRAINIAN
+        """).fetchall()
+
+        specialty_options = []
+        seen_specs = set()
+        for g in groups:
+            sp = (g['specialty'] or '').strip()
+            if sp and sp not in seen_specs:
+                seen_specs.add(sp)
+                specialty_options.append(sp)
+
+        if _table_exists(conn, 'specialties'):
+            cat_specs = cursor.execute("""
+                SELECT code || ' ' || name_ua AS specialty
+                FROM specialties
+                WHERE is_active = 1
+                ORDER BY substr(code, 1, 1), CAST(substr(code, 2) AS INTEGER), code
+            """).fetchall()
+            for r in cat_specs:
+                sp = (r['specialty'] or '').strip()
+                if sp and sp not in seen_specs:
+                    seen_specs.add(sp)
+                    specialty_options.append(sp)
+
+        return render_template(
+            'manage_accreditations.html',
+            accreditations=accreditations,
+            groups=groups,
+            specialty_options=specialty_options,
+            degree_levels=degree_levels,
         )
-        return redirect(url_for('admin.manage_accreditations'))
-
-    if request.method == 'POST' and 'edit' in request.form:
-        acc_id = request.form.get('id')
-        degree = request.form.get('degree')
-        specialty = request.form.get('specialty')
-        text_ua = request.form.get('text_ua')
-        text_en = request.form.get('text_en')
-        cursor.execute("""
-            UPDATE accreditations SET degree=?, specialty=?, text_ua=?, text_en=? WHERE id=?
-        """, (degree, specialty, text_ua, text_en, acc_id))
-        conn.commit()
-        log_action(
-            current_username(),
-            f"редагував акредитацію ID {acc_id}: {degree} / {specialty}"
-        )
-        return redirect(url_for('admin.manage_accreditations'))
-
-    if request.method == 'POST' and 'delete' in request.form:
-        acc_id = request.form.get('id')
-        row = cursor.execute("SELECT degree, specialty FROM accreditations WHERE id=?", (acc_id,)).fetchone()
-        cursor.execute("DELETE FROM accreditations WHERE id=?", (acc_id,))
-        conn.commit()
-        log_action(
-            current_username(),
-            f"ВИДАЛИВ акредитацію ID {acc_id}: {row[0] if row else ''} / {row[1] if row else ''}"
-        )
-        return redirect(url_for('admin.manage_accreditations'))
-
-    cursor.execute("SELECT id, degree, specialty, text_ua, text_en FROM accreditations ORDER BY degree, specialty")
-    accreditations = cursor.fetchall()
-    cursor.execute("SELECT DISTINCT specialty FROM groups WHERE archived = FALSE ORDER BY specialty")
-    groups = cursor.fetchall()
-
-    return render_template('manage_accreditations.html', accreditations=accreditations, groups=groups)
+    finally:
+        conn.close()
 
 
 @admin_bp.route('/admin/manage_specialties', methods=['GET', 'POST'])
