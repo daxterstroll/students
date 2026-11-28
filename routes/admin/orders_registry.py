@@ -18,7 +18,7 @@ import sqlite3
 from flask import render_template, request, redirect, url_for, flash, session
 
 from routes.admin import admin_bp
-from routes.db import get_db
+from routes.db import get_db, normalize_name_for_match
 from routes.helpers import current_username, sort_ukrainian
 from routes.utils import permission_required, log_action, save_multiple_attachments, build_field_changes
 from routes.orders_service import (
@@ -97,6 +97,42 @@ def _extract_group_id_from_payload(order_type, payload):
             return None
     return None
 
+def _escape_like(s: str) -> str:
+    return s.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+
+
+def _parse_student_tokens(raw_query: str) -> list[str]:
+    norm = normalize_name_for_match(raw_query).replace("'", '')
+    tokens: list[str] = []
+    for part in norm.split():
+        p = part.strip()
+        if p and p not in tokens:
+            tokens.append(p)
+        if len(tokens) >= 6:
+            break
+    return tokens
+
+
+def _student_name_sql_expr(alias: str = 's') -> str:
+    return (
+        f"REPLACE(NORM_NAME("
+        f"COALESCE({alias}.last_name_UA, '') || ' ' || "
+        f"COALESCE({alias}.first_name_UA, '') || ' ' || "
+        f"COALESCE({alias}.middle_name_UA, '') || ' ' || "
+        f"COALESCE({alias}.last_name_ENG, '') || ' ' || "
+        f"COALESCE({alias}.first_name_ENG, '')"
+        f"), '''', '')"
+    )
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table_name,),
+    ).fetchone()
+    return row is not None
+
+
 @admin_bp.route('/admin/orders')
 @permission_required('manage_orders')
 def orders_list():
@@ -114,6 +150,7 @@ def orders_list():
 
     order_type = (request.args.get('type') or '').strip() or None
     search = (request.args.get('search') or '').strip()
+    student_filter = (request.args.get('student') or '').strip()
     number_filter = (request.args.get('number') or '').strip()
     only_duplicates = request.args.get('only_duplicates') == '1'
     page = max(1, request.args.get('page', 1, type=int))
@@ -153,14 +190,54 @@ def orders_list():
         where.append('o.order_type = ?')
         params.append(order_type)
     if number_filter:
-        where.append("o.order_number LIKE ?")
-        params.append(f'%{number_filter}%')
+        where.append("o.order_number LIKE ? ESCAPE '\\'")
+        params.append(f"%{_escape_like(number_filter)}%")
     if search:
         where.append(
-            "(o.order_number LIKE ? OR IFNULL(o.title, '') LIKE ? OR IFNULL(o.notes, '') LIKE ?)"
+            "(o.order_number LIKE ? ESCAPE '\\' OR IFNULL(o.title, '') LIKE ? ESCAPE '\\' OR IFNULL(o.notes, '') LIKE ? ESCAPE '\\')"
         )
-        q = f'%{search}%'
+        q = f"%{_escape_like(search)}%"
         params.extend([q, q, q])
+
+    student_tokens = _parse_student_tokens(student_filter)
+    student_match_sql = ''
+    tok_params: list[str] = []
+    group_join_conds = ["s.group_id = oi.entity_id"]
+    if student_tokens:
+        if _table_exists(conn, 'student_enrollments'):
+            group_join_conds.append(
+                "EXISTS (SELECT 1 FROM student_enrollments se WHERE se.student_id = s.id AND se.group_id = oi.entity_id)"
+            )
+        if _table_exists(conn, 'frozen_students'):
+            group_join_conds.append(
+                "EXISTS (SELECT 1 FROM frozen_students fs WHERE fs.student_id = s.id AND fs.previous_group_id = oi.entity_id)"
+            )
+        name_expr = _student_name_sql_expr('s')
+        tok_conds = [f"{name_expr} LIKE ? ESCAPE '\\'" for _ in student_tokens]
+        tok_params = [f"%{_escape_like(t)}%" for t in student_tokens]
+        student_match_sql = ' AND '.join(tok_conds)
+        group_join_sql = ' OR '.join(group_join_conds)
+        where.append(f"""(
+            EXISTS (
+                SELECT 1
+                FROM order_items oi
+                JOIN students s ON s.id = oi.entity_id
+                WHERE oi.order_id = o.id
+                  AND oi.entity_type = 'student'
+                  AND ({student_match_sql})
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM order_items oi
+                JOIN students s ON ({group_join_sql})
+                WHERE oi.order_id = o.id
+                  AND oi.entity_type = 'group'
+                  AND ({student_match_sql})
+            )
+        )""")
+        params.extend(tok_params)
+        params.extend(tok_params)
+
     if only_duplicates:
         if duplicate_numbers:
             ph = ','.join('?' * len(duplicate_numbers))
@@ -211,6 +288,75 @@ def orders_list():
         params + [per_page, offset],
     ).fetchall()
 
+    matched_by_order: dict[int, list[dict]] = {}
+    if student_tokens and rows:
+        order_ids_page = [r['id'] for r in rows]
+        oid_ph = ','.join('?' * len(order_ids_page))
+        seen_per_order: dict[int, set[int]] = {}
+
+        direct_matches = conn.execute(
+            f"""
+            SELECT oi.order_id, s.id AS student_id,
+                   s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+                   COALESCE(g.name, '') AS group_name
+            FROM order_items oi
+            JOIN students s ON s.id = oi.entity_id
+            LEFT JOIN groups g ON g.id = s.group_id
+            WHERE oi.order_id IN ({oid_ph})
+              AND oi.entity_type = 'student'
+              AND ({student_match_sql})
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+            """,
+            order_ids_page + tok_params,
+        ).fetchall()
+        for mr in direct_matches:
+            oid = mr['order_id']
+            sid = mr['student_id']
+            if sid in seen_per_order.setdefault(oid, set()):
+                continue
+            seen_per_order[oid].add(sid)
+            full_name = ' '.join(
+                x for x in (mr['last_name_UA'], mr['first_name_UA'], mr['middle_name_UA'] or '') if x
+            )
+            matched_by_order.setdefault(oid, []).append({
+                'id': sid,
+                'full_name': full_name,
+                'via': 'direct',
+                'group_name': mr['group_name'] or '',
+            })
+
+        group_join_sql = ' OR '.join(group_join_conds)
+        group_matches = conn.execute(
+            f"""
+            SELECT DISTINCT oi.order_id, s.id AS student_id,
+                   s.last_name_UA, s.first_name_UA, s.middle_name_UA,
+                   COALESCE(g.name, '') AS order_group_name
+            FROM order_items oi
+            JOIN groups g ON g.id = oi.entity_id
+            JOIN students s ON ({group_join_sql})
+            WHERE oi.order_id IN ({oid_ph})
+              AND oi.entity_type = 'group'
+              AND ({student_match_sql})
+            ORDER BY s.last_name_UA COLLATE UKRAINIAN, s.first_name_UA COLLATE UKRAINIAN
+            """,
+            order_ids_page + tok_params,
+        ).fetchall()
+        for mr in group_matches:
+            oid = mr['order_id']
+            sid = mr['student_id']
+            if sid in seen_per_order.setdefault(oid, set()):
+                continue
+            seen_per_order[oid].add(sid)
+            full_name = ' '.join(
+                x for x in (mr['last_name_UA'], mr['first_name_UA'], mr['middle_name_UA'] or '') if x
+            )
+            matched_by_order.setdefault(oid, []).append({
+                'id': sid,
+                'full_name': full_name,
+                'via': 'group',
+                'group_name': mr['order_group_name'] or '',
+            })
+
     type_counts = {t: 0 for t in ORDER_TYPES}
     for r in conn.execute(
         """
@@ -229,6 +375,9 @@ def orders_list():
         d = dict(r)
         d['type_label'] = ORDER_TYPE_LABELS.get(d['order_type'], d['order_type'])
         d['duplicates_count'] = duplicate_numbers.get(d['order_number'], 0)
+        people = matched_by_order.get(d['id']) or []
+        d['matched_people'] = people[:6]
+        d['matched_people_extra'] = max(0, len(people) - 6)
         orders.append(d)
 
     return render_template(
@@ -236,6 +385,7 @@ def orders_list():
         orders=orders,
         order_type=order_type or '',
         search=search,
+        student_filter=student_filter,
         number_filter=number_filter,
         only_duplicates=only_duplicates,
         duplicate_numbers=duplicate_numbers,
@@ -382,11 +532,14 @@ def order_detail(order_id):
     peer_orders = [dict(r) for r in peer_orders]
     conn.close()
 
+    item_q = (request.args.get('q') or '').strip()
+
     return render_template(
         'order_detail.html',
         order=order,
         type_labels=ORDER_TYPE_LABELS,
         peer_orders=peer_orders,
+        item_q=item_q,
     )
 
 

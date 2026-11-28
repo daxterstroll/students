@@ -1742,28 +1742,60 @@ def global_search_api():
             try:
                 from routes.orders_service import ORDER_TYPE_LABELS
                 q_like = f"%{q_low}%"
+                o_fio_conds = []
+                o_fio_params: list = []
+                for tok in tokens[:5]:
+                    o_fio_conds.append(
+                        "LOWER_UA(COALESCE(s.last_name_UA,'') || ' ' || COALESCE(s.first_name_UA,'') || ' ' || COALESCE(s.middle_name_UA,'')) LIKE ?"
+                    )
+                    o_fio_params.append(f"%{tok}%")
+                o_fio_sql = "(" + " AND ".join(o_fio_conds) + ")" if o_fio_conds else "1=0"
+
                 rows_o = conn.execute(
-                    """
-                    SELECT o.id, o.order_type, o.order_number, o.order_date, o.title
+                    f"""
+                    SELECT o.id, o.order_type, o.order_number, o.order_date, o.title,
+                           (
+                               SELECT s.last_name_UA || ' ' || s.first_name_UA || ' ' || COALESCE(s.middle_name_UA, '')
+                               FROM order_items oi
+                               JOIN students s ON s.id = oi.entity_id
+                               WHERE oi.order_id = o.id
+                                 AND oi.entity_type = 'student'
+                                 AND {o_fio_sql}
+                               LIMIT 1
+                           ) AS matched_student
                     FROM orders o
                     WHERE o.status = 'active'
                       AND (
                           LOWER_UA(COALESCE(o.order_number, '')) LIKE ?
                           OR LOWER_UA(COALESCE(o.title, '')) LIKE ?
                           OR LOWER_UA(COALESCE(o.notes, '')) LIKE ?
+                          OR EXISTS (
+                              SELECT 1
+                              FROM order_items oi
+                              JOIN students s ON s.id = oi.entity_id
+                              WHERE oi.order_id = o.id
+                                AND oi.entity_type = 'student'
+                                AND {o_fio_sql}
+                          )
                       )
                     ORDER BY o.id DESC
                     LIMIT 6
                     """,
-                    (q_like, q_like, q_like),
+                    o_fio_params + [q_like, q_like, q_like] + o_fio_params,
                 ).fetchall()
                 for o in rows_o:
                     t_lbl = ORDER_TYPE_LABELS.get(o['order_type'], o['order_type'])
+                    sub_parts = [t_lbl]
+                    if o['title']:
+                        sub_parts.append(o['title'])
+                    matched_st = (o['matched_student'] or '').strip()
+                    if matched_st:
+                        sub_parts.append(f"студент: {matched_st}")
                     orders_res.append({
                         'id': o['id'],
                         'title': f"Наказ № {o['order_number']} від {o['order_date']}",
-                        'subtitle': f"{t_lbl}" + (f" · {o['title']}" if o['title'] else ''),
-                        'url': url_for('admin.order_detail', order_id=o['id']),
+                        'subtitle': ' · '.join(sub_parts),
+                        'url': url_for('admin.order_detail', order_id=o['id'], q=q if matched_st else None),
                     })
             except Exception:
                 pass

@@ -2,11 +2,11 @@
 {% import '_macros.html' as ui %}
 {% block title %}Наказ № {{ order.order_number }}{% endblock %}
 {% block main_class %}py-3{% endblock %}
+
 {% block content %}
 <div class="container py-4">
-
     <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
-        <a href="{{ url_for('admin.orders_list') }}" class="btn btn-sm btn-outline-secondary">
+        <a href="{{ url_for('admin.orders_list', student=item_q or none) }}" class="btn btn-sm btn-outline-secondary">
             <i class="bi bi-arrow-left me-1"></i> До реєстру
         </a>
         <div class="d-flex flex-wrap gap-2">
@@ -85,9 +85,10 @@
 
     <div class="card">
         <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-            <strong>Позиції наказу</strong>
-            <div class="d-flex align-items-center gap-2">
-                <span class="badge bg-primary">{{ order['items']|length }}</span>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <strong>Позиції наказу</strong>
+                <span class="badge bg-primary" id="orderItemsTotalBadge">{{ order['items']|length }}</span>
+                <span class="badge bg-info text-dark d-none" id="orderItemsFilteredBadge"></span>
                 {% if order.duplicates_hidden %}
                 <span class="badge bg-warning text-dark"
                       title="У БД було {{ order.duplicates_hidden }} зайвих рядків з тим самим студентом і групою — приховано при показі">
@@ -96,11 +97,25 @@
                 </span>
                 {% endif %}
             </div>
+            {% if order['items'] %}
+            <div class="input-group input-group-sm" style="max-width: 340px;">
+                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                <input type="text"
+                       id="orderItemsFilterInput"
+                       class="form-control"
+                       value="{{ item_q or '' }}"
+                       placeholder="Пошук по ПІБ / групі в наказі..."
+                       autocomplete="off">
+                <button type="button" id="orderItemsFilterClear" class="btn btn-outline-secondary d-none" title="Показати всі">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+            {% endif %}
         </div>
         <div class="card-body p-0">
             {% if order['items'] %}
             <div class="table-responsive">
-                <table class="table table-sm table-hover mb-0 align-middle">
+                <table class="table table-sm table-hover mb-0 align-middle" id="orderItemsTable">
                     <thead class="table-light">
                         <tr>
                             <th class="text-center" style="width:40px;">№</th>
@@ -112,7 +127,8 @@
                     </thead>
                     <tbody>
                         {% for it in order['items'] %}
-                        <tr>
+                        <tr class="js-order-item-row"
+                            data-search-text="{{ (it.label ~ ' ' ~ (it.group_name_for_item or '') ~ ' ' ~ (it.payload_text or ''))|e }}">
                             <td class="text-center font-monospace small">{{ loop.index }}</td>
                             <td>
                                 {% if it.student_id %}
@@ -160,10 +176,79 @@
                     </tbody>
                 </table>
             </div>
+            <div class="p-4 text-center text-muted d-none" id="orderItemsEmptyFilter">
+                За запитом у цьому наказі нікого не знайдено.
+            </div>
             {% else %}
             <div class="p-4 text-center text-muted">Позицій немає</div>
             {% endif %}
         </div>
     </div>
 </div>
+
+{% if order['items'] %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const input = document.getElementById('orderItemsFilterInput');
+    const clearBtn = document.getElementById('orderItemsFilterClear');
+    const rows = [...document.querySelectorAll('.js-order-item-row')];
+    const badge = document.getElementById('orderItemsFilteredBadge');
+    const emptyMsg = document.getElementById('orderItemsEmptyFilter');
+    if (!input || !rows.length) return;
+
+    function normalizeStr(s) {
+        return String(s || '')
+            .toLowerCase()
+            .replace(/[\u2019\u02BC\u2018`\u02BB\u2032\u055A\uFF07']/g, '')
+            .replace(/[\u2014\u2013\u2012\u2212\uFF0D\u2011-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function applyFilter() {
+        const normQ = normalizeStr(input.value);
+        const tokens = normQ ? normQ.split(' ').filter(Boolean) : [];
+        let shown = 0;
+
+        rows.forEach(tr => {
+            if (!tokens.length) {
+                tr.classList.remove('d-none', 'table-info');
+                shown += 1;
+                return;
+            }
+            const hay = normalizeStr(tr.dataset.searchText || tr.textContent);
+            const matched = tokens.every(t => hay.includes(t));
+            tr.classList.toggle('d-none', !matched);
+            tr.classList.toggle('table-info', matched);
+            if (matched) shown += 1;
+        });
+
+        if (clearBtn) clearBtn.classList.toggle('d-none', !tokens.length);
+        if (badge) {
+            if (tokens.length) {
+                badge.textContent = 'Знайдено: ' + shown;
+                badge.classList.remove('d-none');
+            } else {
+                badge.classList.add('d-none');
+            }
+        }
+        if (emptyMsg) {
+            emptyMsg.classList.toggle('d-none', shown > 0);
+        }
+    }
+
+    input.addEventListener('input', applyFilter);
+    if (clearBtn) {
+        clearBtn.addEventListener('click', function () {
+            input.value = '';
+            applyFilter();
+            input.focus();
+        });
+    }
+    if (input.value.trim()) {
+        applyFilter();
+    }
+});
+</script>
+{% endif %}
 {% endblock %}

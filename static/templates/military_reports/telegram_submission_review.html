@@ -120,6 +120,36 @@
     </div>
     {% endif %}
 
+    {% if risk_flags %}
+    <div class="alert {% if risk_level == 'critical' %}alert-danger{% else %}alert-warning{% endif %} d-flex align-items-start gap-2 mb-4">
+        <i class="bi bi-shield-exclamation fs-4"></i>
+        <div>
+            <strong>
+                {% if risk_level == 'critical' %}Виявлено критичні розбіжності при звірці PDF з БД!
+                {% else %}Попередження за даними військового обліку з PDF:{% endif %}
+            </strong>
+            <ul class="mb-0 mt-1 small">
+                {% for rf in risk_flags %}
+                <li>
+                    <span class="badge {% if rf.level == 'critical' %}bg-danger{% else %}bg-warning text-dark{% endif %} me-1">{{ rf.label }}</span>
+                    {{ rf.detail }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if not sub.pdf_rel_path and sub.files_cleaned_at %}
+    <div class="alert alert-secondary d-flex align-items-start gap-2 mb-4">
+        <i class="bi bi-hdd-stack fs-5"></i>
+        <div>
+            <strong>Тимчасові файли черги очищено за регламентом ({{ sub.files_cleaned_at[:16] }}):</strong>
+            тимчасовий PDF видалено з папки <code>static/uploads/telegram_vod/</code>, при цьому історія звірки та всі розпізнані поля в БД повністю збережені.
+        </div>
+    </div>
+    {% endif %}
+
     {% if sub.is_outdated_pdf %}
     <div class="alert alert-secondary d-flex align-items-start gap-2 mb-4">
         <i class="bi bi-calendar-x fs-5"></i>

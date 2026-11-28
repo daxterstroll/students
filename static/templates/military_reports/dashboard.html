@@ -316,6 +316,10 @@
                         <i class="bi bi-telegram me-2"></i>
                         <strong>Telegram-бот ВОД («Резерв+»)</strong> — розсилки та перевірка подач
                     </a>
+                    <a href="{{ url_for('military_telegram.telegram_dashboard', tab='groups') }}" class="btn btn-outline-primary text-start">
+                        <i class="bi bi-clipboard2-data me-2"></i>
+                        <strong>Зведення «Резерв+» по групах</strong> — хто здав / не здав, звіти старостам
+                    </a>
                     {% endif %}
                     <a href="{{ url_for('military_reports.tck_offices') }}" class="btn btn-outline-secondary text-start">
                         <i class="bi bi-building me-2"></i>

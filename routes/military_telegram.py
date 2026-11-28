@@ -19,6 +19,7 @@ Telegram-бот для збору військово-облікових доку
         перевіряє і чергу бота, і вже підтверджені файли в `attachments`).
 """
 
+import calendar
 from datetime import date, datetime, timedelta
 import html as html_lib
 import json
@@ -347,6 +348,55 @@ def ensure_telegram_vod_schema(conn) -> None:
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_tg_events_read ON telegram_events(is_read, id)")
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS telegram_group_contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            group_id INTEGER NOT NULL UNIQUE,
+            leader_name TEXT NOT NULL DEFAULT '',
+            leader_chat_id TEXT NOT NULL DEFAULT '',
+            curator_name TEXT NOT NULL DEFAULT '',
+            curator_chat_id TEXT NOT NULL DEFAULT '',
+            notes TEXT NOT NULL DEFAULT '',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_tg_group_contacts_gid ON telegram_group_contacts(group_id)")
+
+    # Ідемпотентні міграції колонок на існуючих таблицях
+    def _ensure_cols(table_name: str, cols_spec: list[tuple[str, str]]) -> None:
+        existing_cols = {
+            r[1] for r in conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        for col_name, col_ddl in cols_spec:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_ddl}")
+
+    _ensure_cols('telegram_bot_settings', [
+        ('auto_cleanup_enabled', 'INTEGER NOT NULL DEFAULT 1'),
+        ('auto_cleanup_months', 'INTEGER NOT NULL DEFAULT 6'),
+        ('auto_cleanup_include_not_found', 'INTEGER NOT NULL DEFAULT 1'),
+        ('auto_cleanup_include_approved', 'INTEGER NOT NULL DEFAULT 0'),
+        ('last_cleanup_date', "TEXT NOT NULL DEFAULT ''"),
+        ('last_cleanup_summary', "TEXT NOT NULL DEFAULT ''"),
+    ])
+
+    _ensure_cols('telegram_vod_submissions', [
+        ('risk_flags_json', "TEXT NOT NULL DEFAULT '[]'"),
+        ('risk_level', "TEXT NOT NULL DEFAULT 'none'"),
+        ('risk_count', 'INTEGER NOT NULL DEFAULT 0'),
+        ('files_cleaned_at', "TEXT NOT NULL DEFAULT ''"),
+    ])
+
+    _ensure_cols('telegram_auto_reminder_rules', [
+        ('escalation_enabled', 'INTEGER NOT NULL DEFAULT 0'),
+        ('escalation_last_days', 'INTEGER NOT NULL DEFAULT 3'),
+        ('escalation_send_to_leaders', 'INTEGER NOT NULL DEFAULT 1'),
+        ('escalation_extra_chat_ids', "TEXT NOT NULL DEFAULT ''"),
+        ('escalation_last_date', "TEXT NOT NULL DEFAULT ''"),
+        ('escalation_last_summary', "TEXT NOT NULL DEFAULT ''"),
+    ])
 
     # Початкові корисні пресети фільтрів (одноразово)
     conn.execute("""
@@ -723,6 +773,180 @@ def _build_submission_diffs(conn, student_id: int, parsed: dict) -> tuple[dict, 
     mil_diff = _build_diff(cur_mil, new_military, MILITARY_FIELDS)
     stu_diff = _build_diff(cur_stu, new_student, STUDENT_FIELDS)
     return new_military, new_student, mil_diff, stu_diff
+
+
+def _norm_risk_text(val) -> str:
+    if val is None:
+        return ''
+    return ' '.join(_norm_apos(str(val)).split())
+
+
+def _analyze_submission_risks(
+    conn,
+    student_id: int | None,
+    parsed: dict,
+    *,
+    cur_mil: dict | None = None,
+    today_ref: date | None = None,
+) -> tuple[list[dict], str]:
+    """
+    Автоматична звірка критичних розбіжностей та ризиків при розборі PDF «Резерв+»:
+      - поява/зміна відмітки про розшук / звернення до поліції;
+      - зняття/виключення з обліку або зміна військового статусу;
+      - зміна ТЦК порівняно з БД;
+      - зникнення активної відстрочки, її прострочення або швидке закінчення (≤30 дн.);
+      - прострочення або швидке закінчення терміну дії ВОД (≤14 дн.).
+    Повертає (список_ризиків, max_level), де max_level in ('none', 'warning', 'critical').
+    """
+    if not student_id or not isinstance(parsed, dict):
+        return [], 'none'
+
+    if cur_mil is None:
+        row = conn.execute("SELECT * FROM military WHERE student_id = ?", (int(student_id),)).fetchone()
+        cur_mil = dict(row) if row else {}
+
+    today = today_ref or date.today()
+    flags: list[dict] = []
+
+    # 1. Поліція / розшук
+    new_police = _norm_risk_text(parsed.get('police_reason'))
+    old_police = _norm_risk_text(cur_mil.get('police_reason')) if cur_mil else ''
+    new_police_date = _norm_risk_text(parsed.get('police_date'))
+    new_sb = _norm_risk_text(parsed.get('status_badge'))
+    old_sb = _norm_risk_text(cur_mil.get('status_badge')) if cur_mil else ''
+    new_sb_low = new_sb.casefold()
+
+    if new_police or 'розшук' in new_sb_low:
+        if not old_police:
+            lbl = 'Поліція / розшук (нове!)'
+            det = f"У PDF з’явилась відмітка: {new_police or new_sb}"
+        elif new_police and old_police and new_police.casefold() != old_police.casefold():
+            lbl = 'Зміна запису поліції'
+            det = f"Було: «{old_police}» → Стало: «{new_police}»"
+        else:
+            lbl = 'Відмітка поліції / розшуку'
+            det = f"Активна відмітка: {new_police or new_sb}"
+        if new_police_date:
+            det += f" (від {new_police_date})"
+        flags.append({'code': 'police_risk', 'level': 'critical', 'label': lbl, 'detail': det})
+
+    # 2. Зняття / виключення з обліку або зміна статусу
+    is_excl_status = any(k in new_sb_low for k in ('знят', 'виключ', 'невійськовозобов'))
+    if is_excl_status:
+        is_new_excl = old_sb.casefold() != new_sb_low
+        flags.append({
+            'code': 'status_removed',
+            'level': 'critical' if is_new_excl else 'warning',
+            'label': new_sb[:34] if len(new_sb) <= 34 else (new_sb[:31] + '…'),
+            'detail': (
+                f"Статус обліку змінився: «{old_sb or 'не вказано'}» → «{new_sb}»"
+                if is_new_excl else
+                f"Статус у PDF: «{new_sb}»"
+            ),
+        })
+    elif old_sb and new_sb and old_sb.casefold() != new_sb_low:
+        flags.append({
+            'code': 'status_changed',
+            'level': 'warning',
+            'label': 'Зміна статусу ВО',
+            'detail': f"Статус у БД «{old_sb}» → у PDF «{new_sb}»",
+        })
+
+    # 3. Зміна ТЦК
+    old_tck = _norm_risk_text(cur_mil.get('tck_name')) if cur_mil else ''
+    new_tck = _norm_risk_text(parsed.get('tck') or parsed.get('tck_name'))
+    if old_tck and new_tck and old_tck.casefold() != new_tck.casefold():
+        flags.append({
+            'code': 'tck_changed',
+            'level': 'critical',
+            'label': 'Зміна ТЦК',
+            'detail': f"ТЦК змінився: «{old_tck}» → «{new_tck}»",
+        })
+
+    # 4. Відстрочка (зникла / прострочена / спливає за <= 30 дн.)
+    old_def_str = _norm_risk_text(cur_mil.get('deferral_until')) if cur_mil else ''
+    new_def_str = _norm_risk_text(parsed.get('deferral_until'))
+    old_def_dt = _parse_date_obj(old_def_str)
+    new_def_dt = _parse_date_obj(new_def_str)
+
+    if old_def_dt and old_def_dt >= today and not new_def_str:
+        flags.append({
+            'code': 'deferral_lost',
+            'level': 'critical',
+            'label': 'Відстрочка зникла!',
+            'detail': f"У БД була відстрочка до {old_def_str}, у новому PDF її немає",
+        })
+    elif new_def_dt and new_def_dt < today:
+        flags.append({
+            'code': 'deferral_expired',
+            'level': 'critical',
+            'label': 'Відстрочка закінчилась',
+            'detail': f"Термін відстрочки минув {new_def_str}",
+        })
+    elif new_def_dt and new_def_dt <= (today + timedelta(days=30)):
+        days_left = (new_def_dt - today).days
+        flags.append({
+            'code': 'deferral_expiring',
+            'level': 'warning',
+            'label': f'Відстрочка ≤ {days_left} дн.',
+            'detail': f"Діє до {new_def_str} (залишилось {days_left} дн.)",
+        })
+
+    # 5. Термін дії ВОД (valid_until)
+    new_val_str = _norm_risk_text(parsed.get('valid_until'))
+    new_val_dt = _parse_date_obj(new_val_str)
+    if new_val_dt and new_val_dt < today:
+        flags.append({
+            'code': 'valid_until_expired',
+            'level': 'warning',
+            'label': 'ВОД прострочений',
+            'detail': f"ВОД був дійсний до {new_val_str}",
+        })
+    elif new_val_dt and new_val_dt <= (today + timedelta(days=14)):
+        days_left = (new_val_dt - today).days
+        flags.append({
+            'code': 'valid_until_expiring',
+            'level': 'warning',
+            'label': f'ВОД спливає ({days_left} дн.)',
+            'detail': f"ВОД дійсний до {new_val_str}",
+        })
+
+    if any(f['level'] == 'critical' for f in flags):
+        max_level = 'critical'
+    elif flags:
+        max_level = 'warning'
+    else:
+        max_level = 'none'
+    return flags, max_level
+
+
+def _hydrate_submission_risks(conn, sub_dict: dict, cur_mil_by_sid: dict | None = None) -> dict:
+    """
+    Читає збережені risk_flags або дораховує їх «на льоту» для активних/наявних подань у черзі,
+    щоб критичні розбіжності підсвічувались навіть для раніше прийнятих у чергу PDF.
+    """
+    sid = sub_dict.get('student_id')
+    flags = []
+    level = sub_dict.get('risk_level') or 'none'
+    need_compute = (sub_dict.get('status') == 'pending' and sid) or (
+        sid and (sub_dict.get('risk_flags_json') in (None, '', '[]')) and level == 'none'
+    )
+    if need_compute:
+        try:
+            parsed = json.loads(sub_dict.get('parsed_json') or '{}')
+        except Exception:
+            parsed = {}
+        cur_mil = cur_mil_by_sid.get(int(sid)) if cur_mil_by_sid is not None else None
+        flags, level = _analyze_submission_risks(conn, int(sid), parsed, cur_mil=cur_mil)
+    else:
+        try:
+            flags = json.loads(sub_dict.get('risk_flags_json') or '[]')
+        except Exception:
+            flags = []
+    sub_dict['risk_flags'] = flags
+    sub_dict['risk_level'] = level
+    sub_dict['risk_count'] = len(flags)
+    return sub_dict
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1396,14 +1620,21 @@ def query_filtered_students(conn, raw_filters) -> dict:
 
         tg_subs = subs_by_student.get(sid, [])
         sub_months_pending_or_ok = set()
+        sub_months_pending = set()
+        sub_months_approved = set()
         for sr in tg_subs:
-            if sr.get('parsed_ym'):
-                sub_months_pending_or_ok.add(sr['parsed_ym'])
-            if sr.get('upload_ym'):
-                sub_months_pending_or_ok.add(sr['upload_ym'])
+            yms_sr = [y for y in (sr.get('parsed_ym'), sr.get('upload_ym')) if y]
+            for y in yms_sr:
+                sub_months_pending_or_ok.add(y)
+                if sr.get('status') == 'pending':
+                    sub_months_pending.add(y)
+                elif sr.get('status') == 'approved':
+                    sub_months_approved.add(y)
 
         has_att_in_month = vod_month in att_months
-        has_any_in_month = has_att_in_month or (vod_month in sub_months_pending_or_ok)
+        has_approved_in_month = has_att_in_month or (vod_month in sub_months_approved)
+        has_pending_in_month = (not has_approved_in_month) and (vod_month in sub_months_pending)
+        has_any_in_month = has_approved_in_month or (vod_month in sub_months_pending_or_ok)
 
         vms = f['vod_month_state']
         if vms == 'missing_this_month' and has_any_in_month:
@@ -1476,6 +1707,8 @@ def query_filtered_students(conn, raw_filters) -> dict:
             'deferral_until': s['deferral_until'] or '',
             'valid_until': s['valid_until'] or '',
             'has_att_in_month': has_att_in_month,
+            'has_approved_in_month': has_approved_in_month,
+            'has_pending_in_month': has_pending_in_month,
             'has_any_in_month': has_any_in_month,
             'links': st_links,
             'is_linked': is_linked,
@@ -1516,6 +1749,150 @@ def _render_broadcast_message(template: str, student: dict, vod_month: str) -> s
     for k, v in replacements.items():
         text = text.replace(k, v)
     return text
+
+
+def _format_group_escalation_text(grp: dict, vod_month: str, *, rule_name: str = '') -> str:
+    """Формує зрозумілий Telegram-звіт по групі (хто здав / хто НЕ здав «Резерв+»)."""
+    ym_label = _format_ym_ua(vod_month)
+    hdr = f"📋 Зведення ВОД «Резерв+» за {ym_label}"
+    if rule_name:
+        hdr += f"\n📌 Правило: {rule_name}"
+    lines = [
+        hdr,
+        f"🎓 Група: {grp['group_name']} ({grp.get('faculty_name') or '—'})",
+        f"✅ Підтверджено: {grp['approved_count']} з {grp['total']}",
+    ]
+    if grp['pending_count']:
+        lines.append(f"⏳ На перевірці: {grp['pending_count']}")
+    lines.append(f"❌ Не здали: {grp['missing_count']} ({grp['pct']}% виконання)")
+
+    if grp['missing_students']:
+        lines.append("\nБоржники за поточний місяць:")
+        for idx, st in enumerate(grp['missing_students'], 1):
+            tg_mark = '' if st.get('is_linked') else ' [без TG]'
+            lines.append(f"{idx}. {st['full_name']}{tg_mark}")
+        lines.append("\nПросимо нагадати зазначеним студентам надіслати PDF «Резерв+» у бота.")
+    else:
+        lines.append("\n🎉 Усі студенти групи подали актуальні документи!")
+
+    return "\n".join(lines)
+
+
+def _format_consolidated_escalation_text(summary: dict, vod_month: str, *, rule_name: str = '') -> str:
+    """Формує зведений звіт по всіх групах з боржниками для куратора/відповідального."""
+    ym_label = _format_ym_ua(vod_month)
+    totals = summary['totals']
+    groups_missing = [g for g in summary['groups'] if g['missing_count'] > 0]
+    lines = [
+        f"🚨 Ескалація ВОД «Резерв+» за {ym_label}" + (f" ({rule_name})" if rule_name else ""),
+        f"Всього у вибірці: {totals['total_students']} | Здали: {totals['submitted_count']} | Не здали: {totals['missing_count']}",
+        f"Груп з боржниками: {len(groups_missing)}",
+        "",
+    ]
+    for g in groups_missing:
+        names = ", ".join(st['full_name'] + ('' if st.get('is_linked') else ' [без TG]') for st in g['missing_students'])
+        lines.append(f"• {g['group_name']} (не здали {g['missing_count']}/{g['total']}): {names}")
+    return "\n".join(lines)
+
+
+def build_group_vod_compliance_summary(
+    conn,
+    raw_filters=None,
+    *,
+    vod_month: str | None = None,
+    only_with_missing: bool = False,
+) -> dict:
+    """
+    Формує статистику здачі ВОД «Резерв+» по групах:
+    хто здав (підтверджено / на перевірці), хто НЕ здав, і приєднує контакти старост/кураторів.
+    """
+    ensure_telegram_vod_schema(conn)
+    flt = _parse_filter_dict(raw_filters or {})
+    if vod_month and re.match(r'^\d{4}-\d{2}$', str(vod_month).strip()):
+        flt['vod_month'] = str(vod_month).strip()
+    # Для повної картини по групах беремо всіх студентів обраної вибірки (без фільтра «лише боржники»)
+    flt['vod_month_state'] = 'any'
+    # Дефолтно не обмежуємо прив'язкою TG, щоб бачити реальну картину здачі в групі
+    if not raw_filters or 'tg_link_state' not in raw_filters:
+        flt['tg_link_state'] = 'any'
+    if not raw_filters or 'exclude_women_no_mil' not in raw_filters:
+        flt['exclude_women_no_mil'] = True
+    if not raw_filters or 'exclude_note_18' not in raw_filters:
+        flt['exclude_note_18'] = True
+
+    res = query_filtered_students(conn, flt)
+    eff_ym = res['filters']['vod_month']
+
+    contacts_rows = conn.execute("SELECT * FROM telegram_group_contacts").fetchall()
+    contacts_by_gid = {int(r['group_id']): dict(r) for r in contacts_rows}
+
+    groups_map: dict[int, dict] = {}
+    for st in res['students']:
+        gid = int(st['group_id']) if st.get('group_id') is not None else 0
+        if gid not in groups_map:
+            groups_map[gid] = {
+                'group_id': gid,
+                'group_name': st.get('group_name') or 'Без групи',
+                'course': st.get('course'),
+                'study_form': st.get('study_form') or '',
+                'faculty_name': st.get('faculty_name') or '',
+                'approved_students': [],
+                'pending_students': [],
+                'missing_students': [],
+                'contact': contacts_by_gid.get(gid) or {},
+            }
+        grp = groups_map[gid]
+        if st.get('has_approved_in_month'):
+            grp['approved_students'].append(st)
+        elif st.get('has_pending_in_month'):
+            grp['pending_students'].append(st)
+        else:
+            grp['missing_students'].append(st)
+
+    groups_list = []
+    tot_all = 0
+    tot_app = 0
+    tot_pen = 0
+    tot_mis = 0
+    for grp in groups_map.values():
+        app_c = len(grp['approved_students'])
+        pen_c = len(grp['pending_students'])
+        mis_c = len(grp['missing_students'])
+        total_c = app_c + pen_c + mis_c
+        sub_c = app_c + pen_c
+        pct = int(round((sub_c / total_c) * 100)) if total_c > 0 else 100
+        grp['total'] = total_c
+        grp['approved_count'] = app_c
+        grp['pending_count'] = pen_c
+        grp['submitted_count'] = sub_c
+        grp['missing_count'] = mis_c
+        grp['pct'] = pct
+        grp['leader_text'] = _format_group_escalation_text(grp, eff_ym)
+
+        tot_all += total_c
+        tot_app += app_c
+        tot_pen += pen_c
+        tot_mis += mis_c
+
+        if only_with_missing and mis_c == 0:
+            continue
+        groups_list.append(grp)
+
+    groups_list.sort(key=lambda g: (-g['missing_count'], g['group_name'].casefold()))
+    return {
+        'vod_month': eff_ym,
+        'vod_month_label': _format_ym_ua(eff_ym),
+        'groups': groups_list,
+        'totals': {
+            'total_students': tot_all,
+            'approved_count': tot_app,
+            'pending_count': tot_pen,
+            'submitted_count': tot_app + tot_pen,
+            'missing_count': tot_mis,
+            'groups_total': len(groups_map),
+            'groups_with_missing': sum(1 for g in groups_map.values() if g['missing_count'] > 0),
+        },
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2149,6 +2526,7 @@ def _handle_pdf_document(conn, token: str, chat_id: str, from_user: dict, docume
     is_outdated = bool(parsed_ym and parsed_ym < upload_ym)
 
     new_military, new_student, mil_diff, stu_diff = _build_submission_diffs(conn, sid, parsed)
+    risk_flags, risk_level = _analyze_submission_risks(conn, sid, parsed)
 
     cur = conn.execute(
         """
@@ -2158,8 +2536,9 @@ def _handle_pdf_document(conn, token: str, chat_id: str, from_user: dict, docume
             parsed_full_name, parsed_birth_date, parsed_formed_at, parsed_ym, upload_ym,
             parsed_json, new_military_json, new_student_json, military_diff_json, student_diff_json,
             status, submitted_as_representative,
-            is_monthly_duplicate, duplicate_count, duplicate_info, is_outdated_pdf
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+            is_monthly_duplicate, duplicate_count, duplicate_info, is_outdated_pdf,
+            risk_flags_json, risk_level, risk_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             sid, str(chat_id), tg_uid, tg_username, tg_first, tg_last, linked_phone,
@@ -2175,6 +2554,9 @@ def _handle_pdf_document(conn, token: str, chat_id: str, from_user: dict, docume
             dup_cnt if is_dup else 1,
             dup_info,
             1 if is_outdated else 0,
+            json.dumps(risk_flags, ensure_ascii=False),
+            risk_level,
+            len(risk_flags),
         ),
     )
     sub_id = int(cur.lastrowid)
@@ -2185,6 +2567,17 @@ def _handle_pdf_document(conn, token: str, chat_id: str, from_user: dict, docume
             f"Повторне завантаження ВОД за місяць ({dup_cnt}-й раз): {full_student_name}",
             severity='warning',
             details=dup_info,
+            student_id=sid,
+            submission_id=sub_id,
+        )
+
+    if risk_flags:
+        risk_summary = '; '.join(rf['detail'] for rf in risk_flags[:4])
+        _record_event(
+            conn, 'critical_discrepancy',
+            f"{'Критичні розбіжності' if risk_level == 'critical' else 'Попередження'} у ВОД: {full_student_name}",
+            severity='danger' if risk_level == 'critical' else 'warning',
+            details=risk_summary,
             student_id=sid,
             submission_id=sub_id,
         )
@@ -2556,8 +2949,412 @@ def _execute_auto_rule_dispatch(conn, token: str, rule: dict, *, now: datetime |
     return summary
 
 
+def _is_day_in_escalation_window(day: int, day_from: int, day_to: int, last_days: int,
+                                 ref_date: date | None = None) -> bool:
+    """
+    Перевіряє, чи входить день місяця в останні `last_days` днів вікна розсилки [day_from..day_to]
+    (наприклад, для вікна 15..25 і last_days=3 повертає True для 23, 24, 25 чисел).
+    """
+    if not _is_day_in_window(day, day_from, day_to):
+        return False
+    d_to = max(1, min(31, int(day_to or 25)))
+    n_last = max(1, min(15, int(last_days or 3)))
+    ref = ref_date or date.today()
+    if day <= d_to:
+        dist = d_to - day
+    else:
+        days_in_month = calendar.monthrange(ref.year, ref.month)[1]
+        dist = (days_in_month - day) + d_to
+    return 0 <= dist < n_last
+
+
+def _send_chunked_tg_message(token: str, chat_id: str, text: str) -> tuple[bool, str]:
+    """Надсилає довгий звіт у Telegram, розбиваючи по рядках до 3900 символів."""
+    txt = (text or '').strip()
+    if not txt:
+        return True, ''
+    if len(txt) <= 3900:
+        return _tg_send_message(token, chat_id, txt)
+
+    chunks = []
+    cur_lines = []
+    cur_len = 0
+    for line in txt.splitlines():
+        add_len = len(line) + 1
+        if cur_lines and cur_len + add_len > 3900:
+            chunks.append('\n'.join(cur_lines))
+            cur_lines = [line]
+            cur_len = len(line)
+        else:
+            cur_lines.append(line)
+            cur_len += add_len
+    if cur_lines:
+        chunks.append('\n'.join(cur_lines))
+
+    last_err = ''
+    all_ok = True
+    for ch in chunks:
+        ok, err = _tg_send_message(token, chat_id, ch)
+        if not ok:
+            all_ok = False
+            last_err = err
+    return all_ok, last_err
+
+
+def _execute_rule_escalation(conn, token: str, rule: dict, *, now: datetime | None = None,
+                             force: bool = False) -> dict:
+    """
+    Формує та розсилає ескалаційне зведення по групах (хто здав / не здав «Резерв+»)
+    старостам, кураторам груп та/або додатковим координаторам.
+    """
+    now_dt = now or datetime.now()
+    ym_now = now_dt.strftime('%Y-%m')
+    today_str = now_dt.strftime('%Y-%m-%d')
+    rule_id = int(rule['id'])
+    rule_name = rule.get('name') or f"Правило #{rule_id}"
+
+    try:
+        flt = json.loads(rule.get('filter_json') or '{}')
+    except Exception:
+        flt = {}
+    if not isinstance(flt, dict):
+        flt = {}
+
+    summary = build_group_vod_compliance_summary(
+        conn, flt, vod_month=ym_now, only_with_missing=True
+    )
+
+    if not force:
+        conn.execute(
+            """
+            UPDATE telegram_auto_reminder_rules
+            SET escalation_last_date = ?, updated_at = datetime('now', 'localtime')
+            WHERE id = ?
+            """,
+            (today_str, rule_id),
+        )
+        conn.commit()
+
+    send_leaders = bool(int(rule.get('escalation_send_to_leaders') if rule.get('escalation_send_to_leaders') is not None else 1))
+    extra_raw = (rule.get('escalation_extra_chat_ids') or '').strip()
+    extra_cids = [c.strip() for c in re.split(r'[\s,;]+', extra_raw) if c.strip()]
+
+    sent_leaders = 0
+    sent_extra = 0
+    failed = 0
+    groups_missing = summary['groups']
+
+    if not groups_missing:
+        esc_msg = f"{today_str} — боржників за {_format_ym_ua(ym_now)} немає"
+        conn.execute(
+            "UPDATE telegram_auto_reminder_rules SET escalation_last_summary = ? WHERE id = ?",
+            (esc_msg[:300], rule_id),
+        )
+        conn.commit()
+        return {'groups_missing': 0, 'sent_leaders': 0, 'sent_extra': 0, 'failed': 0, 'missing_students': 0}
+
+    if send_leaders:
+        for grp in groups_missing:
+            cinfo = grp.get('contact') or {}
+            if cinfo and not int(cinfo.get('is_active') if cinfo.get('is_active') is not None else 1):
+                continue
+            targets = []
+            for key in ('leader_chat_id', 'curator_chat_id'):
+                cid = (cinfo.get(key) or '').strip()
+                if cid and cid not in targets:
+                    targets.append(cid)
+            if not targets:
+                continue
+            msg_txt = _format_group_escalation_text(grp, ym_now, rule_name=rule_name)
+            for cid in targets:
+                ok, _err = _send_chunked_tg_message(token, cid, msg_txt)
+                if ok:
+                    sent_leaders += 1
+                else:
+                    failed += 1
+
+    if extra_cids:
+        cons_txt = _format_consolidated_escalation_text(summary, ym_now, rule_name=rule_name)
+        seen_extra = set()
+        for cid in extra_cids:
+            if cid in seen_extra:
+                continue
+            seen_extra.add(cid)
+            ok, _err = _send_chunked_tg_message(token, cid, cons_txt)
+            if ok:
+                sent_extra += 1
+            else:
+                failed += 1
+
+    esc_msg = (
+        f"{today_str} — груп з боржниками: {len(groups_missing)} "
+        f"(студентів: {summary['totals']['missing_count']}), "
+        f"старостам/кураторам: {sent_leaders}, координаторам: {sent_extra}, помилок: {failed}"
+    )
+    conn.execute(
+        "UPDATE telegram_auto_reminder_rules SET escalation_last_date = ?, escalation_last_summary = ? WHERE id = ?",
+        (today_str, esc_msg[:300], rule_id),
+    )
+    _record_event(
+        conn, 'escalation_sent',
+        f"Ескалація по «{rule_name}»: {summary['totals']['missing_count']} боржн. у {len(groups_missing)} гр.",
+        severity='warning' if failed else 'info',
+        details=esc_msg,
+    )
+    conn.commit()
+    return {
+        'groups_missing': len(groups_missing),
+        'missing_students': summary['totals']['missing_count'],
+        'sent_leaders': sent_leaders,
+        'sent_extra': sent_extra,
+        'failed': failed,
+    }
+
+
+def _cleanup_target_where_sql(*, include_not_found: bool, include_approved: bool) -> str:
+    clauses = [
+        "sub.status = 'rejected'",
+        "(sub.is_monthly_duplicate = 1 AND sub.status IN ('approved', 'rejected'))",
+    ]
+    if include_not_found:
+        clauses.append("sub.status = 'not_found'")
+    if include_approved:
+        clauses.append(
+            "(sub.status = 'approved' AND sub.approved_attachment_id IS NOT NULL "
+            "AND EXISTS (SELECT 1 FROM attachments a WHERE a.id = sub.approved_attachment_id))"
+        )
+    return '(' + ' OR '.join(clauses) + ')'
+
+
+def _safe_resolve_vod_file(rel_path: str) -> str | None:
+    if not rel_path or not isinstance(rel_path, str):
+        return None
+    static_root = os.path.join(PROJECT_ROOT, 'static')
+    abs_p = resolve_under_dir(static_root, rel_path)
+    if not abs_p:
+        return None
+    vod_real = os.path.realpath(TELEGRAM_VOD_ABS_DIR)
+    if abs_p != vod_real and not abs_p.startswith(vod_real + os.sep):
+        return None
+    return abs_p
+
+
+def get_telegram_vod_storage_stats(
+    conn,
+    *,
+    months: int = 6,
+    include_not_found: bool = True,
+    include_approved: bool = False,
+) -> dict:
+    """Рахує поточний обсяг папки telegram_vod/ та кандидатів на очищення."""
+    months = max(1, min(60, int(months or 6)))
+    cutoff_str = (datetime.now() - timedelta(days=months * 30)).strftime('%Y-%m-%d %H:%M:%S')
+    disk_files = 0
+    disk_bytes = 0
+    if os.path.isdir(TELEGRAM_VOD_ABS_DIR):
+        for root_d, _dirs, files in os.walk(TELEGRAM_VOD_ABS_DIR):
+            for fn in files:
+                fp = os.path.join(root_d, fn)
+                try:
+                    if os.path.isfile(fp):
+                        disk_files += 1
+                        disk_bytes += os.path.getsize(fp)
+                except OSError:
+                    pass
+
+    where_status = _cleanup_target_where_sql(
+        include_not_found=include_not_found,
+        include_approved=include_approved,
+    )
+    cand_rows = conn.execute(
+        f"""
+        SELECT sub.id, sub.pdf_rel_path, sub.photo_rel_path, sub.photo_raw_rel_path
+        FROM telegram_vod_submissions sub
+        WHERE COALESCE(NULLIF(sub.reviewed_at, ''), sub.created_at) < ?
+          AND (COALESCE(sub.pdf_rel_path, '') != ''
+               OR COALESCE(sub.photo_rel_path, '') != ''
+               OR COALESCE(sub.photo_raw_rel_path, '') != '')
+          AND {where_status}
+        """,
+        (cutoff_str,),
+    ).fetchall()
+
+    cand_bytes = 0
+    cand_files = 0
+    for r in cand_rows:
+        for col in ('pdf_rel_path', 'photo_rel_path', 'photo_raw_rel_path'):
+            rel = r[col] or ''
+            if rel:
+                p = _safe_resolve_vod_file(rel)
+                if p and os.path.isfile(p):
+                    cand_files += 1
+                    try:
+                        cand_bytes += os.path.getsize(p)
+                    except OSError:
+                        pass
+
+    return {
+        'disk_files': disk_files,
+        'disk_bytes': disk_bytes,
+        'disk_mb': round(disk_bytes / (1024 * 1024), 2),
+        'candidate_rows': len(cand_rows),
+        'candidate_files': cand_files,
+        'candidate_bytes': cand_bytes,
+        'candidate_mb': round(cand_bytes / (1024 * 1024), 2),
+        'cutoff_date': cutoff_str[:10],
+    }
+
+
+def cleanup_old_telegram_vod_files(
+    conn,
+    *,
+    months: int = 6,
+    include_not_found: bool = True,
+    include_approved: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """
+    Регламентне очищення застарілих тимчасових файлів черги Telegram-бота (static/uploads/telegram_vod/)
+    для відхилених/дублюючих (і за опцією старих not_found / вже перенесених approved) подань.
+    Самі записи в БД та історія diff зберігаються, очищаються лише тимчасові файли на диску.
+    """
+    ensure_telegram_vod_schema(conn)
+    months = max(1, min(60, int(months or 6)))
+    cutoff_str = (datetime.now() - timedelta(days=months * 30)).strftime('%Y-%m-%d %H:%M:%S')
+    where_status = _cleanup_target_where_sql(
+        include_not_found=include_not_found,
+        include_approved=include_approved,
+    )
+
+    cand_rows = conn.execute(
+        f"""
+        SELECT sub.id, sub.pdf_rel_path, sub.photo_rel_path, sub.photo_raw_rel_path
+        FROM telegram_vod_submissions sub
+        WHERE COALESCE(NULLIF(sub.reviewed_at, ''), sub.created_at) < ?
+          AND (COALESCE(sub.pdf_rel_path, '') != ''
+               OR COALESCE(sub.photo_rel_path, '') != ''
+               OR COALESCE(sub.photo_raw_rel_path, '') != '')
+          AND {where_status}
+        """,
+        (cutoff_str,),
+    ).fetchall()
+
+    if not cand_rows:
+        return {'cleaned_rows': 0, 'deleted_files': 0, 'freed_bytes': 0, 'freed_mb': 0.0, 'cutoff_date': cutoff_str[:10]}
+
+    cand_ids = {int(r['id']) for r in cand_rows}
+
+    # Захищені шляхи: усе, що згадується в attachments або в інших записах черги (особливо pending)
+    protected_rels: set[str] = set()
+    for a in conn.execute("SELECT file_path FROM attachments WHERE COALESCE(file_path, '') != ''").fetchall():
+        protected_rels.add(str(a['file_path']).replace('\\', '/').lstrip('/'))
+
+    for other in conn.execute(
+        "SELECT id, pdf_rel_path, photo_rel_path, photo_raw_rel_path FROM telegram_vod_submissions"
+    ).fetchall():
+        if int(other['id']) in cand_ids:
+            continue
+        for col in ('pdf_rel_path', 'photo_rel_path', 'photo_raw_rel_path'):
+            if other[col]:
+                protected_rels.add(str(other[col]).replace('\\', '/').lstrip('/'))
+
+    deleted_files = 0
+    freed_bytes = 0
+    cleaned_rows = 0
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for r in cand_rows:
+        rid = int(r['id'])
+        if dry_run:
+            cleaned_rows += 1
+        for col in ('pdf_rel_path', 'photo_rel_path', 'photo_raw_rel_path'):
+            rel = (r[col] or '').replace('\\', '/').lstrip('/')
+            if not rel:
+                continue
+            if rel in protected_rels:
+                continue
+            abs_p = _safe_resolve_vod_file(rel)
+            if not abs_p:
+                continue
+            if os.path.isfile(abs_p):
+                try:
+                    sz = os.path.getsize(abs_p)
+                except OSError:
+                    sz = 0
+                if not dry_run:
+                    try:
+                        os.remove(abs_p)
+                        deleted_files += 1
+                        freed_bytes += sz
+                    except OSError as e:
+                        logger.warning(f"VOD cleanup remove warning ({abs_p}): {e}")
+                else:
+                    deleted_files += 1
+                    freed_bytes += sz
+        if not dry_run:
+            conn.execute(
+                """
+                UPDATE telegram_vod_submissions
+                SET pdf_rel_path = '',
+                    photo_rel_path = '',
+                    photo_raw_rel_path = '',
+                    files_cleaned_at = ?
+                WHERE id = ?
+                """,
+                (now_str, rid),
+            )
+            cleaned_rows += 1
+
+    if not dry_run:
+        today_str = date.today().strftime('%Y-%m-%d')
+        freed_mb = round(freed_bytes / (1024 * 1024), 2)
+        summary_txt = f"{today_str} — очищено записів: {cleaned_rows}, файлів: {deleted_files} ({freed_mb} МБ)"
+        conn.execute(
+            """
+            UPDATE telegram_bot_settings
+            SET last_cleanup_date = ?, last_cleanup_summary = ?, updated_at = datetime('now', 'localtime')
+            WHERE id = 1
+            """,
+            (today_str, summary_txt[:300]),
+        )
+        if deleted_files > 0 or cleaned_rows > 0:
+            _record_event(
+                conn, 'vod_files_cleanup',
+                f"Автоочищення тимчасових файлів черги: видалено {deleted_files} файлів ({freed_mb} МБ)",
+                severity='info',
+                details=summary_txt,
+            )
+        conn.commit()
+
+    return {
+        'cleaned_rows': cleaned_rows,
+        'deleted_files': deleted_files,
+        'freed_bytes': freed_bytes,
+        'freed_mb': round(freed_bytes / (1024 * 1024), 2),
+        'cutoff_date': cutoff_str[:10],
+    }
+
+
+def _run_scheduled_vod_cleanup_if_due(conn, settings: dict) -> None:
+    if not int(settings.get('auto_cleanup_enabled') if settings.get('auto_cleanup_enabled') is not None else 1):
+        return
+    today_str = date.today().strftime('%Y-%m-%d')
+    if (settings.get('last_cleanup_date') or '') == today_str:
+        return
+    months = int(settings.get('auto_cleanup_months') or 6)
+    inc_nf = bool(int(settings.get('auto_cleanup_include_not_found') if settings.get('auto_cleanup_include_not_found') is not None else 1))
+    inc_app = bool(int(settings.get('auto_cleanup_include_approved') or 0))
+    cleanup_old_telegram_vod_files(
+        conn,
+        months=months,
+        include_not_found=inc_nf,
+        include_approved=inc_app,
+        dry_run=False,
+    )
+
+
 def _run_due_filter_reminder_rules(conn, token: str, now: datetime | None = None) -> int:
-    """Перевіряє всі активні правила нагадувань за фільтрами (період днів місяця + частота на день)."""
+    """Перевіряє всі активні правила нагадувань за фільтрами (період днів місяця + частота + ескалація)."""
     now_dt = now or datetime.now()
     today_str = now_dt.strftime('%Y-%m-%d')
     now_min = now_dt.hour * 60 + now_dt.minute
@@ -2579,23 +3376,44 @@ def _run_due_filter_reminder_rules(conn, token: str, now: datetime | None = None
         for idx, sm in enumerate(slots):
             if now_min >= sm:
                 due_idx = idx
-        if due_idx < 0:
-            continue
+
         raw_prev_slot = rule.get('last_sent_slot_idx')
         prev_slot = int(raw_prev_slot) if ((rule.get('last_sent_date') or '') == today_str and raw_prev_slot is not None) else -1
-        if due_idx <= prev_slot:
-            continue
-        try:
-            _execute_auto_rule_dispatch(conn, token, rule, now=now_dt, slot_idx=due_idx, created_by='auto_rule')
-            triggered += 1
-        except Exception as e:
-            logger.error(f"Auto reminder rule #{rule['id']} error: {e}", exc_info=True)
+        if due_idx >= 0 and due_idx > prev_slot:
+            try:
+                _execute_auto_rule_dispatch(conn, token, rule, now=now_dt, slot_idx=due_idx, created_by='auto_rule')
+                triggered += 1
+            except Exception as e:
+                logger.error(f"Auto reminder rule #{rule['id']} error: {e}", exc_info=True)
+
+        # Перевірка ескалації наприкінці вікна (раз на день після start_hour)
+        if (
+            int(rule.get('escalation_enabled') or 0) == 1
+            and (rule.get('escalation_last_date') or '') != today_str
+            and now_dt.hour >= int(rule.get('start_hour') if rule.get('start_hour') is not None else 9)
+            and _is_day_in_escalation_window(
+                now_dt.day,
+                rule.get('day_from', 15),
+                rule.get('day_to', 25),
+                rule.get('escalation_last_days', 3),
+                ref_date=now_dt.date(),
+            )
+        ):
+            try:
+                _execute_rule_escalation(conn, token, rule, now=now_dt, force=False)
+            except Exception as e:
+                logger.error(f"Auto reminder escalation rule #{rule['id']} error: {e}", exc_info=True)
+
     return triggered
 
 
 def _run_scheduled_auto_reminder_if_due(conn, token: str, settings: dict) -> None:
-    """Перевіряє та виконує: 1) загальне щомісячне нагадування; 2) усі активні правила за фільтрами."""
+    """Перевіряє та виконує: 1) загальне щомісячне нагадування; 2) правила за фільтрами; 3) щоденне очищення файлів."""
     _run_due_filter_reminder_rules(conn, token)
+    try:
+        _run_scheduled_vod_cleanup_if_due(conn, settings)
+    except Exception as e:
+        logger.error(f"Telegram VOD scheduled cleanup error: {e}", exc_info=True)
 
     if not int(settings.get('auto_remind_enabled') or 0):
         return
@@ -3030,7 +3848,7 @@ def _extract_filters_from_request(src) -> dict:
 @permission_required('manage_military_telegram')
 def telegram_dashboard():
     active_tab = (request.args.get('tab') or 'queue').strip()
-    if active_tab not in ('queue', 'broadcast', 'links', 'settings'):
+    if active_tab not in ('queue', 'groups', 'broadcast', 'links', 'settings'):
         active_tab = 'queue'
     queue_filter = (request.args.get('qstatus') or 'attention').strip()
 
@@ -3039,6 +3857,10 @@ def telegram_dashboard():
     settings = _get_bot_settings(conn)
     worker_status = get_worker_status(conn)
     catalogs = _load_filter_catalogs(conn)
+
+    # Завантажуємо поточні військові записи для актуального підрахунку ризиків у черзі
+    cur_mil_rows = conn.execute("SELECT * FROM military").fetchall()
+    cur_mil_by_sid = {int(m['student_id']): dict(m) for m in cur_mil_rows if m['student_id'] is not None}
 
     # Лічильники черги
     counts = {
@@ -3049,14 +3871,27 @@ def telegram_dashboard():
         ).fetchone()[0],
         'approved': conn.execute("SELECT COUNT(*) FROM telegram_vod_submissions WHERE status='approved'").fetchone()[0],
         'rejected': conn.execute("SELECT COUNT(*) FROM telegram_vod_submissions WHERE status='rejected'").fetchone()[0],
+        'risks': 0,
     }
     counts['attention'] = counts['pending'] + counts['not_found']
+
+    pending_for_risk_cnt = conn.execute(
+        "SELECT id, student_id, status, parsed_json, risk_flags_json, risk_level FROM telegram_vod_submissions WHERE status='pending'"
+    ).fetchall()
+    risk_pending_ids = set()
+    for pr in pending_for_risk_cnt:
+        pd = _hydrate_submission_risks(conn, dict(pr), cur_mil_by_sid=cur_mil_by_sid)
+        if pd['risk_level'] in ('critical', 'warning'):
+            risk_pending_ids.add(int(pd['id']))
+    counts['risks'] = len(risk_pending_ids)
 
     where_sub = "1=1"
     if queue_filter == 'attention':
         where_sub = "sub.status IN ('pending', 'not_found')"
     elif queue_filter == 'duplicates':
         where_sub = "sub.is_monthly_duplicate = 1"
+    elif queue_filter == 'risks':
+        where_sub = "sub.status = 'pending'"
     elif queue_filter in ('pending', 'not_found', 'approved', 'rejected'):
         where_sub = f"sub.status = '{queue_filter}'"
 
@@ -3073,7 +3908,7 @@ def telegram_dashboard():
             CASE sub.status WHEN 'not_found' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
             sub.is_monthly_duplicate DESC,
             sub.id DESC
-        LIMIT 200
+        LIMIT 250
         """
     ).fetchall()
 
@@ -3094,14 +3929,26 @@ def telegram_dashboard():
             d['stu_diff'] = json.loads(d.get('student_diff_json') or '[]')
         except Exception:
             d['stu_diff'] = []
+        _hydrate_submission_risks(conn, d, cur_mil_by_sid=cur_mil_by_sid)
+        if queue_filter == 'risks' and d['risk_level'] not in ('critical', 'warning'):
+            continue
         submissions.append(d)
+
+    if queue_filter in ('attention', 'pending', 'risks'):
+        risk_rank = {'critical': 0, 'warning': 1, 'none': 2}
+        submissions.sort(key=lambda x: (
+            0 if x['status'] == 'not_found' else (1 if x['status'] == 'pending' else 2),
+            risk_rank.get(x.get('risk_level') or 'none', 2),
+            0 if x.get('is_monthly_duplicate') else 1,
+            -int(x['id']),
+        ))
 
     # Прив'язки студентів
     links = [
         dict(r) for r in conn.execute(
             """
             SELECT l.*, s.last_name_UA, s.first_name_UA, s.middle_name_UA, s.phone AS db_phone,
-                   g.name AS group_name
+                   s.group_id AS group_id, g.name AS group_name
             FROM telegram_student_links l
             JOIN students s ON s.id = l.student_id
             LEFT JOIN groups g ON g.id = s.group_id
@@ -3110,10 +3957,31 @@ def telegram_dashboard():
             """
         ).fetchall()
     ]
+    linked_by_group: dict[int, list[dict]] = {}
     for l in links:
         l['student_full_name'] = ' '.join(
             x for x in (l['last_name_UA'], l['first_name_UA'], l['middle_name_UA'] or '') if x
         ).strip()
+        if l.get('group_id') is not None:
+            linked_by_group.setdefault(int(l['group_id']), []).append({
+                'student_full_name': l['student_full_name'],
+                'chat_id': l['chat_id'],
+                'tg_username': l.get('tg_username') or '',
+                'is_representative': bool(l.get('is_representative')),
+            })
+
+    # Контакти старост та кураторів груп
+    group_contacts = [
+        dict(r) for r in conn.execute(
+            """
+            SELECT gc.*, g.name AS group_name, g.course AS group_course, g.study_form AS group_study_form
+            FROM telegram_group_contacts gc
+            LEFT JOIN groups g ON g.id = gc.group_id
+            ORDER BY g.course, g.name COLLATE UKRAINIAN
+            """
+        ).fetchall()
+    ]
+    group_contacts_by_gid = {int(c['group_id']): c for c in group_contacts}
 
     # Активні запрошення
     invites = [
@@ -3195,6 +4063,37 @@ def telegram_dashboard():
     month_options = [{'ym': ym, 'label': _format_ym_ua(ym)} for ym in _recent_months_list(12)]
     today_ym = date.today().strftime('%Y-%m')
 
+    # Зведення по групах (для вкладки groups)
+    grp_month = (request.args.get('gmonth') or today_ym).strip()
+    grp_faculty_id = request.args.get('gfaculty', type=int)
+    grp_course = request.args.get('gcourse', type=int)
+    grp_group_id = request.args.get('ggroup', type=int)
+    grp_only_missing = bool(request.args.get('gmissing') == '1')
+    grp_age_mode = (request.args.get('gage') or 'any').strip()
+    group_summary = None
+    if active_tab == 'groups':
+        g_flt = {
+            'vod_month': grp_month,
+            'faculty_ids': [grp_faculty_id] if grp_faculty_id else [],
+            'courses': [grp_course] if grp_course else [],
+            'group_ids': [grp_group_id] if grp_group_id else [],
+            'age_mode': grp_age_mode if grp_age_mode in ('any', '25_plus', 'under_25') else 'any',
+            'exclude_women_no_mil': True,
+            'exclude_note_18': True,
+        }
+        group_summary = build_group_vod_compliance_summary(
+            conn, g_flt, vod_month=grp_month, only_with_missing=grp_only_missing
+        )
+
+    vod_storage_stats = None
+    if active_tab == 'settings':
+        vod_storage_stats = get_telegram_vod_storage_stats(
+            conn,
+            months=int(settings.get('auto_cleanup_months') or 6),
+            include_not_found=bool(int(settings.get('auto_cleanup_include_not_found') if settings.get('auto_cleanup_include_not_found') is not None else 1)),
+            include_approved=bool(int(settings.get('auto_cleanup_include_approved') or 0)),
+        )
+
     conn.close()
 
     return render_template(
@@ -3208,6 +4107,9 @@ def telegram_dashboard():
         counts=counts,
         submissions=submissions,
         links=links,
+        linked_by_group=linked_by_group,
+        group_contacts=group_contacts,
+        group_contacts_by_gid=group_contacts_by_gid,
         invites=invites,
         active_students=active_students,
         presets=presets,
@@ -3217,6 +4119,16 @@ def telegram_dashboard():
         unread_events=unread_events,
         month_options=month_options,
         today_ym=today_ym,
+        group_summary=group_summary,
+        grp_filters={
+            'gmonth': grp_month,
+            'gfaculty': grp_faculty_id,
+            'gcourse': grp_course,
+            'ggroup': grp_group_id,
+            'gmissing': grp_only_missing,
+            'gage': grp_age_mode,
+        },
+        vod_storage_stats=vod_storage_stats,
     )
 
 
@@ -3328,6 +4240,14 @@ def telegram_auto_rule_save():
     stop_when_submitted = 1 if request.form.get('stop_when_submitted') else 0
     is_enabled = 1 if request.form.get('is_enabled') else 0
 
+    escalation_enabled = 1 if request.form.get('escalation_enabled') else 0
+    escalation_last_days = max(1, min(15, request.form.get('escalation_last_days', type=int) or 3))
+    escalation_send_to_leaders = 1 if request.form.get('escalation_send_to_leaders') else 0
+    escalation_extra_raw = (request.form.get('escalation_extra_chat_ids') or '').strip()
+    escalation_extra_clean = ', '.join(
+        c.strip() for c in re.split(r'[\s,;]+', escalation_extra_raw) if c.strip()
+    )
+
     if not name:
         flash('Вкажіть назву правила авто-нагадування.', 'warning')
         return redirect(url_for('military_telegram.telegram_dashboard', tab='broadcast'))
@@ -3361,13 +4281,18 @@ def telegram_auto_rule_save():
                 SET name = ?, preset_id = ?, filter_json = ?, message_template = ?,
                     day_from = ?, day_to = ?, times_per_day = ?, start_hour = ?, end_hour = ?,
                     stop_when_submitted = ?, is_enabled = ?,
+                    escalation_enabled = ?, escalation_last_days = ?,
+                    escalation_send_to_leaders = ?, escalation_extra_chat_ids = ?,
                     updated_at = datetime('now', 'localtime')
                 WHERE id = ?
                 """,
                 (
                     name, preset_id, flt_json_clean, message_template,
                     day_from, day_to, times_per_day, start_hour, end_hour,
-                    stop_when_submitted, is_enabled, rule_id,
+                    stop_when_submitted, is_enabled,
+                    escalation_enabled, escalation_last_days,
+                    escalation_send_to_leaders, escalation_extra_clean,
+                    rule_id,
                 ),
             )
             flash(f'Правило авто-нагадування «{name}» оновлено.', 'success')
@@ -3377,13 +4302,19 @@ def telegram_auto_rule_save():
                 INSERT INTO telegram_auto_reminder_rules (
                     name, preset_id, filter_json, message_template,
                     day_from, day_to, times_per_day, start_hour, end_hour,
-                    stop_when_submitted, is_enabled, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    stop_when_submitted, is_enabled,
+                    escalation_enabled, escalation_last_days,
+                    escalation_send_to_leaders, escalation_extra_chat_ids,
+                    created_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name, preset_id, flt_json_clean, message_template,
                     day_from, day_to, times_per_day, start_hour, end_hour,
-                    stop_when_submitted, is_enabled, current_username(),
+                    stop_when_submitted, is_enabled,
+                    escalation_enabled, escalation_last_days,
+                    escalation_send_to_leaders, escalation_extra_clean,
+                    current_username(),
                 ),
             )
             flash(f'Правило авто-нагадування «{name}» створено ({day_from}–{day_to} числа, {times_per_day} р./день).', 'success')
@@ -3396,8 +4327,45 @@ def telegram_auto_rule_save():
         f"{'оновив' if rule_id else 'створив'} правило авто-нагадування ВОД: «{name}»",
         category='update',
         section='Військовий облік',
-        details=f"дні: {day_from}..{day_to}, повторів/день: {times_per_day} ({start_hour:02d}:00-{end_hour:02d}:00)",
+        details=f"дні: {day_from}..{day_to}, повторів/день: {times_per_day} ({start_hour:02d}:00-{end_hour:02d}:00), ескалація: {'так' if escalation_enabled else 'ні'}",
     )
+    return redirect(url_for('military_telegram.telegram_dashboard', tab='broadcast'))
+
+
+@military_telegram_bp.route('/admin/military/telegram/auto-rules/<int:rule_id>/escalate-now', methods=['POST'])
+@permission_required('manage_military_telegram')
+def telegram_auto_rule_escalate_now(rule_id):
+    conn = get_db()
+    try:
+        ensure_telegram_vod_schema(conn)
+        settings = _get_bot_settings(conn)
+        token = (settings.get('bot_token') or os.environ.get('TELEGRAM_VOD_BOT_TOKEN') or '').strip()
+        if not token:
+            flash('Спочатку вкажіть токен Telegram-бота в налаштуваннях.', 'error')
+            return redirect(url_for('military_telegram.telegram_dashboard', tab='settings'))
+        row = conn.execute("SELECT * FROM telegram_auto_reminder_rules WHERE id = ?", (rule_id,)).fetchone()
+        if not row:
+            flash('Правило не знайдено.', 'warning')
+            return redirect(url_for('military_telegram.telegram_dashboard', tab='broadcast'))
+        rule = dict(row)
+        res = _execute_rule_escalation(conn, token, rule, force=True)
+        if res['groups_missing'] == 0:
+            flash(f"По правилу «{rule['name']}» боржників за поточний місяць немає — ескалація не потрібна.", 'info')
+        elif res['sent_leaders'] == 0 and res['sent_extra'] == 0 and res['failed'] == 0:
+            flash(
+                f"Знайдено {res['missing_students']} боржників у {res['groups_missing']} групах, "
+                "але не вказано жодного Chat ID старости/куратора або координатора.",
+                'warning',
+            )
+        else:
+            flash(
+                f"Ескалацію надіслано! Груп з боржниками: {res['groups_missing']} "
+                f"(студентів: {res['missing_students']}). Старостам/кураторам: {res['sent_leaders']}, "
+                f"координаторам: {res['sent_extra']}, помилок: {res['failed']}.",
+                'success' if res['failed'] == 0 else 'warning',
+            )
+    finally:
+        conn.close()
     return redirect(url_for('military_telegram.telegram_dashboard', tab='broadcast'))
 
 
@@ -3557,9 +4525,16 @@ def telegram_submission_review(sub_id):
         except Exception:
             stu_diff = []
 
-        # Перераховуємо актуальний diff і повторність на момент відкриття (якщо студент відомий та ще pending)
+        # Перераховуємо актуальний diff і критичні ризики на момент відкриття (якщо студент відомий та ще pending)
+        risk_flags = []
+        risk_level = 'none'
         if sub.get('student_id') and sub['status'] == 'pending':
             new_military, new_student, mil_diff, stu_diff = _build_submission_diffs(conn, int(sub['student_id']), parsed)
+            risk_flags, risk_level = _analyze_submission_risks(conn, int(sub['student_id']), parsed, cur_mil=military)
+        elif sub.get('student_id'):
+            _hydrate_submission_risks(conn, sub, cur_mil_by_sid={int(sub['student_id']): (military or {})})
+            risk_flags = sub.get('risk_flags') or []
+            risk_level = sub.get('risk_level') or 'none'
 
         active_students = []
         if sub['status'] in ('not_found', 'pending'):
@@ -3592,6 +4567,8 @@ def telegram_submission_review(sub_id):
         new_student=new_student,
         mil_diff=mil_diff,
         stu_diff=stu_diff,
+        risk_flags=risk_flags,
+        risk_level=risk_level,
         military_fields=MILITARY_FIELDS,
         student_fields=STUDENT_FIELDS,
         field_label=_field_label,
@@ -3854,6 +4831,7 @@ def telegram_submission_rematch(sub_id):
             parsed = {}
 
         new_mil, new_stu, mil_diff, stu_diff = _build_submission_diffs(conn, student_id, parsed)
+        risk_flags, risk_level = _analyze_submission_risks(conn, student_id, parsed)
         is_dup, dup_cnt, dup_info = _compute_monthly_duplicate_info(
             conn, student_id, sub.get('parsed_ym'), sub.get('upload_ym') or date.today().strftime('%Y-%m'),
             exclude_sub_id=sub_id,
@@ -3870,7 +4848,10 @@ def telegram_submission_rematch(sub_id):
                 student_diff_json = ?,
                 is_monthly_duplicate = ?,
                 duplicate_count = ?,
-                duplicate_info = ?
+                duplicate_info = ?,
+                risk_flags_json = ?,
+                risk_level = ?,
+                risk_count = ?
             WHERE id = ?
             """,
             (
@@ -3882,6 +4863,9 @@ def telegram_submission_rematch(sub_id):
                 1 if is_dup else 0,
                 dup_cnt if is_dup else 1,
                 dup_info,
+                json.dumps(risk_flags, ensure_ascii=False),
+                risk_level,
+                len(risk_flags),
                 sub_id,
             ),
         )
@@ -4181,6 +5165,11 @@ def telegram_save_settings():
     auto_remind_filter_raw = (request.form.get('auto_remind_filter_json') or '{}').strip()
     auto_remind_filter = json.dumps(_parse_filter_dict(auto_remind_filter_raw), ensure_ascii=False)
 
+    auto_cleanup_enabled = 1 if request.form.get('auto_cleanup_enabled') else 0
+    auto_cleanup_months = max(1, min(60, request.form.get('auto_cleanup_months', type=int) or 6))
+    auto_cleanup_include_not_found = 1 if request.form.get('auto_cleanup_include_not_found') else 0
+    auto_cleanup_include_approved = 1 if request.form.get('auto_cleanup_include_approved') else 0
+
     conn = get_db()
     try:
         cur_settings = _get_bot_settings(conn)
@@ -4210,6 +5199,10 @@ def telegram_save_settings():
                 auto_remind_day = ?,
                 auto_remind_hour = ?,
                 auto_remind_filter_json = ?,
+                auto_cleanup_enabled = ?,
+                auto_cleanup_months = ?,
+                auto_cleanup_include_not_found = ?,
+                auto_cleanup_include_approved = ?,
                 updated_at = datetime('now', 'localtime')
             WHERE id = 1
             """,
@@ -4217,6 +5210,8 @@ def telegram_save_settings():
                 effective_token, bot_username, bot_first_name,
                 welcome_text, reminder_text, approval_text, rejection_text,
                 auto_remind_enabled, auto_remind_day, auto_remind_hour, auto_remind_filter,
+                auto_cleanup_enabled, auto_cleanup_months,
+                auto_cleanup_include_not_found, auto_cleanup_include_approved,
             ),
         )
         conn.commit()
@@ -4235,6 +5230,186 @@ def telegram_save_settings():
     )
     flash('Налаштування Telegram-бота збережено.', 'success')
     return redirect(url_for('military_telegram.telegram_dashboard', tab='settings'))
+
+
+@military_telegram_bp.route('/admin/military/telegram/cleanup', methods=['POST'])
+@permission_required('manage_military_telegram')
+def telegram_run_cleanup_now():
+    months = request.form.get('cleanup_months', type=int)
+    conn = get_db()
+    try:
+        ensure_telegram_vod_schema(conn)
+        settings = _get_bot_settings(conn)
+        eff_months = max(1, min(60, months or int(settings.get('auto_cleanup_months') or 6)))
+        inc_nf = bool(int(settings.get('auto_cleanup_include_not_found') if settings.get('auto_cleanup_include_not_found') is not None else 1))
+        inc_app = bool(int(settings.get('auto_cleanup_include_approved') or 0))
+        res = cleanup_old_telegram_vod_files(
+            conn,
+            months=eff_months,
+            include_not_found=inc_nf,
+            include_approved=inc_app,
+            dry_run=False,
+        )
+    finally:
+        conn.close()
+
+    log_action(
+        current_username(),
+        "виконав очищення тимчасових файлів черги Telegram ВОД",
+        category='delete',
+        section='Військовий облік',
+        details=f"старше {eff_months} міс.: записів {res['cleaned_rows']}, файлів {res['deleted_files']} ({res['freed_mb']} МБ)",
+    )
+    if res['deleted_files'] == 0 and res['cleaned_rows'] == 0:
+        flash(f"Застарілих файлів старше {eff_months} міс. (до {res['cutoff_date']}) не знайдено.", 'info')
+    else:
+        flash(
+            f"Очищення завершено! Опрацьовано подань: {res['cleaned_rows']}, видалено файлів: {res['deleted_files']} "
+            f"(звільнено {res['freed_mb']} МБ).",
+            'success',
+        )
+    return redirect(url_for('military_telegram.telegram_dashboard', tab='settings'))
+
+
+@military_telegram_bp.route('/admin/military/telegram/group-contacts/save', methods=['POST'])
+@permission_required('manage_military_telegram')
+def telegram_group_contact_save():
+    group_id = request.form.get('group_id', type=int)
+    leader_name = (request.form.get('leader_name') or '').strip()
+    leader_chat_id = (request.form.get('leader_chat_id') or '').strip()
+    curator_name = (request.form.get('curator_name') or '').strip()
+    curator_chat_id = (request.form.get('curator_chat_id') or '').strip()
+    notes = (request.form.get('notes') or '').strip()
+    is_active = 1 if request.form.get('is_active') else 0
+    return_tab = (request.form.get('return_tab') or 'groups').strip()
+    if return_tab not in ('groups', 'links'):
+        return_tab = 'groups'
+
+    if not group_id:
+        flash('Оберіть академічну групу.', 'warning')
+        return redirect(url_for('military_telegram.telegram_dashboard', tab=return_tab))
+    if not leader_chat_id and not curator_chat_id:
+        flash('Вкажіть хоча б один Telegram Chat ID (старости або куратора).', 'warning')
+        return redirect(url_for('military_telegram.telegram_dashboard', tab=return_tab))
+
+    conn = get_db()
+    try:
+        ensure_telegram_vod_schema(conn)
+        grp = conn.execute("SELECT id, name FROM groups WHERE id = ?", (group_id,)).fetchone()
+        if not grp:
+            flash('Групу не знайдено.', 'error')
+            return redirect(url_for('military_telegram.telegram_dashboard', tab=return_tab))
+        conn.execute(
+            """
+            INSERT INTO telegram_group_contacts (
+                group_id, leader_name, leader_chat_id, curator_name, curator_chat_id, notes, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(group_id) DO UPDATE SET
+                leader_name = excluded.leader_name,
+                leader_chat_id = excluded.leader_chat_id,
+                curator_name = excluded.curator_name,
+                curator_chat_id = excluded.curator_chat_id,
+                notes = excluded.notes,
+                is_active = excluded.is_active,
+                updated_at = datetime('now', 'localtime')
+            """,
+            (group_id, leader_name, leader_chat_id, curator_name, curator_chat_id, notes, is_active),
+        )
+        conn.commit()
+        flash(f"Контакти для звітності по групі «{grp['name']}» збережено.", 'success')
+    finally:
+        conn.close()
+    return redirect(url_for('military_telegram.telegram_dashboard', tab=return_tab))
+
+
+@military_telegram_bp.route('/admin/military/telegram/group-contacts/<int:contact_id>/delete', methods=['POST'])
+@permission_required('manage_military_telegram')
+def telegram_group_contact_delete(contact_id):
+    return_tab = (request.form.get('return_tab') or 'links').strip()
+    if return_tab not in ('groups', 'links'):
+        return_tab = 'links'
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM telegram_group_contacts WHERE id = ?", (contact_id,))
+        conn.commit()
+        flash('Контакт старости/куратора видалено.', 'success')
+    finally:
+        conn.close()
+    return redirect(url_for('military_telegram.telegram_dashboard', tab=return_tab))
+
+
+@military_telegram_bp.route('/admin/military/telegram/group-summary/send', methods=['POST'])
+@permission_required('manage_military_telegram')
+def telegram_group_summary_send():
+    vod_month = (request.form.get('vod_month') or date.today().strftime('%Y-%m')).strip()
+    group_id = request.form.get('group_id', type=int)
+    age_mode = (request.form.get('gage') or 'any').strip()
+    send_all_missing = bool(request.form.get('send_all_missing') == '1')
+    custom_chat_id = (request.form.get('custom_chat_id') or '').strip()
+
+    conn = get_db()
+    try:
+        ensure_telegram_vod_schema(conn)
+        settings = _get_bot_settings(conn)
+        token = (settings.get('bot_token') or os.environ.get('TELEGRAM_VOD_BOT_TOKEN') or '').strip()
+        if not token:
+            flash('Спочатку вкажіть токен Telegram-бота в налаштуваннях.', 'error')
+            return redirect(url_for('military_telegram.telegram_dashboard', tab='settings'))
+
+        flt = {
+            'vod_month': vod_month,
+            'group_ids': [group_id] if (group_id and not send_all_missing) else [],
+            'age_mode': age_mode if age_mode in ('any', '25_plus', 'under_25') else 'any',
+            'exclude_women_no_mil': True,
+            'exclude_note_18': True,
+        }
+        summary = build_group_vod_compliance_summary(
+            conn, flt, vod_month=vod_month, only_with_missing=send_all_missing
+        )
+        sent = 0
+        failed = 0
+        groups_touched = 0
+        for grp in summary['groups']:
+            cinfo = grp.get('contact') or {}
+            targets = []
+            if custom_chat_id and not send_all_missing:
+                targets.append(custom_chat_id)
+            else:
+                if cinfo and not int(cinfo.get('is_active') if cinfo.get('is_active') is not None else 1):
+                    continue
+                for k in ('leader_chat_id', 'curator_chat_id'):
+                    cid = (cinfo.get(k) or '').strip()
+                    if cid and cid not in targets:
+                        targets.append(cid)
+            if not targets:
+                continue
+            groups_touched += 1
+            msg_txt = _format_group_escalation_text(grp, vod_month)
+            for cid in targets:
+                ok, _err = _send_chunked_tg_message(token, cid, msg_txt)
+                if ok:
+                    sent += 1
+                else:
+                    failed += 1
+
+        if groups_touched == 0:
+            flash('Не знайдено жодної групи з налаштованим Chat ID старости/куратора (або всі студенти вже подали PDF).', 'warning')
+        else:
+            _record_event(
+                conn, 'group_summary_sent',
+                f"Надіслано зведення по групах ({groups_touched} гр.) за {_format_ym_ua(vod_month)}",
+                severity='warning' if failed else 'info',
+                details=f"Успішно чатів: {sent}, помилок: {failed}",
+            )
+            conn.commit()
+            flash(
+                f"Зведення надіслано для {groups_touched} груп(и)! Успішно: {sent}, помилок: {failed}.",
+                'success' if failed == 0 else 'warning',
+            )
+    finally:
+        conn.close()
+
+    return redirect(url_for('military_telegram.telegram_dashboard', tab='groups', gmonth=vod_month))
 
 
 @military_telegram_bp.route('/admin/military/telegram/bot/action', methods=['POST'])

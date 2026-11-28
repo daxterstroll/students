@@ -34,6 +34,71 @@
         color: var(--ink);
     }
     .tg-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Тематично безпечне підсвічування рядків черги (світла + темна тема) */
+    tr.tg-row-notfound > td {
+        background-color: rgba(220, 53, 69, .10) !important;
+        --bs-table-bg: transparent;
+        --bs-table-accent-bg: transparent;
+    }
+    tr.tg-row-notfound > td:first-child {
+        box-shadow: inset 4px 0 0 #dc3545;
+    }
+    tr.tg-row-critical > td {
+        background-color: rgba(220, 53, 69, .08) !important;
+        --bs-table-bg: transparent;
+        --bs-table-accent-bg: transparent;
+    }
+    tr.tg-row-critical > td:first-child {
+        box-shadow: inset 4px 0 0 #c93b2b;
+    }
+    tr.tg-row-warning > td,
+    tr.tg-row-dup > td {
+        background-color: rgba(255, 193, 7, .11) !important;
+        --bs-table-bg: transparent;
+        --bs-table-accent-bg: transparent;
+    }
+    tr.tg-row-warning > td:first-child,
+    tr.tg-row-dup > td:first-child {
+        box-shadow: inset 4px 0 0 #d99b16;
+    }
+
+    html[data-theme="dark"] tr.tg-row-notfound > td,
+    html[data-theme="dark"] tr.tg-row-critical > td {
+        background-color: rgba(162, 59, 46, .24) !important;
+        color: var(--ink-text) !important;
+    }
+    html[data-theme="dark"] tr.tg-row-notfound:hover > td,
+    html[data-theme="dark"] tr.tg-row-critical:hover > td {
+        background-color: rgba(162, 59, 46, .34) !important;
+    }
+    html[data-theme="dark"] tr.tg-row-notfound > td:first-child,
+    html[data-theme="dark"] tr.tg-row-critical > td:first-child {
+        box-shadow: inset 4px 0 0 #e06c5d;
+    }
+
+    html[data-theme="dark"] tr.tg-row-warning > td,
+    html[data-theme="dark"] tr.tg-row-dup > td {
+        background-color: rgba(200, 162, 74, .18) !important;
+        color: var(--ink-text) !important;
+    }
+    html[data-theme="dark"] tr.tg-row-warning:hover > td,
+    html[data-theme="dark"] tr.tg-row-dup:hover > td {
+        background-color: rgba(200, 162, 74, .27) !important;
+    }
+    html[data-theme="dark"] tr.tg-row-warning > td:first-child,
+    html[data-theme="dark"] tr.tg-row-dup > td:first-child {
+        box-shadow: inset 4px 0 0 var(--brass);
+    }
+
+    .tg-risk-detail {
+        font-size: .74rem;
+        line-height: 1.3;
+        color: var(--ink-soft, #5a6270);
+    }
+    html[data-theme="dark"] .tg-risk-detail {
+        color: #d6cfc0;
+    }
 </style>
 
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
@@ -101,12 +166,17 @@
 </div>
 {% endif %}
 
-{% if counts.not_found > 0 or unread_events > 0 %}
+{% if counts.not_found > 0 or counts.risks > 0 or unread_events > 0 %}
 <div class="alert alert-warning d-flex justify-content-between align-items-center flex-wrap gap-2 py-2">
     <div class="small">
         <i class="bi bi-bell-fill me-1"></i>
         {% if counts.not_found > 0 %}
         <strong>Увага:</strong> {{ counts.not_found }} PDF від не знайдених у БД студентів потребують перевірки.
+        {% endif %}
+        {% if counts.risks > 0 %}
+        <span class="{% if counts.not_found > 0 %}ms-2{% endif %}">
+            Виявлено <strong>{{ counts.risks }}</strong> подань із критичними змінами або попередженнями (ТЦК, відстрочка, поліція, статус).
+        </span>
         {% endif %}
         {% if unread_events > 0 %}
         <span class="ms-2">Непрочитаних системних подій: <strong>{{ unread_events }}</strong> (вкладка «Налаштування та журнал»).</span>
@@ -123,7 +193,7 @@
 
 {# ── KPI-картки ── #}
 <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md">
         <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='pending') }}" class="card text-center border-primary h-100 text-decoration-none">
             <div class="card-body py-3">
                 <div class="fs-3 fw-bold text-primary">{{ counts.pending }}</div>
@@ -131,7 +201,7 @@
             </div>
         </a>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md">
         <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='not_found') }}" class="card text-center border-danger h-100 text-decoration-none">
             <div class="card-body py-3">
                 <div class="fs-3 fw-bold text-danger">{{ counts.not_found }}</div>
@@ -139,7 +209,15 @@
             </div>
         </a>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-6 col-md">
+        <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='risks') }}" class="card text-center border-danger h-100 text-decoration-none">
+            <div class="card-body py-3">
+                <div class="fs-3 fw-bold text-danger">{{ counts.risks }}</div>
+                <div class="small text-muted">Критичні розбіжності</div>
+            </div>
+        </a>
+    </div>
+    <div class="col-6 col-md">
         <a href="{{ url_for('military_telegram.telegram_dashboard', tab='queue', qstatus='duplicates') }}" class="card text-center border-warning h-100 text-decoration-none">
             <div class="card-body py-3">
                 <div class="fs-3 fw-bold text-warning">{{ counts.duplicates }}</div>
@@ -147,7 +225,7 @@
             </div>
         </a>
     </div>
-    <div class="col-6 col-md-3">
+    <div class="col-12 col-md">
         <a href="{{ url_for('military_telegram.telegram_dashboard', tab='links') }}" class="card text-center border-success h-100 text-decoration-none">
             <div class="card-body py-3">
                 <div class="fs-3 fw-bold text-success">{{ links|length }}</div>
@@ -164,6 +242,12 @@
            href="{{ url_for('military_telegram.telegram_dashboard', tab='queue') }}">
             <i class="bi bi-inbox-fill me-1"></i>Черга перевірки PDF
             {% if counts.attention %}<span class="badge bg-danger ms-1">{{ counts.attention }}</span>{% endif %}
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link {% if active_tab == 'groups' %}active{% endif %}"
+           href="{{ url_for('military_telegram.telegram_dashboard', tab='groups') }}">
+            <i class="bi bi-clipboard2-data me-1"></i>Зведення по групах
         </a>
     </li>
     <li class="nav-item">
@@ -197,6 +281,7 @@
         <div class="btn-group btn-group-sm flex-wrap" role="group">
             {% set qfilters = [
                 ('attention', 'Потребують уваги', counts.attention),
+                ('risks', 'Критичні розбіжності', counts.risks),
                 ('pending', 'На перевірці', counts.pending),
                 ('not_found', 'Не знайдені в БД', counts.not_found),
                 ('duplicates', 'Повторні за місяць', counts.duplicates),
@@ -241,7 +326,7 @@
                     </thead>
                     <tbody>
                         {% for s in submissions %}
-                        <tr class="{% if s.status == 'not_found' %}table-danger{% elif s.is_monthly_duplicate and s.status == 'pending' %}table-warning{% endif %}">
+                        <tr class="{% if s.status == 'not_found' %}tg-row-notfound{% elif s.risk_level == 'critical' %}tg-row-critical{% elif s.risk_level == 'warning' %}tg-row-warning{% elif s.is_monthly_duplicate and s.status == 'pending' %}tg-row-dup{% endif %}">
                             <td class="text-center">
                                 {% if s.status == 'pending' and s.student_id %}
                                 <input type="checkbox" class="form-check-input js-queue-check" name="submission_ids" value="{{ s.id }}">
@@ -278,6 +363,29 @@
                                 <span class="badge bg-info-subtle text-info-emphasis">ВО: {{ s.mil_diff|length }}</span>
                                 <span class="badge bg-primary-subtle text-primary-emphasis">Картка: {{ s.stu_diff|length }}</span>
                                 {% if s.photo_rel_path %}<span class="badge bg-secondary-subtle text-secondary-emphasis">Фото 3×4</span>{% endif %}
+                                {% endif %}
+                                {% if not s.pdf_rel_path and s.files_cleaned_at %}
+                                <span class="badge bg-secondary-subtle text-secondary-emphasis"
+                                      title="Тимчасові файли черги очищено {{ s.files_cleaned_at[:16] }}">
+                                    Файл очищено {{ s.files_cleaned_at[:10] }}
+                                </span>
+                                {% endif %}
+                                {% if s.risk_flags %}
+                                <div class="mt-1 d-flex flex-column gap-1">
+                                    <div class="d-flex flex-wrap gap-1">
+                                        {% for rf in s.risk_flags %}
+                                        <span class="badge {% if rf.level == 'critical' %}bg-danger{% else %}bg-warning text-dark{% endif %}"
+                                              title="{{ rf.detail }}">
+                                            <i class="bi {% if rf.level == 'critical' %}bi-shield-exclamation{% else %}bi-exclamation-circle{% endif %} me-1"></i>{{ rf.label }}
+                                        </span>
+                                        {% endfor %}
+                                    </div>
+                                    {% for rf in s.risk_flags[:3] %}
+                                    <div class="tg-risk-detail">
+                                        <i class="bi bi-dot"></i>{{ rf.detail }}
+                                    </div>
+                                    {% endfor %}
+                                </div>
                                 {% endif %}
                                 {% if s.is_monthly_duplicate %}
                                 <div class="mt-1">
@@ -347,6 +455,281 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
+
+{# ════════════════════════════════════════════════════════════════════════════
+   ВКЛАДКА 1.5: ЗВЕДЕННЯ ПО ГРУПАХ (ХТО ЗДАВ / НЕ ЗДАВ) ТА ЗВІТИ СТАРОСТАМ
+   ════════════════════════════════════════════════════════════════════════════ #}
+{% if active_tab == 'groups' and group_summary %}
+<div class="card mb-3">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong><i class="bi bi-clipboard2-data me-1"></i>Зведення здачі «Резерв+» по групах за {{ group_summary.vod_month_label }}</strong>
+        <form method="POST" action="{{ url_for('military_telegram.telegram_group_summary_send') }}" class="m-0"
+              onsubmit="return confirm('Надіслати індивідуальні зведення по боржниках усім налаштованим старостам/кураторам груп з незданими ВОД?');">
+            <input type="hidden" name="vod_month" value="{{ group_summary.vod_month }}">
+            <input type="hidden" name="gage" value="{{ grp_filters.gage }}">
+            <input type="hidden" name="send_all_missing" value="1">
+            <button type="submit" class="btn btn-sm btn-success"
+                    {% if group_summary.totals.groups_with_missing == 0 %}disabled{% endif %}>
+                <i class="bi bi-send-check me-1"></i>Надіслати зведення всім старостам груп з боржниками
+            </button>
+        </form>
+    </div>
+    <div class="card-body py-2">
+        <form method="GET" action="{{ url_for('military_telegram.telegram_dashboard') }}" class="row g-2 align-items-end">
+            <input type="hidden" name="tab" value="groups">
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Місяць ВОД</label>
+                <select class="form-select form-select-sm" name="gmonth">
+                    {% for m in month_options %}
+                    <option value="{{ m.ym }}" {% if m.ym == grp_filters.gmonth %}selected{% endif %}>{{ m.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Факультет</label>
+                <select class="form-select form-select-sm" name="gfaculty">
+                    <option value="">Усі факультети</option>
+                    {% for fac in catalogs.faculties %}
+                    <option value="{{ fac.id }}" {% if grp_filters.gfaculty == fac.id %}selected{% endif %}>{{ fac.name_ua }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-4 col-md-1">
+                <label class="form-label small mb-1">Курс</label>
+                <select class="form-select form-select-sm" name="gcourse">
+                    <option value="">Усі</option>
+                    {% for c in catalogs.courses %}
+                    <option value="{{ c }}" {% if grp_filters.gcourse == c %}selected{% endif %}>{{ c }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-8 col-md-2">
+                <label class="form-label small mb-1">Група</label>
+                <select class="form-select form-select-sm" name="ggroup">
+                    <option value="">Усі групи</option>
+                    {% for grp in catalogs.groups %}
+                    <option value="{{ grp.id }}" {% if grp_filters.ggroup == grp.id %}selected{% endif %}>{{ grp.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label small mb-1">Вікова категорія</label>
+                <select class="form-select form-select-sm" name="gage">
+                    <option value="any" {% if grp_filters.gage == 'any' %}selected{% endif %}>Усі вікові групи</option>
+                    <option value="25_plus" {% if grp_filters.gage == '25_plus' %}selected{% endif %}>Тільки 25+</option>
+                    <option value="under_25" {% if grp_filters.gage == 'under_25' %}selected{% endif %}>До 25 років</option>
+                </select>
+            </div>
+            <div class="col-6 col-md-2">
+                <div class="form-check mb-1">
+                    <input class="form-check-input" type="checkbox" name="gmissing" value="1" id="grpOnlyMissingChk"
+                           {% if grp_filters.gmissing %}checked{% endif %}>
+                    <label class="form-check-label small" for="grpOnlyMissingChk">Лише з боржниками</label>
+                </div>
+            </div>
+            <div class="col-12 col-md-1 d-flex gap-1">
+                <button type="submit" class="btn btn-sm btn-primary w-100">Ок</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="row g-2 mb-3">
+    <div class="col-6 col-md">
+        <div class="card text-center h-100"><div class="card-body py-2">
+            <div class="fs-4 fw-bold">{{ group_summary.totals.total_students }}</div>
+            <div class="small text-muted">У вибірці</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-center border-success h-100"><div class="card-body py-2">
+            <div class="fs-4 fw-bold text-success">{{ group_summary.totals.approved_count }}</div>
+            <div class="small text-muted">Підтверджено</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-center border-primary h-100"><div class="card-body py-2">
+            <div class="fs-4 fw-bold text-primary">{{ group_summary.totals.pending_count }}</div>
+            <div class="small text-muted">На перевірці</div>
+        </div></div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card text-center border-danger h-100"><div class="card-body py-2">
+            <div class="fs-4 fw-bold text-danger">{{ group_summary.totals.missing_count }}</div>
+            <div class="small text-muted">Не здали</div>
+        </div></div>
+    </div>
+    <div class="col-12 col-md">
+        <div class="card text-center border-warning h-100"><div class="card-body py-2">
+            <div class="fs-4 fw-bold text-warning">{{ group_summary.totals.groups_with_missing }} / {{ group_summary.totals.groups_total }}</div>
+            <div class="small text-muted">Груп з боржниками</div>
+        </div></div>
+    </div>
+</div>
+
+{% if group_summary.groups %}
+<div class="card">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0 small">
+                <thead>
+                    <tr>
+                        <th>Група / Факультет</th>
+                        <th style="min-width:170px;">Виконання</th>
+                        <th>Статистика (Здав / Перевірка / Не здав)</th>
+                        <th>Староста / Куратор (Telegram)</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for g in group_summary.groups %}
+                    {% set gc = g.contact or {} %}
+                    {% set has_target = (gc.leader_chat_id or gc.curator_chat_id) and (gc.is_active is not defined or gc.is_active) %}
+                    <tr>
+                        <td>
+                            <div class="fw-semibold">{{ g.group_name }}</div>
+                            <div class="text-muted" style="font-size:.74rem;">
+                                {{ g.faculty_name or '—' }}{% if g.course %} · {{ g.course }} курс{% endif %}{% if g.study_form %} · {{ g.study_form }}{% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center gap-2">
+                                <div class="progress flex-grow-1" style="height:8px;">
+                                    <div class="progress-bar {% if g.pct == 100 %}bg-success{% elif g.pct >= 60 %}bg-info{% else %}bg-warning{% endif %}"
+                                         style="width:{{ g.pct }}%;"></div>
+                                </div>
+                                <span class="tg-mono fw-semibold">{{ g.pct }}%</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-success-subtle text-success-emphasis">✅ {{ g.approved_count }}</span>
+                            {% if g.pending_count %}
+                            <span class="badge bg-primary-subtle text-primary-emphasis">⏳ {{ g.pending_count }}</span>
+                            {% endif %}
+                            <span class="badge {% if g.missing_count > 0 %}bg-danger-subtle text-danger-emphasis{% else %}bg-secondary-subtle text-secondary-emphasis{% endif %}">
+                                ❌ {{ g.missing_count }}
+                            </span>
+                            <span class="text-muted ms-1">з {{ g.total }}</span>
+                        </td>
+                        <td>
+                            {% if gc.leader_chat_id or gc.curator_chat_id %}
+                                {% if gc.leader_chat_id %}
+                                <div>
+                                    <span class="badge bg-primary-subtle text-primary-emphasis">Староста</span>
+                                    {{ gc.leader_name or '' }} <span class="tg-mono text-muted">({{ gc.leader_chat_id }})</span>
+                                </div>
+                                {% endif %}
+                                {% if gc.curator_chat_id %}
+                                <div class="mt-1">
+                                    <span class="badge bg-info-subtle text-info-emphasis">Куратор</span>
+                                    {{ gc.curator_name or '' }} <span class="tg-mono text-muted">({{ gc.curator_chat_id }})</span>
+                                </div>
+                                {% endif %}
+                                {% if gc.is_active is defined and not gc.is_active %}
+                                <span class="badge bg-secondary mt-1">Вимкнено</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-muted fst-italic">Контакт не вказано</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    data-bs-toggle="collapse" data-bs-target="#grpStudents{{ g.group_id }}"
+                                    title="Показати списки студентів групи">
+                                <i class="bi bi-people me-1"></i>Списки
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary js-open-group-contact"
+                                    data-group-id="{{ g.group_id }}"
+                                    data-group-name="{{ g.group_name }}"
+                                    data-leader-name="{{ gc.leader_name or '' }}"
+                                    data-leader-chat="{{ gc.leader_chat_id or '' }}"
+                                    data-curator-name="{{ gc.curator_name or '' }}"
+                                    data-curator-chat="{{ gc.curator_chat_id or '' }}"
+                                    data-notes="{{ gc.notes or '' }}"
+                                    data-active="{{ gc.is_active if gc.is_active is defined else 1 }}"
+                                    title="Налаштувати Telegram старости / куратора">
+                                <i class="bi bi-person-lines-fill"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-info js-copy-leader-text"
+                                    data-text="{{ g.leader_text }}"
+                                    title="Скопіювати текст зведення для старости / куратора">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('military_telegram.telegram_group_summary_send') }}"
+                                  class="d-inline" onsubmit="return confirm('Надіслати зведення по групі «{{ g.group_name }}» у Telegram старості / куратору?');">
+                                <input type="hidden" name="vod_month" value="{{ group_summary.vod_month }}">
+                                <input type="hidden" name="group_id" value="{{ g.group_id }}">
+                                <input type="hidden" name="gage" value="{{ grp_filters.gage }}">
+                                <button type="submit" class="btn btn-sm btn-outline-success"
+                                        {% if not has_target %}disabled title="Спочатку вкажіть Chat ID старости або куратора"{% else %}title="Надіслати зведення в Telegram"{% endif %}>
+                                    <i class="bi bi-telegram"></i>
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    <tr class="collapse" id="grpStudents{{ g.group_id }}">
+                        <td colspan="5" class="p-3 bg-body-tertiary">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <div class="fw-semibold text-danger mb-1">❌ Не здали ({{ g.missing_count }})</div>
+                                    {% if g.missing_students %}
+                                    <ul class="list-unstyled mb-0 small">
+                                        {% for st in g.missing_students %}
+                                        <li class="py-1 border-bottom">
+                                            <a href="{{ url_for('students.student_details', student_id=st.id) }}" class="text-decoration-none">{{ st.full_name }}</a>
+                                            {% if not st.is_linked %}<span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">без TG</span>{% endif %}
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <div class="text-muted small">Усі студенти подали документи.</div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="fw-semibold text-primary mb-1">⏳ На перевірці ({{ g.pending_count }})</div>
+                                    {% if g.pending_students %}
+                                    <ul class="list-unstyled mb-0 small">
+                                        {% for st in g.pending_students %}
+                                        <li class="py-1 border-bottom">
+                                            <a href="{{ url_for('students.student_details', student_id=st.id) }}" class="text-decoration-none">{{ st.full_name }}</a>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <div class="text-muted small">—</div>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="fw-semibold text-success mb-1">✅ Підтверджено ({{ g.approved_count }})</div>
+                                    {% if g.approved_students %}
+                                    <ul class="list-unstyled mb-0 small">
+                                        {% for st in g.approved_students %}
+                                        <li class="py-1 border-bottom">
+                                            <a href="{{ url_for('students.student_details', student_id=st.id) }}" class="text-decoration-none">{{ st.full_name }}</a>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                    {% else %}
+                                    <div class="text-muted small">—</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body p-4 text-center text-muted">
+        За обраними фільтрами груп не знайдено (або всі студенти вже подали «Резерв+»).
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 {# ════════════════════════════════════════════════════════════════════════════
@@ -755,6 +1138,13 @@
                                     {% else %}
                                     <span class="badge bg-warning-subtle text-warning-emphasis">Завжди за фільтром</span>
                                     {% endif %}
+                                    {% if r.escalation_enabled %}
+                                    <div class="mt-1">
+                                        <span class="badge bg-warning-subtle text-warning-emphasis" title="Автоматичний звіт старостам/кураторам наприкінці вікна">
+                                            <i class="bi bi-megaphone me-1"></i>Ескалація: останні {{ r.escalation_last_days or 3 }} дн.
+                                        </span>
+                                    </div>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% if r.is_enabled %}
@@ -765,6 +1155,9 @@
                                     <span class="text-muted ms-1">сьогодні: <strong>{{ r.effective_sent_today }}</strong>/{{ r.times_per_day }}</span>
                                     {% if r.last_run_summary %}
                                     <div class="text-muted" style="font-size:.73rem;">{{ r.last_run_summary }}</div>
+                                    {% endif %}
+                                    {% if r.escalation_last_summary %}
+                                    <div class="text-muted" style="font-size:.72rem;">Ескалація: {{ r.escalation_last_summary }}</div>
                                     {% endif %}
                                 </td>
                                 <td class="text-end text-nowrap">
@@ -777,6 +1170,12 @@
                                           class="d-inline" onsubmit="return confirm('Виконати це правило нагадування прямо зараз?');">
                                         <button type="submit" class="btn btn-sm btn-outline-success" title="Запустити зараз">
                                             <i class="bi bi-play-fill"></i>
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_escalate_now', rule_id=r.id) }}"
+                                          class="d-inline" onsubmit="return confirm('Надіслати звіт-ескалацію по боржниках цього правила старостам/кураторам зараз?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-info" title="Надіслати ескалацію старостам/кураторам зараз">
+                                            <i class="bi bi-send-exclamation"></i>
                                         </button>
                                     </form>
                                     <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_toggle', rule_id=r.id) }}" class="d-inline">
@@ -798,7 +1197,11 @@
                                             data-end-hour="{{ r.end_hour }}"
                                             data-stop="{{ r.stop_when_submitted }}"
                                             data-enabled="{{ r.is_enabled }}"
-                                            title="Редагувати розклад і фільтр">
+                                            data-esc-enabled="{{ r.escalation_enabled or 0 }}"
+                                            data-esc-days="{{ r.escalation_last_days or 3 }}"
+                                            data-esc-leaders="{{ r.escalation_send_to_leaders if r.escalation_send_to_leaders is not none else 1 }}"
+                                            data-esc-extra="{{ r.escalation_extra_chat_ids or '' }}"
+                                            title="Редагувати розклад, фільтр і ескалацію">
                                         <i class="bi bi-pencil"></i>
                                     </button>
                                     <form method="POST" action="{{ url_for('military_telegram.telegram_auto_rule_delete', rule_id=r.id) }}"
@@ -1114,6 +1517,80 @@
         {% endif %}
     </div>
 </div>
+
+{# Контакти старост і кураторів груп для зведень та ескалації #}
+<div class="card mt-4">
+    <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <strong><i class="bi bi-person-badge me-1"></i>Контакти старост та кураторів груп (для зведень і ескалації)</strong>
+        <button type="button" class="btn btn-sm btn-outline-primary js-open-group-contact"
+                data-group-id="" data-group-name="" data-leader-name="" data-leader-chat=""
+                data-curator-name="" data-curator-chat="" data-notes="" data-active="1">
+            <i class="bi bi-plus-circle me-1"></i>Додати контакт групи
+        </button>
+    </div>
+    <div class="card-body p-0">
+        {% if group_contacts %}
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle small">
+                <thead>
+                    <tr>
+                        <th>Група</th>
+                        <th>Староста</th>
+                        <th>Куратор</th>
+                        <th>Примітка</th>
+                        <th>Статус</th>
+                        <th class="text-end">Дії</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for gc in group_contacts %}
+                    <tr>
+                        <td class="fw-semibold">{{ gc.group_name or gc.group_id }}</td>
+                        <td>
+                            {% if gc.leader_chat_id %}
+                            {{ gc.leader_name or 'Староста' }} <span class="tg-mono text-muted">({{ gc.leader_chat_id }})</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if gc.curator_chat_id %}
+                            {{ gc.curator_name or 'Куратор' }} <span class="tg-mono text-muted">({{ gc.curator_chat_id }})</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-muted">{{ gc.notes or '—' }}</td>
+                        <td>
+                            {% if gc.is_active %}<span class="badge bg-success">Активний</span>
+                            {% else %}<span class="badge bg-secondary">Вимкнено</span>{% endif %}
+                        </td>
+                        <td class="text-end text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-primary js-open-group-contact"
+                                    data-group-id="{{ gc.group_id }}"
+                                    data-group-name="{{ gc.group_name or '' }}"
+                                    data-leader-name="{{ gc.leader_name or '' }}"
+                                    data-leader-chat="{{ gc.leader_chat_id or '' }}"
+                                    data-curator-name="{{ gc.curator_name or '' }}"
+                                    data-curator-chat="{{ gc.curator_chat_id or '' }}"
+                                    data-notes="{{ gc.notes or '' }}"
+                                    data-active="{{ gc.is_active }}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <form method="POST" action="{{ url_for('military_telegram.telegram_group_contact_delete', contact_id=gc.id) }}"
+                                  class="d-inline" onsubmit="return confirm('Видалити контакти групи «{{ gc.group_name }}»?');">
+                                <input type="hidden" name="return_tab" value="links">
+                                <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="p-4 text-center text-muted small">
+            Контакти старост та кураторів ще не додані. Їх можна додати тут або у вкладці «Зведення по групах».
+        </div>
+        {% endif %}
+    </div>
+</div>
 {% endif %}
 
 {# ════════════════════════════════════════════════════════════════════════════
@@ -1190,12 +1667,83 @@
                         </div>
                     </div>
 
+                    <hr>
+                    <h6 class="small text-uppercase text-muted mb-2"><i class="bi bi-hdd-stack me-1"></i>Автоочищення тимчасових файлів черги</h6>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" name="auto_cleanup_enabled" value="1" id="autoCleanSwitch"
+                               {% if settings.auto_cleanup_enabled is not defined or settings.auto_cleanup_enabled %}checked{% endif %}>
+                        <label class="form-check-label small" for="autoCleanSwitch">
+                            Щоденно видаляти старі тимчасові PDF та фото черги (<code>static/uploads/telegram_vod/</code>)
+                        </label>
+                    </div>
+                    <div class="row g-2 mb-2 align-items-end">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Видаляти файли старше (місяців, 1–60)</label>
+                            <input type="number" class="form-control form-control-sm" name="auto_cleanup_months"
+                                   value="{{ settings.auto_cleanup_months or 6 }}" min="1" max="60">
+                        </div>
+                        <div class="col-6 small text-muted">
+                            Подання, що очікують перевірки (<code>pending</code>), та архівні файли в картках студентів ніколи не видаляються.
+                        </div>
+                    </div>
+                    <div class="form-check mb-1 small">
+                        <input class="form-check-input" type="checkbox" name="auto_cleanup_include_not_found" value="1" id="autoCleanNf"
+                               {% if settings.auto_cleanup_include_not_found is not defined or settings.auto_cleanup_include_not_found %}checked{% endif %}>
+                        <label class="form-check-label" for="autoCleanNf">
+                            Також очищати старі нерозпізнані/незнайдені подання (<code>not_found</code>)
+                        </label>
+                    </div>
+                    <div class="form-check mb-3 small">
+                        <input class="form-check-input" type="checkbox" name="auto_cleanup_include_approved" value="1" id="autoCleanApp"
+                               {% if settings.auto_cleanup_include_approved %}checked{% endif %}>
+                        <label class="form-check-label" for="autoCleanApp">
+                            Також очищати тимчасові копії підтверджених подань (<code>approved</code>, копія вже збережена в архіві студента)
+                        </label>
+                    </div>
+
                     <button type="submit" class="btn btn-primary w-100">
                         <i class="bi bi-save me-1"></i>Зберегти налаштування
                     </button>
                 </form>
             </div>
         </div>
+
+        {% if vod_storage_stats %}
+        <div class="card mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong><i class="bi bi-trash3 me-1"></i>Стан папки черги та ручне очищення</strong>
+                <span class="badge bg-secondary tg-mono">{{ vod_storage_stats.disk_mb }} МБ</span>
+            </div>
+            <div class="card-body small">
+                <div class="row g-2 mb-3">
+                    <div class="col-6">
+                        <div class="text-muted">Файлів на диску (<code>telegram_vod</code>):</div>
+                        <div class="fw-semibold">{{ vod_storage_stats.disk_files }} шт. ({{ vod_storage_stats.disk_mb }} МБ)</div>
+                    </div>
+                    <div class="col-6">
+                        <div class="text-muted">Доступно для очищення (до {{ vod_storage_stats.cutoff_date }}):</div>
+                        <div class="fw-semibold text-warning-emphasis">{{ vod_storage_stats.candidate_rows }} записів / {{ vod_storage_stats.candidate_files }} файлів ({{ vod_storage_stats.candidate_mb }} МБ)</div>
+                    </div>
+                </div>
+                {% if settings.last_cleanup_summary %}
+                <div class="text-muted mb-3">
+                    <i class="bi bi-clock-history me-1"></i>Останнє очищення ({{ settings.last_cleanup_date or '—' }}): {{ settings.last_cleanup_summary }}
+                </div>
+                {% endif %}
+                <form method="POST" action="{{ url_for('military_telegram.telegram_run_cleanup_now') }}"
+                      class="d-flex align-items-center gap-2"
+                      onsubmit="return confirm('Видалити застарілі тимчасові файли черги згідно з обраними параметрами? Історія в БД та файли в картках студентів збережуться.');">
+                    <input type="number" class="form-control form-control-sm" style="max-width:110px;"
+                           name="cleanup_months" value="{{ settings.auto_cleanup_months or 6 }}" min="1" max="60"
+                           title="Місяців зберігання">
+                    <span class="text-muted text-nowrap">міс.</span>
+                    <button type="submit" class="btn btn-sm btn-outline-danger flex-grow-1">
+                        <i class="bi bi-broom me-1"></i>Очистити застарілі файли зараз
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <div class="col-lg-6">
@@ -1364,11 +1912,99 @@
                             <label class="form-check-label" for="autoRuleEnabled">Правило увімкнене</label>
                         </div>
                     </div>
+
+                    <div class="col-12 border-top pt-3">
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input" type="checkbox" name="escalation_enabled" value="1" id="autoRuleEscEnabled">
+                            <label class="form-check-label small fw-semibold" for="autoRuleEscEnabled">
+                                <i class="bi bi-megaphone me-1 text-warning"></i>Ескалація наприкінці вікна: автоматичний звіт старостам / кураторам (хто здав / не здав)
+                            </label>
+                        </div>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-6 col-md-4">
+                                <label class="form-label small mb-1">За скільки останніх днів вікна (1–15)</label>
+                                <input type="number" class="form-control form-control-sm" name="escalation_last_days" id="autoRuleEscDays" value="3" min="1" max="15">
+                                <div class="form-text" style="font-size:.72rem;">Напр., для 15–25 і значення 3 — це 23–25 числа.</div>
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="escalation_send_to_leaders" value="1" id="autoRuleEscLeaders" checked>
+                                    <label class="form-check-label small" for="autoRuleEscLeaders">Надсилати старостам і кураторам груп</label>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-4">
+                                <label class="form-label small mb-1">Додаткові Chat ID координаторів (через кому)</label>
+                                <input type="text" class="form-control form-control-sm tg-mono" name="escalation_extra_chat_ids" id="autoRuleEscExtra" placeholder="123456789, 987654321">
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
                 <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Зберегти правило</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Модалка налаштування контакту старости / куратора групи #}
+<div class="modal fade" id="tgGroupContactModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="POST" action="{{ url_for('military_telegram.telegram_group_contact_save') }}" class="modal-content">
+            <input type="hidden" name="return_tab" value="{{ active_tab if active_tab in ('groups', 'links') else 'groups' }}">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-person-badge me-1"></i>Староста та куратор групи</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрити"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-2">
+                    <label class="form-label small fw-semibold mb-1">Академічна група</label>
+                    <select class="form-select form-select-sm" name="group_id" id="gcGroupId" required>
+                        <option value="">— оберіть групу —</option>
+                        {% for grp in catalogs.groups %}
+                        <option value="{{ grp.id }}">{{ grp.name }} ({{ grp.course }} к., {{ grp.study_form }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3 d-none" id="gcQuickPickWrap">
+                    <label class="form-label small mb-1 text-info-emphasis">Швидко підставити Chat ID з прив’язаних у групі:</label>
+                    <select class="form-select form-select-sm" id="gcQuickPickSelect">
+                        <option value="">— оберіть прив’язаного студента / представника —</option>
+                    </select>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label class="form-label small mb-1">ПІБ старости (необов.)</label>
+                        <input type="text" class="form-control form-control-sm" name="leader_name" id="gcLeaderName" placeholder="Напр. Іваненко І.">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Telegram Chat ID старости</label>
+                        <input type="text" class="form-control form-control-sm tg-mono" name="leader_chat_id" id="gcLeaderChat" placeholder="123456789">
+                    </div>
+                </div>
+                <div class="row g-2 mb-2">
+                    <div class="col-6">
+                        <label class="form-label small mb-1">ПІБ куратора (необов.)</label>
+                        <input type="text" class="form-control form-control-sm" name="curator_name" id="gcCuratorName" placeholder="Напр. Петренко О.">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label small mb-1">Telegram Chat ID куратора</label>
+                        <input type="text" class="form-control form-control-sm tg-mono" name="curator_chat_id" id="gcCuratorChat" placeholder="987654321">
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small mb-1">Примітка</label>
+                    <input type="text" class="form-control form-control-sm" name="notes" id="gcNotes" placeholder="Додаткова інформація...">
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="is_active" value="1" id="gcIsActive" checked>
+                    <label class="form-check-label small" for="gcIsActive">Надсилати авто-зведення (активний контакт)</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Скасувати</button>
+                <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-save me-1"></i>Зберегти контакт</button>
             </div>
         </form>
     </div>
@@ -1660,6 +2296,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 document.getElementById('autoRuleMsg').value = cfg.msg || document.getElementById('broadcastMsgText').value;
                 document.getElementById('autoRuleStopSub').checked = cfg.stop_when_submitted !== false;
                 document.getElementById('autoRuleEnabled').checked = cfg.is_enabled !== false;
+                document.getElementById('autoRuleEscEnabled').checked = !!cfg.escalation_enabled;
+                document.getElementById('autoRuleEscDays').value = cfg.escalation_last_days ?? 3;
+                document.getElementById('autoRuleEscLeaders').checked = cfg.escalation_send_to_leaders !== false;
+                document.getElementById('autoRuleEscExtra').value = cfg.escalation_extra_chat_ids || '';
                 syncSourceVisibility();
                 updateSlotsPreview();
                 bootstrap.Modal.getOrCreateInstance(autoRuleModalEl).show();
@@ -1701,6 +2341,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         end_hour: btn.dataset.endHour,
                         stop_when_submitted: btn.dataset.stop === '1',
                         is_enabled: btn.dataset.enabled === '1',
+                        escalation_enabled: btn.dataset.escEnabled === '1',
+                        escalation_last_days: btn.dataset.escDays || 3,
+                        escalation_send_to_leaders: btn.dataset.escLeaders !== '0',
+                        escalation_extra_chat_ids: btn.dataset.escExtra || '',
                     });
                 });
             });
@@ -1718,6 +2362,100 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         runPreview();
+    }
+
+    // Копіювання тексту зведення для старости/куратора (вкладка groups)
+    function copyPlainText(text, btn) {
+        const done = () => {
+            const oldHtml = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check2 text-success"></i>';
+            setTimeout(() => { btn.innerHTML = oldHtml; }, 1400);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(ta);
+                done();
+            });
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
+            done();
+        }
+    }
+
+    document.querySelectorAll('.js-copy-leader-text').forEach(btn => {
+        btn.addEventListener('click', function () {
+            copyPlainText(btn.dataset.text || '', btn);
+        });
+    });
+
+    // Модалка контакту старости/куратора групи
+    const gcModalEl = document.getElementById('tgGroupContactModal');
+    if (gcModalEl) {
+        const linkedByGroup = {{ linked_by_group|tojson }};
+        const gcGroupSel = document.getElementById('gcGroupId');
+        const gcQuickWrap = document.getElementById('gcQuickPickWrap');
+        const gcQuickSel = document.getElementById('gcQuickPickSelect');
+
+        function refreshQuickPick(gid) {
+            const items = linkedByGroup[String(gid)] || [];
+            gcQuickSel.innerHTML = '';
+            const defOpt = document.createElement('option');
+            defOpt.value = '';
+            defOpt.textContent = '— оберіть прив’язаного студента / представника —';
+            gcQuickSel.appendChild(defOpt);
+            if (!items.length) {
+                gcQuickWrap.classList.add('d-none');
+                return;
+            }
+            items.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.chat_id || '';
+                opt.dataset.name = item.student_full_name || '';
+                const uname = item.tg_username ? ` (@${item.tg_username})` : '';
+                const rep = item.is_representative ? ' [предст.]' : '';
+                opt.textContent = `${item.student_full_name}${uname}${rep} — ${item.chat_id}`;
+                gcQuickSel.appendChild(opt);
+            });
+            gcQuickWrap.classList.remove('d-none');
+        }
+
+        gcGroupSel.addEventListener('change', function () {
+            refreshQuickPick(gcGroupSel.value);
+        });
+
+        gcQuickSel.addEventListener('change', function () {
+            const opt = gcQuickSel.selectedOptions[0];
+            if (!opt || !opt.value) return;
+            document.getElementById('gcLeaderChat').value = opt.value;
+            if (!document.getElementById('gcLeaderName').value && opt.dataset.name) {
+                document.getElementById('gcLeaderName').value = opt.dataset.name;
+            }
+        });
+
+        document.querySelectorAll('.js-open-group-contact').forEach(btn => {
+            btn.addEventListener('click', function () {
+                const gid = btn.dataset.groupId || '';
+                gcGroupSel.value = gid;
+                document.getElementById('gcLeaderName').value = btn.dataset.leaderName || '';
+                document.getElementById('gcLeaderChat').value = btn.dataset.leaderChat || '';
+                document.getElementById('gcCuratorName').value = btn.dataset.curatorName || '';
+                document.getElementById('gcCuratorChat').value = btn.dataset.curatorChat || '';
+                document.getElementById('gcNotes').value = btn.dataset.notes || '';
+                document.getElementById('gcIsActive').checked = btn.dataset.active !== '0';
+                refreshQuickPick(gid);
+                bootstrap.Modal.getOrCreateInstance(gcModalEl).show();
+            });
+        });
     }
 });
 </script>
